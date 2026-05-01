@@ -7,12 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MiniLineChart } from "@/components/charts/MiniLineChart";
-import { kpiTargets } from "@/data/mock";
+import { useKpiTargets } from "@/hooks/use-data";
 
 export default function KpiDetailPage() {
   const params = useParams();
   const id = typeof params.id === "string" ? params.id : "";
-  const kpi = kpiTargets.find((item) => item.id === id);
+  const { data: kpiTargets } = useKpiTargets();
+  const kpi = kpiTargets.find((item: Record<string, unknown>) => item.id === id);
 
   if (!kpi) {
     return (

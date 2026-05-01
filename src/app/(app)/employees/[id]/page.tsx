@@ -6,13 +6,15 @@ import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { employees, events } from "@/data/mock";
+import { useEmployees, useEvents } from "@/hooks/use-data";
 
 export default function EmployeeDetailPage() {
   const params = useParams();
   const id = typeof params.id === "string" ? params.id : "";
-  const employee = employees.find((item) => item.id === id);
-  const employeeEvents = events.filter((event) => event.employee === employee?.name).slice(0, 3);
+  const { data: employees } = useEmployees();
+  const { data: events } = useEvents();
+  const employee = employees.find((item: Record<string, unknown>) => item.id === id);
+  const employeeEvents = events.filter((event: Record<string, unknown>) => event.employee === (employee as Record<string, unknown>)?.name).slice(0, 3);
 
   if (!employee) {
     return (

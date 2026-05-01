@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { kpiTargets } from "@/data/mock";
+import { useKpiTargets } from "@/hooks/use-data";
 
 const trendClass = (trend: string) =>
   trend.startsWith("-")
@@ -22,6 +22,11 @@ const trendClass = (trend: string) =>
     : "bg-green-50 text-green-700 border-green-200";
 
 export default function AnalyticsPage() {
+  const { data: kpiTargets, loading } = useKpiTargets();
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading analytics...</div>;
+  }
   return (
     <div className="flex flex-col gap-6">
       <div>

@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { events } from "@/data/mock";
+import { useEvents } from "@/hooks/use-data";
 
 const typeStyles: Record<string, string> = {
   "Check-in": "bg-green-50 text-green-700 border-green-200",
@@ -21,6 +21,11 @@ const typeStyles: Record<string, string> = {
 };
 
 export default function EventsPage() {
+  const { data: events, loading } = useEvents();
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading events...</div>;
+  }
   return (
     <div className="flex flex-col gap-6">
       <div>

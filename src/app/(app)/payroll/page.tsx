@@ -13,9 +13,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { payrollRuns, payrollPreview } from "@/data/mock";
+import { usePayrollRuns, usePayrollPreview } from "@/hooks/use-data";
 
 export default function PayrollPage() {
+  const { data: payrollRuns, loading: loadingRuns } = usePayrollRuns();
+  const { data: payrollPreview, loading: loadingPreview } = usePayrollPreview();
+
+  if (loadingRuns || loadingPreview) {
+    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading payroll...</div>;
+  }
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

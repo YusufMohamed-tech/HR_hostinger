@@ -6,12 +6,13 @@ import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { auditLogs } from "@/data/mock";
+import { useAuditLogs } from "@/hooks/use-data";
 
 export default function AuditLogDetailPage() {
   const params = useParams();
   const id = typeof params.id === "string" ? params.id : "";
-  const log = auditLogs.find((item) => item.id === id);
+  const { data: auditLogs } = useAuditLogs();
+  const log = auditLogs.find((item: Record<string, unknown>) => item.id === id);
 
   if (!log) {
     return (
