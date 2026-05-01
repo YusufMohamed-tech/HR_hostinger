@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useKpiTargets } from "@/hooks/use-data";
+import { PageSkeleton } from "@/components/Skeletons";
 
 const trendClass = (trend: string) =>
   trend.startsWith("-")
@@ -25,7 +26,7 @@ export default function AnalyticsPage() {
   const { data: kpiTargets, loading } = useKpiTargets();
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading analytics...</div>;
+    return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">

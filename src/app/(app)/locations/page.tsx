@@ -14,13 +14,14 @@ import {
 import { useLocations } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { AddLocationDialog } from "@/components/forms/AddLocationDialog";
+import { PageSkeleton } from "@/components/Skeletons";
 
 export default function LocationsPage() {
   const { currentUser } = useRoleContext();
   const { data: locations, loading, refetch } = useLocations();
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading locations...</div>;
+    return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">

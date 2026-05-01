@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCourses } from "@/hooks/use-data";
+import { PageSkeleton } from "@/components/Skeletons";
 
 const statusClass = (status: string) => {
   if (status === "Completed") return "bg-green-50 text-green-700 border-green-200";
@@ -16,7 +17,7 @@ export default function LearningPage() {
   const { data: courses, loading } = useCourses();
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading courses...</div>;
+    return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">

@@ -4,12 +4,13 @@ import React from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useHierarchy } from "@/hooks/use-data";
+import { PageSkeleton } from "@/components/Skeletons";
 
 export default function HierarchyPage() {
   const { data: hierarchy, loading } = useHierarchy();
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading hierarchy...</div>;
+    return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">

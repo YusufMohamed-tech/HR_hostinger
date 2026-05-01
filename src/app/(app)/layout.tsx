@@ -2,6 +2,7 @@ import React from "react";
 import { Header } from "@/components/layout/Header";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { AuthGuard } from "@/components/auth/AuthGuard";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -12,7 +13,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Header />
           <main className="flex-1 overflow-auto p-4 md:p-8 ml-0 lg:ml-2">
             <div className="mx-auto max-w-7xl">
-              {children}
+              <ErrorBoundary>
+                {children}
+              </ErrorBoundary>
             </div>
           </main>
         </div>

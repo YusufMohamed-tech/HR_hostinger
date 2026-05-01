@@ -18,13 +18,14 @@ import {
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useEmployees } from "@/hooks/use-data";
 import { AddEmployeeDialog } from "@/components/forms/AddEmployeeDialog";
+import { PageSkeleton } from "@/components/Skeletons";
 
 export default function EmployeesPage() {
   const { currentUser } = useRoleContext();
   const { data: employees, loading, refetch } = useEmployees();
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading employees...</div>;
+    return <PageSkeleton />;
   }
 
   return (

@@ -4,6 +4,7 @@ import React from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAiInsights } from "@/hooks/use-data";
+import { PageSkeleton } from "@/components/Skeletons";
 
 const impactClass = (impact: string) => {
   if (impact === "High") return "bg-red-50 text-red-700 border-red-200";
@@ -15,7 +16,7 @@ export default function AiInsightsPage() {
   const { data: aiInsights, loading } = useAiInsights();
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading insights...</div>;
+    return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">

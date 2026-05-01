@@ -14,13 +14,14 @@ import {
 import { useContracts } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { AddContractDialog } from "@/components/forms/AddContractDialog";
+import { PageSkeleton } from "@/components/Skeletons";
 
 export default function ContractsPage() {
   const { currentUser } = useRoleContext();
   const { data: contracts, loading, refetch } = useContracts();
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading contracts...</div>;
+    return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">
