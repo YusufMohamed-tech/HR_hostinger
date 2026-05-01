@@ -2,28 +2,18 @@
 
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Network } from "lucide-react";
+import { Network, Eye, EyeOff } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { Role } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
-const roles: Role[] = ["Super Admin", "Admin", "Team Leader", "Employee"];
 
 export default function LoginPage() {
   const router = useRouter();
   const { currentUser, login } = useRoleContext();
   const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [role, setRole] = useState<Role>("Employee");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -38,12 +28,12 @@ export default function LoginPage() {
     setSubmitting(true);
     setMessage("");
 
-    const result = await login({ email, name, role });
+    const result = await login({ email, password });
     setMessage(result.message);
     setSubmitting(false);
 
     if (result.success) {
-      // Don't redirect — user needs to check their email for the magic link
+      router.replace("/");
     }
   };
 
@@ -96,22 +86,12 @@ export default function LoginPage() {
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
             <div className="space-y-2">
               <h2 className="text-2xl font-semibold text-slate-900">Sign in</h2>
-              <p className="text-sm text-slate-500">Choose a role to preview the system.</p>
+              <p className="text-sm text-slate-500">Enter your credentials to access the dashboard.</p>
             </div>
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="name">Full name</Label>
-                <Input
-                  id="name"
-                  placeholder="Enter your name"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Work email</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
                   id="email"
                   type="email"
@@ -123,35 +103,46 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Role</Label>
-                <Select value={role} onValueChange={(value) => setRole(value as Role)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roles.map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {item}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter your password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               <Button type="submit" className="w-full bg-brand hover:bg-brand-dark text-white" disabled={submitting}>
-                {submitting ? "Sending magic link..." : "Continue to dashboard"}
+                {submitting ? "Signing in..." : "Sign in"}
               </Button>
 
               {message && (
-                <p className={`text-sm text-center ${message.includes("sent") ? "text-brand-dark" : "text-red-600"}`}>
+                <p className={`text-sm text-center ${message.includes("successful") ? "text-brand-dark" : "text-red-600"}`}>
                   {message}
                 </p>
               )}
             </form>
 
-            <p className="mt-4 text-xs text-slate-400">
-              Sign in with your work email. A magic link will be sent to your inbox.
-            </p>
+            <div className="mt-6 border-t pt-4">
+              <p className="text-xs text-slate-400 mb-3">Demo accounts:</p>
+              <div className="grid gap-1.5 text-xs text-slate-500">
+                <div className="flex justify-between"><span className="font-medium">Super Admin</span><span>superadmin1234@gmail.com / superadmin</span></div>
+                <div className="flex justify-between"><span className="font-medium">Admin</span><span>admin@tatwir.com / admin1234</span></div>
+                <div className="flex justify-between"><span className="font-medium">Team Leader</span><span>leader@tatwir.com / leader1234</span></div>
+                <div className="flex justify-between"><span className="font-medium">Employee</span><span>employee@tatwir.com / employee1234</span></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
