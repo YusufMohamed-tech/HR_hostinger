@@ -24,6 +24,8 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState<Role>("Employee");
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     if (currentUser) {
@@ -31,10 +33,18 @@ export default function LoginPage() {
     }
   }, [currentUser, router]);
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    login({ email, name, role });
-    router.replace("/");
+    setSubmitting(true);
+    setMessage("");
+
+    const result = await login({ email, name, role });
+    setMessage(result.message);
+    setSubmitting(false);
+
+    if (result.success) {
+      // Don't redirect — user needs to check their email for the magic link
+    }
   };
 
   return (
@@ -128,13 +138,19 @@ export default function LoginPage() {
                 </Select>
               </div>
 
-              <Button type="submit" className="w-full bg-brand hover:bg-brand-dark text-white">
-                Continue to dashboard
+              <Button type="submit" className="w-full bg-brand hover:bg-brand-dark text-white" disabled={submitting}>
+                {submitting ? "Sending magic link..." : "Continue to dashboard"}
               </Button>
+
+              {message && (
+                <p className={`text-sm text-center ${message.includes("sent") ? "text-brand-dark" : "text-red-600"}`}>
+                  {message}
+                </p>
+              )}
             </form>
 
             <p className="mt-4 text-xs text-slate-400">
-              Demo mode only. Authentication will be replaced by Supabase magic link.
+              Sign in with your work email. A magic link will be sent to your inbox.
             </p>
           </div>
         </div>
