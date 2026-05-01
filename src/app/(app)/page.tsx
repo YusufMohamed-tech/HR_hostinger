@@ -5,6 +5,7 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MiniLineChart } from "@/components/charts/MiniLineChart";
+import { useEmployees, useLocations, useEvents, useAiInsights } from "@/hooks/use-data";
 import {
   Users,
   MapPin,
@@ -15,19 +16,31 @@ import {
 
 export default function DashboardPage() {
   const { currentUser } = useRoleContext();
+  const { data: employees } = useEmployees();
+  const { data: locations } = useLocations();
+  const { data: events } = useEvents();
+  const { data: aiInsights } = useAiInsights();
 
-  // Mock data for the dashboard
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activeCount = employees.filter((e: any) => e.status === "Active" || e.status === "active").length || employees.length;
+  const siteCount = locations.length;
+  const eventCount = events.length;
+
   const stats = [
-    { label: "Active Employees", value: "248", icon: Users, change: "+12%" },
-    { label: "Check-ins Today", value: "194", icon: Clock, change: "92% Attendance" },
-    { label: "Active Sites", value: "12", icon: MapPin, change: "All operational" },
+    { label: "Active Employees", value: String(activeCount), icon: Users, change: `${employees.length} total` },
+    { label: "Events Today", value: String(eventCount), icon: Clock, change: "Live stream" },
+    { label: "Active Sites", value: String(siteCount), icon: MapPin, change: "All operational" },
     { label: "Overall KPI", value: "94%", icon: TrendingUp, change: "+2.4%" },
   ];
 
-  const recentAnomalies = [
-    { id: 1, employee: "Tariq Ali", issue: "Late Check-in (45m)", location: "Site A - Downtown", severity: "medium" },
-    { id: 2, employee: "Sara Ahmed", issue: "Missed Check-out", location: "Site B - East Mall", severity: "high" },
-  ];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recentAnomalies = aiInsights.slice(0, 3).map((insight: any, i: number) => ({
+    id: insight.id || i,
+    employee: insight.title || "System Alert",
+    issue: insight.summary || "Anomaly detected",
+    location: insight.category || "Organization-wide",
+    severity: insight.impact === "High" ? "high" : "medium",
+  }));
 
   const scheduleSeries = [62, 68, 70, 74, 72, 76, 78];
 
