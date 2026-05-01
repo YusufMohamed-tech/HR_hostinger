@@ -13,12 +13,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { organizations } from "@/data/mock";
+import { useOrganizations } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
 
 export default function OrganizationsPage() {
   const { currentUser } = useRoleContext();
+  const { data: organizations, loading } = useOrganizations();
 
+  if (loading) {
+    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading organizations...</div>;
+  }
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">

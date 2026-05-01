@@ -16,10 +16,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { employees } from "@/data/mock";
+import { useEmployees } from "@/hooks/use-data";
 
 export default function EmployeesPage() {
   const { currentUser } = useRoleContext();
+  const { data: employees, loading } = useEmployees();
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading employees...</div>;
+  }
 
   return (
     <div className="flex flex-col gap-6">
