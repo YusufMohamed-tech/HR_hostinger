@@ -3,9 +3,15 @@
 import React from "react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { trackingAlerts, locations } from "@/data/mock";
+import { useTrackingAlerts, useLocations } from "@/hooks/use-data";
 
 export default function TrackingPage() {
+  const { data: trackingAlerts, loading: loadingAlerts } = useTrackingAlerts();
+  const { data: locations, loading: loadingLocations } = useLocations();
+
+  if (loadingAlerts || loadingLocations) {
+    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading tracking...</div>;
+  }
   return (
     <div className="flex flex-col gap-6">
       <div>

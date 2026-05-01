@@ -12,9 +12,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { auditLogs } from "@/data/mock";
+import { useAuditLogs } from "@/hooks/use-data";
 
 export default function AuditLogsPage() {
+  const { data: auditLogs, loading } = useAuditLogs();
+
+  if (loading) {
+    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading audit logs...</div>;
+  }
   return (
     <div className="flex flex-col gap-6">
       <div>

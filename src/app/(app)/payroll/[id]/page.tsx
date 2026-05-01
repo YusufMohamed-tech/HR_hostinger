@@ -6,12 +6,14 @@ import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { payrollRuns, payrollPreview } from "@/data/mock";
+import { usePayrollRuns, usePayrollPreview } from "@/hooks/use-data";
 
 export default function PayrollRunDetailPage() {
   const params = useParams();
   const id = typeof params.id === "string" ? params.id : "";
-  const run = payrollRuns.find((item) => item.id === id);
+  const { data: payrollRuns } = usePayrollRuns();
+  const { data: payrollPreview } = usePayrollPreview();
+  const run = payrollRuns.find((item: Record<string, unknown>) => item.id === id);
 
   if (!run) {
     return (

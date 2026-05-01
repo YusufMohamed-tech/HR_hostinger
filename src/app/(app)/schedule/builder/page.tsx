@@ -14,9 +14,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { locations, employees } from "@/data/mock";
+import { useLocations, useEmployees } from "@/hooks/use-data";
 
 export default function ShiftBuilderPage() {
+  const { data: locations } = useLocations();
+  const { data: employees } = useEmployees();
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">

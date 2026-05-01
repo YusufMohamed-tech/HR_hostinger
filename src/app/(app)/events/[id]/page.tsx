@@ -6,12 +6,13 @@ import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { events } from "@/data/mock";
+import { useEvents } from "@/hooks/use-data";
 
 export default function EventDetailPage() {
   const params = useParams();
   const id = typeof params.id === "string" ? params.id : "";
-  const event = events.find((item) => item.id === id);
+  const { data: events } = useEvents();
+  const event = events.find((item: Record<string, unknown>) => item.id === id);
 
   if (!event) {
     return (
