@@ -562,3 +562,56 @@ CREATE POLICY employees_self ON public.employees
 DROP POLICY IF EXISTS shift_assignments_self ON public.shift_assignments;
 CREATE POLICY shift_assignments_self ON public.shift_assignments
   FOR SELECT USING (employee_id IN (SELECT id FROM public.employees WHERE user_id = auth.uid()));
+
+-- =====================================================================
+-- PHASE 1 ENHANCEMENTS
+-- =====================================================================
+
+-- 1) Auto-create profile when a new user signs up via Supabase Auth
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (user_id, email, full_name)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1))
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 2) Additional performance indexes for foreign key lookups and common queries
+CREATE INDEX IF NOT EXISTS idx_employees_dept ON public.employees(department_id);
+CREATE INDEX IF NOT EXISTS idx_employees_location ON public.employees(location_id);
+CREATE INDEX IF NOT EXISTS idx_employees_manager ON public.employees(manager_id);
+CREATE INDEX IF NOT EXISTS idx_employees_status ON public.employees(status);
+CREATE INDEX IF NOT EXISTS idx_contracts_employee ON public.contracts(employee_id);
+CREATE INDEX IF NOT EXISTS idx_contracts_status ON public.contracts(status);
+CREATE INDEX IF NOT EXISTS idx_shift_assignments_shift ON public.shift_assignments(shift_id);
+CREATE INDEX IF NOT EXISTS idx_shift_assignments_employee ON public.shift_assignments(employee_id);
+CREATE INDEX IF NOT EXISTS idx_events_employee ON public.events(employee_id);
+CREATE INDEX IF NOT EXISTS idx_events_type ON public.events(event_type);
+CREATE INDEX IF NOT EXISTS idx_events_occurred ON public.events(occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON public.audit_logs(actor_user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON public.audit_logs(entity, entity_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON public.audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payroll_items_employee ON public.payroll_items(employee_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_employee ON public.enrollments(employee_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_course ON public.enrollments(course_id);
+CREATE INDEX IF NOT EXISTS idx_shifts_date ON public.shifts(shift_date);
+CREATE INDEX IF NOT EXISTS idx_shifts_location ON public.shifts(location_id);
+
+-- 3) Hardened audit_logs: immutable rows (no UPDATE), only super_admin can DELETE
+DROP POLICY IF EXISTS org_update_audit_logs ON public.audit_logs;
+CREATE POLICY org_update_audit_logs ON public.audit_logs
+  FOR UPDATE USING (false); -- audit logs are immutable
+
+DROP POLICY IF EXISTS org_delete_audit_logs ON public.audit_logs;
+CREATE POLICY org_delete_audit_logs ON public.audit_logs
+  FOR DELETE USING (public.is_super_admin()); -- only super admin can purge
