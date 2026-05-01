@@ -88,7 +88,7 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle>Anomaly Detection (AI)</CardTitle>
             <CardDescription>
-              Actionable flags from today's active shifts.
+              Actionable flags from today&apos;s active shifts.
             </CardDescription>
           </CardHeader>
           <CardContent>
