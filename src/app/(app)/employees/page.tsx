@@ -2,7 +2,8 @@
 
 import React from "react";
 import Link from "next/link";
-import { Search, Filter } from "lucide-react";
+import { Search, Filter, Trash2 } from "lucide-react";
+import { deleteEmployee } from "@/lib/services/employees";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -99,9 +100,25 @@ export default function EmployeesPage() {
                   <TableCell className="text-gray-600">{emp.department}</TableCell>
                   <TableCell className="text-gray-600">{emp.location}</TableCell>
                   <TableCell className="text-right">
-                    <Button asChild variant="ghost" size="sm" className="text-brand hover:text-brand-dark">
-                      <Link href={`/employees/${emp.id}`}>View</Link>
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      <Button asChild variant="ghost" size="sm" className="text-brand hover:text-brand-dark">
+                        <Link href={`/employees/${emp.id}`}>View</Link>
+                      </Button>
+                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          onClick={async () => {
+                            if (!confirm(`Delete ${emp.name}?`)) return;
+                            await deleteEmployee(emp.id, currentUser?.orgId || "", currentUser?.id);
+                            refetch();
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
