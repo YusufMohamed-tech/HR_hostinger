@@ -1,0 +1,34 @@
+# Project Structure
+
+src/
+- app/
+  - (app)/
+    - analytics/
+    - ai-insights/
+    - audit-logs/
+    - contracts/
+    - departments/
+    - employees/
+    - events/
+    - hierarchy/
+    - learning/
+    - locations/
+    - organizations/
+    - payroll/
+    - schedule/
+    - settings/
+    - tracking/
+  - login/
+- components/
+  - auth/
+  - layout/
+  - ui/
+- config/
+- data/
+- db/
+- hooks/
+- lib/
+- providers/
+- services/
+- types/
+- utils/

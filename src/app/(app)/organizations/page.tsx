@@ -1,0 +1,81 @@
+"use client";
+
+import React from "react";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { organizations } from "@/data/mock";
+import { useRoleContext } from "@/providers/RoleProvider";
+
+export default function OrganizationsPage() {
+  const { currentUser } = useRoleContext();
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Organizations</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Multi-tenant workspace setup and company provisioning.
+          </p>
+        </div>
+
+        {currentUser?.role === "Super Admin" && (
+          <Button className="bg-brand hover:bg-brand-dark text-white">
+            <Plus className="w-4 h-4 mr-2" />
+            Add Organization
+          </Button>
+        )}
+      </div>
+
+      <Card className="border-none shadow-sm">
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
+                <TableHead className="font-semibold text-gray-600">Organization</TableHead>
+                <TableHead className="font-semibold text-gray-600">Plan</TableHead>
+                <TableHead className="font-semibold text-gray-600">Users</TableHead>
+                <TableHead className="font-semibold text-gray-600">Status</TableHead>
+                <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {organizations.map((org) => (
+                <TableRow key={org.id}>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span className="font-medium text-gray-900">{org.name}</span>
+                      <span className="text-xs text-gray-400">{org.id}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-gray-600">{org.plan}</TableCell>
+                  <TableCell className="text-gray-600">{org.users}</TableCell>
+                  <TableCell>
+                    <Badge className={org.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
+                      {org.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">
+                      Manage
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
