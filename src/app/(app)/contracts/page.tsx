@@ -1,8 +1,6 @@
 "use client";
 
 import React from "react";
-import { Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -15,10 +13,11 @@ import {
 } from "@/components/ui/table";
 import { useContracts } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
+import { AddContractDialog } from "@/components/forms/AddContractDialog";
 
 export default function ContractsPage() {
   const { currentUser } = useRoleContext();
-  const { data: contracts, loading } = useContracts();
+  const { data: contracts, loading, refetch } = useContracts();
 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading contracts...</div>;
@@ -34,10 +33,7 @@ export default function ContractsPage() {
         </div>
 
         {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
-          <Button className="bg-brand hover:bg-brand-dark text-white">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Contract
-          </Button>
+          <AddContractDialog onSuccess={refetch} />
         )}
       </div>
 

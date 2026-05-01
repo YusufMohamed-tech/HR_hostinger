@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -14,10 +13,11 @@ import {
 } from "@/components/ui/table";
 import { useDepartments } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
+import { AddDepartmentDialog } from "@/components/forms/AddDepartmentDialog";
 
 export default function DepartmentsPage() {
   const { currentUser } = useRoleContext();
-  const { data: departments, loading } = useDepartments();
+  const { data: departments, loading, refetch } = useDepartments();
 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading departments...</div>;
@@ -33,10 +33,7 @@ export default function DepartmentsPage() {
         </div>
 
         {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
-          <Button className="bg-brand hover:bg-brand-dark text-white">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Department
-          </Button>
+          <AddDepartmentDialog onSuccess={refetch} />
         )}
       </div>
 

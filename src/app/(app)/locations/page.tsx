@@ -1,8 +1,6 @@
 "use client";
 
 import React from "react";
-import { Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -15,10 +13,11 @@ import {
 } from "@/components/ui/table";
 import { useLocations } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
+import { AddLocationDialog } from "@/components/forms/AddLocationDialog";
 
 export default function LocationsPage() {
   const { currentUser } = useRoleContext();
-  const { data: locations, loading } = useLocations();
+  const { data: locations, loading, refetch } = useLocations();
 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading locations...</div>;
@@ -34,10 +33,7 @@ export default function LocationsPage() {
         </div>
 
         {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
-          <Button className="bg-brand hover:bg-brand-dark text-white">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Location
-          </Button>
+          <AddLocationDialog onSuccess={refetch} />
         )}
       </div>
 

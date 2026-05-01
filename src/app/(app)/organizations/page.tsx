@@ -1,7 +1,6 @@
 "use client";
 
 import React from "react";
-import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,10 +14,11 @@ import {
 } from "@/components/ui/table";
 import { useOrganizations } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
+import { AddOrganizationDialog } from "@/components/forms/AddOrganizationDialog";
 
 export default function OrganizationsPage() {
   const { currentUser } = useRoleContext();
-  const { data: organizations, loading } = useOrganizations();
+  const { data: organizations, loading, refetch } = useOrganizations();
 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading organizations...</div>;
@@ -34,10 +34,7 @@ export default function OrganizationsPage() {
         </div>
 
         {currentUser?.role === "Super Admin" && (
-          <Button className="bg-brand hover:bg-brand-dark text-white">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Organization
-          </Button>
+          <AddOrganizationDialog onSuccess={refetch} />
         )}
       </div>
 
