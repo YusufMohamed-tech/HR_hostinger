@@ -19,6 +19,26 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Core tables
+CREATE TABLE IF NOT EXISTS public.organizations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  slug text UNIQUE,
+  plan text DEFAULT 'Starter',
+  status text DEFAULT 'Active',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.org_members (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  role public.org_role NOT NULL DEFAULT 'employee',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (org_id, user_id)
+);
+
 CREATE OR REPLACE FUNCTION public.current_org_id()
 RETURNS uuid AS $$
   SELECT org_id FROM public.org_members WHERE user_id = auth.uid() LIMIT 1;
@@ -43,26 +63,6 @@ RETURNS boolean AS $$
       AND role IN ('admin', 'super_admin')
   );
 $$ LANGUAGE sql STABLE;
-
--- Core tables
-CREATE TABLE IF NOT EXISTS public.organizations (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  slug text UNIQUE,
-  plan text DEFAULT 'Starter',
-  status text DEFAULT 'Active',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.org_members (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  role public.org_role NOT NULL DEFAULT 'employee',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (org_id, user_id)
-);
 
 CREATE TABLE IF NOT EXISTS public.profiles (
   user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
