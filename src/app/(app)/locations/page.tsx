@@ -1,7 +1,10 @@
 "use client";
 
 import React from "react";
+import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { deleteLocation } from "@/lib/services/locations";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -48,6 +51,7 @@ export default function LocationsPage() {
                 <TableHead className="font-semibold text-gray-600">Employees</TableHead>
                 <TableHead className="font-semibold text-gray-600">Geofence</TableHead>
                 <TableHead className="font-semibold text-gray-600">Status</TableHead>
+                <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -70,6 +74,14 @@ export default function LocationsPage() {
                     <Badge className={location.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-100 text-gray-600 border-gray-200"}>
                       {location.status}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        onClick={async () => { if (!confirm(`Delete ${location.name}?`)) return; await deleteLocation(location.id, currentUser?.orgId || "", currentUser?.id); refetch(); }}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

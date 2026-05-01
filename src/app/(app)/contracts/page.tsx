@@ -1,7 +1,10 @@
 "use client";
 
 import React from "react";
+import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { deleteContract } from "@/lib/services/contracts";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -49,6 +52,7 @@ export default function ContractsPage() {
                 <TableHead className="font-semibold text-gray-600">End</TableHead>
                 <TableHead className="font-semibold text-gray-600">Salary</TableHead>
                 <TableHead className="font-semibold text-gray-600">Status</TableHead>
+                <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -68,6 +72,14 @@ export default function ContractsPage() {
                     <Badge className={contract.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
                       {contract.status}
                     </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                        onClick={async () => { if (!confirm(`Delete contract?`)) return; await deleteContract(contract.id, currentUser?.orgId || "", currentUser?.id); refetch(); }}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
