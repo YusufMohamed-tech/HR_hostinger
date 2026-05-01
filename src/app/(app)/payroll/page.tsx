@@ -14,13 +14,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { usePayrollRuns, usePayrollPreview } from "@/hooks/use-data";
+import { PageSkeleton } from "@/components/Skeletons";
 
 export default function PayrollPage() {
   const { data: payrollRuns, loading: loadingRuns } = usePayrollRuns();
   const { data: payrollPreview, loading: loadingPreview } = usePayrollPreview();
 
   if (loadingRuns || loadingPreview) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading payroll...</div>;
+    return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">

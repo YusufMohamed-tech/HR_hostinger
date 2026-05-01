@@ -13,12 +13,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuditLogs } from "@/hooks/use-data";
+import { PageSkeleton } from "@/components/Skeletons";
 
 export default function AuditLogsPage() {
   const { data: auditLogs, loading } = useAuditLogs();
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading audit logs...</div>;
+    return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">

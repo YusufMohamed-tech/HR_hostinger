@@ -14,13 +14,14 @@ import {
 import { useDepartments } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { AddDepartmentDialog } from "@/components/forms/AddDepartmentDialog";
+import { PageSkeleton } from "@/components/Skeletons";
 
 export default function DepartmentsPage() {
   const { currentUser } = useRoleContext();
   const { data: departments, loading, refetch } = useDepartments();
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading departments...</div>;
+    return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">
