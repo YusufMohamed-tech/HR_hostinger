@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Plus, Search, Filter } from "lucide-react";
+import { Search, Filter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -17,10 +17,11 @@ import {
 } from "@/components/ui/table";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useEmployees } from "@/hooks/use-data";
+import { AddEmployeeDialog } from "@/components/forms/AddEmployeeDialog";
 
 export default function EmployeesPage() {
   const { currentUser } = useRoleContext();
-  const { data: employees, loading } = useEmployees();
+  const { data: employees, loading, refetch } = useEmployees();
 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading employees...</div>;
@@ -37,10 +38,7 @@ export default function EmployeesPage() {
         </div>
 
         {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
-          <Button className="bg-brand hover:bg-brand-dark text-white">
-            <Plus className="w-4 h-4 mr-2" />
-            Add Employee
-          </Button>
+          <AddEmployeeDialog onSuccess={refetch} />
         )}
       </div>
 
