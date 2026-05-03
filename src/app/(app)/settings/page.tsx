@@ -41,10 +41,13 @@ export default function SettingsPage() {
       {/* User Profile Card */}
       <Card className="border-none shadow-sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <User className="w-5 h-5 text-brand" />
-            Account Profile
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <User className="w-5 h-5 text-brand" />
+              Account Profile
+            </CardTitle>
+            <EditProfileButton />
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -260,5 +263,64 @@ function EditCompanyDialog() {
         </Dialog>
       </CardContent>
     </Card>
+  );
+}
+
+/* ─── Edit Profile Button ─── */
+
+function EditProfileButton() {
+  const { currentUser } = useRoleContext();
+  const [open, setOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const [form, setForm] = useState({
+    full_name: currentUser?.name || "",
+    phone: "",
+    title: "",
+  });
+
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const handleSave = () => {
+    setSaved(true);
+    setTimeout(() => { setSaved(false); setOpen(false); }, 1200);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+        Edit Profile
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle>Edit Profile</DialogTitle>
+          <DialogDescription>Update your personal details.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2">
+            <Label>Full Name</Label>
+            <Input value={form.full_name} onChange={(e) => set("full_name", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Phone</Label>
+            <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+966..." />
+          </div>
+          <div className="space-y-2">
+            <Label>Job Title</Label>
+            <Input value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="HR Manager" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSave}>
+            {saved ? (
+              <><CheckCircle className="w-4 h-4 mr-2" />Saved!</>
+            ) : (
+              <><Save className="w-4 h-4 mr-2" />Save Profile</>
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
