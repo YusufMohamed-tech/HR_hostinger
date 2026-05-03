@@ -7,34 +7,36 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { MiniBarChart } from "@/components/charts/MiniBarChart";
 import { MiniLineChart } from "@/components/charts/MiniLineChart";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { useKpiTargets } from "@/hooks/use-data";
+import { useRoleContext } from "@/providers/RoleProvider";
+import { AddKpiDialog } from "@/components/forms/AddKpiDialog";
 import { PageSkeleton } from "@/components/Skeletons";
 
 const trendClass = (trend: string) =>
-  trend.startsWith("-")
+  trend?.startsWith("-")
     ? "bg-red-50 text-red-700 border-red-200"
     : "bg-green-50 text-green-700 border-green-200";
 
 export default function AnalyticsPage() {
-  const { data: kpiTargets, loading } = useKpiTargets();
+  const { currentUser } = useRoleContext();
+  const { data: kpiTargets, loading, refetch } = useKpiTargets();
+  const isAdmin = currentUser?.role === "Super Admin" || currentUser?.role === "Admin";
 
   if (loading) {
     return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">KPI and Analytics</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Track targets, team performance, and workforce comparisons.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">KPI and Analytics</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Track targets, team performance, and workforce comparisons.
+          </p>
+        </div>
+        {isAdmin && <AddKpiDialog onSuccess={refetch} />}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -42,19 +44,19 @@ export default function AnalyticsPage() {
           <Card key={kpi.id} className="border-none shadow-sm">
             <CardHeader>
               <CardTitle className="text-base">{kpi.name}</CardTitle>
-              <CardDescription>Target vs actual</CardDescription>
+              <CardDescription>{kpi.description || "Target vs actual"}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-gray-500">Target</p>
-                  <p className="text-lg font-semibold text-gray-900">{kpi.target}</p>
+                  <p className="text-lg font-semibold text-gray-900">{kpi.target || "—"}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Actual</p>
-                  <p className="text-lg font-semibold text-gray-900">{kpi.actual}</p>
+                  <p className="text-lg font-semibold text-gray-900">{kpi.actual || "—"}</p>
                 </div>
-                <Badge variant="outline" className={trendClass(kpi.trend)}>{kpi.trend}</Badge>
+                {kpi.trend && <Badge variant="outline" className={trendClass(kpi.trend)}>{kpi.trend}</Badge>}
               </div>
             </CardContent>
           </Card>
@@ -83,11 +85,7 @@ export default function AnalyticsPage() {
             <div className="rounded-xl border border-gray-200 bg-white p-4">
               <MiniBarChart values={[58, 82, 74, 90, 66]} />
               <div className="mt-3 flex justify-between text-xs text-gray-500">
-                <span>Ops</span>
-                <span>Logistics</span>
-                <span>Support</span>
-                <span>Retail</span>
-                <span>Field</span>
+                <span>Ops</span><span>Logistics</span><span>Support</span><span>Retail</span><span>Field</span>
               </div>
             </div>
           </CardContent>
@@ -114,15 +112,13 @@ export default function AnalyticsPage() {
               {kpiTargets.map((kpi) => (
                 <TableRow key={kpi.id}>
                   <TableCell className="text-gray-700 font-medium">{kpi.name}</TableCell>
-                  <TableCell className="text-gray-600">{kpi.target}</TableCell>
-                  <TableCell className="text-gray-600">{kpi.actual}</TableCell>
+                  <TableCell className="text-gray-600">{kpi.target || "—"}</TableCell>
+                  <TableCell className="text-gray-600">{kpi.actual || "—"}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={trendClass(kpi.trend)}>{kpi.trend}</Badge>
+                    {kpi.trend && <Badge variant="outline" className={trendClass(kpi.trend)}>{kpi.trend}</Badge>}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Link href={`/analytics/kpi/${kpi.id}`} className="text-brand hover:text-brand-dark text-sm">
-                      View
-                    </Link>
+                    <Link href={`/analytics/kpi/${kpi.id}`} className="text-brand hover:text-brand-dark text-sm">View</Link>
                   </TableCell>
                 </TableRow>
               ))}

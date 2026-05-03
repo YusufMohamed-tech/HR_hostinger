@@ -13,7 +13,8 @@ import { getEvents } from "@/lib/services/events";
 import { getKpiDefinitions } from "@/lib/services/analytics";
 import { getPayrollCycles, getPayrollItems } from "@/lib/services/payroll";
 import { getCourses } from "@/lib/services/learning";
-import { getAuditLogs, getAiInsights, getTrackingSessions, getShifts, getHierarchy } from "@/lib/services/operations";
+import { getShifts } from "@/lib/services/schedule";
+import { getAuditLogs, getAiInsights, getTrackingSessions, getHierarchy } from "@/lib/services/operations";
 
 /* ─── Mock fallbacks ─── */
 import {
@@ -178,4 +179,3 @@ export function useSchedule() {
 export function useHierarchy() {
   return useOrgData<AnyList>(getHierarchy as AnyFetcher, mockHierarchy);
 }
-
