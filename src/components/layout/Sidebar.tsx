@@ -9,6 +9,7 @@ import {
   Banknote,
   Building2,
   CalendarDays,
+  Clock,
   FileText,
   GraduationCap,
   LayoutDashboard,
@@ -19,6 +20,7 @@ import {
   Settings,
   Sparkles,
   Users,
+  UserPlus,
   Workflow,
   LineChart
 } from "lucide-react";
@@ -36,6 +38,7 @@ export function SidebarContent() {
     const core = [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
       { name: "Schedule", href: "/schedule", icon: CalendarDays },
+      { name: "Availability", href: "/availability", icon: Clock },
       { name: "Learning", href: "/learning", icon: GraduationCap },
     ];
 
@@ -68,7 +71,10 @@ export function SidebarContent() {
       : [];
 
     const system = isAdmin
-      ? [{ name: "Settings", href: "/settings", icon: Settings }]
+      ? [
+          { name: "Members", href: "/members", icon: UserPlus },
+          { name: "Settings", href: "/settings", icon: Settings },
+        ]
       : [];
 
     return [
