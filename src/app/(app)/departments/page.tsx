@@ -4,6 +4,7 @@ import React from "react";
 import { Trash2, Layers as LayersIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteDepartment } from "@/lib/services/departments";
+import { EditDepartmentDialog } from "@/components/forms/EditDepartmentDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -66,6 +67,9 @@ export default function DepartmentsPage() {
                   <TableCell className="text-gray-600">{dept.locations}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                        <EditDepartmentDialog department={dept} onSuccess={refetch} />
+                      )}
                       <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">View</Button>
                       {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
                         <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"

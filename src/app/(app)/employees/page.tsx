@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { Search, Filter, Trash2, Users } from "lucide-react";
 import { deleteEmployee } from "@/lib/services/employees";
+import { EditEmployeeDialog } from "@/components/forms/EditEmployeeDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -101,6 +102,9 @@ export default function EmployeesPage() {
                   <TableCell className="text-gray-600">{emp.location}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
+                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                        <EditEmployeeDialog employee={emp} onSuccess={refetch} />
+                      )}
                       <Button asChild variant="ghost" size="sm" className="text-brand hover:text-brand-dark">
                         <Link href={`/employees/${emp.id}`}>View</Link>
                       </Button>
