@@ -70,12 +70,10 @@ export function SidebarContent() {
         ]
       : [];
 
-    const system = isAdmin
-      ? [
-          { name: "Members", href: "/members", icon: UserPlus },
-          { name: "Settings", href: "/settings", icon: Settings },
-        ]
-      : [];
+    const system = [
+      ...(isAdmin ? [{ name: "Members", href: "/members", icon: UserPlus }] : []),
+      { name: "Settings", href: "/settings", icon: Settings },
+    ];
 
     return [
       { title: "Core", links: core },
