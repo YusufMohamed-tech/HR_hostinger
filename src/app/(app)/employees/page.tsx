@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Search, Filter, Trash2 } from "lucide-react";
+import { Search, Filter, Trash2, Users } from "lucide-react";
 import { deleteEmployee } from "@/lib/services/employees";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,6 +124,14 @@ export default function EmployeesPage() {
               ))}
             </TableBody>
           </Table>
+
+          {employees.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Users className="h-10 w-10 text-gray-300 mb-3" />
+              <p className="text-sm font-medium text-gray-900">No employees yet</p>
+              <p className="text-xs text-gray-500 mt-1">Add your first employee to get started.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

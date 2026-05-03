@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { Activity } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -52,7 +53,7 @@ export default function EventsPage() {
               {events.map((event) => (
                 <TableRow key={event.id}>
                   <TableCell>
-                    <Badge className={typeStyles[event.type] || "bg-gray-100 text-gray-600 border-gray-200"}>
+                    <Badge variant="outline" className={typeStyles[event.type] || "bg-gray-100 text-gray-600 border-gray-200"}>
                       {event.type}
                     </Badge>
                   </TableCell>
@@ -68,6 +69,14 @@ export default function EventsPage() {
               ))}
             </TableBody>
           </Table>
+
+          {events.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Activity className="h-10 w-10 text-gray-300 mb-3" />
+              <p className="text-sm font-medium text-gray-900">No events recorded</p>
+              <p className="text-xs text-gray-500 mt-1">Events will appear here as they are captured.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

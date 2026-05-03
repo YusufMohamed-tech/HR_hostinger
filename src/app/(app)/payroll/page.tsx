@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { Banknote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,7 +60,7 @@ export default function PayrollPage() {
                   <TableCell className="text-gray-600">{run.employees}</TableCell>
                   <TableCell className="text-gray-600">{run.total}</TableCell>
                   <TableCell>
-                    <Badge className={run.status === "Completed" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
+                    <Badge variant="outline" className={run.status === "Completed" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
                       {run.status}
                     </Badge>
                   </TableCell>
@@ -72,6 +73,14 @@ export default function PayrollPage() {
               ))}
             </TableBody>
           </Table>
+
+          {payrollRuns.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Banknote className="h-10 w-10 text-gray-300 mb-3" />
+              <p className="text-sm font-medium text-gray-900">No payroll runs yet</p>
+              <p className="text-xs text-gray-500 mt-1">Run payroll to generate your first cycle.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -102,6 +111,12 @@ export default function PayrollPage() {
               ))}
             </TableBody>
           </Table>
+
+          {payrollPreview.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <p className="text-sm text-gray-500">No preview data available.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -128,7 +128,7 @@ export default function SettingsPage() {
       )}
 
       {/* Logout */}
-      <Card className="border-none shadow-sm border-red-100">
+      <Card className="shadow-sm border-red-200">
         <CardContent className="flex items-center justify-between p-6">
           <div>
             <p className="font-medium text-gray-900">Sign Out</p>

@@ -39,7 +39,7 @@ export default function LearningPage() {
                 <Link href={`/learning/course/${course.id}`} className="font-semibold text-gray-900 hover:text-brand">
                   {course.title}
                 </Link>
-                <Badge className={statusClass(course.status)}>{course.status}</Badge>
+                <Badge variant="outline" className={statusClass(course.status)}>{course.status}</Badge>
               </div>
               <p className="text-xs text-gray-500 mt-1">Due {course.due}</p>
               <div className="mt-3">

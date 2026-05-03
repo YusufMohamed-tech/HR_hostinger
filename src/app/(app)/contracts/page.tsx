@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { deleteContract } from "@/lib/services/contracts";
@@ -69,7 +69,7 @@ export default function ContractsPage() {
                   <TableCell className="text-gray-600">{contract.end}</TableCell>
                   <TableCell className="text-gray-600">{contract.salary}</TableCell>
                   <TableCell>
-                    <Badge className={contract.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
+                    <Badge variant="outline" className={contract.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
                       {contract.status}
                     </Badge>
                   </TableCell>
@@ -85,6 +85,14 @@ export default function ContractsPage() {
               ))}
             </TableBody>
           </Table>
+
+          {contracts.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <FileText className="h-10 w-10 text-gray-300 mb-3" />
+              <p className="text-sm font-medium text-gray-900">No contracts yet</p>
+              <p className="text-xs text-gray-500 mt-1">Add a contract to track employee agreements.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

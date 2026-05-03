@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteOrganization } from "@/lib/services/organizations";
 import { Badge } from "@/components/ui/badge";
@@ -17,13 +17,14 @@ import {
 import { useOrganizations } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { AddOrganizationDialog } from "@/components/forms/AddOrganizationDialog";
+import { PageSkeleton } from "@/components/Skeletons";
 
 export default function OrganizationsPage() {
   const { currentUser } = useRoleContext();
   const { data: organizations, loading, refetch } = useOrganizations();
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-sm text-gray-500">Loading organizations...</div>;
+    return <PageSkeleton />;
   }
   return (
     <div className="flex flex-col gap-6">
@@ -64,7 +65,7 @@ export default function OrganizationsPage() {
                   <TableCell className="text-gray-600">{org.plan}</TableCell>
                   <TableCell className="text-gray-600">{org.users}</TableCell>
                   <TableCell>
-                    <Badge className={org.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
+                    <Badge variant="outline" className={org.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
                       {org.status}
                     </Badge>
                   </TableCell>
@@ -83,6 +84,14 @@ export default function OrganizationsPage() {
               ))}
             </TableBody>
           </Table>
+
+          {organizations.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Building2 className="h-10 w-10 text-gray-300 mb-3" />
+              <p className="text-sm font-medium text-gray-900">No organizations yet</p>
+              <p className="text-xs text-gray-500 mt-1">Create your first organization to get started.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { deleteLocation } from "@/lib/services/locations";
@@ -66,12 +66,12 @@ export default function LocationsPage() {
                   <TableCell className="text-gray-600">{location.city}</TableCell>
                   <TableCell className="text-gray-600">{location.employees}</TableCell>
                   <TableCell>
-                    <Badge className={location.geofence === "Enabled" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
+                    <Badge variant="outline" className={location.geofence === "Enabled" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
                       {location.geofence}
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge className={location.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-100 text-gray-600 border-gray-200"}>
+                    <Badge variant="outline" className={location.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-100 text-gray-600 border-gray-200"}>
                       {location.status}
                     </Badge>
                   </TableCell>
@@ -87,6 +87,14 @@ export default function LocationsPage() {
               ))}
             </TableBody>
           </Table>
+
+          {locations.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <MapPin className="h-10 w-10 text-gray-300 mb-3" />
+              <p className="text-sm font-medium text-gray-900">No locations yet</p>
+              <p className="text-xs text-gray-500 mt-1">Add a location to manage your sites.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

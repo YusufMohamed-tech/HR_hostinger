@@ -40,7 +40,8 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-muted">
       <div className="grid min-h-screen lg:grid-cols-2">
-        <div className="relative overflow-hidden bg-white">
+        {/* Left branding panel — hidden on mobile, shown on lg+ */}
+        <div className="relative overflow-hidden bg-white hidden lg:block">
           <div className="absolute -right-24 top-10 h-80 w-80 rotate-12 rounded-[48px] bg-slate-100/80" />
           <div className="absolute -right-8 bottom-8 h-64 w-64 rotate-12 rounded-[40px] bg-slate-100/70" />
           <div className="relative z-10 flex h-full flex-col justify-between p-8 lg:p-12">
@@ -82,8 +83,17 @@ export default function LoginPage() {
           </div>
         </div>
 
+        {/* Right login form — full width on mobile */}
         <div className="flex items-center justify-center p-6 lg:p-10">
           <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+            {/* Mobile-only branding */}
+            <div className="flex items-center gap-3 mb-6 lg:hidden">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white">
+                <Network className="h-4 w-4" />
+              </div>
+              <span className="font-bold text-lg tracking-tight text-slate-900">Tatwir Talent</span>
+            </div>
+
             <div className="space-y-2">
               <h2 className="text-2xl font-semibold text-slate-900">Sign in</h2>
               <p className="text-sm text-slate-500">Enter your credentials to access the dashboard.</p>
