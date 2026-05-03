@@ -28,7 +28,7 @@ export function Header() {
   }
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-gray-200 px-6 bg-white shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] z-10 relative">
+    <header className="flex h-16 shrink-0 items-center justify-between border-b border-gray-200 px-6 bg-white shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] z-20 relative">
       <div className="flex items-center gap-4 lg:hidden">
         <Sheet>
           <SheetTrigger>

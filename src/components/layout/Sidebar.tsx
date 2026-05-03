@@ -129,7 +129,7 @@ export function SidebarContent() {
 
 export function Sidebar() {
   return (
-    <aside className="hidden lg:flex w-[240px] flex-col h-screen fixed">
+    <aside className="hidden lg:flex w-[240px] flex-col h-screen fixed left-0 top-0 z-30">
       <SidebarContent />
     </aside>
   );
