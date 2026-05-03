@@ -5,6 +5,7 @@ import { Trash2, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { deleteLocation } from "@/lib/services/locations";
+import { EditLocationDialog } from "@/components/forms/EditLocationDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -76,12 +77,17 @@ export default function LocationsPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
-                      <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                        onClick={async () => { if (!confirm(`Delete ${location.name}?`)) return; await deleteLocation(location.id, currentUser?.orgId || "", currentUser?.id); refetch(); }}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    )}
+                    <div className="flex items-center justify-end gap-1">
+                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                        <EditLocationDialog location={location} onSuccess={refetch} />
+                      )}
+                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          onClick={async () => { if (!confirm(`Delete ${location.name}?`)) return; await deleteLocation(location.id, currentUser?.orgId || "", currentUser?.id); refetch(); }}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
