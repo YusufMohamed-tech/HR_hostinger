@@ -4,21 +4,18 @@ import React from "react";
 import Link from "next/link";
 import { Banknote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { usePayrollRuns, usePayrollPreview } from "@/hooks/use-data";
+import { useRoleContext } from "@/providers/RoleProvider";
+import { RunPayrollDialog } from "@/components/forms/RunPayrollDialog";
 import { PageSkeleton } from "@/components/Skeletons";
 
 export default function PayrollPage() {
-  const { data: payrollRuns, loading: loadingRuns } = usePayrollRuns();
+  const { currentUser } = useRoleContext();
+  const { data: payrollRuns, loading: loadingRuns, refetch } = usePayrollRuns();
   const { data: payrollPreview, loading: loadingPreview } = usePayrollPreview();
 
   if (loadingRuns || loadingPreview) {
@@ -33,7 +30,9 @@ export default function PayrollPage() {
             Review payroll cycles, bonuses, and KPI based payouts.
           </p>
         </div>
-        <Button className="bg-brand hover:bg-brand-dark text-white">Run Payroll</Button>
+        {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+          <RunPayrollDialog onSuccess={refetch} />
+        )}
       </div>
 
       <Card className="border-none shadow-sm">
@@ -55,19 +54,17 @@ export default function PayrollPage() {
             <TableBody>
               {payrollRuns.map((run) => (
                 <TableRow key={run.id}>
-                  <TableCell className="font-medium text-gray-900">{run.id}</TableCell>
-                  <TableCell className="text-gray-600">{run.period}</TableCell>
-                  <TableCell className="text-gray-600">{run.employees}</TableCell>
-                  <TableCell className="text-gray-600">{run.total}</TableCell>
+                  <TableCell className="font-medium text-gray-900">{run.id?.slice(0, 8) || run.id}</TableCell>
+                  <TableCell className="text-gray-600">{run.period || run.name || run.period_start}</TableCell>
+                  <TableCell className="text-gray-600">{run.employees || "—"}</TableCell>
+                  <TableCell className="text-gray-600">{run.total || "—"}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={run.status === "Completed" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
                       {run.status}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Link href={`/payroll/${run.id}`} className="text-brand hover:text-brand-dark text-sm">
-                      View
-                    </Link>
+                    <Link href={`/payroll/${run.id}`} className="text-brand hover:text-brand-dark text-sm">View</Link>
                   </TableCell>
                 </TableRow>
               ))}
@@ -102,11 +99,11 @@ export default function PayrollPage() {
             <TableBody>
               {payrollPreview.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell className="text-gray-700 font-medium">{row.name}</TableCell>
-                  <TableCell className="text-gray-600">{row.base} SAR</TableCell>
-                  <TableCell className="text-gray-600">{row.bonus} SAR</TableCell>
-                  <TableCell className="text-gray-600">{row.deductions} SAR</TableCell>
-                  <TableCell className="text-gray-900 font-semibold">{row.total} SAR</TableCell>
+                  <TableCell className="text-gray-700 font-medium">{row.name || row.employee?.full_name || "—"}</TableCell>
+                  <TableCell className="text-gray-600">{row.base || row.base_salary || 0} SAR</TableCell>
+                  <TableCell className="text-gray-600">{row.bonus || row.bonuses || 0} SAR</TableCell>
+                  <TableCell className="text-gray-600">{row.deductions || 0} SAR</TableCell>
+                  <TableCell className="text-gray-900 font-semibold">{row.total || 0} SAR</TableCell>
                 </TableRow>
               ))}
             </TableBody>
