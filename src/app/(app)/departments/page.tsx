@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Layers as LayersIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { deleteDepartment } from "@/lib/services/departments";
 import { Card, CardContent } from "@/components/ui/card";
@@ -79,6 +79,14 @@ export default function DepartmentsPage() {
               ))}
             </TableBody>
           </Table>
+
+          {departments.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <LayersIcon className="h-10 w-10 text-gray-300 mb-3" />
+              <p className="text-sm font-medium text-gray-900">No departments yet</p>
+              <p className="text-xs text-gray-500 mt-1">Create your first department to organize teams.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

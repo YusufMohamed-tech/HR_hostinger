@@ -54,7 +54,7 @@ export default function AnalyticsPage() {
                   <p className="text-xs text-gray-500">Actual</p>
                   <p className="text-lg font-semibold text-gray-900">{kpi.actual}</p>
                 </div>
-                <Badge className={trendClass(kpi.trend)}>{kpi.trend}</Badge>
+                <Badge variant="outline" className={trendClass(kpi.trend)}>{kpi.trend}</Badge>
               </div>
             </CardContent>
           </Card>
@@ -117,7 +117,7 @@ export default function AnalyticsPage() {
                   <TableCell className="text-gray-600">{kpi.target}</TableCell>
                   <TableCell className="text-gray-600">{kpi.actual}</TableCell>
                   <TableCell>
-                    <Badge className={trendClass(kpi.trend)}>{kpi.trend}</Badge>
+                    <Badge variant="outline" className={trendClass(kpi.trend)}>{kpi.trend}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Link href={`/analytics/kpi/${kpi.id}`} className="text-brand hover:text-brand-dark text-sm">

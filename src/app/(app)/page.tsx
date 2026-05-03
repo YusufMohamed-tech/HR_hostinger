@@ -83,13 +83,13 @@ export default function DashboardPage() {
               Hours scheduled vs actual checks-ins over the week.
             </CardDescription>
           </CardHeader>
-          <CardContent className="border-t border-dashed bg-white m-4 rounded">
+          <CardContent className="border-t border-dashed pt-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-gray-500">Scheduled vs Actual</p>
                 <p className="text-lg font-semibold text-gray-900">76% utilization</p>
               </div>
-              <Badge className="bg-brand-light text-brand-dark border-brand/20">+4.2% WoW</Badge>
+              <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">+4.2% WoW</Badge>
             </div>
             <div className="mt-6">
               <MiniLineChart values={scheduleSeries} />
@@ -115,7 +115,7 @@ export default function DashboardPage() {
                     <p className="text-sm font-medium leading-none">{anomaly.employee}</p>
                     <p className="text-xs text-gray-500">{anomaly.issue} &middot; {anomaly.location}</p>
                   </div>
-                  <Badge className="bg-red-500 hover:bg-red-600 text-white border-transparent">
+                  <Badge variant="outline" className="bg-red-500 hover:bg-red-600 text-white border-transparent">
                     {anomaly.severity === "high" ? "Urgent" : "Review"}
                   </Badge>
                 </div>

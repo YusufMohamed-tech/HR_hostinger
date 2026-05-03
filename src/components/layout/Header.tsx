@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { LogOut, Menu, Search, Network } from "lucide-react";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { SidebarContent } from "./Sidebar";
 
@@ -38,6 +38,7 @@ export function Header() {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-[280px] p-0 border-r-0">
+            <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
             <SidebarContent />
           </SheetContent>
         </Sheet>

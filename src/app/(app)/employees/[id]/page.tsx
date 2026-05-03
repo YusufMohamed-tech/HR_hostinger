@@ -55,7 +55,7 @@ export default function EmployeeDetailPage() {
             </div>
             <div>
               <p className="text-xs text-gray-500">Status</p>
-              <Badge className={employee.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
+              <Badge variant="outline" className={employee.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
                 {employee.status}
               </Badge>
             </div>

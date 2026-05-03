@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import { FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -51,7 +52,7 @@ export default function AuditLogsPage() {
                   <TableCell className="text-gray-600">{log.entity}</TableCell>
                   <TableCell className="text-gray-600">{log.time}</TableCell>
                   <TableCell>
-                    <Badge className="bg-green-50 text-green-700 border-green-200">{log.status}</Badge>
+                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{log.status}</Badge>
                   </TableCell>
                   <TableCell className="text-right">
                     <Link href={`/audit-logs/${log.id}`} className="text-brand hover:text-brand-dark text-sm">
@@ -62,6 +63,14 @@ export default function AuditLogsPage() {
               ))}
             </TableBody>
           </Table>
+
+          {auditLogs.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <FileText className="h-10 w-10 text-gray-300 mb-3" />
+              <p className="text-sm font-medium text-gray-900">No audit logs</p>
+              <p className="text-xs text-gray-500 mt-1">Actions will be recorded here automatically.</p>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
