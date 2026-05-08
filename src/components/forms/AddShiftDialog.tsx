@@ -25,36 +25,28 @@ export function AddShiftDialog({ onSuccess }: Props) {
   const [error, setError] = useState("");
 
   const [form, setForm] = useState({
-    location_id: "",
-    shift_date: "",
+    name: "Morning Shift",
+    shift_type: "morning",
     start_time: "08:00",
     end_time: "16:00",
-    required_headcount: "1",
-    status: "Planned",
+    location_id: "",
   });
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
   const handleSubmit = async () => {
-    if (!form.shift_date || !currentUser?.orgId) return;
+    if (!form.name || !currentUser?.orgId) return;
     setSubmitting(true);
     setError("");
 
-    const startDt = `${form.shift_date}T${form.start_time}:00`;
-    const endDt = `${form.shift_date}T${form.end_time}:00`;
-
-    const { error: err } = await createShift(
-      {
-        org_id: currentUser.orgId,
-        location_id: form.location_id || undefined,
-        shift_date: form.shift_date,
-        start_time: startDt,
-        end_time: endDt,
-        required_headcount: parseInt(form.required_headcount) || 1,
-        status: form.status,
-      },
-      currentUser.id
-    );
+    const { error: err } = await createShift({
+      org_id: currentUser.orgId,
+      name: form.name,
+      shift_type: form.shift_type,
+      start_time: form.start_time,
+      end_time: form.end_time,
+      location_id: form.location_id || undefined,
+    });
 
     if (err) {
       setError(err.message);
@@ -64,38 +56,46 @@ export function AddShiftDialog({ onSuccess }: Props) {
 
     setSubmitting(false);
     setOpen(false);
-    setForm({ location_id: "", shift_date: "", start_time: "08:00", end_time: "16:00", required_headcount: "1", status: "Planned" });
+    setForm({ name: "Morning Shift", shift_type: "morning", start_time: "08:00", end_time: "16:00", location_id: "" });
     onSuccess();
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={<Button className="bg-brand hover:bg-brand-dark text-white" />}
-      >
+      <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
         <Plus className="w-4 h-4 mr-2" />
         Create Shift
       </DialogTrigger>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle>Create Shift</DialogTitle>
-          <DialogDescription>Define shift timing, location, and headcount.</DialogDescription>
+          <DialogTitle>Create Shift Template</DialogTitle>
+          <DialogDescription>Define shift type, timing, and location.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
+          <div className="space-y-2">
+            <Label>Name *</Label>
+            <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Morning Shift" />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Date *</Label>
-              <Input type="date" value={form.shift_date} onChange={(e) => set("shift_date", e.target.value)} />
+              <Label>Shift Type</Label>
+              <Select value={form.shift_type} onValueChange={(v) => set("shift_type", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="morning">Morning</SelectItem>
+                  <SelectItem value="night">Night</SelectItem>
+                  <SelectItem value="flexible">Flexible</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label>Location</Label>
               <Select value={form.location_id} onValueChange={(v) => set("location_id", v)}>
-                <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {locations.map((l: any) => (
-                    <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                  {locations.map((l) => (
+                    <SelectItem key={l.id} value={String(l.id)}>{String(l.name)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -112,30 +112,13 @@ export function AddShiftDialog({ onSuccess }: Props) {
               <Input type="time" value={form.end_time} onChange={(e) => set("end_time", e.target.value)} />
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Headcount</Label>
-              <Input type="number" value={form.required_headcount} onChange={(e) => set("required_headcount", e.target.value)} min="1" />
-            </div>
-            <div className="space-y-2">
-              <Label>Status</Label>
-              <Select value={form.status} onValueChange={(v) => set("status", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Planned">Planned</SelectItem>
-                  <SelectItem value="Published">Published</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.shift_date}>
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.name}>
             {submitting ? "Creating..." : "Create Shift"}
           </Button>
         </DialogFooter>

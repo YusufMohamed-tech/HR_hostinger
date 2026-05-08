@@ -40,7 +40,7 @@ export default function EmployeesPage() {
           </p>
         </div>
 
-        {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+        {currentUser?.role === "Admin" && (
           <AddEmployeeDialog onSuccess={refetch} />
         )}
       </div>
@@ -80,9 +80,9 @@ export default function EmployeesPage() {
                 <TableRow key={emp.id}>
                   <TableCell>
                     <div className="flex flex-col">
-                      <span className="font-medium text-gray-900">{emp.name}</span>
-                      <span className="text-xs text-gray-500">{emp.email}</span>
-                      <span className="text-xs text-gray-400 mt-0.5">{emp.id}</span>
+                      <span className="font-medium text-gray-900">{emp.full_name || emp.name}</span>
+                      <span className="text-xs text-gray-500">{emp.email || "—"}</span>
+                      <span className="text-xs text-gray-400 mt-0.5">{emp.employee_code || emp.id}</span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -97,25 +97,25 @@ export default function EmployeesPage() {
                       {emp.status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-gray-600">{emp.role}</TableCell>
-                  <TableCell className="text-gray-600">{emp.department}</TableCell>
-                  <TableCell className="text-gray-600">{emp.location}</TableCell>
+                  <TableCell className="text-gray-600">{emp.job_title || "—"}</TableCell>
+                  <TableCell className="text-gray-600">{emp.department?.name || emp.department || "—"}</TableCell>
+                  <TableCell className="text-gray-600">{emp.location?.name || emp.location || "—"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                      {currentUser?.role === "Admin" && (
                         <EditEmployeeDialog employee={emp} onSuccess={refetch} />
                       )}
                       <Button asChild variant="ghost" size="sm" className="text-brand hover:text-brand-dark">
                         <Link href={`/employees/${emp.id}`}>View</Link>
                       </Button>
-                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                      {currentUser?.role === "Admin" && (
                         <Button
                           variant="ghost"
                           size="sm"
                           className="text-red-500 hover:text-red-700 hover:bg-red-50"
                           onClick={async () => {
-                            if (!confirm(`Delete ${emp.name}?`)) return;
-                            await deleteEmployee(emp.id, currentUser?.orgId || "", currentUser?.id);
+                            if (!confirm(`Delete ${emp.full_name || emp.name}?`)) return;
+                            await deleteEmployee(emp.id);
                             refetch();
                           }}
                         >

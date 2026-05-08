@@ -1,4 +1,4 @@
-export type Role = "Super Admin" | "Admin" | "Team Leader" | "Employee";
+export type Role = "Admin" | "Employee";
 
 export interface User {
   id: string;
@@ -6,6 +6,7 @@ export interface User {
   email: string;
   role: Role;
   orgId: string;
+  employeeId?: string;
   avatarUrl?: string;
 }
 

@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useDepartments } from "@/hooks/use-data";
+import { useDepartments, useEmployees } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { AddDepartmentDialog } from "@/components/forms/AddDepartmentDialog";
 import { PageSkeleton } from "@/components/Skeletons";
@@ -22,6 +22,7 @@ import { PageSkeleton } from "@/components/Skeletons";
 export default function DepartmentsPage() {
   const { currentUser } = useRoleContext();
   const { data: departments, loading, refetch } = useDepartments();
+  const { data: employees } = useEmployees();
 
   if (loading) {
     return <PageSkeleton />;
@@ -36,7 +37,7 @@ export default function DepartmentsPage() {
           </p>
         </div>
 
-        {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+        {currentUser?.role === "Admin" && (
           <AddDepartmentDialog onSuccess={refetch} />
         )}
       </div>
@@ -47,9 +48,8 @@ export default function DepartmentsPage() {
             <TableHeader>
               <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
                 <TableHead className="font-semibold text-gray-600">Department</TableHead>
-                <TableHead className="font-semibold text-gray-600">Department Head</TableHead>
+                <TableHead className="font-semibold text-gray-600">Department Manager</TableHead>
                 <TableHead className="font-semibold text-gray-600">Headcount</TableHead>
-                <TableHead className="font-semibold text-gray-600">Locations</TableHead>
                 <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -62,18 +62,19 @@ export default function DepartmentsPage() {
                       <span className="text-xs text-gray-400">{dept.id}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-gray-600">{dept.head}</TableCell>
-                  <TableCell className="text-gray-600">{dept.headcount}</TableCell>
-                  <TableCell className="text-gray-600">{dept.locations}</TableCell>
+                  <TableCell className="text-gray-600">{dept.manager?.full_name || "—"}</TableCell>
+                  <TableCell className="text-gray-600">
+                    {employees.filter((emp) => emp.department_id === dept.id).length}
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                      {currentUser?.role === "Admin" && (
                         <EditDepartmentDialog department={dept} onSuccess={refetch} />
                       )}
                       <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">View</Button>
-                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                      {currentUser?.role === "Admin" && (
                         <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={async () => { if (!confirm(`Delete ${dept.name}?`)) return; await deleteDepartment(dept.id, currentUser?.orgId || "", currentUser?.id); refetch(); }}>
+                          onClick={async () => { if (!confirm(`Delete ${dept.name}?`)) return; await deleteDepartment(dept.id); refetch(); }}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       )}

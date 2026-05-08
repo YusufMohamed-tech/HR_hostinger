@@ -5,44 +5,48 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MiniLineChart } from "@/components/charts/MiniLineChart";
-import { useEmployees, useLocations, useEvents, useAiInsights } from "@/hooks/use-data";
+import { useEmployees, useLocations, useAttendance, useTasks, useLeaveRequests, useNotifications } from "@/hooks/use-data";
 import {
   Users,
   MapPin,
   Clock,
-  TrendingUp,
-  AlertTriangle
+  ClipboardList,
+  CheckSquare,
+  Bell
 } from "lucide-react";
 
 export default function DashboardPage() {
   const { currentUser } = useRoleContext();
   const { data: employees } = useEmployees();
   const { data: locations } = useLocations();
-  const { data: events } = useEvents();
-  const { data: aiInsights } = useAiInsights();
+  const today = new Date().toISOString().split("T")[0];
+  const { data: attendance } = useAttendance(today);
+  const { data: tasks } = useTasks();
+  const { data: leaves } = useLeaveRequests();
+  const { data: notifications } = useNotifications();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const activeCount = employees.filter((e: any) => e.status === "Active" || e.status === "active").length || employees.length;
-  const siteCount = locations.length;
-  const eventCount = events.length;
+  const isAdmin = currentUser?.role === "Admin";
 
-  const stats = [
-    { label: "Active Employees", value: String(activeCount), icon: Users, change: `${employees.length} total` },
-    { label: "Events Today", value: String(eventCount), icon: Clock, change: "Live stream" },
-    { label: "Active Sites", value: String(siteCount), icon: MapPin, change: "All operational" },
-    { label: "Overall KPI", value: "94%", icon: TrendingUp, change: "+2.4%" },
-  ];
+  const presentCount = attendance.filter((row) => row.status === "present").length;
+  const lateCount = attendance.filter((row) => row.status === "late").length;
+  const pendingTasks = tasks.filter((task) => task.status === "pending" || task.status === "in_progress").length;
+  const pendingLeaves = leaves.filter((req) => req.status === "pending").length;
+  const firstAttendance = attendance[0] as Record<string, unknown> | undefined;
+  const myStatus = typeof firstAttendance?.status === "string" ? firstAttendance.status : "Not checked";
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const recentAnomalies = aiInsights.slice(0, 3).map((insight: any, i: number) => ({
-    id: insight.id || i,
-    employee: insight.title || "System Alert",
-    issue: insight.summary || "Anomaly detected",
-    location: insight.category || "Organization-wide",
-    severity: insight.impact === "High" ? "high" : "medium",
-  }));
-
-  const scheduleSeries = [62, 68, 70, 74, 72, 76, 78];
+  const stats = isAdmin
+    ? [
+        { label: "Employees", value: String(employees.length), icon: Users, change: "Total active" },
+        { label: "Present Today", value: String(presentCount), icon: Clock, change: `${lateCount} late` },
+        { label: "Active Tasks", value: String(pendingTasks), icon: CheckSquare, change: "In progress" },
+        { label: "Pending Leave", value: String(pendingLeaves), icon: ClipboardList, change: "Needs review" },
+      ]
+    : [
+        { label: "My Tasks", value: String(pendingTasks), icon: CheckSquare, change: "Due soon" },
+        { label: "Attendance", value: attendance.length ? myStatus : "Not checked", icon: Clock, change: "Today" },
+        { label: "Locations", value: String(locations.length), icon: MapPin, change: "Assigned" },
+        { label: "Alerts", value: String(notifications.length), icon: Bell, change: "New" },
+      ];
 
   return (
     <div className="flex flex-col gap-6">
@@ -78,51 +82,44 @@ export default function DashboardPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
         <Card className="col-span-4">
           <CardHeader>
-            <CardTitle>Schedule Utilization</CardTitle>
-            <CardDescription>
-              Hours scheduled vs actual checks-ins over the week.
-            </CardDescription>
+            <CardTitle>Today&apos;s Attendance</CardTitle>
+            <CardDescription>Live check-ins and presence status across shifts.</CardDescription>
           </CardHeader>
           <CardContent className="border-t border-dashed pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500">Scheduled vs Actual</p>
-                <p className="text-lg font-semibold text-gray-900">76% utilization</p>
+                <p className="text-xs text-gray-500">Present / Late</p>
+                <p className="text-lg font-semibold text-gray-900">{presentCount} present · {lateCount} late</p>
               </div>
-              <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">+4.2% WoW</Badge>
+              <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">{attendance.length} total</Badge>
             </div>
             <div className="mt-6">
-              <MiniLineChart values={scheduleSeries} />
+              <MiniLineChart values={[10, 18, 22, 30, 28, 35, 40]} />
             </div>
           </CardContent>
         </Card>
 
         <Card className="col-span-3">
           <CardHeader>
-            <CardTitle>Anomaly Detection (AI)</CardTitle>
-            <CardDescription>
-              Actionable flags from today&apos;s active shifts.
-            </CardDescription>
+            <CardTitle>Recent Notifications</CardTitle>
+            <CardDescription>Latest alerts that need attention.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {recentAnomalies.map((anomaly) => (
-                <div key={anomaly.id} className="flex items-center gap-4 p-3 border rounded-lg bg-red-50/30 border-red-100">
-                  <div className="bg-red-100 p-2 rounded-full">
-                    <AlertTriangle className="w-4 h-4 text-red-600" />
+              {notifications.slice(0, 3).map((note) => (
+                <div key={note.id} className="flex items-center gap-4 p-3 border rounded-lg bg-slate-50 border-slate-100">
+                  <div className="bg-brand-light p-2 rounded-full">
+                    <Bell className="w-4 h-4 text-brand" />
                   </div>
                   <div className="flex-1 space-y-1">
-                    <p className="text-sm font-medium leading-none">{anomaly.employee}</p>
-                    <p className="text-xs text-gray-500">{anomaly.issue} &middot; {anomaly.location}</p>
+                    <p className="text-sm font-medium leading-none">{note.title}</p>
+                    <p className="text-xs text-gray-500">{note.body || "View details"}</p>
                   </div>
-                  <Badge variant="outline" className="bg-red-500 hover:bg-red-600 text-white border-transparent">
-                    {anomaly.severity === "high" ? "Urgent" : "Review"}
-                  </Badge>
                 </div>
               ))}
 
-              {recentAnomalies.length === 0 && (
-                <div className="text-sm text-gray-500 text-center py-4">No anomalies detected.</div>
+              {notifications.length === 0 && (
+                <div className="text-sm text-gray-500 text-center py-4">No notifications yet.</div>
               )}
             </div>
           </CardContent>

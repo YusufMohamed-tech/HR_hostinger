@@ -5,24 +5,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { 
-  Activity,
-  Banknote,
-  Building2,
   CalendarDays,
+  Bell,
+  CheckSquare,
   Clock,
   FileText,
-  GraduationCap,
   LayoutDashboard,
   Layers,
   MapPin,
   Network,
-  Radar,
   Settings,
-  Sparkles,
   Users,
-  UserPlus,
-  Workflow,
-  LineChart
+  ClipboardList
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -32,55 +26,31 @@ export function SidebarContent() {
 
   const getSections = () => {
     const role = currentUser?.role ?? "Employee";
-    const isAdmin = role === "Admin" || role === "Super Admin";
-    const isLeader = role === "Team Leader" || isAdmin;
+    const isAdmin = role === "Admin";
 
     const core = [
       { name: "Dashboard", href: "/", icon: LayoutDashboard },
+      { name: "Attendance", href: "/attendance", icon: Clock },
+      { name: "Tasks", href: "/tasks", icon: CheckSquare },
+      { name: "Leave", href: "/leave", icon: ClipboardList },
       { name: "Schedule", href: "/schedule", icon: CalendarDays },
-      { name: "Availability", href: "/availability", icon: Clock },
-      { name: "Learning", href: "/learning", icon: GraduationCap },
+      { name: "Locations", href: "/locations", icon: MapPin },
+      { name: "Notifications", href: "/notifications", icon: Bell },
     ];
 
-    const org = role === "Super Admin"
-      ? [{ name: "Organizations", href: "/organizations", icon: Building2 }]
-      : [];
-
-    const hrOps = isAdmin
+    const adminOps = isAdmin
       ? [
           { name: "Employees", href: "/employees", icon: Users },
           { name: "Departments", href: "/departments", icon: Layers },
-          { name: "Locations", href: "/locations", icon: MapPin },
-          { name: "Contracts", href: "/contracts", icon: FileText },
-          { name: "Hierarchy", href: "/hierarchy", icon: Workflow },
+          { name: "Members", href: "/members", icon: FileText },
         ]
       : [];
 
-    const operations = isLeader
-      ? [{ name: "Events", href: "/events", icon: Activity }]
-      : [];
-
-    const insights = isLeader
-      ? [
-          { name: "Analytics", href: "/analytics", icon: LineChart },
-          { name: "Payroll", href: "/payroll", icon: Banknote },
-          { name: "Tracking", href: "/tracking", icon: Radar },
-          { name: "AI Insights", href: "/ai-insights", icon: Sparkles },
-          { name: "Audit Logs", href: "/audit-logs", icon: FileText },
-        ]
-      : [];
-
-    const system = [
-      ...(isAdmin ? [{ name: "Members", href: "/members", icon: UserPlus }] : []),
-      { name: "Settings", href: "/settings", icon: Settings },
-    ];
+    const system = [{ name: "Settings", href: "/settings", icon: Settings }];
 
     return [
       { title: "Core", links: core },
-      { title: "Organizations", links: org },
-      { title: "HR Ops", links: hrOps },
-      { title: "Operations", links: operations },
-      { title: "Insights", links: insights },
+      { title: "Admin", links: adminOps },
       { title: "System", links: system },
     ];
   };

@@ -37,7 +37,7 @@ export default function LocationsPage() {
           </p>
         </div>
 
-        {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+        {currentUser?.role === "Admin" && (
           <AddLocationDialog onSuccess={refetch} />
         )}
       </div>
@@ -48,10 +48,10 @@ export default function LocationsPage() {
             <TableHeader>
               <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
                 <TableHead className="font-semibold text-gray-600">Location</TableHead>
-                <TableHead className="font-semibold text-gray-600">City</TableHead>
-                <TableHead className="font-semibold text-gray-600">Employees</TableHead>
-                <TableHead className="font-semibold text-gray-600">Geofence</TableHead>
-                <TableHead className="font-semibold text-gray-600">Status</TableHead>
+                <TableHead className="font-semibold text-gray-600">Type</TableHead>
+                <TableHead className="font-semibold text-gray-600">Manager</TableHead>
+                <TableHead className="font-semibold text-gray-600">Radius</TableHead>
+                <TableHead className="font-semibold text-gray-600">Coordinates</TableHead>
                 <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -64,26 +64,26 @@ export default function LocationsPage() {
                       <span className="text-xs text-gray-400">{location.id}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-gray-600">{location.city}</TableCell>
-                  <TableCell className="text-gray-600">{location.employees}</TableCell>
+                  <TableCell className="text-gray-600">{location.type || "branch"}</TableCell>
+                  <TableCell className="text-gray-600">{location.manager?.full_name || "—"}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={location.geofence === "Enabled" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
-                      {location.geofence}
+                    <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">
+                      {location.radius_meters || 100}m
                     </Badge>
                   </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={location.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-100 text-gray-600 border-gray-200"}>
-                      {location.status}
-                    </Badge>
+                  <TableCell className="text-gray-600">
+                    {(location.latitude && location.longitude)
+                      ? `${location.latitude}, ${location.longitude}`
+                      : "—"}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
-                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                      {currentUser?.role === "Admin" && (
                         <EditLocationDialog location={location} onSuccess={refetch} />
                       )}
-                      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+                      {currentUser?.role === "Admin" && (
                         <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={async () => { if (!confirm(`Delete ${location.name}?`)) return; await deleteLocation(location.id, currentUser?.orgId || "", currentUser?.id); refetch(); }}>
+                          onClick={async () => { if (!confirm(`Delete ${location.name}?`)) return; await deleteLocation(location.id); refetch(); }}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       )}

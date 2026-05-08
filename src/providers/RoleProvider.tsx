@@ -1,127 +1,99 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback, useMemo } from "react";
 import { Role, User } from "@/types";
+import { createClient } from "@/lib/supabase/client";
 
 interface RoleContextProps {
   currentUser: User | null;
   loading: boolean;
   login: (input: { email: string; password: string }) => Promise<{ success: boolean; message: string }>;
   logout: () => Promise<void>;
-  switchRole: (role: Role) => void;
-  supabaseUser: null;
+  refresh: () => Promise<void>;
 }
 
 const RoleContext = createContext<RoleContextProps | undefined>(undefined);
 
-/**
- * Hardcoded user credentials for demo/production use.
- */
-const CREDENTIALS: { email: string; password: string; user: User }[] = [
-  {
-    email: "superadmin1234@gmail.com",
-    password: "superadmin",
-    user: {
-      id: "sa-001",
-      name: "Super Admin",
-      email: "superadmin1234@gmail.com",
-      role: "Super Admin",
-      orgId: "org-tatwir-001",
-    },
-  },
-  {
-    email: "admin@tatwir.com",
-    password: "admin1234",
-    user: {
-      id: "adm-001",
-      name: "Ahmed Al-Rashid",
-      email: "admin@tatwir.com",
-      role: "Admin",
-      orgId: "org-tatwir-001",
-    },
-  },
-  {
-    email: "leader@tatwir.com",
-    password: "leader1234",
-    user: {
-      id: "tl-001",
-      name: "Tariq Ali",
-      email: "leader@tatwir.com",
-      role: "Team Leader",
-      orgId: "org-tatwir-001",
-    },
-  },
-  {
-    email: "employee@tatwir.com",
-    password: "employee1234",
-    user: {
-      id: "emp-001",
-      name: "Omar Zaid",
-      email: "employee@tatwir.com",
-      role: "Employee",
-      orgId: "org-tatwir-001",
-    },
-  },
-];
-
-const STORAGE_KEY = "tatwir_hrms_user";
-
 export function RoleProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const supabase = useMemo(() => createClient(), []);
 
-  /**
-   * On mount, restore session from localStorage.
-   */
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        setCurrentUser(JSON.parse(stored));
-      }
-    } catch {
-      // Ignore parse errors
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    const user = userData?.user;
+
+    if (userError || !user) {
+      setCurrentUser(null);
+      setLoading(false);
+      return;
     }
+
+    const [{ data: membership }, { data: profile }, { data: employee }] = await Promise.all([
+      supabase
+        .from("org_members")
+        .select("org_id, role")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("profiles")
+        .select("full_name, email")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("employees")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+    ]);
+
+    const role: Role = membership?.role === "admin" ? "Admin" : "Employee";
+    const name = profile?.full_name || user.user_metadata?.full_name || user.email || "User";
+    const email = profile?.email || user.email || "";
+
+    setCurrentUser({
+      id: user.id,
+      name,
+      email,
+      role,
+      orgId: membership?.org_id || "",
+      employeeId: employee?.id || undefined,
+    });
     setLoading(false);
-  }, []);
+  }, [supabase]);
 
-  /**
-   * Login with email + password against hardcoded credentials.
-   */
+  useEffect(() => {
+    refresh();
+    const { data: listener } = supabase.auth.onAuthStateChange(() => {
+      refresh();
+    });
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, [refresh, supabase]);
+
   const login = async (input: { email: string; password: string }): Promise<{ success: boolean; message: string }> => {
-    const match = CREDENTIALS.find(
-      (c) => c.email.toLowerCase() === input.email.toLowerCase() && c.password === input.password
-    );
+    const { error } = await supabase.auth.signInWithPassword({
+      email: input.email,
+      password: input.password,
+    });
 
-    if (!match) {
-      return { success: false, message: "Invalid email or password." };
+    if (error) {
+      return { success: false, message: error.message };
     }
 
-    setCurrentUser(match.user);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(match.user));
-    return { success: true, message: "Login successful!" };
+    await refresh();
+    return { success: true, message: "Login successful." };
   };
 
-  /**
-   * Sign out — clears localStorage session.
-   */
   const logout = async () => {
+    await supabase.auth.signOut();
     setCurrentUser(null);
-    localStorage.removeItem(STORAGE_KEY);
-  };
-
-  /**
-   * Switch role (admin feature for testing).
-   */
-  const switchRole = (role: Role) => {
-    if (!currentUser) return;
-    const updated = { ...currentUser, role };
-    setCurrentUser(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   };
 
   return (
-    <RoleContext.Provider value={{ currentUser, loading, login, logout, switchRole, supabaseUser: null }}>
+    <RoleContext.Provider value={{ currentUser, loading, login, logout, refresh }}>
       {children}
     </RoleContext.Provider>
   );
