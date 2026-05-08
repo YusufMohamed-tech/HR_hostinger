@@ -23,3 +23,14 @@ export async function markNotificationRead(id: string, isRead = true) {
 
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
+
+export async function markAllNotificationsRead(orgId: string, userId: string) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("notifications")
+    .update({ is_read: true } as never)
+    .eq("org_id", orgId)
+    .eq("user_id", userId);
+
+  return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+}

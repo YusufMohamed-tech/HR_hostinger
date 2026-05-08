@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckSquare, Plus, Timer } from "lucide-react";
+import { CheckSquare, ListChecks, MessageSquare, Plus, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,7 +14,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,37 +81,75 @@ export default function TasksPage() {
             </TableHeader>
             <TableBody>
               {tasks.map((task) => {
-                const assignments = task.assignments || [];
-                const myAssignment = assignments.find((a: Record<string, unknown>) => a.employee?.id === currentUser?.employeeId);
+                const taskRecord = task as Record<string, unknown>;
+                const assignments = Array.isArray(taskRecord.assignments) ? taskRecord.assignments as Record<string, unknown>[] : [];
+                const myAssignment = assignments.find((a) => String((a.employee as Record<string, unknown> | undefined)?.id ?? "") === currentUser?.employeeId);
+                const updates = Array.isArray(taskRecord.updates) ? taskRecord.updates as Record<string, unknown>[] : [];
+                const latestUpdate = updates
+                  .slice()
+                  .sort((a, b) => {
+                    const aTime = a.created_at ? new Date(String(a.created_at)).getTime() : 0;
+                    const bTime = b.created_at ? new Date(String(b.created_at)).getTime() : 0;
+                    return bTime - aTime;
+                  })[0];
+                const taskId = String(taskRecord.id ?? "");
+                const title = typeof taskRecord.title === "string" ? taskRecord.title : "—";
+                const description = typeof taskRecord.description === "string" ? taskRecord.description : "—";
+                const priority = typeof taskRecord.priority === "string" ? taskRecord.priority : "medium";
+                const status = typeof taskRecord.status === "string" ? taskRecord.status : "pending";
+                const dueDate = typeof taskRecord.due_date === "string" ? taskRecord.due_date : "—";
+                const location = (taskRecord.location ?? null) as Record<string, unknown> | null;
+                const locationName = typeof location?.name === "string" ? location.name : "—";
+                const assignees = assignments
+                  .map((a) => {
+                    const employee = (a.employee ?? null) as Record<string, unknown> | null;
+                    return typeof employee?.full_name === "string" ? employee.full_name : null;
+                  })
+                  .filter((name): name is string => Boolean(name));
                 return (
-                  <TableRow key={task.id}>
+                  <TableRow key={taskId}>
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="font-medium text-gray-900">{task.title}</span>
-                        <span className="text-xs text-gray-500">{task.description || "—"}</span>
+                        <span className="font-medium text-gray-900">{title}</span>
+                        <span className="text-xs text-gray-500">
+                          {description}
+                          {latestUpdate?.note ? ` · ${latestUpdate.note}` : ""}
+                        </span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-gray-600">{task.priority || "medium"}</TableCell>
+                    <TableCell className="text-gray-600">{priority}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={statusStyles[task.status] || "bg-gray-100 text-gray-600 border-gray-200"}>
-                        {task.status}
+                      <Badge variant="outline" className={statusStyles[status] || "bg-gray-100 text-gray-600 border-gray-200"}>
+                        {status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-gray-600">{task.due_date || "—"}</TableCell>
-                    <TableCell className="text-gray-600">{task.location?.name || "—"}</TableCell>
+                    <TableCell className="text-gray-600">{dueDate}</TableCell>
+                    <TableCell className="text-gray-600">{locationName}</TableCell>
                     <TableCell className="text-gray-600">
-                      {assignments.length ? assignments.map((a: Record<string, unknown>) => a.employee?.full_name).join(", ") : "—"}
+                      {assignees.length ? assignees.join(", ") : "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      {myAssignment && (
-                        <TaskUpdateButtons
-                          assignmentId={myAssignment.id}
-                          taskId={task.id}
-                          orgId={currentUser?.orgId || ""}
-                          employeeId={currentUser?.employeeId || ""}
-                          onSuccess={refetch}
-                        />
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        <TaskHistoryDialog title={title} updates={updates} />
+                        {myAssignment && (
+                          <TaskNoteDialog
+                            taskId={taskId}
+                            orgId={currentUser?.orgId || ""}
+                            employeeId={currentUser?.employeeId || ""}
+                            status={status}
+                            onSuccess={refetch}
+                          />
+                        )}
+                        {myAssignment && (
+                          <TaskUpdateButtons
+                            assignmentId={String(myAssignment.id ?? "")}
+                            taskId={taskId}
+                            orgId={currentUser?.orgId || ""}
+                            employeeId={currentUser?.employeeId || ""}
+                            onSuccess={refetch}
+                          />
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
@@ -331,5 +376,161 @@ function TaskUpdateButtons({
       </Button>
       {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
+  );
+}
+
+function TaskHistoryDialog({
+  title,
+  updates,
+}: {
+  title: string;
+  updates: Record<string, unknown>[];
+}) {
+  const sortedUpdates = updates
+    .slice()
+    .sort((a, b) => {
+      const aTime = a.created_at ? new Date(String(a.created_at)).getTime() : 0;
+      const bTime = b.created_at ? new Date(String(b.created_at)).getTime() : 0;
+      return bTime - aTime;
+    });
+
+  return (
+    <Dialog>
+      <DialogTrigger render={<Button variant="ghost" size="sm" />}>
+        <ListChecks className="w-4 h-4" />
+        <span className="sr-only">History</span>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle>Task Updates</DialogTitle>
+          <DialogDescription>{title}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {sortedUpdates.map((update, index) => {
+            const updateRecord = update as Record<string, unknown>;
+            const employee = (updateRecord.employee ?? null) as Record<string, unknown> | null;
+            const employeeName = typeof employee?.full_name === "string" ? employee.full_name : "";
+            const status = typeof updateRecord.status === "string" ? updateRecord.status : "update";
+            const note = typeof updateRecord.note === "string" ? updateRecord.note : "No note";
+            const createdAt = typeof updateRecord.created_at === "string" ? updateRecord.created_at : "";
+
+            return (
+              <div
+                key={`${createdAt || "update"}-${index}`}
+                className="rounded-lg border border-gray-200 px-4 py-3"
+              >
+                <div className="flex items-center justify-between">
+                  <Badge
+                    variant="outline"
+                    className={statusStyles[status] || "bg-gray-100 text-gray-600 border-gray-200"}
+                  >
+                    {status}
+                  </Badge>
+                  <span className="text-xs text-gray-500">
+                    {createdAt ? new Date(createdAt).toLocaleString() : ""}
+                  </span>
+                </div>
+                <div className="mt-2 space-y-1">
+                  <p className="text-sm text-gray-700">{note}</p>
+                  {employeeName && (
+                    <p className="text-xs text-gray-500">By {employeeName}</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {sortedUpdates.length === 0 && (
+            <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
+              No updates yet.
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" />}>Close</DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TaskNoteDialog({
+  taskId,
+  orgId,
+  employeeId,
+  status,
+  onSuccess,
+}: {
+  taskId: string;
+  orgId: string;
+  employeeId: string;
+  status: string;
+  onSuccess: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = async () => {
+    if (!note.trim()) return;
+    setSubmitting(true);
+    setError("");
+
+    const { error: updateError } = await createTaskUpdate({
+      org_id: orgId,
+      task_id: taskId,
+      employee_id: employeeId || undefined,
+      status,
+      progress: status === "completed" ? 100 : 50,
+      note: note.trim(),
+    });
+
+    if (updateError) {
+      setError(updateError.message);
+      setSubmitting(false);
+      return;
+    }
+
+    setSubmitting(false);
+    setOpen(false);
+    setNote("");
+    onSuccess();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" />}>
+        <MessageSquare className="w-4 h-4" />
+        <span className="sr-only">Add note</span>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>Add Task Note</DialogTitle>
+          <DialogDescription>Share progress or context for this task.</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 py-4">
+          <div className="space-y-2">
+            <Label>Note</Label>
+            <Input
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="Work started, blockers identified, etc."
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !note.trim()}>
+            {submitting ? "Saving..." : "Add Note"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -76,56 +76,82 @@ export default function EmployeesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {employees.map((emp) => (
-                <TableRow key={emp.id}>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-medium text-gray-900">{emp.full_name || emp.name}</span>
-                      <span className="text-xs text-gray-500">{emp.email || "—"}</span>
-                      <span className="text-xs text-gray-400 mt-0.5">{emp.employee_code || emp.id}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        emp.status === "Active"
-                          ? "bg-green-50 text-green-700 border-green-200"
-                          : "bg-amber-50 text-amber-700 border-amber-200"
-                      }
-                    >
-                      {emp.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-gray-600">{emp.job_title || "—"}</TableCell>
-                  <TableCell className="text-gray-600">{emp.department?.name || emp.department || "—"}</TableCell>
-                  <TableCell className="text-gray-600">{emp.location?.name || emp.location || "—"}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {currentUser?.role === "Admin" && (
-                        <EditEmployeeDialog employee={emp} onSuccess={refetch} />
-                      )}
-                      <Button asChild variant="ghost" size="sm" className="text-brand hover:text-brand-dark">
-                        <Link href={`/employees/${emp.id}`}>View</Link>
-                      </Button>
-                      {currentUser?.role === "Admin" && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={async () => {
-                            if (!confirm(`Delete ${emp.full_name || emp.name}?`)) return;
-                            await deleteEmployee(emp.id);
-                            refetch();
-                          }}
-                        >
-                          <Trash2 className="w-4 h-4" />
+              {employees.map((emp) => {
+                const empRecord = emp as Record<string, unknown>;
+                const empId = String(empRecord.id ?? "");
+                const empName = typeof empRecord.full_name === "string"
+                  ? empRecord.full_name
+                  : typeof empRecord.name === "string"
+                    ? empRecord.name
+                    : "—";
+                const empEmail = typeof empRecord.email === "string" ? empRecord.email : "—";
+                const empCode = typeof empRecord.employee_code === "string" ? empRecord.employee_code : empId;
+                const empStatus = typeof empRecord.status === "string" ? empRecord.status : "Active";
+                const jobTitle = typeof empRecord.job_title === "string" ? empRecord.job_title : "—";
+                const department = (empRecord.department ?? null) as Record<string, unknown> | null;
+                const departmentName = typeof department?.name === "string"
+                  ? department.name
+                  : typeof empRecord.department === "string"
+                    ? empRecord.department
+                    : "—";
+                const location = (empRecord.location ?? null) as Record<string, unknown> | null;
+                const locationName = typeof location?.name === "string"
+                  ? location.name
+                  : typeof empRecord.location === "string"
+                    ? empRecord.location
+                    : "—";
+
+                return (
+                  <TableRow key={empId}>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-gray-900">{empName}</span>
+                        <span className="text-xs text-gray-500">{empEmail}</span>
+                        <span className="text-xs text-gray-400 mt-0.5">{empCode}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          empStatus === "Active"
+                            ? "bg-green-50 text-green-700 border-green-200"
+                            : "bg-amber-50 text-amber-700 border-amber-200"
+                        }
+                      >
+                        {empStatus}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-gray-600">{jobTitle}</TableCell>
+                    <TableCell className="text-gray-600">{departmentName}</TableCell>
+                    <TableCell className="text-gray-600">{locationName}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {currentUser?.role === "Admin" && (
+                          <EditEmployeeDialog employee={emp} onSuccess={refetch} />
+                        )}
+                        <Button asChild variant="ghost" size="sm" className="text-brand hover:text-brand-dark">
+                          <Link href={`/employees/${empId}`}>View</Link>
                         </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                        {currentUser?.role === "Admin" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={async () => {
+                              if (!confirm(`Delete ${empName}?`)) return;
+                              await deleteEmployee(empId);
+                              refetch();
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
 

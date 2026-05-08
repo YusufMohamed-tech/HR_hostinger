@@ -70,38 +70,54 @@ export default function SchedulePage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {assignments.map((assignment) => (
-                <TableRow key={assignment.id}>
-                  <TableCell className="font-medium text-gray-900">
-                    {assignment.employee?.full_name || "—"}
-                  </TableCell>
-                  <TableCell className="text-gray-700">{assignment.shift?.name || "—"}</TableCell>
-                  <TableCell className="text-gray-600">{assignment.shift?.shift_type || "—"}</TableCell>
-                  <TableCell className="text-gray-600">
-                    {assignment.shift?.start_time || "—"} - {assignment.shift?.end_time || "—"}
-                  </TableCell>
-                  <TableCell className="text-gray-600">{assignment.shift?.location?.name || "—"}</TableCell>
-                  <TableCell className="text-gray-600">
-                    {assignment.start_date || "—"} {assignment.end_date ? `→ ${assignment.end_date}` : ""}
-                  </TableCell>
-                  {isAdmin && (
-                    <TableCell className="text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                        onClick={async () => {
-                          if (!confirm("Remove this assignment?")) return;
-                          await removeEmployeeShift(assignment.id);
-                          refetchAssignments();
-                        }}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+              {assignments.map((assignment) => {
+                const assignmentRecord = assignment as Record<string, unknown>;
+                const assignmentId = String(assignmentRecord.id ?? "");
+                const employee = (assignmentRecord.employee ?? null) as Record<string, unknown> | null;
+                const employeeName = typeof employee?.full_name === "string" ? employee.full_name : "—";
+                const shift = (assignmentRecord.shift ?? null) as Record<string, unknown> | null;
+                const shiftName = typeof shift?.name === "string" ? shift.name : "—";
+                const shiftType = typeof shift?.shift_type === "string" ? shift.shift_type : "—";
+                const shiftStart = typeof shift?.start_time === "string" ? shift.start_time : "—";
+                const shiftEnd = typeof shift?.end_time === "string" ? shift.end_time : "—";
+                const shiftLocation = (shift?.location ?? null) as Record<string, unknown> | null;
+                const shiftLocationName = typeof shiftLocation?.name === "string" ? shiftLocation.name : "—";
+                const startDate = typeof assignmentRecord.start_date === "string" ? assignmentRecord.start_date : "—";
+                const endDate = typeof assignmentRecord.end_date === "string" ? assignmentRecord.end_date : "";
+
+                return (
+                  <TableRow key={assignmentId}>
+                    <TableCell className="font-medium text-gray-900">
+                      {employeeName}
                     </TableCell>
-                  )}
-                </TableRow>
-              ))}
+                    <TableCell className="text-gray-700">{shiftName}</TableCell>
+                    <TableCell className="text-gray-600">{shiftType}</TableCell>
+                    <TableCell className="text-gray-600">
+                      {shiftStart} - {shiftEnd}
+                    </TableCell>
+                    <TableCell className="text-gray-600">{shiftLocationName}</TableCell>
+                    <TableCell className="text-gray-600">
+                      {startDate} {endDate ? `→ ${endDate}` : ""}
+                    </TableCell>
+                    {isAdmin && (
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                          onClick={async () => {
+                            if (!confirm("Remove this assignment?")) return;
+                            await removeEmployeeShift(assignmentId);
+                            refetchAssignments();
+                          }}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
 

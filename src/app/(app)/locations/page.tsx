@@ -56,41 +56,58 @@ export default function LocationsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {locations.map((location) => (
-                <TableRow key={location.id}>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-medium text-gray-900">{location.name}</span>
-                      <span className="text-xs text-gray-400">{location.id}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-gray-600">{location.type || "branch"}</TableCell>
-                  <TableCell className="text-gray-600">{location.manager?.full_name || "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">
-                      {location.radius_meters || 100}m
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-gray-600">
-                    {(location.latitude && location.longitude)
-                      ? `${location.latitude}, ${location.longitude}`
-                      : "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {currentUser?.role === "Admin" && (
-                        <EditLocationDialog location={location} onSuccess={refetch} />
-                      )}
-                      {currentUser?.role === "Admin" && (
-                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={async () => { if (!confirm(`Delete ${location.name}?`)) return; await deleteLocation(location.id); refetch(); }}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {locations.map((location) => {
+                const locationRecord = location as Record<string, unknown>;
+                const locationId = String(locationRecord.id ?? "");
+                const locationName = typeof locationRecord.name === "string" ? locationRecord.name : "—";
+                const locationType = typeof locationRecord.type === "string" ? locationRecord.type : "branch";
+                const manager = (locationRecord.manager ?? null) as Record<string, unknown> | null;
+                const managerName = typeof manager?.full_name === "string" ? manager.full_name : "—";
+                const radius = typeof locationRecord.radius_meters === "number" ? locationRecord.radius_meters : 100;
+                const latitude = typeof locationRecord.latitude === "number" ? locationRecord.latitude : null;
+                const longitude = typeof locationRecord.longitude === "number" ? locationRecord.longitude : null;
+                const coordinates = latitude !== null && longitude !== null ? `${latitude}, ${longitude}` : "—";
+
+                return (
+                  <TableRow key={locationId}>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-gray-900">{locationName}</span>
+                        <span className="text-xs text-gray-400">{locationId}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-gray-600">{locationType}</TableCell>
+                    <TableCell className="text-gray-600">{managerName}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">
+                        {radius}m
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-gray-600">{coordinates}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {currentUser?.role === "Admin" && (
+                          <EditLocationDialog location={location} onSuccess={refetch} />
+                        )}
+                        {currentUser?.role === "Admin" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={async () => {
+                              if (!confirm(`Delete ${locationName}?`)) return;
+                              await deleteLocation(locationId);
+                              refetch();
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
 

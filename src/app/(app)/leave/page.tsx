@@ -35,6 +35,13 @@ export default function LeavePage() {
   const { data: leaveRequests, loading, refetch } = useLeaveRequests();
   const { data: balances } = useLeaveBalances(currentUser?.employeeId);
   const isAdmin = currentUser?.role === "Admin";
+  const visibleRequests = isAdmin
+    ? leaveRequests
+    : leaveRequests.filter((req) => String((req as Record<string, unknown>).employee_id ?? "") === currentUser?.employeeId);
+  const balance = (balances[0] ?? null) as Record<string, unknown> | null;
+  const sickRemaining = typeof balance?.sick_remaining === "number" ? balance.sick_remaining : 0;
+  const vacationRemaining = typeof balance?.vacation_remaining === "number" ? balance.vacation_remaining : 0;
+  const emergencyRemaining = typeof balance?.emergency_remaining === "number" ? balance.emergency_remaining : 0;
 
   if (loading) return <PageSkeleton />;
 
@@ -53,15 +60,15 @@ export default function LeavePage() {
           <CardContent className="py-4 grid grid-cols-3 gap-4 text-sm">
             <div>
               <p className="text-xs text-gray-500">Sick</p>
-              <p className="font-semibold text-gray-900">{balances[0]?.sick_remaining ?? 0}</p>
+              <p className="font-semibold text-gray-900">{sickRemaining}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Vacation</p>
-              <p className="font-semibold text-gray-900">{balances[0]?.vacation_remaining ?? 0}</p>
+              <p className="font-semibold text-gray-900">{vacationRemaining}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Emergency</p>
-              <p className="font-semibold text-gray-900">{balances[0]?.emergency_remaining ?? 0}</p>
+              <p className="font-semibold text-gray-900">{emergencyRemaining}</p>
             </div>
           </CardContent>
         </Card>
@@ -75,23 +82,40 @@ export default function LeavePage() {
                 <TableHead className="font-semibold text-gray-600">Employee</TableHead>
                 <TableHead className="font-semibold text-gray-600">Type</TableHead>
                 <TableHead className="font-semibold text-gray-600">Dates</TableHead>
+                <TableHead className="font-semibold text-gray-600">Days</TableHead>
                 <TableHead className="font-semibold text-gray-600">Status</TableHead>
                 <TableHead className="font-semibold text-gray-600">Reason</TableHead>
                 {isAdmin && <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {leaveRequests.map((req) => (
-                <TableRow key={req.id}>
-                  <TableCell className="font-medium text-gray-900">{req.employee?.full_name || "—"}</TableCell>
-                  <TableCell className="text-gray-600">{req.leave_type}</TableCell>
-                  <TableCell className="text-gray-600">{req.start_date} → {req.end_date}</TableCell>
+              {visibleRequests.map((req) => {
+                const reqRecord = req as Record<string, unknown>;
+                const reqId = String(reqRecord.id ?? "");
+                const employee = (reqRecord.employee ?? null) as Record<string, unknown> | null;
+                const employeeName = typeof employee?.full_name === "string" ? employee.full_name : "—";
+                const leaveType = typeof reqRecord.leave_type === "string" ? reqRecord.leave_type : "—";
+                const startDateStr = typeof reqRecord.start_date === "string" ? reqRecord.start_date : "";
+                const endDateStr = typeof reqRecord.end_date === "string" ? reqRecord.end_date : "";
+                const status = typeof reqRecord.status === "string" ? reqRecord.status : "pending";
+                const reason = typeof reqRecord.reason === "string" ? reqRecord.reason : "—";
+                const startDate = startDateStr ? new Date(startDateStr) : null;
+                const endDate = endDateStr ? new Date(endDateStr) : null;
+                const dayCount = startDate && endDate
+                  ? Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1)
+                  : null;
+                return (
+                  <TableRow key={reqId}>
+                  <TableCell className="font-medium text-gray-900">{employeeName}</TableCell>
+                  <TableCell className="text-gray-600">{leaveType}</TableCell>
+                  <TableCell className="text-gray-600">{startDateStr || "—"} → {endDateStr || "—"}</TableCell>
+                  <TableCell className="text-gray-600">{dayCount ?? "—"}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className={statusStyle[req.status] || "bg-gray-100 text-gray-600 border-gray-200"}>
-                      {req.status}
+                    <Badge variant="outline" className={statusStyle[status] || "bg-gray-100 text-gray-600 border-gray-200"}>
+                      {status}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-gray-600">{req.reason || "—"}</TableCell>
+                  <TableCell className="text-gray-600">{reason}</TableCell>
                   {isAdmin && (
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -100,7 +124,7 @@ export default function LeavePage() {
                           size="sm"
                           className="text-green-600 hover:text-green-700"
                           onClick={async () => {
-                            await updateLeaveRequest(req.id, { status: "approved", decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            await updateLeaveRequest(reqId, { status: "approved", decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
                             refetch();
                           }}
                         >
@@ -111,7 +135,7 @@ export default function LeavePage() {
                           size="sm"
                           className="text-red-600 hover:text-red-700"
                           onClick={async () => {
-                            await updateLeaveRequest(req.id, { status: "rejected", decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            await updateLeaveRequest(reqId, { status: "rejected", decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
                             refetch();
                           }}
                         >
@@ -121,11 +145,12 @@ export default function LeavePage() {
                     </TableCell>
                   )}
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
 
-          {leaveRequests.length === 0 && (
+          {visibleRequests.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <CalendarDays className="h-10 w-10 text-gray-300 mb-3" />
               <p className="text-sm font-medium text-gray-900">No leave requests yet</p>

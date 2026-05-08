@@ -51,7 +51,9 @@ export default function AttendancePage() {
     return locations.find((loc) => loc.id === employee.location_id) || null;
   }, [currentUser?.employeeId, employees, locations]);
 
-  const assignedShift = employeeShifts[0]?.shift;
+  const assignedShift = (employeeShifts[0]?.shift ?? null) as Record<string, unknown> | null;
+  const shiftStartTime = typeof assignedShift?.start_time === "string" ? assignedShift.start_time : undefined;
+  const shiftId = typeof assignedShift?.id === "string" ? assignedShift.id : undefined;
 
   const handleCheckIn = async () => {
     if (!currentUser?.orgId || !currentUser?.employeeId) return;
@@ -73,7 +75,7 @@ export default function AttendancePage() {
     }
 
     const { latitude, longitude } = position.coords;
-    const radius = assignedLocation?.radius_meters || 100;
+    const radius = Number(assignedLocation?.radius_meters ?? 100);
     const distance = assignedLocation?.latitude && assignedLocation?.longitude
       ? haversineDistance(latitude, longitude, Number(assignedLocation.latitude), Number(assignedLocation.longitude))
       : 0;
@@ -90,8 +92,8 @@ export default function AttendancePage() {
     let status = "present";
     let lateMinutes = 0;
 
-    if (assignedShift?.start_time) {
-      const [hours, minutes] = String(assignedShift.start_time).split(":");
+    if (shiftStartTime) {
+      const [hours, minutes] = shiftStartTime.split(":");
       const shiftStart = new Date();
       shiftStart.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
       if (now.getTime() > shiftStart.getTime()) {
@@ -117,7 +119,7 @@ export default function AttendancePage() {
       org_id: currentUser.orgId,
       employee_id: currentUser.employeeId,
       work_date: today,
-      shift_id: assignedShift?.id || undefined,
+      shift_id: shiftId,
       check_in_at: now.toISOString(),
       check_in_lat: latitude,
       check_in_lng: longitude,
@@ -143,6 +145,13 @@ export default function AttendancePage() {
     setSubmitting(true);
     setError("");
 
+    const attendanceId = typeof myAttendance.id === "string" ? myAttendance.id : "";
+    if (!attendanceId) {
+      setError("Unable to resolve attendance record.");
+      setSubmitting(false);
+      return;
+    }
+
     const position = await new Promise<GeolocationPosition>((resolve, reject) => {
       navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
     }).catch(() => null);
@@ -155,10 +164,11 @@ export default function AttendancePage() {
 
     const now = new Date();
     const deviceInfo = navigator.userAgent;
-    const startTime = myAttendance.check_in_at ? new Date(myAttendance.check_in_at).getTime() : now.getTime();
+    const checkInAt = typeof myAttendance.check_in_at === "string" ? myAttendance.check_in_at : null;
+    const startTime = checkInAt ? new Date(checkInAt).getTime() : now.getTime();
     const totalMinutes = Math.max(0, Math.round((now.getTime() - startTime) / 60000));
 
-    const { error: err } = await updateCheckOut(myAttendance.id, {
+    const { error: err } = await updateCheckOut(attendanceId, {
       check_out_at: now.toISOString(),
       check_out_lat: position.coords.latitude,
       check_out_lng: position.coords.longitude,
@@ -193,7 +203,7 @@ export default function AttendancePage() {
             <div className="space-y-2">
               <p className="text-xs text-gray-500">Status</p>
               <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">
-                {myAttendance?.status || "Not checked"}
+                {myAttendance?.status ? String(myAttendance.status) : "Not checked"}
               </Badge>
             </div>
             <div className="space-y-2">
@@ -242,19 +252,27 @@ export default function AttendancePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(isAdmin ? attendance : attendance.filter((row) => row.employee_id === currentUser?.employeeId)).map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell className="font-medium text-gray-900">{row.employee?.full_name || "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={row.status === "late" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-green-50 text-green-700 border-green-200"}>
-                        {row.status || "present"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-gray-600">{row.check_in_at ? new Date(row.check_in_at).toLocaleTimeString() : "—"}</TableCell>
-                    <TableCell className="text-gray-600">{row.check_out_at ? new Date(row.check_out_at).toLocaleTimeString() : "—"}</TableCell>
-                    <TableCell className="text-gray-600">{row.late_minutes ?? 0}</TableCell>
-                  </TableRow>
-                ))}
+                {(isAdmin ? attendance : attendance.filter((row) => row.employee_id === currentUser?.employeeId)).map((row) => {
+                  const rowStatus = typeof row.status === "string" ? row.status : "present";
+                  const checkInAt = typeof row.check_in_at === "string" ? row.check_in_at : null;
+                  const checkOutAt = typeof row.check_out_at === "string" ? row.check_out_at : null;
+                  const lateMinutes = typeof row.late_minutes === "number" ? row.late_minutes : 0;
+                  const employee = (row.employee ?? null) as Record<string, unknown> | null;
+                  const employeeName = typeof employee?.full_name === "string" ? employee.full_name : "—";
+                  return (
+                    <TableRow key={String(row.id)}>
+                      <TableCell className="font-medium text-gray-900">{employeeName}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={rowStatus === "late" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-green-50 text-green-700 border-green-200"}>
+                          {rowStatus}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-gray-600">{checkInAt ? new Date(checkInAt).toLocaleTimeString() : "—"}</TableCell>
+                      <TableCell className="text-gray-600">{checkOutAt ? new Date(checkOutAt).toLocaleTimeString() : "—"}</TableCell>
+                      <TableCell className="text-gray-600">{lateMinutes}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
