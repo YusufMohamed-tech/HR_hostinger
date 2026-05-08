@@ -37,8 +37,6 @@ export function Header() {
   const [showResults, setShowResults] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
 
-  const roles: Role[] = ["Admin", "Employee"];
-
   const filtered = query.trim().length > 0
     ? SEARCH_ITEMS.filter((item) => {
         const q = query.toLowerCase();

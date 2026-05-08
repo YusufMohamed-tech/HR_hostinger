@@ -54,34 +54,52 @@ export default function DepartmentsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {departments.map((dept) => (
-                <TableRow key={dept.id}>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-medium text-gray-900">{dept.name}</span>
-                      <span className="text-xs text-gray-400">{dept.id}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-gray-600">{dept.manager?.full_name || "—"}</TableCell>
-                  <TableCell className="text-gray-600">
-                    {employees.filter((emp) => emp.department_id === dept.id).length}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      {currentUser?.role === "Admin" && (
-                        <EditDepartmentDialog department={dept} onSuccess={refetch} />
-                      )}
-                      <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">View</Button>
-                      {currentUser?.role === "Admin" && (
-                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={async () => { if (!confirm(`Delete ${dept.name}?`)) return; await deleteDepartment(dept.id); refetch(); }}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {departments.map((dept) => {
+                const deptRecord = dept as Record<string, unknown>;
+                const deptId = String(deptRecord.id ?? "");
+                const deptName = typeof deptRecord.name === "string" ? deptRecord.name : "—";
+                const manager = (deptRecord.manager ?? null) as Record<string, unknown> | null;
+                const managerName = typeof manager?.full_name === "string" ? manager.full_name : "—";
+                const headcount = employees.filter((emp) => {
+                  const empRecord = emp as Record<string, unknown>;
+                  return String(empRecord.department_id ?? "") === deptId;
+                }).length;
+
+                return (
+                  <TableRow key={deptId}>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-gray-900">{deptName}</span>
+                        <span className="text-xs text-gray-400">{deptId}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-gray-600">{managerName}</TableCell>
+                    <TableCell className="text-gray-600">{headcount}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {currentUser?.role === "Admin" && (
+                          <EditDepartmentDialog department={dept} onSuccess={refetch} />
+                        )}
+                        <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">View</Button>
+                        {currentUser?.role === "Admin" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={async () => {
+                              if (!confirm(`Delete ${deptName}?`)) return;
+                              await deleteDepartment(deptId);
+                              refetch();
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
 

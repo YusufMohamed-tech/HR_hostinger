@@ -54,34 +54,51 @@ export default function OrganizationsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {organizations.map((org) => (
-                <TableRow key={org.id}>
-                  <TableCell>
-                    <div className="flex flex-col">
-                      <span className="font-medium text-gray-900">{org.name}</span>
-                      <span className="text-xs text-gray-400">{org.id}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-gray-600">{org.plan}</TableCell>
-                  <TableCell className="text-gray-600">{org.users}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={org.status === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
-                      {org.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">Manage</Button>
-                      {currentUser?.role === "Admin" && (
-                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={async () => { if (!confirm(`Delete ${org.name}?`)) return; await deleteOrganization(org.id); refetch(); }}>
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {organizations.map((org) => {
+                const orgRecord = org as Record<string, unknown>;
+                const orgId = String(orgRecord.id ?? "");
+                const orgName = typeof orgRecord.name === "string" ? orgRecord.name : "—";
+                const orgPlan = typeof orgRecord.plan === "string" ? orgRecord.plan : "—";
+                const orgUsers = typeof orgRecord.users === "number" ? orgRecord.users : 0;
+                const orgStatus = typeof orgRecord.status === "string" ? orgRecord.status : "Active";
+
+                return (
+                  <TableRow key={orgId}>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-gray-900">{orgName}</span>
+                        <span className="text-xs text-gray-400">{orgId}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-gray-600">{orgPlan}</TableCell>
+                    <TableCell className="text-gray-600">{orgUsers}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={orgStatus === "Active" ? "bg-green-50 text-green-700 border-green-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
+                        {orgStatus}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">Manage</Button>
+                        {currentUser?.role === "Admin" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                            onClick={async () => {
+                              if (!confirm(`Delete ${orgName}?`)) return;
+                              await deleteOrganization(orgId);
+                              refetch();
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
 

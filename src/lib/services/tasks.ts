@@ -4,7 +4,7 @@ export async function getTasks(orgId: string) {
   const supabase = createClient();
   const result = await supabase
     .from("tasks")
-    .select("*, location:location_id(name), assignments:task_assignments(id, status, employee:employee_id(id, full_name))")
+    .select("*, location:location_id(name), assignments:task_assignments(id, status, employee:employee_id(id, full_name)), updates:task_updates(status, note, created_at, employee:employee_id(full_name))")
     .eq("org_id", orgId)
     .order("created_at", { ascending: false });
 
@@ -15,7 +15,7 @@ export async function getTaskById(id: string) {
   const supabase = createClient();
   const result = await supabase
     .from("tasks")
-    .select("*, assignments:task_assignments(*, employee:employee_id(full_name))")
+    .select("*, assignments:task_assignments(*, employee:employee_id(full_name)), updates:task_updates(status, note, created_at, employee:employee_id(full_name))")
     .eq("id", id)
     .single();
 

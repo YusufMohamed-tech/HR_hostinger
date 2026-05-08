@@ -27,10 +27,13 @@ export default function DashboardPage() {
 
   const isAdmin = currentUser?.role === "Admin";
 
-  const presentCount = attendance.filter((row) => row.status === "present").length;
-  const lateCount = attendance.filter((row) => row.status === "late").length;
-  const pendingTasks = tasks.filter((task) => task.status === "pending" || task.status === "in_progress").length;
-  const pendingLeaves = leaves.filter((req) => req.status === "pending").length;
+  const presentCount = attendance.filter((row) => String((row as Record<string, unknown>).status ?? "") === "present").length;
+  const lateCount = attendance.filter((row) => String((row as Record<string, unknown>).status ?? "") === "late").length;
+  const pendingTasks = tasks.filter((task) => {
+    const status = String((task as Record<string, unknown>).status ?? "");
+    return status === "pending" || status === "in_progress";
+  }).length;
+  const pendingLeaves = leaves.filter((req) => String((req as Record<string, unknown>).status ?? "") === "pending").length;
   const firstAttendance = attendance[0] as Record<string, unknown> | undefined;
   const myStatus = typeof firstAttendance?.status === "string" ? firstAttendance.status : "Not checked";
 
@@ -106,17 +109,23 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {notifications.slice(0, 3).map((note) => (
-                <div key={note.id} className="flex items-center gap-4 p-3 border rounded-lg bg-slate-50 border-slate-100">
-                  <div className="bg-brand-light p-2 rounded-full">
-                    <Bell className="w-4 h-4 text-brand" />
+              {notifications.slice(0, 3).map((note) => {
+                const noteRecord = note as Record<string, unknown>;
+                const noteId = String(noteRecord.id ?? "");
+                const noteTitle = typeof noteRecord.title === "string" ? noteRecord.title : "Notification";
+                const noteBody = typeof noteRecord.body === "string" ? noteRecord.body : "View details";
+                return (
+                  <div key={noteId} className="flex items-center gap-4 p-3 border rounded-lg bg-slate-50 border-slate-100">
+                    <div className="bg-brand-light p-2 rounded-full">
+                      <Bell className="w-4 h-4 text-brand" />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm font-medium leading-none">{noteTitle}</p>
+                      <p className="text-xs text-gray-500">{noteBody}</p>
+                    </div>
                   </div>
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm font-medium leading-none">{note.title}</p>
-                    <p className="text-xs text-gray-500">{note.body || "View details"}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
 
               {notifications.length === 0 && (
                 <div className="text-sm text-gray-500 text-center py-4">No notifications yet.</div>
