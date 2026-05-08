@@ -149,7 +149,7 @@ export default function LoginPage() {
                   variant="outline" 
                   className="text-xs"
                   onClick={() => {
-                    setEmail("hr.tatwir.sa");
+                    setEmail("hr@tatwir.sa");
                     setPassword("12345678");
                   }}
                 >
@@ -160,7 +160,7 @@ export default function LoginPage() {
                   variant="outline" 
                   className="text-xs"
                   onClick={() => {
-                    setEmail("employee.tatwir.sa");
+                    setEmail("employee@tatwir.sa");
                     setPassword("123456789");
                   }}
                 >
