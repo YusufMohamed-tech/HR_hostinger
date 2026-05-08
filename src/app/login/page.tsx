@@ -142,6 +142,31 @@ export default function LoginPage() {
                   {message}
                 </p>
               )}
+
+              <div className="pt-4 grid grid-cols-2 gap-3 border-t">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  className="text-xs"
+                  onClick={() => {
+                    setEmail("hr.tatwir.sa");
+                    setPassword("12345678");
+                  }}
+                >
+                  Fill HR Login
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  className="text-xs"
+                  onClick={() => {
+                    setEmail("employee.tatwir.sa");
+                    setPassword("123456789");
+                  }}
+                >
+                  Fill Employee Login
+                </Button>
+              </div>
             </form>
 
             <div className="mt-6 border-t pt-4">
