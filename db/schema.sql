@@ -1,4 +1,4 @@
--- Tatwir Talent HRMS schema (Supabase Postgres)
+-- Phase 1 Core Workforce OS schema (Supabase Postgres)
 
 create extension if not exists "pgcrypto";
 
@@ -6,7 +6,34 @@ create extension if not exists "pgcrypto";
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'org_role') THEN
-    CREATE TYPE public.org_role AS ENUM ('super_admin', 'admin', 'team_leader', 'employee');
+    CREATE TYPE public.org_role AS ENUM ('admin', 'employee');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'employment_type') THEN
+    CREATE TYPE public.employment_type AS ENUM ('full_time', 'part_time', 'intern', 'contract');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'attendance_status') THEN
+    CREATE TYPE public.attendance_status AS ENUM ('present', 'late', 'absent', 'on_leave', 'half_day');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
+    CREATE TYPE public.task_status AS ENUM ('pending', 'in_progress', 'completed', 'rejected', 'delayed');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'leave_type') THEN
+    CREATE TYPE public.leave_type AS ENUM ('sick', 'vacation', 'emergency');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'leave_status') THEN
+    CREATE TYPE public.leave_status AS ENUM ('pending', 'approved', 'rejected');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'shift_type') THEN
+    CREATE TYPE public.shift_type AS ENUM ('morning', 'night', 'flexible');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'notification_type') THEN
+    CREATE TYPE public.notification_type AS ENUM ('attendance', 'task', 'leave', 'system');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'document_type') THEN
+    CREATE TYPE public.document_type AS ENUM ('cv', 'contract', 'national_id', 'certificate', 'other');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'location_type') THEN
+    CREATE TYPE public.location_type AS ENUM ('branch', 'booth', 'office', 'area');
   END IF;
 END$$;
 
@@ -19,12 +46,31 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION public.current_org_id()
+RETURNS uuid AS $$
+  SELECT org_id FROM public.org_members WHERE user_id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION public.current_role()
+RETURNS text AS $$
+  SELECT role::text FROM public.org_members WHERE user_id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean AS $$
+  SELECT COALESCE((SELECT role = 'admin' FROM public.org_members WHERE user_id = auth.uid() LIMIT 1), false);
+$$ LANGUAGE sql STABLE;
+
+CREATE OR REPLACE FUNCTION public.current_employee_id()
+RETURNS uuid AS $$
+  SELECT id FROM public.employees WHERE user_id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql STABLE;
+
 -- Core tables
 CREATE TABLE IF NOT EXISTS public.organizations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
   slug text UNIQUE,
-  plan text DEFAULT 'Starter',
   status text DEFAULT 'Active',
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
@@ -39,31 +85,6 @@ CREATE TABLE IF NOT EXISTS public.org_members (
   UNIQUE (org_id, user_id)
 );
 
-CREATE OR REPLACE FUNCTION public.current_org_id()
-RETURNS uuid AS $$
-  SELECT org_id FROM public.org_members WHERE user_id = auth.uid() LIMIT 1;
-$$ LANGUAGE sql STABLE;
-
-CREATE OR REPLACE FUNCTION public.current_role()
-RETURNS text AS $$
-  SELECT role::text FROM public.org_members WHERE user_id = auth.uid() LIMIT 1;
-$$ LANGUAGE sql STABLE;
-
-CREATE OR REPLACE FUNCTION public.is_super_admin()
-RETURNS boolean AS $$
-  SELECT COALESCE((SELECT role = 'super_admin' FROM public.org_members WHERE user_id = auth.uid() LIMIT 1), false);
-$$ LANGUAGE sql STABLE;
-
-CREATE OR REPLACE FUNCTION public.is_org_admin(org uuid)
-RETURNS boolean AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.org_members
-    WHERE user_id = auth.uid()
-      AND org_id = org
-      AND role IN ('admin', 'super_admin')
-  );
-$$ LANGUAGE sql STABLE;
-
 CREATE TABLE IF NOT EXISTS public.profiles (
   user_id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   org_id uuid REFERENCES public.organizations(id) ON DELETE SET NULL,
@@ -71,6 +92,9 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   email text,
   phone text,
   title text,
+  username text,
+  account_status text DEFAULT 'Active',
+  last_login_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -79,7 +103,7 @@ CREATE TABLE IF NOT EXISTS public.departments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   name text NOT NULL,
-  head_employee_id uuid,
+  manager_employee_id uuid REFERENCES public.employees(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -88,11 +112,11 @@ CREATE TABLE IF NOT EXISTS public.locations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   name text NOT NULL,
-  city text,
-  geofence jsonb,
-  geofence_status text DEFAULT 'Draft',
+  type public.location_type NOT NULL DEFAULT 'branch',
   latitude numeric,
   longitude numeric,
+  radius_meters integer DEFAULT 100,
+  manager_employee_id uuid REFERENCES public.employees(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -105,268 +129,212 @@ CREATE TABLE IF NOT EXISTS public.employees (
   full_name text NOT NULL,
   email text,
   phone text,
-  role text,
-  status text DEFAULT 'Active',
+  address text,
+  emergency_contact_name text,
+  emergency_contact_phone text,
+  national_id text,
+  date_of_birth date,
+  gender text,
+  hiring_date date,
   department_id uuid REFERENCES public.departments(id) ON DELETE SET NULL,
-  location_id uuid REFERENCES public.locations(id) ON DELETE SET NULL,
+  job_title text,
   manager_id uuid REFERENCES public.employees(id) ON DELETE SET NULL,
-  hire_date date,
+  location_id uuid REFERENCES public.locations(id) ON DELETE SET NULL,
+  employment_type public.employment_type DEFAULT 'full_time',
+  status text DEFAULT 'Active',
+  base_salary numeric DEFAULT 0,
+  bonus numeric DEFAULT 0,
+  deductions numeric DEFAULT 0,
+  payment_method text,
+  bank_account text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (org_id, employee_code)
 );
 
-CREATE TABLE IF NOT EXISTS public.contracts (
+CREATE TABLE IF NOT EXISTS public.employee_documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
-  start_date date NOT NULL,
-  end_date date,
-  base_salary numeric,
-  currency text DEFAULT 'SAR',
-  status text DEFAULT 'Active',
-  terms jsonb,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.org_hierarchy (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  manager_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
-  report_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  doc_type public.document_type NOT NULL DEFAULT 'other',
+  file_path text NOT NULL,
+  file_name text,
+  uploaded_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Scheduling
-CREATE TABLE IF NOT EXISTS public.shifts (
+CREATE TABLE IF NOT EXISTS public.salary_history (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  location_id uuid REFERENCES public.locations(id) ON DELETE SET NULL,
-  shift_date date,
-  start_time timestamptz,
-  end_time timestamptz,
-  required_headcount integer DEFAULT 0,
-  status text DEFAULT 'Planned',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.shift_assignments (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  shift_id uuid NOT NULL REFERENCES public.shifts(id) ON DELETE CASCADE,
-  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
-  status text DEFAULT 'Assigned',
-  assigned_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.availability (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
-  weekday integer,
-  start_time time,
-  end_time time,
-  notes text
-);
-
-CREATE TABLE IF NOT EXISTS public.shift_conflicts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  shift_id uuid REFERENCES public.shifts(id) ON DELETE CASCADE,
-  employee_id uuid REFERENCES public.employees(id) ON DELETE CASCADE,
-  conflict_type text,
-  details jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Events
-CREATE TABLE IF NOT EXISTS public.events (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  employee_id uuid REFERENCES public.employees(id) ON DELETE SET NULL,
-  user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
-  event_type text NOT NULL,
-  payload jsonb,
-  occurred_at timestamptz NOT NULL DEFAULT now(),
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- KPI & Analytics
-CREATE TABLE IF NOT EXISTS public.kpi_definitions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  description text,
-  unit text,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.kpi_targets (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  kpi_id uuid NOT NULL REFERENCES public.kpi_definitions(id) ON DELETE CASCADE,
-  target_value numeric,
-  period_start date,
-  period_end date,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.kpi_results (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  kpi_id uuid NOT NULL REFERENCES public.kpi_definitions(id) ON DELETE CASCADE,
-  employee_id uuid REFERENCES public.employees(id) ON DELETE SET NULL,
-  department_id uuid REFERENCES public.departments(id) ON DELETE SET NULL,
-  value numeric,
-  measured_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.team_metrics (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  department_id uuid REFERENCES public.departments(id) ON DELETE SET NULL,
-  metrics jsonb,
-  period_start date,
-  period_end date,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-
--- Payroll
-CREATE TABLE IF NOT EXISTS public.payroll_cycles (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  name text,
-  period_start date,
-  period_end date,
-  status text DEFAULT 'Draft',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.payroll_items (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  payroll_cycle_id uuid NOT NULL REFERENCES public.payroll_cycles(id) ON DELETE CASCADE,
   employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
   base_salary numeric DEFAULT 0,
-  bonuses numeric DEFAULT 0,
+  bonus numeric DEFAULT 0,
   deductions numeric DEFAULT 0,
-  total numeric DEFAULT 0,
+  payment_method text,
+  bank_account text,
+  effective_date date NOT NULL DEFAULT CURRENT_DATE,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS public.earnings (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  payroll_item_id uuid NOT NULL REFERENCES public.payroll_items(id) ON DELETE CASCADE,
-  earning_type text,
-  amount numeric DEFAULT 0,
-  notes text
-);
-
-CREATE TABLE IF NOT EXISTS public.deductions (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  payroll_item_id uuid NOT NULL REFERENCES public.payroll_items(id) ON DELETE CASCADE,
-  deduction_type text,
-  amount numeric DEFAULT 0,
-  notes text
-);
-
-CREATE TABLE IF NOT EXISTS public.kpi_payouts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  payroll_item_id uuid NOT NULL REFERENCES public.payroll_items(id) ON DELETE CASCADE,
-  kpi_id uuid NOT NULL REFERENCES public.kpi_definitions(id) ON DELETE CASCADE,
-  amount numeric DEFAULT 0
-);
-
--- Learning
-CREATE TABLE IF NOT EXISTS public.courses (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  title text NOT NULL,
-  description text,
-  status text DEFAULT 'Active',
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.course_modules (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  course_id uuid NOT NULL REFERENCES public.courses(id) ON DELETE CASCADE,
-  title text NOT NULL,
-  sort_order integer DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.enrollments (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  course_id uuid NOT NULL REFERENCES public.courses(id) ON DELETE CASCADE,
-  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
-  status text DEFAULT 'Assigned',
-  progress integer DEFAULT 0,
-  due_date date,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.milestones (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  enrollment_id uuid NOT NULL REFERENCES public.enrollments(id) ON DELETE CASCADE,
-  title text NOT NULL,
-  status text DEFAULT 'Pending',
-  completed_at timestamptz
-);
-
--- Tracking
-CREATE TABLE IF NOT EXISTS public.tracking_sessions (
+CREATE TABLE IF NOT EXISTS public.employee_kpis (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
-  location_id uuid REFERENCES public.locations(id) ON DELETE SET NULL,
-  source text,
-  started_at timestamptz NOT NULL DEFAULT now(),
-  ended_at timestamptz
-);
-
-CREATE TABLE IF NOT EXISTS public.tracking_points (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  session_id uuid NOT NULL REFERENCES public.tracking_sessions(id) ON DELETE CASCADE,
-  latitude numeric,
-  longitude numeric,
-  accuracy numeric,
+  kpi_name text NOT NULL,
+  value numeric,
   recorded_at timestamptz NOT NULL DEFAULT now()
 );
 
--- AI Insights
-CREATE TABLE IF NOT EXISTS public.ai_insights (
+CREATE TABLE IF NOT EXISTS public.employee_reviews (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  title text NOT NULL,
-  impact text,
-  summary text,
-  payload jsonb,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  review_month date,
+  rating numeric,
+  notes text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
--- Audit logs
-CREATE TABLE IF NOT EXISTS public.audit_logs (
+CREATE TABLE IF NOT EXISTS public.employee_actions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  actor_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
-  action text NOT NULL,
-  entity text,
-  entity_id uuid,
-  old_values jsonb,
-  new_values jsonb,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  action_type text NOT NULL,
+  reason text,
+  points numeric,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Shifts
+CREATE TABLE IF NOT EXISTS public.shifts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  shift_type public.shift_type NOT NULL DEFAULT 'morning',
+  start_time time,
+  end_time time,
+  location_id uuid REFERENCES public.locations(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.employee_shifts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  shift_id uuid NOT NULL REFERENCES public.shifts(id) ON DELETE CASCADE,
+  start_date date,
+  end_date date,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Attendance
+CREATE TABLE IF NOT EXISTS public.attendance_records (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  work_date date NOT NULL DEFAULT CURRENT_DATE,
+  shift_id uuid REFERENCES public.shifts(id) ON DELETE SET NULL,
+  check_in_at timestamptz,
+  check_out_at timestamptz,
+  check_in_lat numeric,
+  check_in_lng numeric,
+  check_out_lat numeric,
+  check_out_lng numeric,
+  check_in_device text,
+  check_out_device text,
+  check_in_photo_path text,
+  status public.attendance_status DEFAULT 'present',
+  total_minutes integer DEFAULT 0,
+  late_minutes integer DEFAULT 0,
+  within_geofence boolean DEFAULT true,
+  distance_meters integer DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Tasks
+CREATE TABLE IF NOT EXISTS public.tasks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  description text,
+  priority text DEFAULT 'medium',
+  status public.task_status NOT NULL DEFAULT 'pending',
+  due_date date,
+  location_id uuid REFERENCES public.locations(id) ON DELETE SET NULL,
+  created_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.task_assignments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  task_id uuid NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  status public.task_status NOT NULL DEFAULT 'pending',
+  assigned_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.task_updates (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  task_id uuid NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
+  employee_id uuid REFERENCES public.employees(id) ON DELETE SET NULL,
+  status public.task_status,
+  progress integer,
+  note text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.task_attachments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  task_id uuid NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
+  uploaded_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  file_path text NOT NULL,
+  file_name text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Leave
+CREATE TABLE IF NOT EXISTS public.leave_balances (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  sick_remaining integer DEFAULT 0,
+  vacation_remaining integer DEFAULT 0,
+  emergency_remaining integer DEFAULT 0,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (org_id, employee_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.leave_requests (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  leave_type public.leave_type NOT NULL,
+  status public.leave_status NOT NULL DEFAULT 'pending',
+  start_date date NOT NULL,
+  end_date date NOT NULL,
+  reason text,
+  requested_at timestamptz NOT NULL DEFAULT now(),
+  decided_at timestamptz,
+  decided_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  decision_note text
+);
+
+-- Notifications
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  body text,
+  type public.notification_type NOT NULL DEFAULT 'system',
+  link text,
+  is_read boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -377,17 +345,14 @@ CREATE INDEX IF NOT EXISTS idx_departments_org ON public.departments(org_id);
 CREATE INDEX IF NOT EXISTS idx_locations_org ON public.locations(org_id);
 CREATE INDEX IF NOT EXISTS idx_employees_org ON public.employees(org_id);
 CREATE INDEX IF NOT EXISTS idx_employees_user ON public.employees(user_id);
-CREATE INDEX IF NOT EXISTS idx_contracts_org ON public.contracts(org_id);
-CREATE INDEX IF NOT EXISTS idx_shifts_org ON public.shifts(org_id);
-CREATE INDEX IF NOT EXISTS idx_shift_assignments_org ON public.shift_assignments(org_id);
-CREATE INDEX IF NOT EXISTS idx_events_org ON public.events(org_id);
-CREATE INDEX IF NOT EXISTS idx_kpi_targets_org ON public.kpi_targets(org_id);
-CREATE INDEX IF NOT EXISTS idx_kpi_results_org ON public.kpi_results(org_id);
-CREATE INDEX IF NOT EXISTS idx_payroll_cycles_org ON public.payroll_cycles(org_id);
-CREATE INDEX IF NOT EXISTS idx_payroll_items_org ON public.payroll_items(org_id);
-CREATE INDEX IF NOT EXISTS idx_courses_org ON public.courses(org_id);
-CREATE INDEX IF NOT EXISTS idx_enrollments_org ON public.enrollments(org_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_org ON public.audit_logs(org_id);
+CREATE INDEX IF NOT EXISTS idx_employee_docs_org ON public.employee_documents(org_id);
+CREATE INDEX IF NOT EXISTS idx_employee_docs_emp ON public.employee_documents(employee_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_org ON public.attendance_records(org_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_emp ON public.attendance_records(employee_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_org ON public.tasks(org_id);
+CREATE INDEX IF NOT EXISTS idx_task_assignments_emp ON public.task_assignments(employee_id);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_emp ON public.leave_requests(employee_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications(user_id);
 
 -- Updated_at triggers
 DO $$
@@ -412,162 +377,21 @@ BEGIN
     CREATE TRIGGER trg_employees_updated_at BEFORE UPDATE ON public.employees
     FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_contracts_updated_at') THEN
-    CREATE TRIGGER trg_contracts_updated_at BEFORE UPDATE ON public.contracts
-    FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
-  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_shifts_updated_at') THEN
     CREATE TRIGGER trg_shifts_updated_at BEFORE UPDATE ON public.shifts
     FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_payroll_cycles_updated_at') THEN
-    CREATE TRIGGER trg_payroll_cycles_updated_at BEFORE UPDATE ON public.payroll_cycles
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_tasks_updated_at') THEN
+    CREATE TRIGGER trg_tasks_updated_at BEFORE UPDATE ON public.tasks
     FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_courses_updated_at') THEN
-    CREATE TRIGGER trg_courses_updated_at BEFORE UPDATE ON public.courses
-    FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_course_modules_updated_at') THEN
-    CREATE TRIGGER trg_course_modules_updated_at BEFORE UPDATE ON public.course_modules
-    FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_enrollments_updated_at') THEN
-    CREATE TRIGGER trg_enrollments_updated_at BEFORE UPDATE ON public.enrollments
+  IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_attendance_updated_at') THEN
+    CREATE TRIGGER trg_attendance_updated_at BEFORE UPDATE ON public.attendance_records
     FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
   END IF;
 END$$;
 
--- RLS
-ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.org_members ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.locations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.contracts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.org_hierarchy ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.shifts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.shift_assignments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.availability ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.shift_conflicts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.kpi_definitions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.kpi_targets ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.kpi_results ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.team_metrics ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.payroll_cycles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.payroll_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.earnings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.deductions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.kpi_payouts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.courses ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.course_modules ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.enrollments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.milestones ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tracking_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tracking_points ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.ai_insights ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
-
--- Organizations policies
-DROP POLICY IF EXISTS org_select ON public.organizations;
-DROP POLICY IF EXISTS org_insert ON public.organizations;
-DROP POLICY IF EXISTS org_update ON public.organizations;
-DROP POLICY IF EXISTS org_delete ON public.organizations;
-
-CREATE POLICY org_select ON public.organizations
-  FOR SELECT USING (public.is_super_admin() OR id = public.current_org_id());
-CREATE POLICY org_insert ON public.organizations
-  FOR INSERT WITH CHECK (public.is_super_admin());
-CREATE POLICY org_update ON public.organizations
-  FOR UPDATE USING (public.is_super_admin()) WITH CHECK (public.is_super_admin());
-CREATE POLICY org_delete ON public.organizations
-  FOR DELETE USING (public.is_super_admin());
-
--- Org members policies
-DROP POLICY IF EXISTS org_members_select ON public.org_members;
-DROP POLICY IF EXISTS org_members_insert ON public.org_members;
-DROP POLICY IF EXISTS org_members_update ON public.org_members;
-DROP POLICY IF EXISTS org_members_delete ON public.org_members;
-
-CREATE POLICY org_members_select ON public.org_members
-  FOR SELECT USING (public.is_super_admin() OR org_id = public.current_org_id());
-CREATE POLICY org_members_insert ON public.org_members
-  FOR INSERT WITH CHECK (public.is_super_admin() OR (org_id = public.current_org_id() AND public.current_role() IN ('admin','super_admin')));
-CREATE POLICY org_members_update ON public.org_members
-  FOR UPDATE USING (public.is_super_admin() OR (org_id = public.current_org_id() AND public.current_role() IN ('admin','super_admin')))
-  WITH CHECK (public.is_super_admin() OR (org_id = public.current_org_id() AND public.current_role() IN ('admin','super_admin')));
-CREATE POLICY org_members_delete ON public.org_members
-  FOR DELETE USING (public.is_super_admin() OR (org_id = public.current_org_id() AND public.current_role() IN ('admin','super_admin')));
-
--- Profiles policies
-DROP POLICY IF EXISTS profiles_select ON public.profiles;
-DROP POLICY IF EXISTS profiles_insert ON public.profiles;
-DROP POLICY IF EXISTS profiles_update ON public.profiles;
-DROP POLICY IF EXISTS profiles_delete ON public.profiles;
-
-CREATE POLICY profiles_select ON public.profiles
-  FOR SELECT USING (public.is_super_admin() OR org_id = public.current_org_id() OR user_id = auth.uid());
-CREATE POLICY profiles_insert ON public.profiles
-  FOR INSERT WITH CHECK (public.is_super_admin() OR org_id = public.current_org_id() OR user_id = auth.uid());
-CREATE POLICY profiles_update ON public.profiles
-  FOR UPDATE USING (public.is_super_admin() OR org_id = public.current_org_id() OR user_id = auth.uid())
-  WITH CHECK (public.is_super_admin() OR org_id = public.current_org_id() OR user_id = auth.uid());
-CREATE POLICY profiles_delete ON public.profiles
-  FOR DELETE USING (public.is_super_admin() OR org_id = public.current_org_id());
-
--- Generic org-scoped policies
-DO $$
-DECLARE
-  tbl text;
-BEGIN
-  FOREACH tbl IN ARRAY ARRAY[
-    'departments','locations','employees','contracts','org_hierarchy','shifts','shift_assignments',
-    'availability','shift_conflicts','events','kpi_definitions','kpi_targets','kpi_results','team_metrics',
-    'payroll_cycles','payroll_items','earnings','deductions','kpi_payouts','courses','course_modules',
-    'enrollments','milestones','tracking_sessions','tracking_points','ai_insights','audit_logs'
-  ]
-  LOOP
-    EXECUTE format('DROP POLICY IF EXISTS org_select_%I ON public.%I', tbl, tbl);
-    EXECUTE format('DROP POLICY IF EXISTS org_insert_%I ON public.%I', tbl, tbl);
-    EXECUTE format('DROP POLICY IF EXISTS org_update_%I ON public.%I', tbl, tbl);
-    EXECUTE format('DROP POLICY IF EXISTS org_delete_%I ON public.%I', tbl, tbl);
-
-    EXECUTE format(
-      'CREATE POLICY org_select_%I ON public.%I FOR SELECT USING (public.is_super_admin() OR org_id = public.current_org_id())',
-      tbl, tbl
-    );
-    EXECUTE format(
-      'CREATE POLICY org_insert_%I ON public.%I FOR INSERT WITH CHECK (public.is_super_admin() OR org_id = public.current_org_id())',
-      tbl, tbl
-    );
-    EXECUTE format(
-      'CREATE POLICY org_update_%I ON public.%I FOR UPDATE USING (public.is_super_admin() OR org_id = public.current_org_id()) WITH CHECK (public.is_super_admin() OR org_id = public.current_org_id())',
-      tbl, tbl
-    );
-    EXECUTE format(
-      'CREATE POLICY org_delete_%I ON public.%I FOR DELETE USING (public.is_super_admin() OR org_id = public.current_org_id())',
-      tbl, tbl
-    );
-  END LOOP;
-END$$;
-
--- Employee self-access policy
-DROP POLICY IF EXISTS employees_self ON public.employees;
-CREATE POLICY employees_self ON public.employees
-  FOR SELECT USING (user_id = auth.uid());
-
--- Shift assignment self-access
-DROP POLICY IF EXISTS shift_assignments_self ON public.shift_assignments;
-CREATE POLICY shift_assignments_self ON public.shift_assignments
-  FOR SELECT USING (employee_id IN (SELECT id FROM public.employees WHERE user_id = auth.uid()));
-
--- =====================================================================
--- PHASE 1 ENHANCEMENTS
--- =====================================================================
-
--- 1) Auto-create profile when a new user signs up via Supabase Auth
+-- Auto-create profile when a new user signs up via Supabase Auth
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
@@ -586,32 +410,163 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 2) Additional performance indexes for foreign key lookups and common queries
-CREATE INDEX IF NOT EXISTS idx_employees_dept ON public.employees(department_id);
-CREATE INDEX IF NOT EXISTS idx_employees_location ON public.employees(location_id);
-CREATE INDEX IF NOT EXISTS idx_employees_manager ON public.employees(manager_id);
-CREATE INDEX IF NOT EXISTS idx_employees_status ON public.employees(status);
-CREATE INDEX IF NOT EXISTS idx_contracts_employee ON public.contracts(employee_id);
-CREATE INDEX IF NOT EXISTS idx_contracts_status ON public.contracts(status);
-CREATE INDEX IF NOT EXISTS idx_shift_assignments_shift ON public.shift_assignments(shift_id);
-CREATE INDEX IF NOT EXISTS idx_shift_assignments_employee ON public.shift_assignments(employee_id);
-CREATE INDEX IF NOT EXISTS idx_events_employee ON public.events(employee_id);
-CREATE INDEX IF NOT EXISTS idx_events_type ON public.events(event_type);
-CREATE INDEX IF NOT EXISTS idx_events_occurred ON public.events(occurred_at DESC);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON public.audit_logs(actor_user_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON public.audit_logs(entity, entity_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON public.audit_logs(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_payroll_items_employee ON public.payroll_items(employee_id);
-CREATE INDEX IF NOT EXISTS idx_enrollments_employee ON public.enrollments(employee_id);
-CREATE INDEX IF NOT EXISTS idx_enrollments_course ON public.enrollments(course_id);
-CREATE INDEX IF NOT EXISTS idx_shifts_date ON public.shifts(shift_date);
-CREATE INDEX IF NOT EXISTS idx_shifts_location ON public.shifts(location_id);
+-- RLS
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.org_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.departments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.locations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.salary_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_kpis ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_actions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.shifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_shifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.attendance_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.task_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.task_updates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.task_attachments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.leave_balances ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.leave_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
--- 3) Hardened audit_logs: immutable rows (no UPDATE), only super_admin can DELETE
-DROP POLICY IF EXISTS org_update_audit_logs ON public.audit_logs;
-CREATE POLICY org_update_audit_logs ON public.audit_logs
-  FOR UPDATE USING (false); -- audit logs are immutable
+-- Organizations policies
+DROP POLICY IF EXISTS org_select ON public.organizations;
+DROP POLICY IF EXISTS org_insert ON public.organizations;
+DROP POLICY IF EXISTS org_update ON public.organizations;
+DROP POLICY IF EXISTS org_delete ON public.organizations;
 
-DROP POLICY IF EXISTS org_delete_audit_logs ON public.audit_logs;
-CREATE POLICY org_delete_audit_logs ON public.audit_logs
-  FOR DELETE USING (public.is_super_admin()); -- only super admin can purge
+CREATE POLICY org_select ON public.organizations
+  FOR SELECT USING (id = public.current_org_id());
+CREATE POLICY org_insert ON public.organizations
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
+CREATE POLICY org_update ON public.organizations
+  FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY org_delete ON public.organizations
+  FOR DELETE USING (auth.role() = 'service_role');
+
+-- Org members policies
+DROP POLICY IF EXISTS org_members_select ON public.org_members;
+DROP POLICY IF EXISTS org_members_insert ON public.org_members;
+DROP POLICY IF EXISTS org_members_update ON public.org_members;
+DROP POLICY IF EXISTS org_members_delete ON public.org_members;
+
+CREATE POLICY org_members_select ON public.org_members
+  FOR SELECT USING (org_id = public.current_org_id());
+CREATE POLICY org_members_insert ON public.org_members
+  FOR INSERT WITH CHECK (public.is_admin() OR auth.role() = 'service_role');
+CREATE POLICY org_members_update ON public.org_members
+  FOR UPDATE USING (public.is_admin() OR auth.role() = 'service_role')
+  WITH CHECK (public.is_admin() OR auth.role() = 'service_role');
+CREATE POLICY org_members_delete ON public.org_members
+  FOR DELETE USING (public.is_admin() OR auth.role() = 'service_role');
+
+-- Profiles policies
+DROP POLICY IF EXISTS profiles_select ON public.profiles;
+DROP POLICY IF EXISTS profiles_insert ON public.profiles;
+DROP POLICY IF EXISTS profiles_update ON public.profiles;
+DROP POLICY IF EXISTS profiles_delete ON public.profiles;
+
+CREATE POLICY profiles_select ON public.profiles
+  FOR SELECT USING (user_id = auth.uid() OR public.is_admin());
+CREATE POLICY profiles_insert ON public.profiles
+  FOR INSERT WITH CHECK (user_id = auth.uid() OR auth.role() = 'service_role');
+CREATE POLICY profiles_update ON public.profiles
+  FOR UPDATE USING (user_id = auth.uid() OR public.is_admin())
+  WITH CHECK (user_id = auth.uid() OR public.is_admin());
+CREATE POLICY profiles_delete ON public.profiles
+  FOR DELETE USING (auth.role() = 'service_role');
+
+-- Generic org-scoped policies (admin full, employees read)
+DO $$
+DECLARE
+  tbl text;
+BEGIN
+  FOREACH tbl IN ARRAY ARRAY[
+    'departments','locations','employees','employee_documents','salary_history',
+    'employee_kpis','employee_reviews','employee_actions','shifts','employee_shifts',
+    'attendance_records','tasks','task_assignments','task_updates','task_attachments',
+    'leave_balances','leave_requests'
+  ]
+  LOOP
+    EXECUTE format('DROP POLICY IF EXISTS org_select_%I ON public.%I', tbl, tbl);
+    EXECUTE format('DROP POLICY IF EXISTS org_insert_%I ON public.%I', tbl, tbl);
+    EXECUTE format('DROP POLICY IF EXISTS org_update_%I ON public.%I', tbl, tbl);
+    EXECUTE format('DROP POLICY IF EXISTS org_delete_%I ON public.%I', tbl, tbl);
+
+    EXECUTE format(
+      'CREATE POLICY org_select_%I ON public.%I FOR SELECT USING (org_id = public.current_org_id())',
+      tbl, tbl
+    );
+    EXECUTE format(
+      'CREATE POLICY org_insert_%I ON public.%I FOR INSERT WITH CHECK (public.is_admin())',
+      tbl, tbl
+    );
+    EXECUTE format(
+      'CREATE POLICY org_update_%I ON public.%I FOR UPDATE USING (public.is_admin()) WITH CHECK (public.is_admin())',
+      tbl, tbl
+    );
+    EXECUTE format(
+      'CREATE POLICY org_delete_%I ON public.%I FOR DELETE USING (public.is_admin())',
+      tbl, tbl
+    );
+  END LOOP;
+END$$;
+
+-- Employee self access (employees table)
+DROP POLICY IF EXISTS employees_self ON public.employees;
+CREATE POLICY employees_self ON public.employees
+  FOR SELECT USING (user_id = auth.uid());
+
+-- Attendance: employees can insert/update their own records
+DROP POLICY IF EXISTS attendance_self_insert ON public.attendance_records;
+DROP POLICY IF EXISTS attendance_self_update ON public.attendance_records;
+
+CREATE POLICY attendance_self_insert ON public.attendance_records
+  FOR INSERT WITH CHECK (employee_id = public.current_employee_id() AND org_id = public.current_org_id());
+CREATE POLICY attendance_self_update ON public.attendance_records
+  FOR UPDATE USING (employee_id = public.current_employee_id() AND org_id = public.current_org_id())
+  WITH CHECK (employee_id = public.current_employee_id() AND org_id = public.current_org_id());
+
+-- Tasks: employees can view assigned tasks and update their own assignments
+DROP POLICY IF EXISTS tasks_employee_select ON public.tasks;
+CREATE POLICY tasks_employee_select ON public.tasks
+  FOR SELECT USING (
+    public.is_admin() OR EXISTS (
+      SELECT 1 FROM public.task_assignments ta
+      WHERE ta.task_id = id AND ta.employee_id = public.current_employee_id()
+    )
+  );
+
+DROP POLICY IF EXISTS task_assignments_employee_select ON public.task_assignments;
+CREATE POLICY task_assignments_employee_select ON public.task_assignments
+  FOR SELECT USING (public.is_admin() OR employee_id = public.current_employee_id());
+
+DROP POLICY IF EXISTS task_updates_employee_insert ON public.task_updates;
+CREATE POLICY task_updates_employee_insert ON public.task_updates
+  FOR INSERT WITH CHECK (public.is_admin() OR employee_id = public.current_employee_id());
+
+-- Leave: employees can create and view their own requests
+DROP POLICY IF EXISTS leave_requests_self_select ON public.leave_requests;
+DROP POLICY IF EXISTS leave_requests_self_insert ON public.leave_requests;
+
+CREATE POLICY leave_requests_self_select ON public.leave_requests
+  FOR SELECT USING (public.is_admin() OR employee_id = public.current_employee_id());
+CREATE POLICY leave_requests_self_insert ON public.leave_requests
+  FOR INSERT WITH CHECK (employee_id = public.current_employee_id() AND org_id = public.current_org_id());
+
+-- Notifications: employee sees own notifications; admin sees all
+DROP POLICY IF EXISTS notifications_select ON public.notifications;
+DROP POLICY IF EXISTS notifications_insert ON public.notifications;
+DROP POLICY IF EXISTS notifications_update ON public.notifications;
+
+CREATE POLICY notifications_select ON public.notifications
+  FOR SELECT USING (public.is_admin() OR user_id = auth.uid());
+CREATE POLICY notifications_insert ON public.notifications
+  FOR INSERT WITH CHECK (public.is_admin() OR auth.role() = 'service_role');
+CREATE POLICY notifications_update ON public.notifications
+  FOR UPDATE USING (user_id = auth.uid() OR public.is_admin())
+  WITH CHECK (user_id = auth.uid() OR public.is_admin());

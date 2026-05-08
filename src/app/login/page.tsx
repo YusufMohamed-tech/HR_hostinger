@@ -145,13 +145,7 @@ export default function LoginPage() {
             </form>
 
             <div className="mt-6 border-t pt-4">
-              <p className="text-xs text-slate-400 mb-3">Demo accounts:</p>
-              <div className="grid gap-1.5 text-xs text-slate-500">
-                <div className="flex justify-between"><span className="font-medium">Super Admin</span><span>superadmin1234@gmail.com / superadmin</span></div>
-                <div className="flex justify-between"><span className="font-medium">Admin</span><span>admin@tatwir.com / admin1234</span></div>
-                <div className="flex justify-between"><span className="font-medium">Team Leader</span><span>leader@tatwir.com / leader1234</span></div>
-                <div className="flex justify-between"><span className="font-medium">Employee</span><span>employee@tatwir.com / employee1234</span></div>
-              </div>
+              <p className="text-xs text-slate-400">Use your company credentials to sign in.</p>
             </div>
           </div>
         </div>

@@ -1,84 +1,11 @@
-"use client";
-
 import React from "react";
-import Link from "next/link";
-import { Activity } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { useEvents } from "@/hooks/use-data";
-import { PageSkeleton } from "@/components/Skeletons";
-
-const typeStyles: Record<string, string> = {
-  "Check-in": "bg-green-50 text-green-700 border-green-200",
-  Movement: "bg-blue-50 text-blue-700 border-blue-200",
-  Sales: "bg-amber-50 text-amber-700 border-amber-200",
-};
+import { PhasePlaceholder } from "@/components/PhasePlaceholder";
 
 export default function EventsPage() {
-  const { data: events, loading } = useEvents();
-
-  if (loading) {
-    return <PageSkeleton />;
-  }
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Event Stream</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Real-time actions captured across shifts and locations.
-        </p>
-      </div>
-
-      <Card className="border-none shadow-sm">
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                <TableHead className="font-semibold text-gray-600">Type</TableHead>
-                <TableHead className="font-semibold text-gray-600">Employee</TableHead>
-                <TableHead className="font-semibold text-gray-600">Location</TableHead>
-                <TableHead className="font-semibold text-gray-600">Time</TableHead>
-                <TableHead className="font-semibold text-gray-600">Payload</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {events.map((event) => (
-                <TableRow key={event.id}>
-                  <TableCell>
-                    <Badge variant="outline" className={typeStyles[event.type] || "bg-gray-100 text-gray-600 border-gray-200"}>
-                      {event.type}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-gray-700">{event.employee}</TableCell>
-                  <TableCell className="text-gray-600">{event.location}</TableCell>
-                  <TableCell className="text-gray-600">{event.time}</TableCell>
-                  <TableCell className="text-gray-500 text-xs">
-                    <Link href={`/events/${event.id}`} className="text-brand hover:text-brand-dark">
-                      {event.payload}
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          {events.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Activity className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">No events recorded</p>
-              <p className="text-xs text-gray-500 mt-1">Events will appear here as they are captured.</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <PhasePlaceholder
+      title="Event Stream"
+      description="Real-time event monitoring is planned for a later phase."
+    />
   );
 }

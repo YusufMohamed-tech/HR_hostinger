@@ -15,10 +15,8 @@ import { PageSkeleton } from "@/components/Skeletons";
 
 const roleBadge = (role: string) => {
   const map: Record<string, string> = {
-    super_admin: "bg-purple-50 text-purple-700 border-purple-200",
     admin: "bg-blue-50 text-blue-700 border-blue-200",
-    team_leader: "bg-amber-50 text-amber-700 border-amber-200",
-    member: "bg-green-50 text-green-700 border-green-200",
+    employee: "bg-green-50 text-green-700 border-green-200",
   };
   return map[role] || "bg-gray-100 text-gray-600 border-gray-200";
 };
@@ -41,16 +39,16 @@ export default function MembersPage() {
 
   const handleRemove = async (id: string, name: string) => {
     if (!confirm(`Remove ${name} from the organization?`)) return;
-    await removeOrgMember(id, currentUser?.orgId || "", currentUser?.id);
+    await removeOrgMember(id);
     fetchMembers();
   };
 
   const handleRoleChange = async (id: string, newRole: string) => {
-    await updateOrgMemberRole(id, currentUser?.orgId || "", newRole, currentUser?.id);
+    await updateOrgMemberRole(id, newRole);
     fetchMembers();
   };
 
-  const isSuperAdmin = currentUser?.role === "Super Admin";
+  const isAdmin = currentUser?.role === "Admin";
 
   if (loading) return <PageSkeleton />;
 
@@ -80,7 +78,7 @@ export default function MembersPage() {
                 <TableHead className="font-semibold text-gray-600">Email</TableHead>
                 <TableHead className="font-semibold text-gray-600">Role</TableHead>
                 <TableHead className="font-semibold text-gray-600">Joined</TableHead>
-                {isSuperAdmin && <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>}
+                {isAdmin && <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -91,16 +89,14 @@ export default function MembersPage() {
                   </TableCell>
                   <TableCell className="text-gray-600">{member.profiles?.email || "—"}</TableCell>
                   <TableCell>
-                    {isSuperAdmin ? (
+                    {isAdmin ? (
                       <Select value={member.role} onValueChange={(v) => handleRoleChange(member.id, v)}>
                         <SelectTrigger className="w-[140px] h-8">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="super_admin">Super Admin</SelectItem>
                           <SelectItem value="admin">Admin</SelectItem>
-                          <SelectItem value="team_leader">Team Leader</SelectItem>
-                          <SelectItem value="member">Member</SelectItem>
+                          <SelectItem value="employee">Employee</SelectItem>
                         </SelectContent>
                       </Select>
                     ) : (
@@ -110,7 +106,7 @@ export default function MembersPage() {
                   <TableCell className="text-gray-500 text-xs">
                     {member.created_at ? new Date(member.created_at).toLocaleDateString() : "—"}
                   </TableCell>
-                  {isSuperAdmin && (
+                  {isAdmin && (
                     <TableCell className="text-right">
                       <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
                         onClick={() => handleRemove(member.id, member.profiles?.full_name || "member")}>

@@ -6,15 +6,15 @@ import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useEmployees, useEvents } from "@/hooks/use-data";
+import { useEmployees, useAttendance } from "@/hooks/use-data";
 
 export default function EmployeeDetailPage() {
   const params = useParams();
   const id = typeof params.id === "string" ? params.id : "";
   const { data: employees } = useEmployees();
-  const { data: events } = useEvents();
+  const { data: attendance } = useAttendance();
   const employee = employees.find((item: Record<string, unknown>) => item.id === id);
-  const employeeEvents = events.filter((event: Record<string, unknown>) => event.employee === (employee as Record<string, unknown>)?.name).slice(0, 3);
+  const recentAttendance = attendance.filter((row) => row.employee_id === id).slice(0, 3);
 
   if (!employee) {
     return (
@@ -42,7 +42,7 @@ export default function EmployeeDetailPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="border-none shadow-sm">
           <CardHeader>
-            <CardTitle>Profile</CardTitle>
+            <CardTitle>Basic Info</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-gray-600">
             <div>
@@ -52,6 +52,14 @@ export default function EmployeeDetailPage() {
             <div>
               <p className="text-xs text-gray-500">Phone</p>
               <p className="font-medium text-gray-900">{employee.phone}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Employee ID</p>
+              <p className="font-medium text-gray-900">{employee.employee_code || employee.id}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">National ID</p>
+              <p className="font-medium text-gray-900">{employee.national_id || "—"}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Status</p>
@@ -64,40 +72,48 @@ export default function EmployeeDetailPage() {
 
         <Card className="border-none shadow-sm">
           <CardHeader>
-            <CardTitle>Assignment</CardTitle>
+            <CardTitle>Work Info</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-gray-600">
             <div>
-              <p className="text-xs text-gray-500">Role</p>
-              <p className="font-medium text-gray-900">{employee.role}</p>
+              <p className="text-xs text-gray-500">Job Title</p>
+              <p className="font-medium text-gray-900">{employee.job_title || "—"}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Department</p>
-              <p className="font-medium text-gray-900">{employee.department}</p>
+              <p className="font-medium text-gray-900">{employee.department?.name || employee.department || "—"}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Location</p>
-              <p className="font-medium text-gray-900">{employee.location}</p>
+              <p className="font-medium text-gray-900">{employee.location?.name || employee.location || "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Employment Type</p>
+              <p className="font-medium text-gray-900">{employee.employment_type || "—"}</p>
             </div>
           </CardContent>
         </Card>
 
         <Card className="border-none shadow-sm">
           <CardHeader>
-            <CardTitle>Employment</CardTitle>
+            <CardTitle>Salary Info</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-gray-600">
             <div>
-              <p className="text-xs text-gray-500">Manager</p>
-              <p className="font-medium text-gray-900">{employee.manager}</p>
+              <p className="text-xs text-gray-500">Base Salary</p>
+              <p className="font-medium text-gray-900">{employee.base_salary ?? 0}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Hire Date</p>
-              <p className="font-medium text-gray-900">{employee.hireDate}</p>
+              <p className="text-xs text-gray-500">Bonus</p>
+              <p className="font-medium text-gray-900">{employee.bonus ?? 0}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Contract</p>
-              <p className="font-medium text-gray-900">{employee.contract}</p>
+              <p className="text-xs text-gray-500">Deductions</p>
+              <p className="font-medium text-gray-900">{employee.deductions ?? 0}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Payment Method</p>
+              <p className="font-medium text-gray-900">{employee.payment_method || "—"}</p>
             </div>
           </CardContent>
         </Card>
@@ -105,19 +121,19 @@ export default function EmployeeDetailPage() {
 
       <Card className="border-none shadow-sm">
         <CardHeader>
-          <CardTitle>Recent Events</CardTitle>
+          <CardTitle>Recent Attendance</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {employeeEvents.length === 0 && (
-            <p className="text-sm text-gray-500">No events recorded for this employee.</p>
+          {recentAttendance.length === 0 && (
+            <p className="text-sm text-gray-500">No attendance records for this employee.</p>
           )}
-          {employeeEvents.map((event) => (
-            <div key={event.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
+          {recentAttendance.map((record) => (
+            <div key={record.id} className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3">
               <div>
-                <p className="text-sm font-semibold text-gray-900">{event.type}</p>
-                <p className="text-xs text-gray-500">{event.location}</p>
+                <p className="text-sm font-semibold text-gray-900">{record.status}</p>
+                <p className="text-xs text-gray-500">{record.work_date}</p>
               </div>
-              <div className="text-xs text-gray-400">{event.time}</div>
+              <div className="text-xs text-gray-400">{record.check_in_at || "—"}</div>
             </div>
           ))}
         </CardContent>

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
+import { useEmployees } from "@/hooks/use-data";
 import { createLocation } from "@/lib/services/locations";
 
 interface Props {
@@ -18,14 +19,18 @@ interface Props {
 
 export function AddLocationDialog({ onSuccess }: Props) {
   const { currentUser } = useRoleContext();
+  const { data: employees } = useEmployees();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
   const [form, setForm] = useState({
     name: "",
-    city: "",
-    geofence_status: "disabled",
+    type: "branch",
+    latitude: "",
+    longitude: "",
+    radius_meters: "100",
+    manager_employee_id: "",
   });
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
@@ -35,10 +40,15 @@ export function AddLocationDialog({ onSuccess }: Props) {
     setSubmitting(true);
     setError("");
 
-    const { error: err } = await createLocation(
-      { org_id: currentUser.orgId, ...form },
-      currentUser.id
-    );
+    const { error: err } = await createLocation({
+      org_id: currentUser.orgId,
+      name: form.name,
+      type: form.type,
+      latitude: form.latitude ? parseFloat(form.latitude) : undefined,
+      longitude: form.longitude ? parseFloat(form.longitude) : undefined,
+      radius_meters: form.radius_meters ? parseInt(form.radius_meters, 10) : undefined,
+      manager_employee_id: form.manager_employee_id || undefined,
+    });
 
     if (err) {
       setError(err.message);
@@ -48,42 +58,65 @@ export function AddLocationDialog({ onSuccess }: Props) {
 
     setSubmitting(false);
     setOpen(false);
-    setForm({ name: "", city: "", geofence_status: "disabled" });
+    setForm({ name: "", type: "branch", latitude: "", longitude: "", radius_meters: "100", manager_employee_id: "" });
     onSuccess();
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger
-        render={<Button className="bg-brand hover:bg-brand-dark text-white" />}
-      >
+      <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
         <Plus className="w-4 h-4 mr-2" />
         Add Location
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
           <DialogTitle>Add Location</DialogTitle>
-          <DialogDescription>Register a new site or branch office.</DialogDescription>
+          <DialogDescription>Register a new branch, booth, or office with geofence settings.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="grid gap-4 py-4">
           <div className="space-y-2">
             <Label>Location Name *</Label>
-            <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Site A - Downtown" />
+            <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Nasr City Branch" />
           </div>
-          <div className="space-y-2">
-            <Label>City</Label>
-            <Input value={form.city} onChange={(e) => set("city", e.target.value)} placeholder="Riyadh" />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Location Type</Label>
+              <Select value={form.type} onValueChange={(v) => set("type", v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="branch">Branch</SelectItem>
+                  <SelectItem value="booth">Booth</SelectItem>
+                  <SelectItem value="office">Office</SelectItem>
+                  <SelectItem value="area">Area</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Manager</Label>
+              <Select value={form.manager_employee_id} onValueChange={(v) => set("manager_employee_id", v)}>
+                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectContent>
+                  {employees.map((emp) => (
+                    <SelectItem key={emp.id} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label>Geofence</Label>
-            <Select value={form.geofence_status} onValueChange={(v) => set("geofence_status", v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="enabled">Enabled</SelectItem>
-                <SelectItem value="disabled">Disabled</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label>Latitude</Label>
+              <Input value={form.latitude} onChange={(e) => set("latitude", e.target.value)} placeholder="24.7136" />
+            </div>
+            <div className="space-y-2">
+              <Label>Longitude</Label>
+              <Input value={form.longitude} onChange={(e) => set("longitude", e.target.value)} placeholder="46.6753" />
+            </div>
+            <div className="space-y-2">
+              <Label>Radius (m)</Label>
+              <Input type="number" value={form.radius_meters} onChange={(e) => set("radius_meters", e.target.value)} />
+            </div>
           </div>
         </div>
 

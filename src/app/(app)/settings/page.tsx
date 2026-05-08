@@ -23,9 +23,7 @@ export default function SettingsPage() {
   };
 
   const roleBadgeColor = {
-    "Super Admin": "bg-purple-50 text-purple-700 border-purple-200",
     Admin: "bg-blue-50 text-blue-700 border-blue-200",
-    "Team Leader": "bg-amber-50 text-amber-700 border-amber-200",
     Employee: "bg-green-50 text-green-700 border-green-200",
   }[currentUser?.role || "Employee"];
 
@@ -91,7 +89,7 @@ export default function SettingsPage() {
       </Card>
 
       {/* System Settings (Admin only) */}
-      {(currentUser?.role === "Super Admin" || currentUser?.role === "Admin") && (
+      {currentUser?.role === "Admin" && (
         <div className="grid gap-4 md:grid-cols-2">
           <EditCompanyDialog />
 
@@ -100,19 +98,11 @@ export default function SettingsPage() {
               <CardTitle>Roles and Permissions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-gray-500">Define access rules for admins and team leaders.</p>
+              <p className="text-sm text-gray-500">Access control for Admin and Employee roles.</p>
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700">Super Admin</span>
-                  <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">Full Access</Badge>
-                </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-700">Admin</span>
                   <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Manage + View</Badge>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700">Team Leader</span>
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Team + Schedule</Badge>
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-700">Employee</span>
@@ -127,22 +117,18 @@ export default function SettingsPage() {
               <CardTitle>Notifications</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-gray-500">Configure alerts for attendance, KPI drift, and payroll.</p>
+              <p className="text-sm text-gray-500">Configure alerts for attendance, tasks, and leave approvals.</p>
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
                 <label className="flex items-center justify-between text-sm cursor-pointer">
                   <span className="text-gray-700">Late arrival alerts</span>
                   <input type="checkbox" className="rounded border-gray-300" defaultChecked />
                 </label>
                 <label className="flex items-center justify-between text-sm cursor-pointer">
-                  <span className="text-gray-700">KPI target drift</span>
+                  <span className="text-gray-700">New task assignments</span>
                   <input type="checkbox" className="rounded border-gray-300" defaultChecked />
                 </label>
                 <label className="flex items-center justify-between text-sm cursor-pointer">
-                  <span className="text-gray-700">Payroll approvals</span>
-                  <input type="checkbox" className="rounded border-gray-300" />
-                </label>
-                <label className="flex items-center justify-between text-sm cursor-pointer">
-                  <span className="text-gray-700">Shift conflict warnings</span>
+                  <span className="text-gray-700">Leave approvals</span>
                   <input type="checkbox" className="rounded border-gray-300" defaultChecked />
                 </label>
               </div>
@@ -151,22 +137,18 @@ export default function SettingsPage() {
 
           <Card className="border-none shadow-sm">
             <CardHeader>
-              <CardTitle>Compliance</CardTitle>
+              <CardTitle>Security</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-gray-500">Audit exports, retention, and approvals.</p>
+              <p className="text-sm text-gray-500">Session controls and authentication settings.</p>
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-700">Audit log retention</span>
-                  <span className="text-gray-900 font-medium">90 days</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-700">Auto-export schedule</span>
-                  <span className="text-gray-900 font-medium">Monthly</span>
-                </div>
-                <div className="flex items-center justify-between">
                   <span className="text-gray-700">Two-factor auth</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">Enabled</Badge>
+                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Planned</Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-700">Password policy</span>
+                  <span className="text-gray-900 font-medium">Standard</span>
                 </div>
               </div>
             </CardContent>

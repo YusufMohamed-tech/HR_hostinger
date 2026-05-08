@@ -36,7 +36,7 @@ export default function OrganizationsPage() {
           </p>
         </div>
 
-        {currentUser?.role === "Super Admin" && (
+        {currentUser?.role === "Admin" && (
           <AddOrganizationDialog onSuccess={refetch} />
         )}
       </div>
@@ -72,7 +72,7 @@ export default function OrganizationsPage() {
                   <TableCell className="text-right">
                     <div className="flex items-center justify-end gap-1">
                       <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">Manage</Button>
-                      {currentUser?.role === "Super Admin" && (
+                      {currentUser?.role === "Admin" && (
                         <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-700 hover:bg-red-50"
                           onClick={async () => { if (!confirm(`Delete ${org.name}?`)) return; await deleteOrganization(org.id); refetch(); }}>
                           <Trash2 className="w-4 h-4" />

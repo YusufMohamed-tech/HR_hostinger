@@ -1,151 +1,81 @@
 import { createClient } from "@/lib/supabase/client";
-import { writeAuditLog } from "@/lib/utils/audit";
-
-/* ─── READ ─── */
 
 export async function getShifts(orgId: string) {
   const supabase = createClient();
   const result = await supabase
-    .from("shifts" as never)
-    .select("*, location:location_id(name), shift_assignments(*, employee:employee_id(full_name, role))")
+    .from("shifts")
+    .select("*, location:location_id(name)")
     .eq("org_id", orgId)
-    .order("shift_date", { ascending: false });
+    .order("name");
+
   return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
 }
 
-export async function getShiftById(id: string) {
+export async function createShift(values: Record<string, unknown>) {
   const supabase = createClient();
   const result = await supabase
-    .from("shifts" as never)
-    .select("*, location:location_id(name), shift_assignments(*, employee:employee_id(full_name, role, email))")
-    .eq("id", id)
-    .single();
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
-}
-
-/* ─── CREATE ─── */
-
-export async function createShift(
-  values: {
-    org_id: string;
-    location_id?: string;
-    shift_date?: string;
-    start_time?: string;
-    end_time?: string;
-    required_headcount?: number;
-    status?: string;
-  },
-  actorUserId?: string
-) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("shifts" as never)
+    .from("shifts")
     .insert(values as never)
     .select()
     .single();
 
-  const { data, error } = result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
-
-  if (!error && data) {
-    await writeAuditLog(supabase, {
-      org_id: values.org_id,
-      actor_user_id: actorUserId,
-      action: "created",
-      entity: "shift",
-      entity_id: data.id as string,
-      new_values: values,
-    });
-  }
-
-  return { data, error };
+  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
-/* ─── UPDATE ─── */
-
-export async function updateShift(
-  id: string,
-  orgId: string,
-  values: Record<string, unknown>,
-  actorUserId?: string
-) {
+export async function updateShift(id: string, values: Record<string, unknown>) {
   const supabase = createClient();
   const result = await supabase
-    .from("shifts" as never)
+    .from("shifts")
     .update(values as never)
     .eq("id", id)
     .select()
     .single();
 
-  const { data, error } = result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
-
-  if (!error) {
-    await writeAuditLog(supabase, {
-      org_id: orgId, actor_user_id: actorUserId,
-      action: "updated", entity: "shift", entity_id: id,
-      new_values: values,
-    });
-  }
-
-  return { data, error };
+  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
-/* ─── DELETE ─── */
-
-export async function deleteShift(id: string, orgId: string, actorUserId?: string) {
-  const supabase = createClient();
-  const result = await supabase.from("shifts" as never).delete().eq("id", id);
-  const { error } = result as unknown as { error: { message: string } | null };
-
-  if (!error) {
-    await writeAuditLog(supabase, {
-      org_id: orgId, actor_user_id: actorUserId,
-      action: "deleted", entity: "shift", entity_id: id,
-    });
-  }
-
-  return { error };
-}
-
-/* ─── ASSIGNMENTS ─── */
-
-export async function createShiftAssignment(
-  values: { org_id: string; shift_id: string; employee_id: string },
-  actorUserId?: string
-) {
+export async function deleteShift(id: string) {
   const supabase = createClient();
   const result = await supabase
-    .from("shift_assignments" as never)
+    .from("shifts")
+    .delete()
+    .eq("id", id);
+
+  return result as unknown as { error: { message: string } | null };
+}
+
+export async function getEmployeeShifts(orgId: string, employeeId?: string) {
+  const supabase = createClient();
+  let query = supabase
+    .from("employee_shifts")
+    .select("*, shift:shift_id(name, shift_type, start_time, end_time, location:location_id(name)), employee:employee_id(full_name, employee_code)")
+    .eq("org_id", orgId);
+
+  if (employeeId) {
+    query = query.eq("employee_id", employeeId);
+  }
+
+  const result = await query.order("start_date", { ascending: false });
+  return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+}
+
+export async function assignEmployeeShift(values: Record<string, unknown>) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("employee_shifts")
     .insert(values as never)
     .select()
     .single();
 
-  const { data, error } = result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
-
-  if (!error && data) {
-    await writeAuditLog(supabase, {
-      org_id: values.org_id,
-      actor_user_id: actorUserId,
-      action: "assigned_to_shift",
-      entity: "shift_assignment",
-      entity_id: data.id as string,
-      new_values: values,
-    });
-  }
-
-  return { data, error };
+  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
-export async function deleteShiftAssignment(id: string, orgId: string, actorUserId?: string) {
+export async function removeEmployeeShift(id: string) {
   const supabase = createClient();
-  const result = await supabase.from("shift_assignments" as never).delete().eq("id", id);
-  const { error } = result as unknown as { error: { message: string } | null };
+  const result = await supabase
+    .from("employee_shifts")
+    .delete()
+    .eq("id", id);
 
-  if (!error) {
-    await writeAuditLog(supabase, {
-      org_id: orgId, actor_user_id: actorUserId,
-      action: "removed_from_shift", entity: "shift_assignment", entity_id: id,
-    });
-  }
-
-  return { error };
+  return result as unknown as { error: { message: string } | null };
 }

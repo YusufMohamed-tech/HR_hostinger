@@ -4,11 +4,12 @@ import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { Pencil } from "lucide-react";
-import { useRoleContext } from "@/providers/RoleProvider";
+import { useEmployees } from "@/hooks/use-data";
 import { updateDepartment } from "@/lib/services/departments";
 
 interface Props {
@@ -18,29 +19,29 @@ interface Props {
 }
 
 export function EditDepartmentDialog({ department, onSuccess }: Props) {
-  const { currentUser } = useRoleContext();
+  const { data: employees } = useEmployees();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [name, setName] = useState("");
+  const [managerId, setManagerId] = useState("");
 
   useEffect(() => {
     if (department && open) {
       setName(department.name || "");
+      setManagerId(department.manager_employee_id || "");
     }
   }, [department, open]);
 
   const handleSubmit = async () => {
-    if (!name || !currentUser?.orgId) return;
+    if (!name) return;
     setSubmitting(true);
     setError("");
 
-    const { error: err } = await updateDepartment(
-      department.id,
-      currentUser.orgId,
-      { name },
-      currentUser.id
-    );
+    const { error: err } = await updateDepartment(department.id, {
+      name,
+      manager_employee_id: managerId || undefined,
+    });
 
     if (err) {
       setError(err.message);
@@ -69,6 +70,17 @@ export function EditDepartmentDialog({ department, onSuccess }: Props) {
           <div className="space-y-2">
             <Label>Department Name *</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Department Manager</Label>
+            <Select value={managerId} onValueChange={(v) => setManagerId(v)}>
+              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectContent>
+                {employees.map((emp) => (
+                  <SelectItem key={emp.id} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

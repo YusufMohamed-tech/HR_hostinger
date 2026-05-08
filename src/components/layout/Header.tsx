@@ -3,7 +3,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { Role } from "@/types";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,37 +13,31 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { LogOut, Menu, Search, Network, Users, Building2, MapPin, Calendar, BarChart3 } from "lucide-react";
+import { LogOut, Menu, Search, Network, Users, MapPin, Calendar, CheckSquare, Bell, ClipboardList, Layers } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { SidebarContent } from "./Sidebar";
 
 const SEARCH_ITEMS = [
   { label: "Employees", href: "/employees", icon: Users, keywords: ["staff", "people", "team", "workers"] },
-  { label: "Departments", href: "/departments", icon: Building2, keywords: ["teams", "divisions", "groups"] },
-  { label: "Locations", href: "/locations", icon: MapPin, keywords: ["sites", "offices", "branches", "geofence"] },
+  { label: "Departments", href: "/departments", icon: Layers, keywords: ["teams", "divisions", "groups"] },
+  { label: "Attendance", href: "/attendance", icon: Calendar, keywords: ["clock-in", "check-in", "presence"] },
+  { label: "Tasks", href: "/tasks", icon: CheckSquare, keywords: ["work", "assignments", "todo"] },
+  { label: "Leave", href: "/leave", icon: ClipboardList, keywords: ["vacation", "sick", "time off"] },
+  { label: "Locations", href: "/locations", icon: MapPin, keywords: ["sites", "branches", "geofence"] },
   { label: "Schedule", href: "/schedule", icon: Calendar, keywords: ["shifts", "roster", "timetable"] },
-  { label: "Payroll", href: "/payroll", icon: BarChart3, keywords: ["salary", "wages", "compensation", "pay"] },
-  { label: "Analytics", href: "/analytics", icon: BarChart3, keywords: ["kpi", "metrics", "performance", "targets"] },
-  { label: "Contracts", href: "/contracts", icon: Building2, keywords: ["agreements", "terms"] },
-  { label: "Events", href: "/events", icon: Calendar, keywords: ["clock-in", "attendance", "check-in"] },
-  { label: "Learning", href: "/learning", icon: Users, keywords: ["courses", "training", "lms"] },
-  { label: "Tracking", href: "/tracking", icon: MapPin, keywords: ["gps", "geofence", "location"] },
-  { label: "AI Insights", href: "/ai-insights", icon: BarChart3, keywords: ["anomaly", "detection", "signals"] },
-  { label: "Audit Logs", href: "/audit-logs", icon: Building2, keywords: ["history", "changes", "log"] },
-  { label: "Organizations", href: "/organizations", icon: Building2, keywords: ["tenants", "companies"] },
-  { label: "Hierarchy", href: "/hierarchy", icon: Users, keywords: ["org chart", "reporting", "managers"] },
-  { label: "Settings", href: "/settings", icon: Building2, keywords: ["profile", "preferences", "config"] },
+  { label: "Notifications", href: "/notifications", icon: Bell, keywords: ["alerts", "updates"] },
+  { label: "Settings", href: "/settings", icon: Users, keywords: ["profile", "preferences", "config"] },
 ];
 
 export function Header() {
   const router = useRouter();
-  const { currentUser, switchRole, logout } = useRoleContext();
+  const { currentUser, logout } = useRoleContext();
   const [query, setQuery] = useState("");
   const [showResults, setShowResults] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
 
-  const roles: Role[] = ["Super Admin", "Admin", "Team Leader", "Employee"];
+  const roles: Role[] = ["Admin", "Employee"];
 
   const filtered = query.trim().length > 0
     ? SEARCH_ITEMS.filter((item) => {
@@ -154,17 +147,6 @@ export function Header() {
                 </p>
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel>Simulate Role</DropdownMenuLabel>
-            {roles.map((role) => (
-              <DropdownMenuItem
-                key={role}
-                onClick={() => switchRole(role)}
-                className="cursor-pointer"
-              >
-               {currentUser.role === role ? "✓ " : ""} {role}
-              </DropdownMenuItem>
-            ))}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout} className="cursor-pointer text-red-600">
               <LogOut className="mr-2 h-4 w-4" />
