@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Search, Filter, Trash2, Users } from "lucide-react";
+import { Search, Trash2, Users } from "lucide-react";
 import { deleteEmployee } from "@/lib/services/employees";
 import { EditEmployeeDialog } from "@/components/forms/EditEmployeeDialog";
 import { Button } from "@/components/ui/button";
@@ -21,10 +21,45 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import { useEmployees } from "@/hooks/use-data";
 import { AddEmployeeDialog } from "@/components/forms/AddEmployeeDialog";
 import { PageSkeleton } from "@/components/Skeletons";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useState, useMemo } from "react";
 
 export default function EmployeesPage() {
   const { currentUser } = useRoleContext();
   const { data: employees, loading, refetch } = useEmployees();
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("All");
+
+  const uniqueDepartments = useMemo(() => {
+    const depts = new Set<string>();
+    employees.forEach(emp => {
+      const empRecord = emp as Record<string, unknown>;
+      const department = (empRecord.department ?? null) as Record<string, unknown> | null;
+      const departmentName = typeof department?.name === "string" ? department.name : typeof empRecord.department === "string" ? empRecord.department : "—";
+      if (departmentName !== "—") depts.add(departmentName);
+    });
+    return ["All", ...Array.from(depts)];
+  }, [employees]);
+
+  const filteredEmployees = useMemo(() => {
+    return employees.filter((emp) => {
+      const empRecord = emp as Record<string, unknown>;
+      const empName = typeof empRecord.full_name === "string" ? empRecord.full_name : typeof empRecord.name === "string" ? empRecord.name : "";
+      const empEmail = typeof empRecord.email === "string" ? empRecord.email : "";
+      const empCode = typeof empRecord.employee_code === "string" ? empRecord.employee_code : String(empRecord.id ?? "");
+      const department = (empRecord.department ?? null) as Record<string, unknown> | null;
+      const departmentName = typeof department?.name === "string" ? department.name : typeof empRecord.department === "string" ? empRecord.department : "—";
+      
+      const matchesSearch = empName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+                            empEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            empCode.toLowerCase().includes(searchQuery.toLowerCase());
+                            
+      const matchesDept = departmentFilter === "All" || departmentName === departmentFilter;
+      
+      return matchesSearch && matchesDept;
+    });
+  }, [employees, searchQuery, departmentFilter]);
 
   if (loading) {
     return <PageSkeleton />;
@@ -54,13 +89,21 @@ export default function EmployeesPage() {
                 type="search"
                 placeholder="Search employees..."
                 className="pl-9 bg-gray-50 border-gray-200 focus-visible:ring-brand"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
             <div className="flex gap-2 w-full sm:w-auto">
-              <Button variant="outline" className="w-full sm:w-auto text-gray-600">
-                <Filter className="w-4 h-4 mr-2" />
-                Filters
-              </Button>
+              <Select value={departmentFilter} onValueChange={(val) => setDepartmentFilter(val || "All")}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {uniqueDepartments.map(dept => (
+                    <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -76,7 +119,7 @@ export default function EmployeesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {employees.map((emp) => {
+              {filteredEmployees.map((emp) => {
                 const empRecord = emp as Record<string, unknown>;
                 const empId = String(empRecord.id ?? "");
                 const empName = typeof empRecord.full_name === "string"
@@ -155,11 +198,11 @@ export default function EmployeesPage() {
             </TableBody>
           </Table>
 
-          {employees.length === 0 && (
+          {filteredEmployees.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Users className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">No employees yet</p>
-              <p className="text-xs text-gray-500 mt-1">Add your first employee to get started.</p>
+              <p className="text-sm font-medium text-gray-900">No employees found</p>
+              <p className="text-xs text-gray-500 mt-1">Adjust your search or filter to find what you&apos;re looking for.</p>
             </div>
           )}
         </CardContent>

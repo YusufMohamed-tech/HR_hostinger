@@ -12,6 +12,7 @@ import { LogOut, Shield, User, Building2, Mail, Key, Save, CheckCircle } from "l
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import { createClient } from "@/lib/supabase/client";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -263,7 +264,24 @@ function EditProfileButton() {
 
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
-  const handleSave = () => {
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSave = async () => {
+    if (!currentUser?.id) return;
+    setSubmitting(true);
+    const supabase = createClient();
+    
+    await supabase.from("profiles").update({ full_name: form.full_name } as never).eq("user_id", currentUser.id);
+    
+    if (currentUser.employeeId) {
+      await supabase.from("employees").update({ 
+        full_name: form.full_name,
+        phone: form.phone || null,
+        job_title: form.title || null
+      } as never).eq("id", currentUser.employeeId);
+    }
+    
+    setSubmitting(false);
     setSaved(true);
     setTimeout(() => { setSaved(false); setOpen(false); }, 1200);
   };
@@ -294,9 +312,11 @@ function EditProfileButton() {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSave}>
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSave} disabled={submitting}>
             {saved ? (
               <><CheckCircle className="w-4 h-4 mr-2" />Saved!</>
+            ) : submitting ? (
+              "Saving..."
             ) : (
               <><Save className="w-4 h-4 mr-2" />Save Profile</>
             )}

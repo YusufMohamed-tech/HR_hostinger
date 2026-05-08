@@ -48,17 +48,17 @@ export function RoleProvider({ children }: { children: ReactNode }) {
         .maybeSingle(),
     ]);
 
-    const role: Role = membership?.role === "admin" ? "Admin" : "Employee";
-    const name = profile?.full_name || user.user_metadata?.full_name || user.email || "User";
-    const email = profile?.email || user.email || "";
+    const role: Role = (membership as unknown as Record<string, unknown>)?.role === "admin" ? "Admin" : "Employee";
+    const name = String((profile as unknown as Record<string, unknown>)?.full_name || user.user_metadata?.full_name || user.email || "User");
+    const email = String((profile as unknown as Record<string, unknown>)?.email || user.email || "");
 
     setCurrentUser({
       id: user.id,
       name,
       email,
       role,
-      orgId: membership?.org_id || "",
-      employeeId: employee?.id || undefined,
+      orgId: String((membership as unknown as Record<string, unknown>)?.org_id || ""),
+      employeeId: (employee as unknown as Record<string, unknown>)?.id ? String((employee as unknown as Record<string, unknown>)?.id) : undefined,
     });
     setLoading(false);
   }, [supabase]);

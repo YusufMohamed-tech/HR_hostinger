@@ -9,7 +9,6 @@ import {
   Bell,
   CheckSquare,
   Clock,
-  FileText,
   LayoutDashboard,
   Layers,
   MapPin,
@@ -42,7 +41,6 @@ export function SidebarContent() {
       ? [
           { name: "Employees", href: "/employees", icon: Users },
           { name: "Departments", href: "/departments", icon: Layers },
-          { name: "Members", href: "/members", icon: FileText },
         ]
       : [];
 

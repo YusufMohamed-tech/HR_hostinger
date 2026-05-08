@@ -93,7 +93,7 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Location Type</Label>
-              <Select value={form.type} onValueChange={(v) => set("type", v)}>
+              <Select value={form.type} onValueChange={(v) => set("type", v || "")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="branch">Branch</SelectItem>
@@ -105,11 +105,11 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
             </div>
             <div className="space-y-2">
               <Label>Manager</Label>
-              <Select value={form.manager_employee_id} onValueChange={(v) => set("manager_employee_id", v)}>
+              <Select value={form.manager_employee_id} onValueChange={(v) => set("manager_employee_id", v || "")}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
                   {employees.map((emp) => (
-                    <SelectItem key={emp.id} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
+                    <SelectItem key={String(emp.id)} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

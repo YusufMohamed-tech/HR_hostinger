@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useAttendance, useEmployees, useLocations, useEmployeeShifts } from "@/hooks/use-data";
 import { createCheckIn, updateCheckOut, uploadAttendanceSelfie } from "@/lib/services/attendance";
+import { notifyHrLateArrival } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -134,6 +135,10 @@ export default function AttendancePage() {
     if (err) {
       setError(err.message);
     } else {
+      if (status === "late" && currentUser.orgId) {
+        const empName = employees.find(e => e.id === currentUser.employeeId)?.full_name as string || currentUser.name || "Employee";
+        await notifyHrLateArrival(currentUser.orgId, empName, lateMinutes);
+      }
       refetch();
       setPhotoFile(null);
     }

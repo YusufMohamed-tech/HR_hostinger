@@ -177,7 +177,7 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
               </div>
               <div className="space-y-2">
                 <Label>Gender</Label>
-                <Select value={form.gender} onValueChange={(v) => set("gender", v)}>
+                <Select value={form.gender} onValueChange={(v) => set("gender", v || "")}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="male">Male</SelectItem>
@@ -207,11 +207,11 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Department</Label>
-                <Select value={form.department_id} onValueChange={(v) => set("department_id", v)}>
+                <Select value={form.department_id} onValueChange={(v) => set("department_id", v || "")}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>
                     {departments.map((d) => (
-                      <SelectItem key={d.id} value={String(d.id)}>{String(d.name)}</SelectItem>
+                      <SelectItem key={String(d.id)} value={String(d.id)}>{String(d.name)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -224,22 +224,22 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Manager</Label>
-                <Select value={form.manager_id} onValueChange={(v) => set("manager_id", v)}>
+                <Select value={form.manager_id} onValueChange={(v) => set("manager_id", v || "")}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>
                     {employees.map((emp) => (
-                      <SelectItem key={emp.id} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
+                      <SelectItem key={String(emp.id)} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Location</Label>
-                <Select value={form.location_id} onValueChange={(v) => set("location_id", v)}>
+                <Select value={form.location_id} onValueChange={(v) => set("location_id", v || "")}>
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>
                     {locations.map((l) => (
-                      <SelectItem key={l.id} value={String(l.id)}>{String(l.name)}</SelectItem>
+                      <SelectItem key={String(l.id)} value={String(l.id)}>{String(l.name)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -248,7 +248,7 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Employment Type</Label>
-                <Select value={form.employment_type} onValueChange={(v) => set("employment_type", v)}>
+                <Select value={form.employment_type} onValueChange={(v) => set("employment_type", v || "")}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="full_time">Full-time</SelectItem>
@@ -260,7 +260,7 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
               </div>
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={form.status} onValueChange={(v) => set("status", v)}>
+                <Select value={form.status} onValueChange={(v) => set("status", v || "")}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Active">Active</SelectItem>

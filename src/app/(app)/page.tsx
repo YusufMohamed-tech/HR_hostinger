@@ -5,49 +5,65 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MiniLineChart } from "@/components/charts/MiniLineChart";
-import { useEmployees, useLocations, useAttendance, useTasks, useLeaveRequests, useNotifications } from "@/hooks/use-data";
+import { useEmployees, useAttendance, useTasks, useLeaveRequests, useNotifications, useEmployeeShifts } from "@/hooks/use-data";
 import {
   Users,
-  MapPin,
   Clock,
   ClipboardList,
   CheckSquare,
-  Bell
+  Bell,
+  CalendarDays
 } from "lucide-react";
 
 export default function DashboardPage() {
   const { currentUser } = useRoleContext();
   const { data: employees } = useEmployees();
-  const { data: locations } = useLocations();
   const today = new Date().toISOString().split("T")[0];
-  const { data: attendance } = useAttendance(today);
+  const { data: allAttendance } = useAttendance(); // Fetch all to compute 7-day trend
   const { data: tasks } = useTasks();
   const { data: leaves } = useLeaveRequests();
   const { data: notifications } = useNotifications();
+  const { data: myShifts } = useEmployeeShifts(currentUser?.employeeId);
 
   const isAdmin = currentUser?.role === "Admin";
 
-  const presentCount = attendance.filter((row) => String((row as Record<string, unknown>).status ?? "") === "present").length;
-  const lateCount = attendance.filter((row) => String((row as Record<string, unknown>).status ?? "") === "late").length;
+  const todayRecords = allAttendance.filter(row => (row as Record<string, unknown>).work_date === today);
+  const presentCount = todayRecords.filter((row) => String((row as Record<string, unknown>).status ?? "") === "present").length;
+  const lateCount = todayRecords.filter((row) => String((row as Record<string, unknown>).status ?? "") === "late").length;
+  const onLeaveCount = todayRecords.filter((row) => String((row as Record<string, unknown>).status ?? "") === "on_leave").length;
+  const absentCount = Math.max(0, employees.length - presentCount - lateCount - onLeaveCount);
+
   const pendingTasks = tasks.filter((task) => {
     const status = String((task as Record<string, unknown>).status ?? "");
     return status === "pending" || status === "in_progress";
   }).length;
   const pendingLeaves = leaves.filter((req) => String((req as Record<string, unknown>).status ?? "") === "pending").length;
-  const firstAttendance = attendance[0] as Record<string, unknown> | undefined;
+  
+  const firstAttendance = todayRecords.find(r => (r as Record<string, unknown>).employee_id === currentUser?.employeeId);
   const myStatus = typeof firstAttendance?.status === "string" ? firstAttendance.status : "Not checked";
+
+  const last7Days = Array.from({ length: 7 }).map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    return d.toISOString().split("T")[0];
+  });
+  const chartData = last7Days.map(date => {
+    return allAttendance.filter(row => (row as Record<string, unknown>).work_date === date).length;
+  });
+
+  const nextShift = myShifts.length > 0 ? String(((myShifts[0] as Record<string, unknown>).shift as Record<string, unknown>)?.name || "Assigned") : "None";
 
   const stats = isAdmin
     ? [
         { label: "Employees", value: String(employees.length), icon: Users, change: "Total active" },
-        { label: "Present Today", value: String(presentCount), icon: Clock, change: `${lateCount} late` },
+        { label: "Present Today", value: String(presentCount), icon: Clock, change: `${lateCount} late, ${absentCount} absent` },
         { label: "Active Tasks", value: String(pendingTasks), icon: CheckSquare, change: "In progress" },
         { label: "Pending Leave", value: String(pendingLeaves), icon: ClipboardList, change: "Needs review" },
       ]
     : [
         { label: "My Tasks", value: String(pendingTasks), icon: CheckSquare, change: "Due soon" },
-        { label: "Attendance", value: attendance.length ? myStatus : "Not checked", icon: Clock, change: "Today" },
-        { label: "Locations", value: String(locations.length), icon: MapPin, change: "Assigned" },
+        { label: "Attendance", value: todayRecords.some(r => String((r as Record<string, unknown>).employee_id) === currentUser?.employeeId) ? myStatus : "Not checked", icon: Clock, change: "Today" },
+        { label: "Next Shift", value: nextShift, icon: CalendarDays, change: "Upcoming" },
         { label: "Alerts", value: String(notifications.length), icon: Bell, change: "New" },
       ];
 
@@ -91,13 +107,13 @@ export default function DashboardPage() {
           <CardContent className="border-t border-dashed pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500">Present / Late</p>
-                <p className="text-lg font-semibold text-gray-900">{presentCount} present · {lateCount} late</p>
+                <p className="text-xs text-gray-500">Present / Late / Absent</p>
+                <p className="text-lg font-semibold text-gray-900">{presentCount} present · {lateCount} late · {absentCount} absent</p>
               </div>
-              <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">{attendance.length} total</Badge>
+              <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">{todayRecords.length} recorded today</Badge>
             </div>
             <div className="mt-6">
-              <MiniLineChart values={[10, 18, 22, 30, 28, 35, 40]} />
+              <MiniLineChart values={chartData.length ? chartData : [0, 0, 0, 0, 0, 0, 0]} />
             </div>
           </CardContent>
         </Card>

@@ -80,7 +80,7 @@ export function AddShiftDialog({ onSuccess }: Props) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Shift Type</Label>
-              <Select value={form.shift_type} onValueChange={(v) => set("shift_type", v)}>
+              <Select value={form.shift_type} onValueChange={(v) => set("shift_type", v || "")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="morning">Morning</SelectItem>
@@ -91,11 +91,11 @@ export function AddShiftDialog({ onSuccess }: Props) {
             </div>
             <div className="space-y-2">
               <Label>Location</Label>
-              <Select value={form.location_id} onValueChange={(v) => set("location_id", v)}>
+              <Select value={form.location_id} onValueChange={(v) => set("location_id", v || "")}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
                   {locations.map((l) => (
-                    <SelectItem key={l.id} value={String(l.id)}>{String(l.name)}</SelectItem>
+                    <SelectItem key={String(l.id)} value={String(l.id)}>{String(l.name)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
