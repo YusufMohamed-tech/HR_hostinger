@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useLeaveRequests, useLeaveBalances } from "@/hooks/use-data";
 import { createLeaveRequest, updateLeaveRequest } from "@/lib/services/leaves";
+import { notifyLeaveDecision } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 
 const statusStyle: Record<string, string> = {
@@ -124,7 +125,11 @@ export default function LeavePage() {
                           size="sm"
                           className="text-green-600 hover:text-green-700"
                           onClick={async () => {
-                            await updateLeaveRequest(reqId, { status: "approved", decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            const note = window.prompt("Optional approval note:") || "";
+                            await updateLeaveRequest(reqId, { status: "approved", decision_note: note || undefined, decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            if (currentUser?.orgId && reqRecord.employee_id) {
+                              await notifyLeaveDecision(currentUser.orgId, String(reqRecord.employee_id), leaveType, "approved");
+                            }
                             refetch();
                           }}
                         >
@@ -135,7 +140,11 @@ export default function LeavePage() {
                           size="sm"
                           className="text-red-600 hover:text-red-700"
                           onClick={async () => {
-                            await updateLeaveRequest(reqId, { status: "rejected", decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            const note = window.prompt("Reason for rejection:") || "";
+                            await updateLeaveRequest(reqId, { status: "rejected", decision_note: note || undefined, decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            if (currentUser?.orgId && reqRecord.employee_id) {
+                              await notifyLeaveDecision(currentUser.orgId, String(reqRecord.employee_id), leaveType, "rejected");
+                            }
                             refetch();
                           }}
                         >

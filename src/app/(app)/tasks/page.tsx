@@ -29,6 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useTasks, useEmployees, useLocations } from "@/hooks/use-data";
 import { createTask, assignTask, updateTask, updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
+import { notifyTaskAssigned } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 
 const statusStyles: Record<string, string> = {
@@ -224,6 +225,7 @@ function CreateTaskDialog({
         employee_id: form.employee_id,
         status: "pending",
       });
+      await notifyTaskAssigned(currentUser.orgId, form.employee_id, form.title);
     }
 
     setSubmitting(false);

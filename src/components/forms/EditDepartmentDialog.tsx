@@ -73,11 +73,11 @@ export function EditDepartmentDialog({ department, onSuccess }: Props) {
           </div>
           <div className="space-y-2">
             <Label>Department Manager</Label>
-            <Select value={managerId} onValueChange={(v) => setManagerId(v)}>
+            <Select value={managerId} onValueChange={(v) => setManagerId(v || "")}>
               <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>
                 {employees.map((emp) => (
-                  <SelectItem key={emp.id} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
+                  <SelectItem key={String(emp.id)} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

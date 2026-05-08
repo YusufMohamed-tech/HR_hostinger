@@ -7,6 +7,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEmployees, useAttendance } from "@/hooks/use-data";
+import { useRoleContext } from "@/providers/RoleProvider";
+import { 
+  getEmployeeDocuments, 
+  getEmployeeSalaryHistory, 
+  getEmployeeKpis, 
+  getEmployeeReviews, 
+  getEmployeeActions 
+} from "@/lib/services/employee-details";
+import { useEffect, useState } from "react";
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -17,6 +26,36 @@ export default function EmployeeDetailPage() {
   const employeeRecord = employee as Record<string, unknown> | undefined;
   const employeeId = String(employeeRecord?.id ?? id);
   const recentAttendance = attendance.filter((row) => String(row.employee_id ?? "") === employeeId).slice(0, 3);
+  
+  const { currentUser } = useRoleContext();
+  const [details, setDetails] = useState({
+    documents: [] as Record<string, unknown>[],
+    salaryHistory: [] as Record<string, unknown>[],
+    kpis: [] as Record<string, unknown>[],
+    reviews: [] as Record<string, unknown>[],
+    actions: [] as Record<string, unknown>[]
+  });
+
+  useEffect(() => {
+    if (!currentUser?.orgId || !employeeId || employeeId === id) return;
+    async function fetchDetails() {
+      const [docs, salary, kpis, reviews, actions] = await Promise.all([
+        getEmployeeDocuments(currentUser?.orgId as string, employeeId),
+        getEmployeeSalaryHistory(currentUser?.orgId as string, employeeId),
+        getEmployeeKpis(currentUser?.orgId as string, employeeId),
+        getEmployeeReviews(currentUser?.orgId as string, employeeId),
+        getEmployeeActions(currentUser?.orgId as string, employeeId)
+      ]);
+      setDetails({
+        documents: docs.data || [],
+        salaryHistory: salary.data || [],
+        kpis: kpis.data || [],
+        reviews: reviews.data || [],
+        actions: actions.data || []
+      });
+    }
+    fetchDetails();
+  }, [currentUser?.orgId, employeeId, id]);
 
   const employeeName = typeof employeeRecord?.full_name === "string"
     ? employeeRecord.full_name
@@ -176,6 +215,44 @@ export default function EmployeeDetailPage() {
           })}
         </CardContent>
       </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="border-none shadow-sm">
+          <CardHeader>
+            <CardTitle>Documents</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {details.documents.length === 0 ? (
+              <p className="text-sm text-gray-500">No documents found.</p>
+            ) : (
+              details.documents.map((doc: Record<string, unknown>) => (
+                <div key={String(doc.id)} className="flex justify-between items-center text-sm border-b pb-2 border-gray-100">
+                  <span className="font-medium text-gray-700">{String(doc.file_name)}</span>
+                  <Badge variant="outline">{String(doc.doc_type)}</Badge>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader>
+            <CardTitle>Warnings & Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {details.actions.length === 0 ? (
+              <p className="text-sm text-gray-500">No actions recorded.</p>
+            ) : (
+              details.actions.map((act: Record<string, unknown>) => (
+                <div key={String(act.id)} className="flex justify-between items-center text-sm border-b pb-2 border-gray-100">
+                  <span className="font-medium text-gray-700">{String(act.reason)}</span>
+                  <Badge variant="outline" className={act.action_type === 'warning' ? 'text-red-600 bg-red-50' : 'text-blue-600 bg-blue-50'}>{String(act.action_type)}</Badge>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

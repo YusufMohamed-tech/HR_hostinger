@@ -14,7 +14,6 @@ import { getNotifications } from "@/lib/services/notifications";
 import { getOrganizations } from "@/lib/services/organizations";
 
 type Fetcher<T> = (orgId: string) => Promise<{ data: T | null; error: unknown }>;
-const emptyFetcher = async () => ({ data: [], error: null } as { data: Record<string, unknown>[]; error: null });
 
 function useOrgData<T>(fetcher: Fetcher<T>, initial: T) {
   const { currentUser } = useRoleContext();
@@ -203,39 +202,4 @@ export function useOrganizations() {
   return { data, loading, error, refetch };
 }
 
-// Legacy hooks (no Phase 1 usage)
-export function useEvents() {
-  return useOrgData<Record<string, unknown>[]>(emptyFetcher as Fetcher<Record<string, unknown>[]>, []);
-}
 
-export function useKpiTargets() {
-  return useOrgData<Record<string, unknown>[]>(emptyFetcher as Fetcher<Record<string, unknown>[]>, []);
-}
-
-export function usePayrollRuns() {
-  return useOrgData<Record<string, unknown>[]>(emptyFetcher as Fetcher<Record<string, unknown>[]>, []);
-}
-
-export function usePayrollPreview() {
-  return useOrgData<Record<string, unknown>[]>(emptyFetcher as Fetcher<Record<string, unknown>[]>, []);
-}
-
-export function useCourses() {
-  return useOrgData<Record<string, unknown>[]>(emptyFetcher as Fetcher<Record<string, unknown>[]>, []);
-}
-
-export function useAuditLogs() {
-  return useOrgData<Record<string, unknown>[]>(emptyFetcher as Fetcher<Record<string, unknown>[]>, []);
-}
-
-export function useAiInsights() {
-  return useOrgData<Record<string, unknown>[]>(emptyFetcher as Fetcher<Record<string, unknown>[]>, []);
-}
-
-export function useTrackingAlerts() {
-  return useOrgData<Record<string, unknown>[]>(emptyFetcher as Fetcher<Record<string, unknown>[]>, []);
-}
-
-export function useHierarchy() {
-  return useOrgData<Record<string, unknown>[]>(emptyFetcher as Fetcher<Record<string, unknown>[]>, []);
-}
