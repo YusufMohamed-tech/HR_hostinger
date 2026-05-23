@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "apply:schema": "node scripts/apply-schema.mjs"
+    "apply:schema": "node scripts/apply-schema.mjs",
+    "seed:admin": "node scripts/seed-initial-admin.mjs",
+    "seed:demo": "node scripts/seed-demo-users.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

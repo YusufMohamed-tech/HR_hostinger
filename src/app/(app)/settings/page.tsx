@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
+import { getOrganizations, updateOrganization } from "@/lib/services/organizations";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -181,19 +182,62 @@ export default function SettingsPage() {
 /* ─── Edit Company Profile Dialog ─── */
 
 function EditCompanyDialog() {
+  const { currentUser } = useRoleContext();
   const [open, setOpen] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   const [form, setForm] = useState({
-    companyName: "Tatwir Talent",
-    industry: "Workforce Management",
-    country: "Saudi Arabia",
-    timezone: "Asia/Riyadh",
+    companyName: "",
+    status: "active",
   });
 
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
-  const handleSave = () => {
+  useEffect(() => {
+    if (!open || !currentUser?.orgId) return;
+
+    const orgId = currentUser.orgId;
+
+    async function loadOrganization() {
+      const result = await getOrganizations();
+      const organization = result.data?.find((item) => item.id === orgId);
+      if (!organization) return;
+
+      setForm({
+        companyName: typeof organization.name === "string" ? organization.name : "",
+        status: typeof organization.status === "string" ? organization.status : "active",
+      });
+    }
+
+    loadOrganization();
+  }, [currentUser?.orgId, open]);
+
+  const handleSave = async () => {
+    if (!currentUser?.orgId) return;
+
+    const companyName = form.companyName.trim();
+    if (!companyName) {
+      setError("Company name is required.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError("");
+
+    const result = await updateOrganization(currentUser.orgId, {
+      name: companyName,
+      status: form.status.trim() || "active",
+    });
+
+    setSubmitting(false);
+
+    if (result.error) {
+      setError(result.error.message || "Failed to save company profile.");
+      return;
+    }
+
     setSaved(true);
     setTimeout(() => { setSaved(false); setOpen(false); }, 1200);
   };
@@ -218,25 +262,18 @@ function EditCompanyDialog() {
                 <Input value={form.companyName} onChange={(e) => set("companyName", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Industry</Label>
-                <Input value={form.industry} onChange={(e) => set("industry", e.target.value)} />
+                <Label>Status</Label>
+                <Input value={form.status} onChange={(e) => set("status", e.target.value)} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Country</Label>
-                  <Input value={form.country} onChange={(e) => set("country", e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Timezone</Label>
-                  <Input value={form.timezone} onChange={(e) => set("timezone", e.target.value)} />
-                </div>
-              </div>
+              {error && <p className="text-sm text-red-600">{error}</p>}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-              <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSave}>
+              <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>Cancel</Button>
+              <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSave} disabled={submitting}>
                 {saved ? (
                   <><CheckCircle className="w-4 h-4 mr-2" />Saved!</>
+                ) : submitting ? (
+                  "Saving..."
                 ) : (
                   <><Save className="w-4 h-4 mr-2" />Save Changes</>
                 )}
