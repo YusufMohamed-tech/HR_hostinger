@@ -19,12 +19,12 @@ if (!connectionString) {
   process.exit(1);
 }
 
-const schemaPath = path.resolve(process.cwd(), "db", "schema.sql");
+const schemaPath = path.resolve(process.cwd(), "db", "schema-production-clean.sql");
 const sql = fs.readFileSync(schemaPath, "utf8");
 
 const client = new pg.Client({
   connectionString,
-  ssl: { rejectUnauthorized: false },
+  ssl: connectionString.includes('supabase') ? { rejectUnauthorized: false } : false,
 });
 
 try {

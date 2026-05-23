@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRoleContext } from "@/providers/RoleProvider";
 
 import { getEmployees } from "@/lib/services/employees";
@@ -17,6 +17,7 @@ type Fetcher<T> = (orgId: string) => Promise<{ data: T | null; error: unknown }>
 
 function useOrgData<T>(fetcher: Fetcher<T>, initial: T) {
   const { currentUser } = useRoleContext();
+  const initialRef = useRef(initial);
   const [data, setData] = useState<T>(initial);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +26,7 @@ function useOrgData<T>(fetcher: Fetcher<T>, initial: T) {
 
   const refetch = useCallback(async () => {
     if (!orgId) {
-      setData(initial);
+      setData(initialRef.current);
       setLoading(false);
       return;
     }
@@ -39,16 +40,16 @@ function useOrgData<T>(fetcher: Fetcher<T>, initial: T) {
           ? (result.error as { message: string }).message
           : "Failed to load data"
       );
-      setData(initial);
+      setData(initialRef.current);
     } else if (result.data) {
       setData(result.data);
       setError(null);
     } else {
-      setData(initial);
+      setData(initialRef.current);
     }
 
     setLoading(false);
-  }, [orgId, fetcher, initial]);
+  }, [orgId, fetcher]);
 
   useEffect(() => {
     refetch();
@@ -201,5 +202,6 @@ export function useOrganizations() {
 
   return { data, loading, error, refetch };
 }
+
 
 

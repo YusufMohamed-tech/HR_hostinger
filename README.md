@@ -31,11 +31,23 @@ npm run dev
 Add your database connection string to `.env.local`:
 ```
 SUPABASE_DB_URL=postgresql://...
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
 Then run:
 ```bash
 npm run apply:schema
+```
+
+For production, create the first admin through the Supabase Admin API:
+```bash
+npm run seed:admin
+```
+
+Demo users are optional for local/staging only:
+```bash
+npm run seed:demo
 ```
 
 ## Deployment (Vercel)

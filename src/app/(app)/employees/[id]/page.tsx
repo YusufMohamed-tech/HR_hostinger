@@ -37,7 +37,7 @@ export default function EmployeeDetailPage() {
   });
 
   useEffect(() => {
-    if (!currentUser?.orgId || !employeeId || employeeId === id) return;
+    if (!currentUser?.orgId || !employeeId) return;
     async function fetchDetails() {
       const [docs, salary, kpis, reviews, actions] = await Promise.all([
         getEmployeeDocuments(currentUser?.orgId as string, employeeId),
@@ -256,3 +256,4 @@ export default function EmployeeDetailPage() {
     </div>
   );
 }
+

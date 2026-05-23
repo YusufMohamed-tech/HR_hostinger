@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
+  const showDemoLogins = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_SHOW_DEMO_LOGINS === "true";
   const router = useRouter();
   const { currentUser, login } = useRoleContext();
   const [email, setEmail] = useState("");
@@ -142,31 +143,32 @@ export default function LoginPage() {
                   {message}
                 </p>
               )}
-
-              <div className="pt-4 grid grid-cols-2 gap-3 border-t">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="text-xs"
-                  onClick={() => {
-                    setEmail("hr@tatwir.sa");
-                    setPassword("12345678");
-                  }}
-                >
-                  Fill HR Login
-                </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="text-xs"
-                  onClick={() => {
-                    setEmail("employee@tatwir.sa");
-                    setPassword("123456789");
-                  }}
-                >
-                  Fill Employee Login
-                </Button>
-              </div>
+              {showDemoLogins && (
+                <div className="pt-4 grid grid-cols-2 gap-3 border-t">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="text-xs"
+                    onClick={() => {
+                      setEmail(process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL ?? "");
+                      setPassword(process.env.NEXT_PUBLIC_DEMO_ADMIN_PASSWORD ?? "");
+                    }}
+                  >
+                    Fill HR Login
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="text-xs"
+                    onClick={() => {
+                      setEmail(process.env.NEXT_PUBLIC_DEMO_EMPLOYEE_EMAIL ?? "");
+                      setPassword(process.env.NEXT_PUBLIC_DEMO_EMPLOYEE_PASSWORD ?? "");
+                    }}
+                  >
+                    Fill Employee Login
+                  </Button>
+                </div>
+              )}
             </form>
 
             <div className="mt-6 border-t pt-4">
@@ -178,3 +180,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
