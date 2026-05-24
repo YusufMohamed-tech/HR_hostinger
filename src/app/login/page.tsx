@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 export default function LoginPage() {
-  const showDemoLogins = process.env.NODE_ENV !== "production" && process.env.NEXT_PUBLIC_SHOW_DEMO_LOGINS === "true";
   const router = useRouter();
   const { currentUser, login } = useRoleContext();
   const [email, setEmail] = useState("");
@@ -142,32 +141,6 @@ export default function LoginPage() {
                 <p className={`text-sm text-center ${message.includes("successful") ? "text-brand-dark" : "text-red-600"}`}>
                   {message}
                 </p>
-              )}
-              {showDemoLogins && (
-                <div className="pt-4 grid grid-cols-2 gap-3 border-t">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="text-xs"
-                    onClick={() => {
-                      setEmail(process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL ?? "");
-                      setPassword(process.env.NEXT_PUBLIC_DEMO_ADMIN_PASSWORD ?? "");
-                    }}
-                  >
-                    Fill HR Login
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="text-xs"
-                    onClick={() => {
-                      setEmail(process.env.NEXT_PUBLIC_DEMO_EMPLOYEE_EMAIL ?? "");
-                      setPassword(process.env.NEXT_PUBLIC_DEMO_EMPLOYEE_PASSWORD ?? "");
-                    }}
-                  >
-                    Fill Employee Login
-                  </Button>
-                </div>
               )}
             </form>
 

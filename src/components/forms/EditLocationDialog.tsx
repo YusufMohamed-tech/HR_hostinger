@@ -11,6 +11,7 @@ import {
 import { Pencil } from "lucide-react";
 import { useEmployees } from "@/hooks/use-data";
 import { updateLocation } from "@/lib/services/locations";
+import { locationFormSchema, getValidationMessage } from "@/lib/validation";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,17 +50,23 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
   const handleSubmit = async () => {
-    if (!form.name) return;
     setSubmitting(true);
     setError("");
 
+    const parsed = locationFormSchema.safeParse(form);
+    if (!parsed.success) {
+      setError(getValidationMessage(parsed.error));
+      setSubmitting(false);
+      return;
+    }
+
     const { error: err } = await updateLocation(location.id, {
-      name: form.name,
-      type: form.type,
-      latitude: form.latitude ? parseFloat(form.latitude) : undefined,
-      longitude: form.longitude ? parseFloat(form.longitude) : undefined,
-      radius_meters: form.radius_meters ? parseInt(form.radius_meters, 10) : undefined,
-      manager_employee_id: form.manager_employee_id || undefined,
+      name: parsed.data.name,
+      type: parsed.data.type,
+      latitude: parsed.data.latitude,
+      longitude: parsed.data.longitude,
+      radius_meters: parsed.data.radius_meters,
+      manager_employee_id: parsed.data.manager_employee_id,
     });
 
     if (err) {

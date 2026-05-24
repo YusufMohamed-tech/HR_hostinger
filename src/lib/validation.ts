@@ -64,6 +64,20 @@ export const taskFormSchema = z.object({
   employee_id: optionalUuid,
 });
 
+export const departmentFormSchema = z.object({
+  name: z.string().trim().min(2, "Department name is required.").max(160),
+  manager_employee_id: optionalUuid,
+});
+
+export const locationFormSchema = z.object({
+  name: z.string().trim().min(2, "Location name is required.").max(160),
+  type: z.enum(["branch", "booth", "office", "area"]),
+  latitude: z.preprocess(emptyToUndefined, z.coerce.number().min(-90).max(90).optional()),
+  longitude: z.preprocess(emptyToUndefined, z.coerce.number().min(-180).max(180).optional()),
+  radius_meters: z.preprocess(emptyToUndefined, z.coerce.number().min(10).max(10000).optional()),
+  manager_employee_id: optionalUuid,
+});
+
 export function getValidationMessage(error: z.ZodError) {
   return error.issues[0]?.message ?? "Please check the form and try again.";
 }

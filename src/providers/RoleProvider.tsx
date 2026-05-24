@@ -48,7 +48,13 @@ export function RoleProvider({ children }: { children: ReactNode }) {
         .maybeSingle(),
     ]);
 
-    const role: Role = (membership as unknown as Record<string, unknown>)?.role === "admin" ? "Admin" : "Employee";
+    const rawRole = (membership as unknown as Record<string, unknown>)?.role;
+    let role: Role = "Employee";
+    if (rawRole === "admin") role = "Admin";
+    else if (rawRole === "hr_admin") role = "HR_Admin";
+    else if (rawRole === "hr_recruitment") role = "HR_Recruitment";
+    else if (rawRole === "training_manager") role = "Training_Manager";
+
     const name = String((profile as unknown as Record<string, unknown>)?.full_name || user.user_metadata?.full_name || user.email || "User");
     const email = String((profile as unknown as Record<string, unknown>)?.email || user.email || "");
 
