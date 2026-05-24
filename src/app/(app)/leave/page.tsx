@@ -51,8 +51,8 @@ export default function LeavePage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Leave Requests</h1>
-          <p className="text-gray-500 text-sm mt-1">Submit, approve, and track time-off requests.</p>
+          <h1 className="text-2xl font-bold tracking-tight">طلبات الإجازات</h1>
+          <p className="text-gray-500 text-sm mt-1">تقديم طلبات الإجازة واعتمادها ومتابعتها.</p>
         </div>
         {!isAdmin && <CreateLeaveDialog onSuccess={refetch} />}
       </div>
@@ -61,15 +61,15 @@ export default function LeavePage() {
         <Card className="border-none shadow-sm">
           <CardContent className="py-4 grid grid-cols-3 gap-4 text-sm">
             <div>
-              <p className="text-xs text-gray-500">Sick</p>
+              <p className="text-xs text-gray-500">مرضية</p>
               <p className="font-semibold text-gray-900">{sickRemaining}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Vacation</p>
+              <p className="text-xs text-gray-500">سنوية</p>
               <p className="font-semibold text-gray-900">{vacationRemaining}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">Emergency</p>
+              <p className="text-xs text-gray-500">طارئة</p>
               <p className="font-semibold text-gray-900">{emergencyRemaining}</p>
             </div>
           </CardContent>
@@ -81,13 +81,13 @@ export default function LeavePage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                <TableHead className="font-semibold text-gray-600">Employee</TableHead>
-                <TableHead className="font-semibold text-gray-600">Type</TableHead>
-                <TableHead className="font-semibold text-gray-600">Dates</TableHead>
-                <TableHead className="font-semibold text-gray-600">Days</TableHead>
-                <TableHead className="font-semibold text-gray-600">Status</TableHead>
-                <TableHead className="font-semibold text-gray-600">Reason</TableHead>
-                {isAdmin && <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>}
+                <TableHead className="font-semibold text-gray-600">الموظف</TableHead>
+                <TableHead className="font-semibold text-gray-600">النوع</TableHead>
+                <TableHead className="font-semibold text-gray-600">التواريخ</TableHead>
+                <TableHead className="font-semibold text-gray-600">الأيام</TableHead>
+                <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
+                <TableHead className="font-semibold text-gray-600">السبب</TableHead>
+                {isAdmin && <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -171,8 +171,8 @@ export default function LeavePage() {
           {visibleRequests.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <CalendarDays className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">No leave requests yet</p>
-              <p className="text-xs text-gray-500 mt-1">Submit a request to get started.</p>
+              <p className="text-sm font-medium text-gray-900">لا توجد طلبات إجازة بعد</p>
+              <p className="text-xs text-gray-500 mt-1">أرسل طلبًا للبدء.</p>
             </div>
           )}
         </CardContent>
@@ -223,38 +223,38 @@ function CreateLeaveDialog({ onSuccess }: { onSuccess: () => void }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
-        Request Leave
+        طلب إجازة
       </DialogTrigger>
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
-          <DialogTitle>Request Leave</DialogTitle>
-          <DialogDescription>Submit time off for approval.</DialogDescription>
+          <DialogTitle>طلب إجازة</DialogTitle>
+          <DialogDescription>إرسال طلب إجازة للاعتماد.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
-            <Label>Leave Type</Label>
+            <Label>نوع الإجازة</Label>
             <Select value={form.leave_type} onValueChange={(v) => set("leave_type", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="sick">Sick</SelectItem>
-                <SelectItem value="vacation">Vacation</SelectItem>
-                <SelectItem value="emergency">Emergency</SelectItem>
+                <SelectItem value="sick">مرضية</SelectItem>
+                <SelectItem value="vacation">سنوية</SelectItem>
+                <SelectItem value="emergency">طارئة</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Start Date</Label>
+              <Label>تاريخ البداية</Label>
               <Input type="date" value={form.start_date} onChange={(e) => set("start_date", e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>End Date</Label>
+              <Label>تاريخ النهاية</Label>
               <Input type="date" value={form.end_date} onChange={(e) => set("end_date", e.target.value)} />
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Reason</Label>
+            <Label>السبب</Label>
             <Input value={form.reason} onChange={(e) => set("reason", e.target.value)} placeholder="Optional" />
           </div>
         </div>
@@ -262,9 +262,9 @@ function CreateLeaveDialog({ onSuccess }: { onSuccess: () => void }) {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.start_date || !form.end_date}>
-            {submitting ? "Submitting..." : "Submit Request"}
+            {submitting ? "جار الإرسال..." : "إرسال الطلب"}
           </Button>
         </DialogFooter>
       </DialogContent>

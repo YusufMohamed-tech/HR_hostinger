@@ -21,8 +21,8 @@ export default function NotificationsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Notifications</h1>
-          <p className="text-gray-500 text-sm mt-1">In-app alerts for attendance, tasks, and approvals.</p>
+          <h1 className="text-2xl font-bold tracking-tight">الإشعارات</h1>
+          <p className="text-gray-500 text-sm mt-1">تنبيهات داخل النظام للحضور والمهام والاعتمادات.</p>
         </div>
         <Button
           variant="outline"
@@ -77,8 +77,8 @@ export default function NotificationsPage() {
           {notifications.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Bell className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">No notifications yet</p>
-              <p className="text-xs text-gray-500 mt-1">Alerts will appear here as they are generated.</p>
+              <p className="text-sm font-medium text-gray-900">لا توجد إشعارات بعد</p>
+              <p className="text-xs text-gray-500 mt-1">ستظهر التنبيهات هنا عند إنشائها.</p>
             </div>
           )}
         </CardContent>

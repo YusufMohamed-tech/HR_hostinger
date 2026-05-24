@@ -33,33 +33,33 @@ export function SidebarContent() {
     const isAdmin = role === "Admin";
 
     const core = [
-      { name: "Dashboard", href: "/", icon: LayoutDashboard },
-      { name: "Attendance", href: "/attendance", icon: Clock },
-      { name: "Tasks", href: "/tasks", icon: CheckSquare },
-      { name: "Leave", href: "/leave", icon: ClipboardList },
-      { name: "Schedule", href: "/schedule", icon: CalendarDays },
-      { name: "Locations", href: "/locations", icon: MapPin },
-      { name: "Notifications", href: "/notifications", icon: Bell },
+      { name: "لوحة التحكم", href: "/", icon: LayoutDashboard },
+      { name: "الحضور", href: "/attendance", icon: Clock },
+      { name: "المهام", href: "/tasks", icon: CheckSquare },
+      { name: "الإجازات", href: "/leave", icon: ClipboardList },
+      { name: "الجداول", href: "/schedule", icon: CalendarDays },
+      { name: "المواقع", href: "/locations", icon: MapPin },
+      { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 
     const adminOps = isAdmin || role === "HR_Admin" || role === "HR_Recruitment" || role === "Training_Manager"
       ? [
-          { name: "Employees", href: "/employees", icon: Users },
-          { name: "Departments", href: "/departments", icon: Layers },
-          { name: "Personnel", href: "/personnel", icon: FileText },
-          { name: "Payroll", href: "/payroll", icon: Calculator },
-          { name: "Recruitment", href: "/recruitment", icon: Briefcase },
-          { name: "Balances", href: "/balances", icon: WalletCards },
-          { name: "Assets", href: "/assets", icon: Package },
+          { name: "الموظفون", href: "/employees", icon: Users },
+          { name: "الأقسام", href: "/departments", icon: Layers },
+          { name: "ملفات الموظفين", href: "/personnel", icon: FileText },
+          { name: "الرواتب", href: "/payroll", icon: Calculator },
+          { name: "التوظيف", href: "/recruitment", icon: Briefcase },
+          { name: "الأرصدة والعهد", href: "/balances", icon: WalletCards },
+          { name: "الأصول", href: "/assets", icon: Package },
         ]
       : [];
 
-    const system = [{ name: "Settings", href: "/settings", icon: Settings }];
+    const system = [{ name: "الإعدادات", href: "/settings", icon: Settings }];
 
     return [
-      { title: "Core", links: core },
-      { title: "Admin", links: adminOps },
-      { title: "System", links: system },
+      { title: "الأساسي", links: core },
+      { title: "الإدارة", links: adminOps },
+      { title: "النظام", links: system },
     ];
   };
 
@@ -71,7 +71,7 @@ export function SidebarContent() {
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white shadow-sm">
           <Network className="h-5 w-5" />
         </div>
-        <span className="font-bold text-xl tracking-tight text-white">Tatwir Talent</span>
+        <span className="font-bold text-xl tracking-tight text-white">تطوير تالنت</span>
       </div>
       <div className="flex-1 py-6">
         <nav className="grid items-start px-4 text-sm font-medium gap-4">

@@ -64,33 +64,33 @@ export function AddShiftDialog({ onSuccess }: Props) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
         <Plus className="w-4 h-4 mr-2" />
-        Create Shift
+        إنشاء وردية
       </DialogTrigger>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle>Create Shift Template</DialogTitle>
-          <DialogDescription>Define shift type, timing, and location.</DialogDescription>
+          <DialogTitle>إنشاء قالب وردية</DialogTitle>
+          <DialogDescription>تحديد نوع الوردية ووقتها وموقعها.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
-            <Label>Name *</Label>
+            <Label>الاسم *</Label>
             <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Morning Shift" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Shift Type</Label>
+              <Label>نوع الوردية</Label>
               <Select value={form.shift_type} onValueChange={(v) => set("shift_type", v || "")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="morning">Morning</SelectItem>
-                  <SelectItem value="night">Night</SelectItem>
-                  <SelectItem value="flexible">Flexible</SelectItem>
+                  <SelectItem value="morning">صباحية</SelectItem>
+                  <SelectItem value="night">ليلية</SelectItem>
+                  <SelectItem value="flexible">مرنة</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Location</Label>
+              <Label>الموقع</Label>
               <Select value={form.location_id} onValueChange={(v) => set("location_id", v || "")}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
@@ -104,11 +104,11 @@ export function AddShiftDialog({ onSuccess }: Props) {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Start Time</Label>
+              <Label>وقت البداية</Label>
               <Input type="time" value={form.start_time} onChange={(e) => set("start_time", e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>End Time</Label>
+              <Label>وقت النهاية</Label>
               <Input type="time" value={form.end_time} onChange={(e) => set("end_time", e.target.value)} />
             </div>
           </div>
@@ -117,9 +117,9 @@ export function AddShiftDialog({ onSuccess }: Props) {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.name}>
-            {submitting ? "Creating..." : "Create Shift"}
+            {submitting ? "جار الإنشاء..." : "إنشاء وردية"}
           </Button>
         </DialogFooter>
       </DialogContent>

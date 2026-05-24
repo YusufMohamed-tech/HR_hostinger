@@ -33,7 +33,7 @@ export default function PublicApplicationPage() {
 
   const handleSubmit = async () => {
     if (!posting?.org_id || !form.candidate_name.trim() || !form.email.trim()) {
-      setError("Name and email are required.");
+      setError("الاسم والبريد الإلكتروني مطلوبان.");
       return;
     }
     setSubmitting(true);
@@ -81,8 +81,8 @@ export default function PublicApplicationPage() {
             <Network className="h-5 w-5" />
           </div>
           <div>
-            <p className="font-semibold text-slate-900">Tatwir Talent</p>
-            <p className="text-xs text-slate-500">Career Application</p>
+            <p className="font-semibold text-slate-900">تطوير تالنت</p>
+            <p className="text-xs text-slate-500">طلب توظيف</p>
           </div>
         </div>
 
@@ -90,7 +90,7 @@ export default function PublicApplicationPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Briefcase className="h-5 w-5 text-brand" />
-              {loading ? "Loading position..." : String(posting?.title || "Position unavailable")}
+              {loading ? "جار تحميل الوظيفة..." : String(posting?.title || "الوظيفة غير متاحة")}
             </CardTitle>
             {posting && (
               <p className="text-sm text-gray-500">
@@ -99,13 +99,13 @@ export default function PublicApplicationPage() {
             )}
           </CardHeader>
           <CardContent className="space-y-5">
-            {!loading && !posting && <p className="text-sm text-red-600">This job posting is not available.</p>}
-            {isClosed && <p className="text-sm text-red-600">This position is no longer accepting applications.</p>}
+            {!loading && !posting && <p className="text-sm text-red-600">إعلان الوظيفة غير متاح.</p>}
+            {isClosed && <p className="text-sm text-red-600">هذه الوظيفة لم تعد تستقبل طلبات تقديم.</p>}
             {submitted && (
               <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-green-700">
                 <CheckCircle className="mb-2 h-5 w-5" />
-                <p className="font-medium">Application received.</p>
-                <p className="text-sm">Our recruitment team will review your application.</p>
+                <p className="font-medium">تم استلام طلبك.</p>
+                <p className="text-sm">سيراجع فريق التوظيف طلبك.</p>
               </div>
             )}
             {posting && !submitted && !isClosed && (
@@ -116,21 +116,21 @@ export default function PublicApplicationPage() {
                 </div>
                 <div className="grid gap-4">
                   <div className="space-y-2">
-                    <Label>Full Name</Label>
+                    <Label>الاسم الكامل</Label>
                     <Input value={form.candidate_name} onChange={(event) => set("candidate_name", event.target.value)} />
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label>Email</Label>
+                      <Label>البريد الإلكتروني</Label>
                       <Input type="email" value={form.email} onChange={(event) => set("email", event.target.value)} />
                     </div>
                     <div className="space-y-2">
-                      <Label>Phone</Label>
+                      <Label>الجوال</Label>
                       <Input value={form.phone} onChange={(event) => set("phone", event.target.value)} />
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Resume</Label>
+                    <Label>السيرة الذاتية</Label>
                     <Input
                       type="file"
                       accept=".pdf,.doc,.docx,image/*"
@@ -138,12 +138,12 @@ export default function PublicApplicationPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Cover Letter</Label>
+                    <Label>خطاب التقديم</Label>
                     <Input value={form.cover_letter} onChange={(event) => set("cover_letter", event.target.value)} />
                   </div>
                   {error && <p className="text-sm text-red-600">{error}</p>}
                   <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting}>
-                    {submitting ? "Submitting..." : "Submit Application"}
+                    {submitting ? "جار الإرسال..." : "إرسال طلب التقديم"}
                   </Button>
                 </div>
               </>

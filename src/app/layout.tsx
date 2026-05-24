@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Noto_Sans_Arabic } from "next/font/google";
 import "./globals.css";
 import { RoleProvider } from "@/providers/RoleProvider";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const arabic = Noto_Sans_Arabic({ subsets: ["arabic"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Tatwir Talent - HRMS",
-  description: "Advanced SaaS HRMS for Deskless Workers",
+  title: "تطوير تالنت - نظام الموارد البشرية",
+  description: "نظام موارد بشرية متقدم للفرق الميدانية",
 };
 
 export default function RootLayout({
@@ -16,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="ar" dir="rtl" className={arabic.variable}>
       <body className="font-sans antialiased">
         <RoleProvider>
           {children}

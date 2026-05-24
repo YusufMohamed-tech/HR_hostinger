@@ -31,7 +31,7 @@ export default function LocationsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Locations</h1>
+          <h1 className="text-2xl font-bold tracking-tight">المواقع</h1>
           <p className="text-gray-500 text-sm mt-1">
             Manage sites, geofences, and location readiness.
           </p>
@@ -47,12 +47,12 @@ export default function LocationsPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                <TableHead className="font-semibold text-gray-600">Location</TableHead>
-                <TableHead className="font-semibold text-gray-600">Type</TableHead>
-                <TableHead className="font-semibold text-gray-600">Manager</TableHead>
-                <TableHead className="font-semibold text-gray-600">Radius</TableHead>
-                <TableHead className="font-semibold text-gray-600">Coordinates</TableHead>
-                <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>
+                <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
+                <TableHead className="font-semibold text-gray-600">النوع</TableHead>
+                <TableHead className="font-semibold text-gray-600">المدير</TableHead>
+                <TableHead className="font-semibold text-gray-600">النطاق</TableHead>
+                <TableHead className="font-semibold text-gray-600">الإحداثيات</TableHead>
+                <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -114,8 +114,8 @@ export default function LocationsPage() {
           {locations.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <MapPin className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">No locations yet</p>
-              <p className="text-xs text-gray-500 mt-1">Add a location to manage your sites.</p>
+              <p className="text-sm font-medium text-gray-900">لا توجد مواقع بعد</p>
+              <p className="text-xs text-gray-500 mt-1">أضف موقعًا لإدارة مواقع العمل.</p>
             </div>
           )}
         </CardContent>

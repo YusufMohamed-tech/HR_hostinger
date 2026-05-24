@@ -86,11 +86,11 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     });
 
     if (error) {
-      return { success: false, message: error.message };
+      return { success: false, message: "البريد الإلكتروني أو كلمة المرور غير صحيحة." };
     }
 
     await refresh();
-    return { success: true, message: "Login successful." };
+    return { success: true, message: "تم تسجيل الدخول بنجاح." };
   };
 
   const logout = async () => {

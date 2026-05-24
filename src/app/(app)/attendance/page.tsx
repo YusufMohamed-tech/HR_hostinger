@@ -210,24 +210,24 @@ export default function AttendancePage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Attendance</h1>
-        <p className="text-gray-500 text-sm mt-1">Verify presence, track late arrivals, and record work hours.</p>
+        <h1 className="text-2xl font-bold tracking-tight">الحضور</h1>
+        <p className="text-gray-500 text-sm mt-1">التحقق من التواجد، متابعة التأخير، وتسجيل ساعات العمل.</p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-1 border-none shadow-sm">
           <CardHeader>
-            <CardTitle>My Check-in</CardTitle>
+            <CardTitle>تسجيل حضوري</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <p className="text-xs text-gray-500">Status</p>
+              <p className="text-xs text-gray-500">الحالة</p>
               <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">
                 {myAttendance?.status ? String(myAttendance.status) : "Not checked"}
               </Badge>
             </div>
             <div className="space-y-2">
-              <Label>Selfie (check-in only)</Label>
+              <Label>صورة شخصية (عند تسجيل الحضور فقط)</Label>
               <Input
                 type="file"
                 accept="image/*"
@@ -267,17 +267,17 @@ export default function AttendancePage() {
 
         <Card className="lg:col-span-2 border-none shadow-sm">
           <CardHeader>
-            <CardTitle>Today&apos;s Records</CardTitle>
+            <CardTitle>سجلات اليوم</CardTitle>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                  <TableHead className="font-semibold text-gray-600">Employee</TableHead>
-                  <TableHead className="font-semibold text-gray-600">Status</TableHead>
-                  <TableHead className="font-semibold text-gray-600">Check-in</TableHead>
-                  <TableHead className="font-semibold text-gray-600">Check-out</TableHead>
-                  <TableHead className="font-semibold text-gray-600">Late (min)</TableHead>
+                  <TableHead className="font-semibold text-gray-600">الموظف</TableHead>
+                  <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
+                  <TableHead className="font-semibold text-gray-600">تسجيل الحضور</TableHead>
+                  <TableHead className="font-semibold text-gray-600">تسجيل الانصراف</TableHead>
+                  <TableHead className="font-semibold text-gray-600">التأخير (دقيقة)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

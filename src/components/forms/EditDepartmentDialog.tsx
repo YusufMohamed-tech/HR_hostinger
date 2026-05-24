@@ -65,21 +65,21 @@ export function EditDepartmentDialog({ department, onSuccess }: Props) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark" />}>
         <Pencil className="w-3.5 h-3.5 mr-1" />
-        Edit
+        تعديل
       </DialogTrigger>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Edit Department</DialogTitle>
-          <DialogDescription>Update department name.</DialogDescription>
+          <DialogTitle>تعديل قسم</DialogTitle>
+          <DialogDescription>تحديث اسم القسم.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label>Department Name *</Label>
+            <Label>اسم القسم *</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Department Manager</Label>
+            <Label>مدير القسم</Label>
             <Select value={managerId} onValueChange={(v) => setManagerId(v || "")}>
               <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>
@@ -94,9 +94,9 @@ export function EditDepartmentDialog({ department, onSuccess }: Props) {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !name}>
-            {submitting ? "Saving..." : "Save Changes"}
+            {submitting ? "جار الحفظ..." : "حفظ التغييرات"}
           </Button>
         </DialogFooter>
       </DialogContent>
