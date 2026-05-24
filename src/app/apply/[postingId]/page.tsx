@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { getJobPostingById, createJobApplication } from "@/lib/services/recruitment";
+import { getJobPostingById, createJobApplication, uploadRecruitmentResume } from "@/lib/services/recruitment";
 
 export default function PublicApplicationPage() {
   const params = useParams();
@@ -17,7 +17,8 @@ export default function PublicApplicationPage() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ candidate_name: "", email: "", phone: "", resume_url: "", cover_letter: "" });
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [form, setForm] = useState({ candidate_name: "", email: "", phone: "", cover_letter: "" });
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
   useEffect(() => {
@@ -37,13 +38,23 @@ export default function PublicApplicationPage() {
     }
     setSubmitting(true);
     setError("");
+    let resumePath: string | undefined;
+    if (resumeFile) {
+      const { data: uploadData, error: uploadError } = await uploadRecruitmentResume(postingId, resumeFile);
+      if (uploadError) {
+        setError(uploadError.message);
+        setSubmitting(false);
+        return;
+      }
+      resumePath = uploadData?.path;
+    }
     const { error: err } = await createJobApplication({
       org_id: posting.org_id,
       job_posting_id: postingId,
       candidate_name: form.candidate_name.trim(),
       email: form.email.trim(),
       phone: form.phone.trim() || undefined,
-      resume_url: form.resume_url.trim() || undefined,
+      resume_url: resumePath,
       cover_letter: form.cover_letter.trim() || undefined,
       status: "new",
     });
@@ -119,8 +130,12 @@ export default function PublicApplicationPage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label>Resume Link</Label>
-                    <Input value={form.resume_url} onChange={(event) => set("resume_url", event.target.value)} placeholder="Drive, LinkedIn, or portfolio URL" />
+                    <Label>Resume</Label>
+                    <Input
+                      type="file"
+                      accept=".pdf,.doc,.docx,image/*"
+                      onChange={(event) => setResumeFile(event.target.files?.[0] ?? null)}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Cover Letter</Label>

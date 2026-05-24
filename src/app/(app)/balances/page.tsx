@@ -14,7 +14,14 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEmployees } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { acknowledgeFinancialBalance, createFinancialBalance, getFinancialBalances } from "@/lib/services/financial";
+import {
+  acknowledgeFinancialBalance,
+  createFinancialBalance,
+  getFinancialBalances,
+  updateFinancialBalance,
+  uploadBalanceAttachment,
+  uploadBalanceSignature,
+} from "@/lib/services/financial";
 
 export default function BalancesPage() {
   const { currentUser } = useRoleContext();
@@ -121,6 +128,7 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [attachment, setAttachment] = useState<File | null>(null);
   const [form, setForm] = useState({ employee_id: "", balance_type: "deficit", amount: "", description: "" });
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
@@ -131,7 +139,7 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
     }
     setSubmitting(true);
     setError("");
-    const { error: err } = await createFinancialBalance({
+    const { data, error: err } = await createFinancialBalance({
       org_id: currentUser.orgId,
       employee_id: form.employee_id,
       balance_type: form.balance_type,
@@ -139,12 +147,25 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
       description: form.description.trim() || undefined,
       status: "unpaid",
     });
-    setSubmitting(false);
     if (err) {
+      setSubmitting(false);
       setError(err.message);
       return;
     }
+    if (attachment && data?.id) {
+      const { data: uploadData, error: uploadError } = await uploadBalanceAttachment(currentUser.orgId, String(data.id), attachment);
+      if (uploadError) {
+        setSubmitting(false);
+        setError(uploadError.message);
+        return;
+      }
+      if (uploadData?.path) {
+        await updateFinancialBalance(String(data.id), { attachment_url: uploadData.path });
+      }
+    }
+    setSubmitting(false);
     setOpen(false);
+    setAttachment(null);
     setForm({ employee_id: "", balance_type: "deficit", amount: "", description: "" });
     onSuccess();
   };
@@ -195,6 +216,10 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
             <Label>Description</Label>
             <Input value={form.description} onChange={(event) => set("description", event.target.value)} />
           </div>
+          <div className="space-y-2">
+            <Label>Attachment</Label>
+            <Input type="file" onChange={(event) => setAttachment(event.target.files?.[0] ?? null)} />
+          </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
@@ -232,7 +257,9 @@ function AcknowledgeDialog({ balanceId, onSuccess }: { balanceId: string; onSucc
             className="bg-brand hover:bg-brand-dark text-white"
             disabled={!signature.trim()}
             onClick={async () => {
-              await acknowledgeFinancialBalance(balanceId, signature.trim());
+              const { data: uploadData, error: uploadError } = await uploadBalanceSignature(balanceId, signature.trim());
+              if (uploadError || !uploadData?.path) return;
+              await acknowledgeFinancialBalance(balanceId, uploadData.path);
               setOpen(false);
               setSignature("");
               onSuccess();

@@ -60,6 +60,19 @@ export async function createJobApplication(values: Record<string, unknown>) {
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
+export async function uploadRecruitmentResume(postingId: string, file: File) {
+  const supabase = createClient();
+  const extension = file.name.split(".").pop() || "bin";
+  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+  const filePath = `${postingId}/${fileName}`;
+
+  const result = await supabase.storage
+    .from("recruitment-resumes")
+    .upload(filePath, file, { upsert: false });
+
+  return result as unknown as { data: { path: string } | null; error: { message: string } | null };
+}
+
 export async function updateJobApplication(id: string, values: Record<string, unknown>) {
   const supabase = createClient();
   const result = await supabase
