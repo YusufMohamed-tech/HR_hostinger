@@ -34,13 +34,13 @@ export default function RecruitmentPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Recruitment Module</h1>
-          <p className="text-sm text-gray-500">Manage job postings, applications, and interview pipelines.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">وحدة التوظيف</h1>
+          <p className="text-sm text-gray-500">إدارة إعلانات الوظائف والطلبات ومسارات المقابلات.</p>
         </div>
         <div className="flex gap-2">
           {['Admin', 'HR_Admin', 'HR_Recruitment'].includes(currentUser?.role || '') && (
             <Button className="bg-brand hover:bg-brand-dark">
-              <Briefcase className="w-4 h-4 mr-2" /> Post New Job
+              <Briefcase className="w-4 h-4 ml-2" /> نشر وظيفة جديدة
             </Button>
           )}
         </div>
@@ -51,22 +51,22 @@ export default function RecruitmentPage() {
           <CardHeader>
             <div className="flex items-center gap-2">
               <Briefcase className="w-5 h-5 text-gray-500" />
-              <CardTitle>Active Job Postings</CardTitle>
+              <CardTitle>الوظائف النشطة</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="py-8 text-center text-sm text-gray-500">Loading jobs...</div>
+              <div className="py-8 text-center text-sm text-gray-500">جار تحميل الوظائف...</div>
             ) : jobs.length === 0 ? (
-              <div className="py-8 text-center text-sm text-gray-500">No active job postings.</div>
+              <div className="py-8 text-center text-sm text-gray-500">لا توجد وظائف نشطة.</div>
             ) : (
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Title</TableHead>
-                      <TableHead>Department</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>العنوان</TableHead>
+                      <TableHead>القسم</TableHead>
+                      <TableHead>الحالة</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -75,8 +75,8 @@ export default function RecruitmentPage() {
                       const status = typeof job.status === "string" ? job.status : "open";
                       return (
                       <TableRow key={String(job.id)}>
-                        <TableCell className="font-medium">{String(job.title || "Untitled")}</TableCell>
-                        <TableCell>{String(department?.name || "All")}</TableCell>
+                        <TableCell className="font-medium">{String(job.title || "بدون عنوان")}</TableCell>
+                        <TableCell>{String(department?.name || "الكل")}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={status === 'open' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-700'}>
                             {status}
@@ -96,22 +96,22 @@ export default function RecruitmentPage() {
           <CardHeader>
             <div className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-gray-500" />
-              <CardTitle>Recent Applications</CardTitle>
+              <CardTitle>آخر طلبات التقديم</CardTitle>
             </div>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="py-8 text-center text-sm text-gray-500">Loading applications...</div>
+              <div className="py-8 text-center text-sm text-gray-500">جار تحميل طلبات التقديم...</div>
             ) : applications.length === 0 ? (
-              <div className="py-8 text-center text-sm text-gray-500">No recent applications.</div>
+              <div className="py-8 text-center text-sm text-gray-500">لا توجد طلبات تقديم حديثة.</div>
             ) : (
               <div className="rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Candidate</TableHead>
-                      <TableHead>Job</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>المرشح</TableHead>
+                      <TableHead>الوظيفة</TableHead>
+                      <TableHead>الحالة</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -121,10 +121,10 @@ export default function RecruitmentPage() {
                       return (
                       <TableRow key={String(app.id)}>
                         <TableCell className="font-medium">
-                          {String(app.candidate_name || "Candidate")}
+                          {String(app.candidate_name || "المرشح")}
                           <div className="text-xs text-gray-500">{String(app.email || "")}</div>
                         </TableCell>
-                        <TableCell>{String(job?.title || "Unknown")}</TableCell>
+                        <TableCell>{String(job?.title || "غير معروف")}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={status === 'new' ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-700'}>
                             {status}

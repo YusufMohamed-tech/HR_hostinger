@@ -22,7 +22,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-white animate-pulse">
             <Network className="h-5 w-5" />
           </div>
-          <p className="text-sm text-gray-400 animate-pulse">Loading session...</p>
+          <p className="text-sm text-gray-400 animate-pulse">جار تحميل الجلسة...</p>
         </div>
       </div>
     );

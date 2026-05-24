@@ -48,8 +48,8 @@ export default function BalancesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Employee Balances</h1>
-          <p className="text-sm text-gray-500">Track employee deficits, advances, loans, and acknowledgments.</p>
+          <h1 className="text-2xl font-bold tracking-tight">أرصدة الموظفين والعهد</h1>
+          <p className="text-sm text-gray-500">متابعة العجز والسلف والقروض والإقرارات الإلكترونية للموظفين.</p>
         </div>
         {isAdmin && <CreateBalanceDialog employees={employees} onSuccess={loadBalances} />}
       </div>
@@ -57,15 +57,15 @@ export default function BalancesPage() {
       <Card className="border-none shadow-sm">
         <CardContent className="grid gap-4 py-4 sm:grid-cols-3">
           <div>
-            <p className="text-xs text-gray-500">Open Entries</p>
+            <p className="text-xs text-gray-500">السجلات المفتوحة</p>
             <p className="text-2xl font-semibold">{balances.length}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Total Amount</p>
-            <p className="text-2xl font-semibold">{total.toLocaleString()} SAR</p>
+            <p className="text-xs text-gray-500">إجمالي المبلغ</p>
+            <p className="text-2xl font-semibold">{total.toLocaleString()} ريال</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500">Pending Acknowledgment</p>
+            <p className="text-xs text-gray-500">بانتظار الإقرار</p>
             <p className="text-2xl font-semibold">{balances.filter((row) => !row.acknowledgment_signature_url).length}</p>
           </div>
         </CardContent>
@@ -76,12 +76,12 @@ export default function BalancesPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                <TableHead>Employee</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Signature</TableHead>
+                <TableHead>الموظف</TableHead>
+                <TableHead>النوع</TableHead>
+                <TableHead>المبلغ</TableHead>
+                <TableHead>الوصف</TableHead>
+                <TableHead>الحالة</TableHead>
+                <TableHead>التوقيع</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -90,9 +90,9 @@ export default function BalancesPage() {
                 const status = typeof balance.status === "string" ? balance.status : "unpaid";
                 return (
                   <TableRow key={String(balance.id)}>
-                    <TableCell className="font-medium">{String(employee?.full_name || "Me")}</TableCell>
+                    <TableCell className="font-medium">{String(employee?.full_name || "أنا")}</TableCell>
                     <TableCell>{String(balance.balance_type || "balance")}</TableCell>
-                    <TableCell>{Number(balance.amount || 0).toLocaleString()} SAR</TableCell>
+                    <TableCell>{Number(balance.amount || 0).toLocaleString()} ريال</TableCell>
                     <TableCell>{String(balance.description || "-")}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={status === "acknowledged" ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}>
@@ -101,7 +101,7 @@ export default function BalancesPage() {
                     </TableCell>
                     <TableCell>
                       {balance.acknowledgment_signature_url ? (
-                        <Badge variant="outline" className="bg-green-50 text-green-700">Signed</Badge>
+                        <Badge variant="outline" className="bg-green-50 text-green-700">تم التوقيع</Badge>
                       ) : (
                         <AcknowledgeDialog balanceId={String(balance.id)} onSuccess={loadBalances} />
                       )}
@@ -114,7 +114,7 @@ export default function BalancesPage() {
           {!loading && balances.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <WalletCards className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">No balances recorded</p>
+              <p className="text-sm font-medium text-gray-900">لا توجد أرصدة مسجلة</p>
             </div>
           )}
         </CardContent>
@@ -134,7 +134,7 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
 
   const handleSubmit = async () => {
     if (!currentUser?.orgId || !form.employee_id || Number(form.amount) <= 0) {
-      setError("Employee and positive amount are required.");
+      setError("الموظف والمبلغ الموجب مطلوبان.");
       return;
     }
     setSubmitting(true);
@@ -173,22 +173,22 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
-        <Plus className="h-4 w-4 mr-2" /> Add Balance
+        <Plus className="h-4 w-4 ml-2" /> إضافة رصيد
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add Balance Entry</DialogTitle>
-          <DialogDescription>Record money owed, advances, loans, penalties, or reimbursements.</DialogDescription>
+          <DialogTitle>إضافة سجل رصيد</DialogTitle>
+          <DialogDescription>تسجيل مبالغ مستحقة أو سلف أو قروض أو جزاءات أو تعويضات.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
-            <Label>Employee</Label>
+            <Label>الموظف</Label>
             <Select value={form.employee_id} onValueChange={(value) => set("employee_id", value)}>
-              <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="اختر الموظف" /></SelectTrigger>
               <SelectContent>
                 {employees.map((employee) => (
                   <SelectItem key={String(employee.id)} value={String(employee.id)}>
-                    {String(employee.full_name || employee.name || "Employee")}
+                    {String(employee.full_name || employee.name || "الموظف")}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -196,36 +196,36 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Type</Label>
+              <Label>النوع</Label>
               <Select value={form.balance_type} onValueChange={(value) => set("balance_type", value)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="deficit">Deficit</SelectItem>
-                  <SelectItem value="loan">Loan</SelectItem>
-                  <SelectItem value="advance_payment">Advance</SelectItem>
-                  <SelectItem value="reimbursement">Reimbursement</SelectItem>
+                  <SelectItem value="deficit">عجز</SelectItem>
+                  <SelectItem value="loan">قرض</SelectItem>
+                  <SelectItem value="advance_payment">سلفة</SelectItem>
+                  <SelectItem value="reimbursement">تعويض</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Amount</Label>
+              <Label>المبلغ</Label>
               <Input type="number" value={form.amount} onChange={(event) => set("amount", event.target.value)} />
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Description</Label>
+            <Label>الوصف</Label>
             <Input value={form.description} onChange={(event) => set("description", event.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Attachment</Label>
+            <Label>مرفق</Label>
             <Input type="file" onChange={(event) => setAttachment(event.target.files?.[0] ?? null)} />
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? "Saving..." : "Save"}
+            {submitting ? "جار الحفظ..." : "حفظ"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -240,19 +240,19 @@ function AcknowledgeDialog({ balanceId, onSuccess }: { balanceId: string; onSucc
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
-        <PenLine className="h-4 w-4 mr-2" /> Sign
+        <PenLine className="h-4 w-4 ml-2" /> توقيع
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Acknowledge Balance</DialogTitle>
-          <DialogDescription>Type your name as an electronic signature.</DialogDescription>
+          <DialogTitle>إقرار الرصيد</DialogTitle>
+          <DialogDescription>اكتب اسمك كتوقيع إلكتروني.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2 py-4">
-          <Label>Electronic Signature</Label>
+          <Label>التوقيع الإلكتروني</Label>
           <Input value={signature} onChange={(event) => setSignature(event.target.value)} />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button
             className="bg-brand hover:bg-brand-dark text-white"
             disabled={!signature.trim()}
@@ -265,7 +265,7 @@ function AcknowledgeDialog({ balanceId, onSuccess }: { balanceId: string; onSucc
               onSuccess();
             }}
           >
-            Confirm
+            تأكيد
           </Button>
         </DialogFooter>
       </DialogContent>

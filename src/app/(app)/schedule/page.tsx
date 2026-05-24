@@ -38,7 +38,7 @@ export default function SchedulePage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Schedule</h1>
+          <h1 className="text-2xl font-bold tracking-tight">الجداول</h1>
           <p className="text-gray-500 text-sm mt-1">
             Manage shift templates and assign schedules to employees.
           </p>
@@ -60,13 +60,13 @@ export default function SchedulePage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                <TableHead className="font-semibold text-gray-600">Employee</TableHead>
-                <TableHead className="font-semibold text-gray-600">Shift</TableHead>
-                <TableHead className="font-semibold text-gray-600">Type</TableHead>
-                <TableHead className="font-semibold text-gray-600">Time</TableHead>
-                <TableHead className="font-semibold text-gray-600">Location</TableHead>
-                <TableHead className="font-semibold text-gray-600">Dates</TableHead>
-                {isAdmin && <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>}
+                <TableHead className="font-semibold text-gray-600">الموظف</TableHead>
+                <TableHead className="font-semibold text-gray-600">الوردية</TableHead>
+                <TableHead className="font-semibold text-gray-600">النوع</TableHead>
+                <TableHead className="font-semibold text-gray-600">الوقت</TableHead>
+                <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
+                <TableHead className="font-semibold text-gray-600">التواريخ</TableHead>
+                {isAdmin && <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -124,8 +124,8 @@ export default function SchedulePage() {
           {assignments.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <CalendarDays className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">No assignments yet</p>
-              <p className="text-xs text-gray-500 mt-1">Assign a shift to start building schedules.</p>
+              <p className="text-sm font-medium text-gray-900">لا توجد إسنادات بعد</p>
+              <p className="text-xs text-gray-500 mt-1">أسند وردية للبدء في بناء الجداول.</p>
             </div>
           )}
         </CardContent>
@@ -181,17 +181,17 @@ function AssignShiftDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="outline" />}>
-        Assign Shift
+        إسناد وردية
       </DialogTrigger>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle>Assign Shift</DialogTitle>
-          <DialogDescription>Attach a shift template to an employee.</DialogDescription>
+          <DialogTitle>إسناد وردية</DialogTitle>
+          <DialogDescription>ربط قالب وردية بموظف.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
-            <Label>Employee *</Label>
+            <Label>الموظف *</Label>
             <Select value={form.employee_id} onValueChange={(v) => set("employee_id", v)}>
               <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>
@@ -202,7 +202,7 @@ function AssignShiftDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Shift *</Label>
+            <Label>الوردية *</Label>
             <Select value={form.shift_id} onValueChange={(v) => set("shift_id", v)}>
               <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>
@@ -214,11 +214,11 @@ function AssignShiftDialog({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Start Date</Label>
+              <Label>تاريخ البداية</Label>
               <Input type="date" value={form.start_date} onChange={(e) => set("start_date", e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>End Date</Label>
+              <Label>تاريخ النهاية</Label>
               <Input type="date" value={form.end_date} onChange={(e) => set("end_date", e.target.value)} />
             </div>
           </div>
@@ -227,9 +227,9 @@ function AssignShiftDialog({
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.employee_id || !form.shift_id}>
-            {submitting ? "Assigning..." : "Assign Shift"}
+            {submitting ? "جار الإسناد..." : "إسناد وردية"}
           </Button>
         </DialogFooter>
       </DialogContent>

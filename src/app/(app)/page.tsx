@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const pendingLeaves = leaves.filter((req) => String((req as Record<string, unknown>).status ?? "") === "pending").length;
   
   const firstAttendance = todayRecords.find(r => (r as Record<string, unknown>).employee_id === currentUser?.employeeId);
-  const myStatus = typeof firstAttendance?.status === "string" ? firstAttendance.status : "Not checked";
+  const myStatus = typeof firstAttendance?.status === "string" ? firstAttendance.status : "لم يسجل";
 
   const last7Days = Array.from({ length: 7 }).map((_, i) => {
     const d = new Date();
@@ -51,28 +51,28 @@ export default function DashboardPage() {
     return allAttendance.filter(row => (row as Record<string, unknown>).work_date === date).length;
   });
 
-  const nextShift = myShifts.length > 0 ? String(((myShifts[0] as Record<string, unknown>).shift as Record<string, unknown>)?.name || "Assigned") : "None";
+  const nextShift = myShifts.length > 0 ? String(((myShifts[0] as Record<string, unknown>).shift as Record<string, unknown>)?.name || "مخصصة") : "لا يوجد";
 
   const stats = isAdmin
     ? [
-        { label: "Employees", value: String(employees.length), icon: Users, change: "Total active" },
-        { label: "Present Today", value: String(presentCount), icon: Clock, change: `${lateCount} late, ${absentCount} absent` },
-        { label: "Active Tasks", value: String(pendingTasks), icon: CheckSquare, change: "In progress" },
-        { label: "Pending Leave", value: String(pendingLeaves), icon: ClipboardList, change: "Needs review" },
+        { label: "الموظفون", value: String(employees.length), icon: Users, change: "الإجمالي النشط" },
+        { label: "الحاضرون اليوم", value: String(presentCount), icon: Clock, change: `${lateCount} متأخر، ${absentCount} غائب` },
+        { label: "المهام النشطة", value: String(pendingTasks), icon: CheckSquare, change: "قيد التنفيذ" },
+        { label: "طلبات إجازة معلقة", value: String(pendingLeaves), icon: ClipboardList, change: "تحتاج مراجعة" },
       ]
     : [
-        { label: "My Tasks", value: String(pendingTasks), icon: CheckSquare, change: "Due soon" },
-        { label: "Attendance", value: todayRecords.some(r => String((r as Record<string, unknown>).employee_id) === currentUser?.employeeId) ? myStatus : "Not checked", icon: Clock, change: "Today" },
-        { label: "Next Shift", value: nextShift, icon: CalendarDays, change: "Upcoming" },
-        { label: "Alerts", value: String(notifications.length), icon: Bell, change: "New" },
+        { label: "مهامي", value: String(pendingTasks), icon: CheckSquare, change: "مستحقة قريبًا" },
+        { label: "الحضور", value: todayRecords.some(r => String((r as Record<string, unknown>).employee_id) === currentUser?.employeeId) ? myStatus : "لم يسجل", icon: Clock, change: "اليوم" },
+        { label: "الوردية التالية", value: nextShift, icon: CalendarDays, change: "قادمة" },
+        { label: "التنبيهات", value: String(notifications.length), icon: Bell, change: "جديد" },
       ];
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+        <h1 className="text-3xl font-bold tracking-tight">لوحة التحكم</h1>
         <p className="text-gray-500 mt-1">
-          Welcome back, {currentUser?.name}. You are logged in as {currentUser?.role}.
+          مرحبًا بعودتك، {currentUser?.name}. تم تسجيل دخولك بصلاحية {currentUser?.role}.
         </p>
       </div>
 
@@ -101,16 +101,16 @@ export default function DashboardPage() {
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
         <Card className="col-span-4">
           <CardHeader>
-            <CardTitle>Today&apos;s Attendance</CardTitle>
-            <CardDescription>Live check-ins and presence status across shifts.</CardDescription>
+            <CardTitle>حضور اليوم</CardTitle>
+            <CardDescription>تسجيلات حضور مباشرة وحالة التواجد عبر الورديات.</CardDescription>
           </CardHeader>
           <CardContent className="border-t border-dashed pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500">Present / Late / Absent</p>
+                <p className="text-xs text-gray-500">حاضر / متأخر / غائب</p>
                 <p className="text-lg font-semibold text-gray-900">{presentCount} present · {lateCount} late · {absentCount} absent</p>
               </div>
-              <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">{todayRecords.length} recorded today</Badge>
+              <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">{todayRecords.length} تم تسجيله اليوم</Badge>
             </div>
             <div className="mt-6">
               <MiniLineChart values={chartData.length ? chartData : [0, 0, 0, 0, 0, 0, 0]} />
@@ -120,16 +120,16 @@ export default function DashboardPage() {
 
         <Card className="col-span-3">
           <CardHeader>
-            <CardTitle>Recent Notifications</CardTitle>
-            <CardDescription>Latest alerts that need attention.</CardDescription>
+            <CardTitle>آخر الإشعارات</CardTitle>
+            <CardDescription>أحدث التنبيهات التي تحتاج متابعة.</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               {notifications.slice(0, 3).map((note) => {
                 const noteRecord = note as Record<string, unknown>;
                 const noteId = String(noteRecord.id ?? "");
-                const noteTitle = typeof noteRecord.title === "string" ? noteRecord.title : "Notification";
-                const noteBody = typeof noteRecord.body === "string" ? noteRecord.body : "View details";
+                const noteTitle = typeof noteRecord.title === "string" ? noteRecord.title : "إشعار";
+                const noteBody = typeof noteRecord.body === "string" ? noteRecord.body : "عرض التفاصيل";
                 return (
                   <div key={noteId} className="flex items-center gap-4 p-3 border rounded-lg bg-slate-50 border-slate-100">
                     <div className="bg-brand-light p-2 rounded-full">
@@ -144,7 +144,7 @@ export default function DashboardPage() {
               })}
 
               {notifications.length === 0 && (
-                <div className="text-sm text-gray-500 text-center py-4">No notifications yet.</div>
+                <div className="text-sm text-gray-500 text-center py-4">لا توجد إشعارات حتى الآن.</div>
               )}
             </div>
           </CardContent>

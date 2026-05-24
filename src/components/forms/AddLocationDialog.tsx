@@ -74,34 +74,34 @@ export function AddLocationDialog({ onSuccess }: Props) {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
         <Plus className="w-4 h-4 mr-2" />
-        Add Location
+        إضافة موقع
       </DialogTrigger>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>Add Location</DialogTitle>
-          <DialogDescription>Register a new branch, booth, or office with geofence settings.</DialogDescription>
+          <DialogTitle>إضافة موقع</DialogTitle>
+          <DialogDescription>تسجيل فرع أو كشك أو مكتب جديد مع إعدادات النطاق الجغرافي.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
-            <Label>Location Name *</Label>
+            <Label>اسم الموقع *</Label>
             <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Nasr City Branch" />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Location Type</Label>
+              <Label>نوع الموقع</Label>
               <Select value={form.type} onValueChange={(v) => set("type", v || "")}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="branch">Branch</SelectItem>
-                  <SelectItem value="booth">Booth</SelectItem>
-                  <SelectItem value="office">Office</SelectItem>
-                  <SelectItem value="area">Area</SelectItem>
+                  <SelectItem value="branch">فرع</SelectItem>
+                  <SelectItem value="booth">كشك</SelectItem>
+                  <SelectItem value="office">مكتب</SelectItem>
+                  <SelectItem value="area">منطقة</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Manager</Label>
+              <Label>المدير</Label>
               <Select value={form.manager_employee_id} onValueChange={(v) => set("manager_employee_id", v || "")}>
                 <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
@@ -114,15 +114,15 @@ export function AddLocationDialog({ onSuccess }: Props) {
           </div>
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label>Latitude</Label>
+              <Label>خط العرض</Label>
               <Input value={form.latitude} onChange={(e) => set("latitude", e.target.value)} placeholder="24.7136" />
             </div>
             <div className="space-y-2">
-              <Label>Longitude</Label>
+              <Label>خط الطول</Label>
               <Input value={form.longitude} onChange={(e) => set("longitude", e.target.value)} placeholder="46.6753" />
             </div>
             <div className="space-y-2">
-              <Label>Radius (m)</Label>
+              <Label>النطاق (متر)</Label>
               <Input type="number" value={form.radius_meters} onChange={(e) => set("radius_meters", e.target.value)} />
             </div>
           </div>
@@ -131,9 +131,9 @@ export function AddLocationDialog({ onSuccess }: Props) {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.name}>
-            {submitting ? "Adding..." : "Add Location"}
+            {submitting ? "جار الإضافة..." : "إضافة موقع"}
           </Button>
         </DialogFooter>
       </DialogContent>

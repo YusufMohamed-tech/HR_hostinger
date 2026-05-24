@@ -46,14 +46,14 @@ export default function PayrollPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Payroll Module</h1>
-          <p className="text-sm text-gray-500">Manage employee salaries, attendance-based deductions, and payslips.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">وحدة الرواتب</h1>
+          <p className="text-sm text-gray-500">إدارة رواتب الموظفين والخصومات المبنية على الحضور ومسيرات الرواتب.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline"><Download className="w-4 h-4 mr-2" /> Export WPS</Button>
+          <Button variant="outline"><Download className="w-4 h-4 ml-2" /> تصدير WPS</Button>
           {currentUser?.role !== "Employee" && (
             <Button className="bg-brand hover:bg-brand-dark" onClick={handleRunPayroll} disabled={generating}>
-              <Calculator className="w-4 h-4 mr-2" /> {generating ? "Calculating..." : "Run Payroll for Month"}
+              <Calculator className="w-4 h-4 ml-2" /> {generating ? "جار الحساب..." : "تشغيل رواتب الشهر"}
             </Button>
           )}
         </div>
@@ -63,25 +63,25 @@ export default function PayrollPage() {
         <CardHeader>
           <div className="flex items-center gap-2">
             <Calendar className="w-5 h-5 text-gray-500" />
-            <CardTitle>{new Date(currentMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} Payslips</CardTitle>
+            <CardTitle>{new Date(currentMonth).toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })} - مسيرات الرواتب</CardTitle>
           </div>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="py-8 text-center text-sm text-gray-500">Loading payroll data...</div>
+            <div className="py-8 text-center text-sm text-gray-500">جار تحميل بيانات الرواتب...</div>
           ) : payslips.length === 0 ? (
-            <div className="py-8 text-center text-sm text-gray-500">No payslips generated for this month. Run payroll to begin.</div>
+            <div className="py-8 text-center text-sm text-gray-500">لم يتم إنشاء مسيرات لهذا الشهر. شغّل الرواتب للبدء.</div>
           ) : (
             <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Base Salary</TableHead>
-                    <TableHead>Attendance (Days)</TableHead>
-                    <TableHead>Deductions</TableHead>
-                    <TableHead>Net Salary</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>الموظف</TableHead>
+                    <TableHead>الراتب الأساسي</TableHead>
+                    <TableHead>الحضور (أيام)</TableHead>
+                    <TableHead>الخصومات</TableHead>
+                    <TableHead>صافي الراتب</TableHead>
+                    <TableHead>الحالة</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -91,13 +91,13 @@ export default function PayrollPage() {
                     return (
                     <TableRow key={String(slip.id)}>
                       <TableCell className="font-medium">
-                        {String(employee?.full_name || "Unknown")}
+                        {String(employee?.full_name || "غير معروف")}
                         <div className="text-xs text-gray-500">{String(employee?.employee_code || "")}</div>
                       </TableCell>
-                      <TableCell>{Number(slip.base_salary || 0).toLocaleString()} SAR</TableCell>
+                      <TableCell>{Number(slip.base_salary || 0).toLocaleString()} ريال</TableCell>
                       <TableCell>{Number(slip.attendance_days || 0)}</TableCell>
-                      <TableCell className="text-red-600">-{Number(slip.total_deductions || 0).toLocaleString()} SAR</TableCell>
-                      <TableCell className="font-bold text-green-600">{Number(slip.net_salary || 0).toLocaleString()} SAR</TableCell>
+                      <TableCell className="text-red-600">-{Number(slip.total_deductions || 0).toLocaleString()} ريال</TableCell>
+                      <TableCell className="font-bold text-green-600">{Number(slip.net_salary || 0).toLocaleString()} ريال</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={status === 'paid' ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'}>
                           {status}

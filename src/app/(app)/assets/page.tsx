@@ -39,8 +39,8 @@ export default function AssetsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Asset Handover</h1>
-          <p className="text-sm text-gray-500">Track company-owned assets issued to employees.</p>
+          <h1 className="text-2xl font-bold tracking-tight">تسليم الأصول</h1>
+          <p className="text-sm text-gray-500">متابعة الأصول المملوكة للشركة والمسلّمة للموظفين.</p>
         </div>
         {isAdmin && <AssignAssetDialog employees={employees} onSuccess={loadAssets} />}
       </div>
@@ -50,12 +50,12 @@ export default function AssetsPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                <TableHead>Employee</TableHead>
-                <TableHead>Asset</TableHead>
-                <TableHead>Serial</TableHead>
-                <TableHead>Assigned</TableHead>
-                <TableHead>Status</TableHead>
-                {isAdmin && <TableHead className="text-right">Actions</TableHead>}
+                <TableHead>الموظف</TableHead>
+                <TableHead>الأصل</TableHead>
+                <TableHead>الرقم التسلسلي</TableHead>
+                <TableHead>تاريخ التسليم</TableHead>
+                <TableHead>الحالة</TableHead>
+                {isAdmin && <TableHead className="text-left">الإجراءات</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -64,8 +64,8 @@ export default function AssetsPage() {
                 const status = typeof asset.status === "string" ? asset.status : "assigned";
                 return (
                   <TableRow key={String(asset.id)}>
-                    <TableCell className="font-medium">{String(employee?.full_name || "Unknown")}</TableCell>
-                    <TableCell>{String(asset.asset_name || asset.asset_type || "Asset")}</TableCell>
+                    <TableCell className="font-medium">{String(employee?.full_name || "غير معروف")}</TableCell>
+                    <TableCell>{String(asset.asset_name || asset.asset_type || "أصل")}</TableCell>
                     <TableCell>{String(asset.serial_number || "-")}</TableCell>
                     <TableCell>{String(asset.assigned_date || "-")}</TableCell>
                     <TableCell>
@@ -74,7 +74,7 @@ export default function AssetsPage() {
                       </Badge>
                     </TableCell>
                     {isAdmin && (
-                      <TableCell className="text-right">
+                      <TableCell className="text-left">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -99,7 +99,7 @@ export default function AssetsPage() {
           {!loading && assets.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <Package className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">No asset handovers yet</p>
+              <p className="text-sm font-medium text-gray-900">لا توجد عمليات تسليم أصول حتى الآن</p>
             </div>
           )}
         </CardContent>
@@ -118,7 +118,7 @@ function AssignAssetDialog({ employees, onSuccess }: { employees: Record<string,
 
   const handleSubmit = async () => {
     if (!currentUser?.orgId || !form.employee_id || !form.asset_name.trim()) {
-      setError("Employee and asset name are required.");
+      setError("الموظف واسم الأصل مطلوبان.");
       return;
     }
     setSubmitting(true);
@@ -145,22 +145,22 @@ function AssignAssetDialog({ employees, onSuccess }: { employees: Record<string,
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
-        <Plus className="h-4 w-4 mr-2" /> Assign Asset
+        <Plus className="h-4 w-4 ml-2" /> تسليم أصل
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Assign Asset</DialogTitle>
-          <DialogDescription>Record an official company asset handover.</DialogDescription>
+          <DialogTitle>تسليم أصل</DialogTitle>
+          <DialogDescription>تسجيل تسليم أصل رسمي مملوك للشركة.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
-            <Label>Employee</Label>
+            <Label>الموظف</Label>
             <Select value={form.employee_id} onValueChange={(value) => set("employee_id", value)}>
-              <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="اختر الموظف" /></SelectTrigger>
               <SelectContent>
                 {employees.map((employee) => (
                   <SelectItem key={String(employee.id)} value={String(employee.id)}>
-                    {String(employee.full_name || employee.name || "Employee")}
+                    {String(employee.full_name || employee.name || "الموظف")}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -168,28 +168,28 @@ function AssignAssetDialog({ employees, onSuccess }: { employees: Record<string,
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Asset Name</Label>
+              <Label>اسم الأصل</Label>
               <Input value={form.asset_name} onChange={(event) => set("asset_name", event.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Type</Label>
-              <Input value={form.asset_type} onChange={(event) => set("asset_type", event.target.value)} placeholder="Laptop, phone, device" />
+              <Label>النوع</Label>
+              <Input value={form.asset_type} onChange={(event) => set("asset_type", event.target.value)} placeholder="حاسب، جوال، جهاز" />
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Serial Number</Label>
+            <Label>الرقم التسلسلي</Label>
             <Input value={form.serial_number} onChange={(event) => set("serial_number", event.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Notes</Label>
+            <Label>ملاحظات</Label>
             <Input value={form.notes} onChange={(event) => set("notes", event.target.value)} />
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? "Assigning..." : "Assign"}
+            {submitting ? "جار التسليم..." : "تسليم"}
           </Button>
         </DialogFooter>
       </DialogContent>

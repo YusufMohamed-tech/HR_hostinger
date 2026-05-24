@@ -50,31 +50,31 @@ export default function LoginPage() {
                 <Network className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-sm font-semibold tracking-wide text-slate-600">Tatwir Talent</p>
-                <p className="text-xs text-slate-400">Workforce Intelligence Platform</p>
+                <p className="text-sm font-semibold tracking-wide text-slate-600">تطوير تالنت</p>
+                <p className="text-xs text-slate-400">منصة ذكاء القوى العاملة</p>
               </div>
             </div>
 
             <div className="mt-10 space-y-5">
               <h1 className="text-4xl font-bold tracking-tight text-slate-900">
-                Measure Work. <span className="text-brand">Maximize Performance.</span>
+                قِس العمل. <span className="text-brand">وارفع الأداء.</span>
               </h1>
               <p className="text-slate-500 max-w-lg">
-                AI-driven HRMS for deskless teams. Track performance, optimize shifts,
-                and connect workforce data to payroll outcomes.
+                نظام موارد بشرية ذكي للفرق الميدانية. تابع الأداء، حسّن الجداول،
+                واربط بيانات الحضور بنتائج الرواتب.
               </p>
               <div className="grid gap-3 text-sm text-slate-600">
                 <div className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-brand" />
-                  KPI and productivity analytics in real time
+                  مؤشرات أداء وتحليلات إنتاجية لحظية
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-brand" />
-                  AI anomaly detection for attendance and movement
+                  كشف ذكي للشذوذ في الحضور والحركة
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="h-2 w-2 rounded-full bg-brand" />
-                  Workforce scheduling across locations
+                  جدولة القوى العاملة عبر المواقع
                 </div>
               </div>
             </div>
@@ -91,17 +91,17 @@ export default function LoginPage() {
               <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white">
                 <Network className="h-4 w-4" />
               </div>
-              <span className="font-bold text-lg tracking-tight text-slate-900">Tatwir Talent</span>
+              <span className="font-bold text-lg tracking-tight text-slate-900">تطوير تالنت</span>
             </div>
 
             <div className="space-y-2">
-              <h2 className="text-2xl font-semibold text-slate-900">Sign in</h2>
-              <p className="text-sm text-slate-500">Enter your credentials to access the dashboard.</p>
+              <h2 className="text-2xl font-semibold text-slate-900">تسجيل الدخول</h2>
+              <p className="text-sm text-slate-500">أدخل بياناتك للوصول إلى لوحة التحكم.</p>
             </div>
 
             <form onSubmit={handleSubmit} className="mt-6 space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">البريد الإلكتروني</Label>
                 <Input
                   id="email"
                   type="email"
@@ -113,19 +113,19 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">كلمة المرور</Label>
                 <div className="relative">
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="Enter your password"
+                    placeholder="أدخل كلمة المرور"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     required
                   />
                   <button
                     type="button"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                     onClick={() => setShowPassword(!showPassword)}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -134,18 +134,18 @@ export default function LoginPage() {
               </div>
 
               <Button type="submit" className="w-full bg-brand hover:bg-brand-dark text-white" disabled={submitting}>
-                {submitting ? "Signing in..." : "Sign in"}
+                {submitting ? "جار تسجيل الدخول..." : "تسجيل الدخول"}
               </Button>
 
               {message && (
-                <p className={`text-sm text-center ${message.includes("successful") ? "text-brand-dark" : "text-red-600"}`}>
+                <p className={`text-sm text-center ${message.includes("successful") || message.includes("نجاح") ? "text-brand-dark" : "text-red-600"}`}>
                   {message}
                 </p>
               )}
             </form>
 
             <div className="mt-6 border-t pt-4">
-              <p className="text-xs text-slate-400">Use your company credentials to sign in.</p>
+              <p className="text-xs text-slate-400">استخدم بيانات حساب الشركة لتسجيل الدخول.</p>
             </div>
           </div>
         </div>

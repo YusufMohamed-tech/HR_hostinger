@@ -31,7 +31,7 @@ export default function DepartmentsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Departments</h1>
+          <h1 className="text-2xl font-bold tracking-tight">الأقسام</h1>
           <p className="text-gray-500 text-sm mt-1">
             Define teams, leadership, and coverage needs.
           </p>
@@ -47,10 +47,10 @@ export default function DepartmentsPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                <TableHead className="font-semibold text-gray-600">Department</TableHead>
-                <TableHead className="font-semibold text-gray-600">Department Manager</TableHead>
-                <TableHead className="font-semibold text-gray-600">Headcount</TableHead>
-                <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>
+                <TableHead className="font-semibold text-gray-600">القسم</TableHead>
+                <TableHead className="font-semibold text-gray-600">مدير القسم</TableHead>
+                <TableHead className="font-semibold text-gray-600">عدد الموظفين</TableHead>
+                <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -80,7 +80,7 @@ export default function DepartmentsPage() {
                         {currentUser?.role === "Admin" && (
                           <EditDepartmentDialog department={dept} onSuccess={refetch} />
                         )}
-                        <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">View</Button>
+                        <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">عرض</Button>
                         {currentUser?.role === "Admin" && (
                           <Button
                             variant="ghost"
@@ -106,8 +106,8 @@ export default function DepartmentsPage() {
           {departments.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <LayersIcon className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">No departments yet</p>
-              <p className="text-xs text-gray-500 mt-1">Create your first department to organize teams.</p>
+              <p className="text-sm font-medium text-gray-900">لا توجد أقسام بعد</p>
+              <p className="text-xs text-gray-500 mt-1">أنشئ أول قسم لتنظيم الفرق.</p>
             </div>
           )}
         </CardContent>

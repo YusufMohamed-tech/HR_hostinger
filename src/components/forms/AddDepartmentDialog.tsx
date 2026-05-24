@@ -64,21 +64,21 @@ export function AddDepartmentDialog({ onSuccess }: Props) {
         render={<Button className="bg-brand hover:bg-brand-dark text-white" />}
       >
         <Plus className="w-4 h-4 mr-2" />
-        Add Department
+        إضافة قسم
       </DialogTrigger>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Add Department</DialogTitle>
-          <DialogDescription>Create a new department for your organization.</DialogDescription>
+          <DialogTitle>إضافة قسم</DialogTitle>
+          <DialogDescription>إنشاء قسم جديد في المنشأة.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label>Department Name *</Label>
+            <Label>اسم القسم *</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Operations" />
           </div>
           <div className="space-y-2">
-            <Label>Department Manager</Label>
+            <Label>مدير القسم</Label>
             <Select value={managerId} onValueChange={(v) => setManagerId(v || "")}>
               <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
               <SelectContent>
@@ -93,9 +93,9 @@ export function AddDepartmentDialog({ onSuccess }: Props) {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !name}>
-            {submitting ? "Adding..." : "Add Department"}
+            {submitting ? "جار الإضافة..." : "إضافة قسم"}
           </Button>
         </DialogFooter>
       </DialogContent>

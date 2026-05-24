@@ -61,8 +61,8 @@ export default function PersonnelPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Personnel</h1>
-          <p className="text-sm text-gray-500">Manage contracts, official HR files, and social insurance records.</p>
+          <h1 className="text-2xl font-bold tracking-tight">ملفات الموظفين</h1>
+          <p className="text-sm text-gray-500">إدارة العقود والملفات الرسمية وسجلات التأمينات الاجتماعية.</p>
         </div>
         {isAdmin && (
           <div className="flex gap-2">
@@ -74,22 +74,22 @@ export default function PersonnelPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="border-none shadow-sm"><CardContent className="py-4"><p className="text-xs text-gray-500">Files</p><p className="text-2xl font-semibold">{files.length}</p></CardContent></Card>
-        <Card className="border-none shadow-sm"><CardContent className="py-4"><p className="text-xs text-gray-500">Contracts</p><p className="text-2xl font-semibold">{contracts.length}</p></CardContent></Card>
-        <Card className="border-none shadow-sm"><CardContent className="py-4"><p className="text-xs text-gray-500">Expiring Soon</p><p className="text-2xl font-semibold">{expiringFiles.length}</p></CardContent></Card>
+        <Card className="border-none shadow-sm"><CardContent className="py-4"><p className="text-xs text-gray-500">الملفات</p><p className="text-2xl font-semibold">{files.length}</p></CardContent></Card>
+        <Card className="border-none shadow-sm"><CardContent className="py-4"><p className="text-xs text-gray-500">العقود</p><p className="text-2xl font-semibold">{contracts.length}</p></CardContent></Card>
+        <Card className="border-none shadow-sm"><CardContent className="py-4"><p className="text-xs text-gray-500">تنتهي قريبًا</p><p className="text-2xl font-semibold">{expiringFiles.length}</p></CardContent></Card>
       </div>
 
       <Card className="border-none shadow-sm">
-        <CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-brand" /> Official Files</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-brand" /> الملفات الرسمية</CardTitle></CardHeader>
         <CardContent className="p-0">
           <Table>
-            <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Category</TableHead><TableHead>File</TableHead><TableHead>Expiry</TableHead><TableHead>Verified</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>الموظف</TableHead><TableHead>التصنيف</TableHead><TableHead>الملف</TableHead><TableHead>تاريخ الانتهاء</TableHead><TableHead>موثق</TableHead></TableRow></TableHeader>
             <TableBody>
               {files.map((file) => {
                 const employee = (file.employee ?? null) as Record<string, unknown> | null;
                 return (
                   <TableRow key={String(file.id)}>
-                    <TableCell>{String(employee?.full_name || "Employee")}</TableCell>
+                    <TableCell>{String(employee?.full_name || "الموظف")}</TableCell>
                     <TableCell>{String(file.category || "other")}</TableCell>
                     <TableCell>{String(file.file_name || "-")}</TableCell>
                     <TableCell>{String(file.expiry_date || "-")}</TableCell>
@@ -99,22 +99,22 @@ export default function PersonnelPage() {
               })}
             </TableBody>
           </Table>
-          {!loading && files.length === 0 && <EmptyState text="No personnel files yet." />}
+          {!loading && files.length === 0 && <EmptyState text="لا توجد ملفات موظفين حتى الآن." />}
         </CardContent>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="border-none shadow-sm">
-          <CardHeader><CardTitle>Social Insurance</CardTitle></CardHeader>
+          <CardHeader><CardTitle>التأمينات الاجتماعية</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>GOSI</TableHead><TableHead>Rate</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>الموظف</TableHead><TableHead>رقم التأمينات</TableHead><TableHead>النسبة</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader>
               <TableBody>
                 {insurance.map((item) => {
                   const employee = (item.employee ?? null) as Record<string, unknown> | null;
                   return (
                     <TableRow key={String(item.id)}>
-                      <TableCell>{String(employee?.full_name || "Employee")}</TableCell>
+                      <TableCell>{String(employee?.full_name || "الموظف")}</TableCell>
                       <TableCell>{String(item.gosi_number || "-")}</TableCell>
                       <TableCell>{Number(item.contribution_rate || 0)}%</TableCell>
                       <TableCell><Badge variant="outline">{String(item.status || "active")}</Badge></TableCell>
@@ -127,16 +127,16 @@ export default function PersonnelPage() {
         </Card>
 
         <Card className="border-none shadow-sm">
-          <CardHeader><CardTitle>Contracts</CardTitle></CardHeader>
+          <CardHeader><CardTitle>العقود</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Type</TableHead><TableHead>Start</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>الموظف</TableHead><TableHead>النوع</TableHead><TableHead>البداية</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader>
               <TableBody>
                 {contracts.map((contract) => {
                   const employee = (contract.employee ?? null) as Record<string, unknown> | null;
                   return (
                     <TableRow key={String(contract.id)}>
-                      <TableCell>{String(employee?.full_name || "Employee")}</TableCell>
+                      <TableCell>{String(employee?.full_name || "الموظف")}</TableCell>
                       <TableCell>{String(contract.contract_type || "permanent")}</TableCell>
                       <TableCell>{String(contract.start_date || "-")}</TableCell>
                       <TableCell><Badge variant="outline">{String(contract.status || "active")}</Badge></TableCell>
@@ -159,11 +159,11 @@ function EmptyState({ text }: { text: string }) {
 function EmployeeSelect({ employees, value, onChange }: { employees: Record<string, unknown>[]; value: string; onChange: (value: string | null) => void }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger><SelectValue placeholder="Select employee" /></SelectTrigger>
+      <SelectTrigger><SelectValue placeholder="اختر الموظف" /></SelectTrigger>
       <SelectContent>
         {employees.map((employee) => (
           <SelectItem key={String(employee.id)} value={String(employee.id)}>
-            {String(employee.full_name || employee.name || "Employee")}
+            {String(employee.full_name || employee.name || "الموظف")}
           </SelectItem>
         ))}
       </SelectContent>
@@ -180,12 +180,12 @@ function AddFileDialog({ employees, onSuccess }: { employees: Record<string, unk
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" />}>File</DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" />}>ملف</DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>Add File</DialogTitle><DialogDescription>Register an official employee document.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>إضافة ملف</DialogTitle><DialogDescription>تسجيل مستند رسمي للموظف.</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-4">
           <EmployeeSelect employees={employees} value={form.employee_id} onChange={(value) => set("employee_id", value)} />
-          <Input placeholder="Category" value={form.category} onChange={(event) => set("category", event.target.value)} />
+          <Input placeholder="التصنيف" value={form.category} onChange={(event) => set("category", event.target.value)} />
           <Input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
           <Input type="date" value={form.expiry_date} onChange={(event) => set("expiry_date", event.target.value)} />
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -193,12 +193,12 @@ function AddFileDialog({ employees, onSuccess }: { employees: Record<string, unk
         <DialogFooter>
           <Button onClick={async () => {
             if (!currentUser?.orgId || !form.employee_id || !file) {
-              setError("Employee and file are required.");
+              setError("الموظف والملف مطلوبان.");
               return;
             }
             const { data: uploadData, error: uploadError } = await uploadPersonnelFile(currentUser.orgId, form.employee_id, file);
             if (uploadError || !uploadData?.path) {
-              setError(uploadError?.message || "Failed to upload file.");
+              setError(uploadError?.message || "تعذر رفع الملف.");
               return;
             }
             await createPersonnelFile({
@@ -214,7 +214,7 @@ function AddFileDialog({ employees, onSuccess }: { employees: Record<string, unk
             setFile(null);
             setError("");
             onSuccess();
-          }}>Save</Button>
+          }}>حفظ</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -228,12 +228,12 @@ function AddInsuranceDialog({ employees, onSuccess }: { employees: Record<string
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" />}>Insurance</DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" />}>التأمينات</DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>Social Insurance</DialogTitle><DialogDescription>Update GOSI/social insurance details.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>التأمينات الاجتماعية</DialogTitle><DialogDescription>تحديث بيانات التأمينات الاجتماعية.</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-4">
           <EmployeeSelect employees={employees} value={form.employee_id} onChange={(value) => set("employee_id", value)} />
-          <Input placeholder="GOSI number" value={form.gosi_number} onChange={(event) => set("gosi_number", event.target.value)} />
+          <Input placeholder="رقم التأمينات" value={form.gosi_number} onChange={(event) => set("gosi_number", event.target.value)} />
           <Input type="number" value={form.contribution_rate} onChange={(event) => set("contribution_rate", event.target.value)} />
         </div>
         <DialogFooter>
@@ -242,7 +242,7 @@ function AddInsuranceDialog({ employees, onSuccess }: { employees: Record<string
             await upsertSocialInsurance({ org_id: currentUser.orgId, employee_id: form.employee_id, gosi_number: form.gosi_number || undefined, contribution_rate: Number(form.contribution_rate || 0), status: form.status });
             setOpen(false);
             onSuccess();
-          }}>Save</Button>
+          }}>حفظ</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -256,15 +256,15 @@ function AddContractDialog({ employees, onSuccess }: { employees: Record<string,
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" />}>Contract</DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" />}>عقد</DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>Add Contract</DialogTitle><DialogDescription>Record an employee contract.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>إضافة عقد</DialogTitle><DialogDescription>تسجيل عقد موظف.</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-4">
           <EmployeeSelect employees={employees} value={form.employee_id} onChange={(value) => set("employee_id", value)} />
-          <Input placeholder="Contract type" value={form.contract_type} onChange={(event) => set("contract_type", event.target.value)} />
+          <Input placeholder="نوع العقد" value={form.contract_type} onChange={(event) => set("contract_type", event.target.value)} />
           <Input type="date" value={form.start_date} onChange={(event) => set("start_date", event.target.value)} />
           <Input type="date" value={form.end_date} onChange={(event) => set("end_date", event.target.value)} />
-          <Input type="number" placeholder="Salary at signing" value={form.salary_at_signing} onChange={(event) => set("salary_at_signing", event.target.value)} />
+          <Input type="number" placeholder="الراتب عند التوقيع" value={form.salary_at_signing} onChange={(event) => set("salary_at_signing", event.target.value)} />
         </div>
         <DialogFooter>
           <Button onClick={async () => {
@@ -272,7 +272,7 @@ function AddContractDialog({ employees, onSuccess }: { employees: Record<string,
             await createEmployeeContract({ org_id: currentUser.orgId, ...form, end_date: form.end_date || undefined, salary_at_signing: form.salary_at_signing ? Number(form.salary_at_signing) : undefined });
             setOpen(false);
             onSuccess();
-          }}>Save</Button>
+          }}>حفظ</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

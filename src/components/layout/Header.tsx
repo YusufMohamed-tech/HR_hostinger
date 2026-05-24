@@ -19,15 +19,15 @@ import { Input } from "@/components/ui/input";
 import { SidebarContent } from "./Sidebar";
 
 const SEARCH_ITEMS = [
-  { label: "Employees", href: "/employees", icon: Users, keywords: ["staff", "people", "team", "workers"] },
-  { label: "Departments", href: "/departments", icon: Layers, keywords: ["teams", "divisions", "groups"] },
-  { label: "Attendance", href: "/attendance", icon: Calendar, keywords: ["clock-in", "check-in", "presence"] },
-  { label: "Tasks", href: "/tasks", icon: CheckSquare, keywords: ["work", "assignments", "todo"] },
-  { label: "Leave", href: "/leave", icon: ClipboardList, keywords: ["vacation", "sick", "time off"] },
-  { label: "Locations", href: "/locations", icon: MapPin, keywords: ["sites", "branches", "geofence"] },
-  { label: "Schedule", href: "/schedule", icon: Calendar, keywords: ["shifts", "roster", "timetable"] },
-  { label: "Notifications", href: "/notifications", icon: Bell, keywords: ["alerts", "updates"] },
-  { label: "Settings", href: "/settings", icon: Users, keywords: ["profile", "preferences", "config"] },
+  { label: "الموظفون", href: "/employees", icon: Users, keywords: ["staff", "people", "team", "workers", "موظف", "فريق"] },
+  { label: "الأقسام", href: "/departments", icon: Layers, keywords: ["teams", "divisions", "groups", "قسم"] },
+  { label: "الحضور", href: "/attendance", icon: Calendar, keywords: ["clock-in", "check-in", "presence", "حضور", "انصراف"] },
+  { label: "المهام", href: "/tasks", icon: CheckSquare, keywords: ["work", "assignments", "todo", "مهمة"] },
+  { label: "الإجازات", href: "/leave", icon: ClipboardList, keywords: ["vacation", "sick", "time off", "إجازة"] },
+  { label: "المواقع", href: "/locations", icon: MapPin, keywords: ["sites", "branches", "geofence", "موقع", "فرع"] },
+  { label: "الجداول", href: "/schedule", icon: Calendar, keywords: ["shifts", "roster", "timetable", "وردية", "جدول"] },
+  { label: "الإشعارات", href: "/notifications", icon: Bell, keywords: ["alerts", "updates", "تنبيه"] },
+  { label: "الإعدادات", href: "/settings", icon: Users, keywords: ["profile", "preferences", "config", "إعدادات"] },
 ];
 
 export function Header() {
@@ -71,11 +71,11 @@ export function Header() {
           <SheetTrigger>
             <Button variant="ghost" size="icon" className="shrink-0 -ml-2 hover:bg-slate-100">
               <Menu className="h-5 w-5" />
-              <span className="sr-only">Toggle navigation menu</span>
+              <span className="sr-only">فتح أو إغلاق قائمة التنقل</span>
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="w-[280px] p-0 border-r-0">
-            <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
+          <SheetContent side="right" className="w-[280px] p-0 border-r-0">
+            <SheetTitle className="sr-only">قائمة التنقل</SheetTitle>
             <SidebarContent />
           </SheetContent>
         </Sheet>
@@ -84,17 +84,17 @@ export function Header() {
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-brand text-white">
             <Network className="h-4 w-4" />
           </div>
-          <span className="font-bold text-lg tracking-tight text-slate-900 hidden sm:inline-flex">Tatwir Talent</span>
+          <span className="font-bold text-lg tracking-tight text-slate-900 hidden sm:inline-flex">تطوير تالنت</span>
         </div>
       </div>
       
       <div className="hidden lg:flex lg:flex-1" ref={searchRef}>
         <div className="relative w-full max-w-md">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+          <Search className="absolute right-2.5 top-2.5 h-4 w-4 text-slate-400" />
           <Input
             type="search"
-            placeholder="Search employees, departments, or shifts..."
-            className="w-full bg-muted border-none shadow-none pl-9 py-2 hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:ring-1 focus-visible:ring-brand transition-colors h-9"
+            placeholder="ابحث عن موظفين أو أقسام أو ورديات..."
+            className="w-full bg-muted border-none shadow-none pr-9 py-2 hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:ring-1 focus-visible:ring-brand transition-colors h-9"
             value={query}
             onChange={(e) => { setQuery(e.target.value); setShowResults(true); }}
             onFocus={() => setShowResults(true)}
@@ -104,19 +104,19 @@ export function Header() {
               {filtered.map((item) => (
                 <button
                   key={item.href}
-                  className="flex items-center gap-3 w-full px-4 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-3 w-full px-4 py-2.5 text-right text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                   onClick={() => handleSelect(item.href)}
                 >
                   <item.icon className="h-4 w-4 text-gray-400" />
                   <span className="font-medium">{item.label}</span>
-                  <span className="text-xs text-gray-400 ml-auto">{item.href}</span>
+                  <span className="text-xs text-gray-400 mr-auto">{item.href}</span>
                 </button>
               ))}
             </div>
           )}
           {showResults && query.trim().length > 0 && filtered.length === 0 && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 p-4 text-center">
-              <p className="text-sm text-gray-500">No results for &ldquo;{query}&rdquo;</p>
+              <p className="text-sm text-gray-500">لا توجد نتائج لـ &ldquo;{query}&rdquo;</p>
             </div>
           )}
         </div>
@@ -125,7 +125,7 @@ export function Header() {
       <div className="flex items-center gap-4 ml-4">
         <div className="hidden sm:flex items-center mx-4">
           <span className="text-xs font-semibold uppercase tracking-wider text-brand bg-brand-light px-2.5 py-1 rounded-full">
-            {currentUser.role} View
+            عرض {currentUser.role}
           </span>
         </div>
         <DropdownMenu>
@@ -147,8 +147,8 @@ export function Header() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout} className="cursor-pointer text-red-600">
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign out
+              <LogOut className="ml-2 h-4 w-4" />
+              تسجيل الخروج
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
