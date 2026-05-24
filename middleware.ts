@@ -36,8 +36,9 @@ export async function middleware(request: NextRequest) {
   // Protect all app routes — redirect to /login if not authenticated
   const isAuthPage = request.nextUrl.pathname === "/login";
   const isCallback = request.nextUrl.pathname.startsWith("/auth/");
+  const isPublicApplication = request.nextUrl.pathname.startsWith("/apply/");
 
-  if (!user && !isAuthPage && !isCallback) {
+  if (!user && !isAuthPage && !isCallback && !isPublicApplication) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
   }

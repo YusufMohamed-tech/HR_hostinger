@@ -12,6 +12,7 @@ import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useEmployees } from "@/hooks/use-data";
 import { createDepartment } from "@/lib/services/departments";
+import { departmentFormSchema, getValidationMessage } from "@/lib/validation";
 
 interface Props {
   onSuccess: () => void;
@@ -27,14 +28,21 @@ export function AddDepartmentDialog({ onSuccess }: Props) {
   const [managerId, setManagerId] = useState("");
 
   const handleSubmit = async () => {
-    if (!name || !currentUser?.orgId) return;
+    if (!currentUser?.orgId) return;
     setSubmitting(true);
     setError("");
 
+    const parsed = departmentFormSchema.safeParse({ name, manager_employee_id: managerId });
+    if (!parsed.success) {
+      setError(getValidationMessage(parsed.error));
+      setSubmitting(false);
+      return;
+    }
+
     const { error: err } = await createDepartment({
       org_id: currentUser.orgId,
-      name,
-      manager_employee_id: managerId || undefined,
+      name: parsed.data.name,
+      manager_employee_id: parsed.data.manager_employee_id,
     });
 
     if (err) {

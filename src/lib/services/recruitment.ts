@@ -1,0 +1,73 @@
+import { createClient } from "@/lib/supabase/client";
+
+export async function getJobPostings(orgId: string) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("job_postings")
+    .select("*, department:department_id(name), location:location_id(name)")
+    .eq("org_id", orgId)
+    .order("created_at", { ascending: false });
+
+  return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+}
+
+export async function getJobPostingById(id: string) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("job_postings")
+    .select("*, department:department_id(name), location:location_id(name)")
+    .eq("id", id)
+    .single();
+
+  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+}
+
+export async function createJobPosting(values: Record<string, unknown>) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("job_postings")
+    .insert(values as never)
+    .select()
+    .single();
+
+  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+}
+
+export async function getJobApplications(orgId: string, jobId?: string) {
+  const supabase = createClient();
+  let query = supabase
+    .from("job_applications")
+    .select("*, job:job_posting_id(title)")
+    .eq("org_id", orgId)
+    .order("applied_at", { ascending: false });
+
+  if (jobId) {
+    query = query.eq("job_posting_id", jobId);
+  }
+
+  const result = await query;
+  return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+}
+
+export async function createJobApplication(values: Record<string, unknown>) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("job_applications")
+    .insert(values as never)
+    .select()
+    .single();
+
+  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+}
+
+export async function updateJobApplication(id: string, values: Record<string, unknown>) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("job_applications")
+    .update(values as never)
+    .eq("id", id)
+    .select()
+    .single();
+
+  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+}

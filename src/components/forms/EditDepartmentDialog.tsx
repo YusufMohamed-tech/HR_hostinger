@@ -11,6 +11,7 @@ import {
 import { Pencil } from "lucide-react";
 import { useEmployees } from "@/hooks/use-data";
 import { updateDepartment } from "@/lib/services/departments";
+import { departmentFormSchema, getValidationMessage } from "@/lib/validation";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,13 +35,19 @@ export function EditDepartmentDialog({ department, onSuccess }: Props) {
   }, [department, open]);
 
   const handleSubmit = async () => {
-    if (!name) return;
     setSubmitting(true);
     setError("");
 
+    const parsed = departmentFormSchema.safeParse({ name, manager_employee_id: managerId });
+    if (!parsed.success) {
+      setError(getValidationMessage(parsed.error));
+      setSubmitting(false);
+      return;
+    }
+
     const { error: err } = await updateDepartment(department.id, {
-      name,
-      manager_employee_id: managerId || undefined,
+      name: parsed.data.name,
+      manager_employee_id: parsed.data.manager_employee_id,
     });
 
     if (err) {

@@ -24,10 +24,14 @@ export default function SettingsPage() {
     router.replace("/login");
   };
 
-  const roleBadgeColor = {
+  const roleBadgeColors: Record<string, string> = {
     Admin: "bg-blue-50 text-blue-700 border-blue-200",
     Employee: "bg-green-50 text-green-700 border-green-200",
-  }[currentUser?.role || "Employee"];
+    HR_Admin: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    HR_Recruitment: "bg-purple-50 text-purple-700 border-purple-200",
+    Training_Manager: "bg-amber-50 text-amber-700 border-amber-200",
+  };
+  const roleBadgeColor = roleBadgeColors[currentUser?.role || "Employee"];
 
   return (
     <div className="flex flex-col gap-6">

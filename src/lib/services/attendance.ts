@@ -34,11 +34,30 @@ export async function getEmployeeAttendance(employeeId: string, workDate?: strin
 
 export async function createCheckIn(values: Record<string, unknown>) {
   const supabase = createClient();
+  const employeeId = values.employee_id as string;
+  const currentDevice = values.check_in_device as string;
+
+  // Device locking logic
+  const empRes = await supabase.from("employees").select("registered_device_id").eq("id", employeeId).single();
+  const employee = empRes.data as { registered_device_id?: string | null } | null;
+  const registeredDevice = employee?.registered_device_id;
+
+  if (registeredDevice && registeredDevice !== currentDevice) {
+    return { data: null, error: { message: "Attendance locked to your registered device. Please use your primary device." } };
+  } else if (!registeredDevice) {
+    // Register this device implicitly on first use
+    await supabase.from("employees").update({ registered_device_id: currentDevice } as never).eq("id", employeeId);
+  }
+
   const result = await supabase
     .from("attendance_records")
     .insert(values as never)
     .select()
     .single();
+
+  if (result.error && result.error.code === "23505") { // unique constraint violation
+    return { data: null, error: { message: "You have already checked in for today." } };
+  }
 
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }

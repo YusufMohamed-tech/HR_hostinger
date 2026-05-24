@@ -15,7 +15,12 @@ import {
   Network,
   Settings,
   Users,
-  ClipboardList
+  ClipboardList,
+  Calculator,
+  Briefcase,
+  FileText,
+  Package,
+  WalletCards
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -37,10 +42,15 @@ export function SidebarContent() {
       { name: "Notifications", href: "/notifications", icon: Bell },
     ];
 
-    const adminOps = isAdmin
+    const adminOps = isAdmin || role === "HR_Admin" || role === "HR_Recruitment" || role === "Training_Manager"
       ? [
           { name: "Employees", href: "/employees", icon: Users },
           { name: "Departments", href: "/departments", icon: Layers },
+          { name: "Personnel", href: "/personnel", icon: FileText },
+          { name: "Payroll", href: "/payroll", icon: Calculator },
+          { name: "Recruitment", href: "/recruitment", icon: Briefcase },
+          { name: "Balances", href: "/balances", icon: WalletCards },
+          { name: "Assets", href: "/assets", icon: Package },
         ]
       : [];
 

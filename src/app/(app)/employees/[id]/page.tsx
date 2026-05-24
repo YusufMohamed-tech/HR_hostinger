@@ -6,6 +6,14 @@ import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useEmployees, useAttendance } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { 
@@ -16,6 +24,9 @@ import {
   getEmployeeActions 
 } from "@/lib/services/employee-details";
 import { useEffect, useState } from "react";
+
+import { getEmployeeAssets } from "@/lib/services/assets";
+import { getFinancialBalances } from "@/lib/services/financial";
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -33,25 +44,31 @@ export default function EmployeeDetailPage() {
     salaryHistory: [] as Record<string, unknown>[],
     kpis: [] as Record<string, unknown>[],
     reviews: [] as Record<string, unknown>[],
-    actions: [] as Record<string, unknown>[]
+    actions: [] as Record<string, unknown>[],
+    assets: [] as Record<string, unknown>[],
+    financials: [] as Record<string, unknown>[]
   });
 
   useEffect(() => {
     if (!currentUser?.orgId || !employeeId) return;
     async function fetchDetails() {
-      const [docs, salary, kpis, reviews, actions] = await Promise.all([
+      const [docs, salary, kpis, reviews, actions, assets, financials] = await Promise.all([
         getEmployeeDocuments(currentUser?.orgId as string, employeeId),
         getEmployeeSalaryHistory(currentUser?.orgId as string, employeeId),
         getEmployeeKpis(currentUser?.orgId as string, employeeId),
         getEmployeeReviews(currentUser?.orgId as string, employeeId),
-        getEmployeeActions(currentUser?.orgId as string, employeeId)
+        getEmployeeActions(currentUser?.orgId as string, employeeId),
+        getEmployeeAssets(currentUser?.orgId as string, employeeId),
+        getFinancialBalances(currentUser?.orgId as string, employeeId)
       ]);
       setDetails({
         documents: docs.data || [],
         salaryHistory: salary.data || [],
         kpis: kpis.data || [],
         reviews: reviews.data || [],
-        actions: actions.data || []
+        actions: actions.data || [],
+        assets: assets.data || [],
+        financials: financials.data || []
       });
     }
     fetchDetails();
@@ -249,6 +266,80 @@ export default function EmployeeDetailPage() {
                   <Badge variant="outline" className={act.action_type === 'warning' ? 'text-red-600 bg-red-50' : 'text-blue-600 bg-blue-50'}>{String(act.action_type)}</Badge>
                 </div>
               ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="border-none shadow-sm">
+          <CardHeader>
+            <CardTitle>Asset Handover</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {details.assets.length === 0 ? (
+              <p className="text-sm text-gray-500">No assets assigned yet.</p>
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Asset</TableHead>
+                      <TableHead>Serial</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {details.assets.map((asset) => (
+                      <TableRow key={String(asset.id)}>
+                        <TableCell className="font-medium">{String(asset.asset_type)}</TableCell>
+                        <TableCell>{String(asset.serial_number || 'N/A')}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={asset.status === 'assigned' ? 'bg-blue-50 text-blue-700' : 'bg-gray-50 text-gray-700'}>
+                            {String(asset.status)}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardHeader>
+            <CardTitle>Financial Balances & Deficits</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {details.financials.length === 0 ? (
+              <p className="text-sm text-gray-500">No financial deficits recorded.</p>
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {details.financials.map((fin) => (
+                      <TableRow key={String(fin.id)}>
+                        <TableCell className="font-medium">{String(fin.transaction_type)}</TableCell>
+                        <TableCell>${Number(fin.amount).toFixed(2)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={fin.status === 'pending' ? 'bg-yellow-50 text-yellow-700' : 'bg-green-50 text-green-700'}>
+                            {String(fin.status)}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>
