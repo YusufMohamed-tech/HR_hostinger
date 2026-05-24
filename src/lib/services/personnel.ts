@@ -25,6 +25,19 @@ export async function createPersonnelFile(values: Record<string, unknown>) {
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
+export async function uploadPersonnelFile(orgId: string, employeeId: string, file: File) {
+  const supabase = createClient();
+  const extension = file.name.split(".").pop() || "bin";
+  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
+  const filePath = `${orgId}/${employeeId}/${fileName}`;
+
+  const result = await supabase.storage
+    .from("personnel-files")
+    .upload(filePath, file, { upsert: false });
+
+  return result as unknown as { data: { path: string } | null; error: { message: string } | null };
+}
+
 export async function getSocialInsurance(orgId: string, employeeId?: string) {
   const supabase = createClient();
   let query = supabase

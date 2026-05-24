@@ -19,6 +19,7 @@ import {
   getEmployeeContracts,
   getPersonnelFiles,
   getSocialInsurance,
+  uploadPersonnelFile,
   upsertSocialInsurance,
 } from "@/lib/services/personnel";
 
@@ -173,7 +174,9 @@ function EmployeeSelect({ employees, value, onChange }: { employees: Record<stri
 function AddFileDialog({ employees, onSuccess }: { employees: Record<string, unknown>[]; onSuccess: () => void }) {
   const { currentUser } = useRoleContext();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ employee_id: "", category: "other", file_name: "", file_path: "", expiry_date: "" });
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({ employee_id: "", category: "other", expiry_date: "" });
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -183,15 +186,33 @@ function AddFileDialog({ employees, onSuccess }: { employees: Record<string, unk
         <div className="grid gap-4 py-4">
           <EmployeeSelect employees={employees} value={form.employee_id} onChange={(value) => set("employee_id", value)} />
           <Input placeholder="Category" value={form.category} onChange={(event) => set("category", event.target.value)} />
-          <Input placeholder="File name" value={form.file_name} onChange={(event) => set("file_name", event.target.value)} />
-          <Input placeholder="File path / URL" value={form.file_path} onChange={(event) => set("file_path", event.target.value)} />
+          <Input type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
           <Input type="date" value={form.expiry_date} onChange={(event) => set("expiry_date", event.target.value)} />
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
           <Button onClick={async () => {
-            if (!currentUser?.orgId || !form.employee_id || !form.file_name || !form.file_path) return;
-            await createPersonnelFile({ org_id: currentUser.orgId, ...form, expiry_date: form.expiry_date || undefined });
+            if (!currentUser?.orgId || !form.employee_id || !file) {
+              setError("Employee and file are required.");
+              return;
+            }
+            const { data: uploadData, error: uploadError } = await uploadPersonnelFile(currentUser.orgId, form.employee_id, file);
+            if (uploadError || !uploadData?.path) {
+              setError(uploadError?.message || "Failed to upload file.");
+              return;
+            }
+            await createPersonnelFile({
+              org_id: currentUser.orgId,
+              employee_id: form.employee_id,
+              category: form.category || "other",
+              file_name: file.name,
+              file_path: uploadData.path,
+              file_size: file.size,
+              expiry_date: form.expiry_date || undefined,
+            });
             setOpen(false);
+            setFile(null);
+            setError("");
             onSuccess();
           }}>Save</Button>
         </DialogFooter>
