@@ -31,6 +31,7 @@ import { useTasks, useEmployees, useLocations } from "@/hooks/use-data";
 import { createTask, assignTask, updateTask, updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
 import { notifyTaskAssigned } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
+import { getValidationMessage, taskFormSchema } from "@/lib/validation";
 
 const statusStyles: Record<string, string> = {
   pending: "bg-amber-50 text-amber-700 border-amber-200",
@@ -198,17 +199,24 @@ function CreateTaskDialog({
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
   const handleSubmit = async () => {
-    if (!currentUser?.orgId || !form.title) return;
+    if (!currentUser?.orgId) return;
+
+    const parsed = taskFormSchema.safeParse(form);
+    if (!parsed.success) {
+      setError(getValidationMessage(parsed.error));
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
     const { data, error: err } = await createTask({
       org_id: currentUser.orgId,
-      title: form.title,
-      description: form.description || undefined,
-      priority: form.priority,
-      due_date: form.due_date || undefined,
-      location_id: form.location_id || undefined,
+      title: parsed.data.title,
+      description: parsed.data.description,
+      priority: parsed.data.priority,
+      due_date: parsed.data.due_date,
+      location_id: parsed.data.location_id,
       created_by: currentUser.id,
     });
 
@@ -218,14 +226,14 @@ function CreateTaskDialog({
       return;
     }
 
-    if (form.employee_id) {
+    if (parsed.data.employee_id) {
       await assignTask({
         org_id: currentUser.orgId,
         task_id: data.id,
-        employee_id: form.employee_id,
+        employee_id: parsed.data.employee_id,
         status: "pending",
       });
-      await notifyTaskAssigned(currentUser.orgId, form.employee_id, form.title);
+      await notifyTaskAssigned(currentUser.orgId, parsed.data.employee_id, parsed.data.title);
     }
 
     setSubmitting(false);

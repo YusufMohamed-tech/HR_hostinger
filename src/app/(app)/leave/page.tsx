@@ -21,9 +21,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useLeaveRequests, useLeaveBalances } from "@/hooks/use-data";
-import { createLeaveRequest, updateLeaveRequest } from "@/lib/services/leaves";
+import { approveLeaveRequest, createLeaveRequest, updateLeaveRequest } from "@/lib/services/leaves";
 import { notifyLeaveDecision } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
+import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
 
 const statusStyle: Record<string, string> = {
   pending: "bg-amber-50 text-amber-700 border-amber-200",
@@ -126,7 +127,11 @@ export default function LeavePage() {
                           className="text-green-600 hover:text-green-700"
                           onClick={async () => {
                             const note = window.prompt("Optional approval note:") || "";
-                            await updateLeaveRequest(reqId, { status: "approved", decision_note: note || undefined, decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            const { error: approveError } = await approveLeaveRequest(reqRecord, { status: "approved", decision_note: note || undefined, decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            if (approveError) {
+                              window.alert(approveError.message);
+                              return;
+                            }
                             if (currentUser?.orgId && reqRecord.employee_id) {
                               await notifyLeaveDecision(currentUser.orgId, String(reqRecord.employee_id), leaveType, "approved");
                             }
@@ -141,7 +146,11 @@ export default function LeavePage() {
                           className="text-red-600 hover:text-red-700"
                           onClick={async () => {
                             const note = window.prompt("Reason for rejection:") || "";
-                            await updateLeaveRequest(reqId, { status: "rejected", decision_note: note || undefined, decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            const { error: rejectError } = await updateLeaveRequest(reqId, { status: "rejected", decision_note: note || undefined, decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            if (rejectError) {
+                              window.alert(rejectError.message);
+                              return;
+                            }
                             if (currentUser?.orgId && reqRecord.employee_id) {
                               await notifyLeaveDecision(currentUser.orgId, String(reqRecord.employee_id), leaveType, "rejected");
                             }
@@ -182,17 +191,21 @@ function CreateLeaveDialog({ onSuccess }: { onSuccess: () => void }) {
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
   const handleSubmit = async () => {
-    if (!currentUser?.orgId || !currentUser?.employeeId || !form.start_date || !form.end_date) return;
+    if (!currentUser?.orgId || !currentUser?.employeeId) return;
+
+    const parsed = leaveRequestFormSchema.safeParse(form);
+    if (!parsed.success) {
+      setError(getValidationMessage(parsed.error));
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
     const { error: err } = await createLeaveRequest({
       org_id: currentUser.orgId,
       employee_id: currentUser.employeeId,
-      leave_type: form.leave_type,
-      start_date: form.start_date,
-      end_date: form.end_date,
-      reason: form.reason || undefined,
+      ...parsed.data,
     });
 
     if (err) {

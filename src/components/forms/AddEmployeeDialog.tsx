@@ -12,6 +12,7 @@ import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useDepartments, useLocations, useEmployees } from "@/hooks/use-data";
 import { createEmployee } from "@/lib/services/employees";
+import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
 
 interface Props {
   onSuccess: () => void;
@@ -54,34 +55,20 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
   const handleSubmit = async () => {
-    if (!form.full_name || !currentUser?.orgId) return;
+    if (!currentUser?.orgId) return;
+
+    const parsed = employeeFormSchema.safeParse(form);
+    if (!parsed.success) {
+      setError(getValidationMessage(parsed.error));
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
     const payload = {
       org_id: currentUser.orgId,
-      full_name: form.full_name,
-      employee_code: form.employee_code || undefined,
-      email: form.email || undefined,
-      phone: form.phone || undefined,
-      address: form.address || undefined,
-      emergency_contact_name: form.emergency_contact_name || undefined,
-      emergency_contact_phone: form.emergency_contact_phone || undefined,
-      national_id: form.national_id || undefined,
-      date_of_birth: form.date_of_birth || undefined,
-      gender: form.gender || undefined,
-      hiring_date: form.hiring_date || undefined,
-      department_id: form.department_id || undefined,
-      job_title: form.job_title || undefined,
-      manager_id: form.manager_id || undefined,
-      location_id: form.location_id || undefined,
-      employment_type: form.employment_type || undefined,
-      status: form.status || undefined,
-      base_salary: form.base_salary ? parseFloat(form.base_salary) : undefined,
-      bonus: form.bonus ? parseFloat(form.bonus) : undefined,
-      deductions: form.deductions ? parseFloat(form.deductions) : undefined,
-      payment_method: form.payment_method || undefined,
-      bank_account: form.bank_account || undefined,
+      ...parsed.data,
     };
 
     const { error: err } = await createEmployee(payload);

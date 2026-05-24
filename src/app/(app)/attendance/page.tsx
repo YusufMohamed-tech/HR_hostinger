@@ -30,6 +30,9 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return Math.round(R * c);
 }
 
+const MAX_SELFIE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_SELFIE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
 export default function AttendancePage() {
   const { currentUser } = useRoleContext();
   const today = new Date().toISOString().split("T")[0];
@@ -58,8 +61,20 @@ export default function AttendancePage() {
 
   const handleCheckIn = async () => {
     if (!currentUser?.orgId || !currentUser?.employeeId) return;
+    if (myAttendance?.check_in_at) {
+      setError("You have already checked in today.");
+      return;
+    }
     if (!photoFile) {
       setError("Please attach a selfie for check-in.");
+      return;
+    }
+    if (!ALLOWED_SELFIE_TYPES.has(photoFile.type)) {
+      setError("Selfie must be a JPG, PNG, or WebP image.");
+      return;
+    }
+    if (photoFile.size > MAX_SELFIE_BYTES) {
+      setError("Selfie must be 5 MB or smaller.");
       return;
     }
     setSubmitting(true);
@@ -217,7 +232,16 @@ export default function AttendancePage() {
                 type="file"
                 accept="image/*"
                 onChange={(event) => {
-                  setPhotoFile(event.target.files?.[0] ?? null);
+                  const nextFile = event.target.files?.[0] ?? null;
+                  setPhotoFile(nextFile);
+                  if (nextFile && !ALLOWED_SELFIE_TYPES.has(nextFile.type)) {
+                    setError("Selfie must be a JPG, PNG, or WebP image.");
+                    return;
+                  }
+                  if (nextFile && nextFile.size > MAX_SELFIE_BYTES) {
+                    setError("Selfie must be 5 MB or smaller.");
+                    return;
+                  }
                   setError("");
                 }}
               />
