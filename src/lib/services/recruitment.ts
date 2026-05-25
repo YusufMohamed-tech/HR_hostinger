@@ -127,6 +127,28 @@ export async function getRecruitmentResumeUrl(path: string) {
   return result as unknown as { data: { signedUrl: string } | null; error: { message: string } | null };
 }
 
+export async function getRecruitmentMessages(applicationId: string) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("recruitment_messages")
+    .select("*")
+    .eq("job_application_id", applicationId)
+    .order("sent_at", { ascending: false });
+
+  return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+}
+
+export async function createRecruitmentMessage(values: Record<string, unknown>) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("recruitment_messages")
+    .insert(values as never)
+    .select()
+    .single();
+
+  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+}
+
 export async function updateJobApplication(id: string, values: Record<string, unknown>) {
   const supabase = createClient();
   const result = await supabase
