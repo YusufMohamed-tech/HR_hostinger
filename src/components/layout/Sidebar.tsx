@@ -66,7 +66,7 @@ export function SidebarContent() {
   const sections = getSections();
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-slate-900 border-r border-slate-800">
+    <div className="flex h-full flex-col overflow-y-auto bg-slate-900 border-l border-slate-800">
       <div className="flex h-16 shrink-0 items-center px-6 gap-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white shadow-sm">
           <Network className="h-5 w-5" />
@@ -111,7 +111,7 @@ export function SidebarContent() {
 
 export function Sidebar() {
   return (
-    <aside className="hidden lg:flex w-[240px] flex-col h-screen fixed left-0 top-0 z-30">
+    <aside className="hidden lg:flex w-[240px] flex-col h-screen fixed right-0 top-0 z-30">
       <SidebarContent />
     </aside>
   );

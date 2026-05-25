@@ -122,7 +122,7 @@ export function Header() {
         </div>
       </div>
 
-      <div className="flex items-center gap-4 ml-4">
+      <div className="flex items-center gap-4 mr-4">
         <div className="hidden sm:flex items-center mx-4">
           <span className="text-xs font-semibold uppercase tracking-wider text-brand bg-brand-light px-2.5 py-1 rounded-full">
             عرض {currentUser.role}

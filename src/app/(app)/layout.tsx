@@ -7,11 +7,11 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGuard>
-      <div className="flex h-screen overflow-hidden bg-muted">
+      <div className="flex h-screen overflow-hidden bg-muted" dir="rtl">
         <Sidebar />
-        <div className="flex w-full flex-col lg:pl-[240px] bg-muted relative">
+        <div className="flex w-full flex-col lg:pr-[240px] bg-muted relative">
           <Header />
-          <main className="flex-1 overflow-auto p-4 md:p-8 ml-0 lg:ml-2">
+          <main className="flex-1 overflow-auto p-4 md:p-8 mr-0 lg:mr-2">
             <div className="mx-auto max-w-7xl">
               <ErrorBoundary>
                 {children}
