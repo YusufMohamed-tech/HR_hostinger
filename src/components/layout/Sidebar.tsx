@@ -4,23 +4,23 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { 
-  CalendarDays,
+import {
   Bell,
+  Briefcase,
+  Calculator,
+  CalendarDays,
   CheckSquare,
+  ClipboardList,
   Clock,
-  LayoutDashboard,
+  FileText,
   Layers,
+  LayoutDashboard,
   MapPin,
   Network,
+  Package,
   Settings,
   Users,
-  ClipboardList,
-  Calculator,
-  Briefcase,
-  FileText,
-  Package,
-  WalletCards
+  WalletCards,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,23 +42,33 @@ export function SidebarContent() {
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 
-    const adminOps = isAdmin || role === "HR_Admin" || role === "HR_Recruitment" || role === "Training_Manager"
-      ? [
-          { name: "الموظفون", href: "/employees", icon: Users },
-          { name: "الأقسام", href: "/departments", icon: Layers },
-          { name: "ملفات الموظفين", href: "/personnel", icon: FileText },
-          { name: "الرواتب", href: "/payroll", icon: Calculator },
-          { name: "التوظيف", href: "/recruitment", icon: Briefcase },
-          { name: "الأرصدة والعهد", href: "/balances", icon: WalletCards },
-          { name: "الأصول", href: "/assets", icon: Package },
-        ]
-      : [];
+    const fullAdminOps = [
+      { name: "الموظفون", href: "/employees", icon: Users },
+      { name: "الأقسام", href: "/departments", icon: Layers },
+      { name: "ملفات الموظفين", href: "/personnel", icon: FileText },
+      { name: "الرواتب", href: "/payroll", icon: Calculator },
+      { name: "التوظيف", href: "/recruitment", icon: Briefcase },
+      { name: "الأرصدة والعهد", href: "/balances", icon: WalletCards },
+      { name: "الأصول", href: "/assets", icon: Package },
+    ];
+
+    const recruitmentOps = [
+      { name: "التوظيف", href: "/recruitment", icon: Briefcase },
+      { name: "الإشعارات", href: "/notifications", icon: Bell },
+    ];
 
     const system = [{ name: "الإعدادات", href: "/settings", icon: Settings }];
 
+    if (role === "HR_Recruitment") {
+      return [
+        { title: "التوظيف", links: recruitmentOps },
+        { title: "النظام", links: system },
+      ];
+    }
+
     return [
       { title: "الأساسي", links: core },
-      { title: "الإدارة", links: adminOps },
+      { title: "الإدارة", links: isAdmin || role === "HR_Admin" ? fullAdminOps : [] },
       { title: "النظام", links: system },
     ];
   };

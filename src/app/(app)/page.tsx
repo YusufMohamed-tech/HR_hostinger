@@ -1,6 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { currentUser } = useRoleContext();
   const { data: employees } = useEmployees();
   const today = new Date().toISOString().split("T")[0];
@@ -24,6 +26,16 @@ export default function DashboardPage() {
   const { data: leaves } = useLeaveRequests();
   const { data: notifications } = useNotifications();
   const { data: myShifts } = useEmployeeShifts(currentUser?.employeeId);
+
+  useEffect(() => {
+    if (currentUser?.role === "HR_Recruitment") {
+      router.replace("/recruitment");
+    }
+  }, [currentUser?.role, router]);
+
+  if (currentUser?.role === "HR_Recruitment") {
+    return null;
+  }
 
   const isAdmin = currentUser?.role === "Admin";
 
