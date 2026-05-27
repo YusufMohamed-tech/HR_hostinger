@@ -3,6 +3,9 @@
 ALTER TABLE public.job_postings
   ADD COLUMN IF NOT EXISTS application_deadline date;
 
+ALTER TABLE public.job_applications
+  ADD COLUMN IF NOT EXISTS status_history jsonb NOT NULL DEFAULT '[]'::jsonb;
+
 CREATE TABLE IF NOT EXISTS public.recruitment_messages (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,

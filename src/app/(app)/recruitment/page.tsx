@@ -357,8 +357,7 @@ function JobDashboard({
           <div className="grid gap-3 xl:grid-cols-2">
             {jobs.map((job) => {
               const jobId = String(job.id || "");
-              const jobApplications = applications.filter((app) => String(app.job_posting_id || "") === jobId || selectedJobId !== "all");
-              const scopedApps = selectedJobId === "all" ? jobApplications : applications;
+              const scopedApps = applications.filter((app) => String(app.job_posting_id || "") === jobId);
               const link = `${publicOrigin}/apply/${jobId}`;
               const scores = scopedApps.map((application) => scoreCandidate(application, job).score);
               return (
@@ -370,7 +369,7 @@ function JobDashboard({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-gray-900">{String(job.title || "Untitled")}</p>
-                      <p className="text-xs text-gray-500">Source: public link · {daysRemaining(job.application_deadline)} days remaining</p>
+                      <p className="text-xs text-gray-500">Source: public link - {daysRemaining(job.application_deadline)} days remaining</p>
                     </div>
                     <StatusBadge status={String(job.status || "open")} />
                   </div>
@@ -803,7 +802,7 @@ function ApplicationReviewDialog({
       <DialogContent className="max-w-6xl">
         <DialogHeader>
           <DialogTitle>{String(application.candidate_name || "Candidate")}</DialogTitle>
-          <DialogDescription>{String(application.email || "")} {application.phone ? `· ${String(application.phone)}` : ""}</DialogDescription>
+          <DialogDescription>{String(application.email || "")} {application.phone ? `- ${String(application.phone)}` : ""}</DialogDescription>
         </DialogHeader>
         <div className="grid max-h-[74vh] gap-4 overflow-y-auto py-4 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="space-y-4">
@@ -819,7 +818,7 @@ function ApplicationReviewDialog({
               <CardContent className="space-y-3 text-sm">
                 <div className="grid gap-3 md:grid-cols-2">
                   <ProfileLine label="Name" value={String(application.candidate_name || "-")} />
-                  <ProfileLine label="Contact" value={`${String(application.email || "-")} ${application.phone ? `· ${String(application.phone)}` : ""}`} />
+                  <ProfileLine label="Contact" value={`${String(application.email || "-")} ${application.phone ? `- ${String(application.phone)}` : ""}`} />
                   <ProfileLine label="Education" value={candidateScore.education || "-"} />
                   <ProfileLine label="Portfolio" value={candidateScore.portfolio || "-"} />
                   <ProfileLine label="Expected salary" value={candidateScore.salaryExpectation ? String(candidateScore.salaryExpectation) : "-"} />
@@ -902,7 +901,7 @@ function ApplicationReviewDialog({
                     </Button>
                   )}
                 </div>
-                {cvSearch && <p className="text-xs text-gray-500">Use the browser PDF search for “{cvSearch}” inside the preview.</p>}
+                {cvSearch && <p className="text-xs text-gray-500">Use the browser PDF search for <span className="font-medium">{cvSearch}</span> inside the preview.</p>}
                 {resumeUrl ? (
                   <iframe src={resumeUrl} className="h-72 w-full rounded-md border" title="CV preview" />
                 ) : (
