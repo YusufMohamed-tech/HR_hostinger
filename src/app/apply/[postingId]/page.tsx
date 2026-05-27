@@ -157,6 +157,7 @@ export default function PublicApplicationPage() {
       cover_letter: form.cover_letter.trim() || undefined,
       application_answers: answers,
       status: "new",
+      status_history: [{ status: "new", at: new Date().toISOString(), by: "candidate", note: "Application submitted" }],
       source: "public_link",
     });
     setSubmitting(false);
@@ -177,7 +178,7 @@ export default function PublicApplicationPage() {
   const jobMeta = [posting?.employment_type, posting?.experience_level, posting?.salary_range]
     .filter(Boolean)
     .map(String)
-    .join(" · ");
+    .join(" - ");
 
   return (
     <div className="min-h-screen bg-muted">
@@ -203,7 +204,7 @@ export default function PublicApplicationPage() {
             </CardTitle>
             {posting && (
               <p className="text-sm text-gray-500">
-                {String(department?.name || "All departments")} · {String(location?.name || "Flexible location")}
+                {String(department?.name || "All departments")} - {String(location?.name || "Flexible location")}
               </p>
             )}
           </CardHeader>

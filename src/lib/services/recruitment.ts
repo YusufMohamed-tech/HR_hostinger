@@ -60,7 +60,7 @@ export async function getJobApplications(orgId: string, jobId?: string) {
   const supabase = createClient();
   let query = supabase
     .from("job_applications")
-    .select("*, job:job_posting_id(title, department:department_id(name), location:location_id(name))")
+    .select("*, job:job_posting_id(title, description, requirements, salary_range, experience_level, application_deadline, employment_type, department:department_id(name), location:location_id(name))")
     .eq("org_id", orgId)
     .order("applied_at", { ascending: false });
 
@@ -133,6 +133,21 @@ export async function getRecruitmentMessages(applicationId: string) {
     .from("recruitment_messages")
     .select("*")
     .eq("job_application_id", applicationId)
+    .order("sent_at", { ascending: false });
+
+  return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+}
+
+export async function getCandidateRecruitmentMessages(applicationIds: string[]) {
+  if (applicationIds.length === 0) {
+    return { data: [], error: null } as { data: Record<string, unknown>[]; error: null };
+  }
+
+  const supabase = createClient();
+  const result = await supabase
+    .from("recruitment_messages")
+    .select("*")
+    .in("job_application_id", applicationIds)
     .order("sent_at", { ascending: false });
 
   return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
