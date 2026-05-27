@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useLeaveRequests, useLeaveBalances } from "@/hooks/use-data";
-import { approveLeaveRequest, createLeaveRequest, updateLeaveRequest } from "@/lib/services/leaves";
+import { advanceLeaveApproval, createLeaveRequest } from "@/lib/services/leaves";
 import { notifyLeaveDecision } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
@@ -36,8 +36,8 @@ export default function LeavePage() {
   const { currentUser } = useRoleContext();
   const { data: leaveRequests, loading, refetch } = useLeaveRequests();
   const { data: balances } = useLeaveBalances(currentUser?.employeeId);
-  const isAdmin = currentUser?.role === "Admin";
-  const visibleRequests = isAdmin
+  const canApprove = ["Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
+  const visibleRequests = canApprove
     ? leaveRequests
     : leaveRequests.filter((req) => String((req as Record<string, unknown>).employee_id ?? "") === currentUser?.employeeId);
   const balance = (balances[0] ?? null) as Record<string, unknown> | null;
@@ -54,10 +54,10 @@ export default function LeavePage() {
           <h1 className="text-2xl font-bold tracking-tight">طلبات الإجازات</h1>
           <p className="text-gray-500 text-sm mt-1">تقديم طلبات الإجازة واعتمادها ومتابعتها.</p>
         </div>
-        {!isAdmin && <CreateLeaveDialog onSuccess={refetch} />}
+        {!canApprove && <CreateLeaveDialog onSuccess={refetch} />}
       </div>
 
-      {!isAdmin && balances.length > 0 && (
+      {!canApprove && balances.length > 0 && (
         <Card className="border-none shadow-sm">
           <CardContent className="py-4 grid grid-cols-3 gap-4 text-sm">
             <div>
@@ -87,7 +87,7 @@ export default function LeavePage() {
                 <TableHead className="font-semibold text-gray-600">الأيام</TableHead>
                 <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
                 <TableHead className="font-semibold text-gray-600">السبب</TableHead>
-                {isAdmin && <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>}
+                {canApprove && <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -118,21 +118,22 @@ export default function LeavePage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-gray-600">{reason}</TableCell>
-                  {isAdmin && (
+                  {canApprove && (
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Button
                           variant="ghost"
                           size="sm"
                           className="text-green-600 hover:text-green-700"
+                          disabled={status !== "pending"}
                           onClick={async () => {
-                            const note = window.prompt("Optional approval note:") || "";
-                            const { error: approveError } = await approveLeaveRequest(reqRecord, { status: "approved", decision_note: note || undefined, decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            const note = window.prompt("ملاحظة الاعتماد:") || "";
+                            const { data, error: approveError } = await advanceLeaveApproval(reqRecord, "approved", currentUser?.id, note);
                             if (approveError) {
                               window.alert(approveError.message);
                               return;
                             }
-                            if (currentUser?.orgId && reqRecord.employee_id) {
+                            if (currentUser?.orgId && reqRecord.employee_id && String(data?.status || "") === "approved") {
                               await notifyLeaveDecision(currentUser.orgId, String(reqRecord.employee_id), leaveType, "approved");
                             }
                             refetch();
@@ -144,9 +145,10 @@ export default function LeavePage() {
                           variant="ghost"
                           size="sm"
                           className="text-red-600 hover:text-red-700"
+                          disabled={status !== "pending"}
                           onClick={async () => {
-                            const note = window.prompt("Reason for rejection:") || "";
-                            const { error: rejectError } = await updateLeaveRequest(reqId, { status: "rejected", decision_note: note || undefined, decided_at: new Date().toISOString(), decided_by: currentUser?.id || undefined });
+                            const note = window.prompt("سبب الرفض:") || "";
+                            const { error: rejectError } = await advanceLeaveApproval(reqRecord, "rejected", currentUser?.id, note);
                             if (rejectError) {
                               window.alert(rejectError.message);
                               return;

@@ -81,36 +81,36 @@ export default function CandidateApplicationsPage() {
             <Network className="h-5 w-5" />
           </div>
           <div>
-            <p className="font-semibold text-slate-900">Tatwir Talent</p>
-            <p className="text-xs text-slate-500">Candidate portal</p>
+            <p className="font-semibold text-slate-900">تطوير تالنت</p>
+            <p className="text-xs text-slate-500">بوابة المرشح</p>
           </div>
           {userId && (
-            <Button variant="outline" className="mr-auto" onClick={signOut}>Sign out</Button>
+            <Button variant="outline" className="mr-auto" onClick={signOut}>تسجيل الخروج</Button>
           )}
         </div>
 
         {!userId ? (
           <Card className="mx-auto w-full max-w-md border-none shadow-sm">
             <CardHeader>
-              <CardTitle>Sign in to track applications</CardTitle>
+              <CardTitle>سجل الدخول لمتابعة طلباتك</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Input placeholder="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
-              <Input placeholder="Password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+              <Input placeholder="البريد الإلكتروني" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+              <Input placeholder="كلمة المرور" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
               {error && <p className="text-sm text-red-600">{error}</p>}
-              <Button className="w-full bg-brand hover:bg-brand-dark text-white" onClick={signIn}>Sign in</Button>
+              <Button className="w-full bg-brand hover:bg-brand-dark text-white" onClick={signIn}>تسجيل الدخول</Button>
             </CardContent>
           </Card>
         ) : (
           <Card className="border-none shadow-sm">
             <CardHeader>
-              <CardTitle>My applications</CardTitle>
+              <CardTitle>طلباتي</CardTitle>
             </CardHeader>
             <CardContent>
               {loading ? (
-                <div className="py-10 text-center text-sm text-gray-500">Loading applications...</div>
+                <div className="py-10 text-center text-sm text-gray-500">جاري تحميل الطلبات...</div>
               ) : applications.length === 0 ? (
-                <div className="py-10 text-center text-sm text-gray-500">No applications yet.</div>
+                <div className="py-10 text-center text-sm text-gray-500">لا توجد طلبات حتى الآن.</div>
               ) : (
                 <div className="grid gap-3">
                   {applications.map((application) => {
@@ -122,8 +122,8 @@ export default function CandidateApplicationsPage() {
                       <div key={String(application.id)} className="rounded-lg border bg-white p-4">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
-                            <p className="font-medium text-gray-900">{String(job?.title || "Job application")}</p>
-                            <p className="text-xs text-gray-500">Applied at {new Date(String(application.applied_at)).toLocaleDateString()}</p>
+                            <p className="font-medium text-gray-900">{String(job?.title || "طلب توظيف")}</p>
+                            <p className="text-xs text-gray-500">تاريخ التقديم {new Date(String(application.applied_at)).toLocaleDateString()}</p>
                           </div>
                           <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">{applicationStatus}</Badge>
                         </div>
@@ -132,11 +132,11 @@ export default function CandidateApplicationsPage() {
                         )}
                         {history.length > 0 && (
                           <div className="mt-3 rounded-lg bg-gray-50 p-3">
-                            <p className="mb-2 text-sm font-medium text-gray-900">Status timeline</p>
+                            <p className="mb-2 text-sm font-medium text-gray-900">مسار الحالة</p>
                             <div className="space-y-2">
                               {history.slice(0, 5).map((entry, index) => (
                                 <div key={`${String(entry.status || "status")}-${index}`} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                                  <span className="text-gray-700">{String(entry.status || "update")}</span>
+                                  <span className="text-gray-700">{String(entry.status || "تحديث")}</span>
                                   <span className="text-xs text-gray-500">{formatDate(entry.at)}</span>
                                 </div>
                               ))}
@@ -147,13 +147,13 @@ export default function CandidateApplicationsPage() {
                           <div className="mt-3 rounded-lg border border-brand/15 bg-brand-light/50 p-3">
                             <div className="mb-2 flex items-center gap-2 text-sm font-medium text-brand-dark">
                               <MessageSquare className="h-4 w-4" />
-                              Recruiter messages
+                              رسائل مسؤول التوظيف
                             </div>
                             <div className="space-y-2">
                               {messages.slice(0, 3).map((message) => (
                                 <div key={String(message.id)} className="rounded-md bg-white p-3 text-sm">
                                   <div className="flex flex-wrap items-start justify-between gap-2">
-                                    <p className="font-medium text-gray-900">{String(message.subject || "Update")}</p>
+                                    <p className="font-medium text-gray-900">{String(message.subject || "تحديث")}</p>
                                     <p className="text-xs text-gray-500">{formatDate(message.sent_at)}</p>
                                   </div>
                                   <p className="mt-1 whitespace-pre-wrap text-gray-600">{String(message.body || "")}</p>
@@ -168,7 +168,7 @@ export default function CandidateApplicationsPage() {
                 </div>
               )}
               <Button variant="outline" className="mt-4" asChild>
-                <Link href="/">Back to website</Link>
+                <Link href="/">العودة للموقع</Link>
               </Button>
             </CardContent>
           </Card>

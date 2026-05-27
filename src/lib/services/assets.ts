@@ -45,3 +45,25 @@ export async function updateAssetAssignment(id: string, values: Record<string, u
 
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
+
+export async function uploadAssetSignature(assetId: string, signatureData: string) {
+  const supabase = createClient();
+  const bytes = new TextEncoder().encode(signatureData);
+  const filePath = `${assetId}/signature-${Date.now()}.txt`;
+
+  const result = await supabase.storage
+    .from("balance-attachments")
+    .upload(filePath, bytes, {
+      contentType: "text/plain",
+      upsert: false,
+    });
+
+  return result as unknown as { data: { path: string } | null; error: { message: string } | null };
+}
+
+export async function acknowledgeAssetAssignment(id: string, signaturePath: string) {
+  return updateAssetAssignment(id, {
+    acknowledgment_signature_url: signaturePath,
+    acknowledged_at: new Date().toISOString(),
+  });
+}

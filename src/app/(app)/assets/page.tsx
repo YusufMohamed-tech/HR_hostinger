@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Package, Plus, RotateCcw } from "lucide-react";
+import { Package, PenLine, Plus, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEmployees } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { createAssetAssignment, getAssets, updateAssetAssignment } from "@/lib/services/assets";
+import { acknowledgeAssetAssignment, createAssetAssignment, getAssets, updateAssetAssignment, uploadAssetSignature } from "@/lib/services/assets";
 
 export default function AssetsPage() {
   const { currentUser } = useRoleContext();
@@ -55,6 +55,7 @@ export default function AssetsPage() {
                 <TableHead>الرقم التسلسلي</TableHead>
                 <TableHead>تاريخ التسليم</TableHead>
                 <TableHead>الحالة</TableHead>
+                <TableHead>الإقرار</TableHead>
                 {isAdmin && <TableHead className="text-left">الإجراءات</TableHead>}
               </TableRow>
             </TableHeader>
@@ -73,6 +74,13 @@ export default function AssetsPage() {
                         {status}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      {asset.acknowledgment_signature_url ? (
+                        <Badge variant="outline" className="bg-green-50 text-green-700">تم التوقيع</Badge>
+                      ) : status === "assigned" ? (
+                        <AcknowledgeAssetDialog assetId={String(asset.id)} onSuccess={loadAssets} />
+                      ) : "-"}
+                    </TableCell>
                     {isAdmin && (
                       <TableCell className="text-left">
                         <Button
@@ -83,6 +91,7 @@ export default function AssetsPage() {
                             await updateAssetAssignment(String(asset.id), {
                               status: "returned",
                               returned_date: new Date().toISOString().slice(0, 10),
+                              returned_by: currentUser?.id,
                             });
                             loadAssets();
                           }}
@@ -105,6 +114,46 @@ export default function AssetsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function AcknowledgeAssetDialog({ assetId, onSuccess }: { assetId: string; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [signature, setSignature] = useState("");
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+        <PenLine className="h-4 w-4 ml-2" /> توقيع
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>إقرار استلام الأصل</DialogTitle>
+          <DialogDescription>اكتب اسمك لتأكيد استلام العهدة.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-4">
+          <Label>التوقيع الإلكتروني</Label>
+          <Input value={signature} onChange={(event) => setSignature(event.target.value)} />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
+          <Button
+            className="bg-brand hover:bg-brand-dark text-white"
+            disabled={!signature.trim()}
+            onClick={async () => {
+              const { data: uploadData, error: uploadError } = await uploadAssetSignature(assetId, signature.trim());
+              if (uploadError || !uploadData?.path) return;
+              await acknowledgeAssetAssignment(assetId, uploadData.path);
+              setOpen(false);
+              setSignature("");
+              onSuccess();
+            }}
+          >
+            تأكيد
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -131,6 +180,7 @@ function AssignAssetDialog({ employees, onSuccess }: { employees: Record<string,
       serial_number: form.serial_number.trim() || undefined,
       notes: form.notes.trim() || undefined,
       status: "assigned",
+      assigned_by: currentUser.id,
     });
     setSubmitting(false);
     if (err) {

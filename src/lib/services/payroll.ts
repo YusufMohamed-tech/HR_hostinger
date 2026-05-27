@@ -19,46 +19,62 @@ export async function getPayslips(orgId: string, month?: string) {
 export async function generatePayslip(orgId: string, employeeId: string, month: string) {
   const supabase = createClient();
   
-  // Fetch employee salary info
-  const empRes = await supabase.from("employees").select("base_salary").eq("id", employeeId).single();
+  const empRes = await supabase
+    .from("employees")
+    .select("base_salary, bonus, deductions")
+    .eq("id", employeeId)
+    .single();
   if (empRes.error) return { data: null, error: empRes.error };
-  const employee = empRes.data as { base_salary?: number | null } | null;
+  const employee = empRes.data as { base_salary?: number | null; bonus?: number | null; deductions?: number | null } | null;
   const baseSalary = employee?.base_salary || 0;
+  const fixedBonus = employee?.bonus || 0;
+  const fixedDeductions = employee?.deductions || 0;
 
-  // Fetch attendance to calculate days
-  // Here month should be something like "2026-05-01"
   const startOfMonth = new Date(month);
   const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0);
+  const monthStart = startOfMonth.toISOString().slice(0, 10);
+  const monthEnd = endOfMonth.toISOString().slice(0, 10);
 
   const attRes = await supabase
     .from("attendance_records")
-    .select("id")
+    .select("id, status, total_minutes, late_minutes")
     .eq("employee_id", employeeId)
-    .gte("work_date", startOfMonth.toISOString())
-    .lte("work_date", endOfMonth.toISOString());
+    .gte("work_date", monthStart)
+    .lte("work_date", monthEnd);
     
-  const attendanceDays = attRes.data ? attRes.data.length : 0;
+  const attendanceRows = (attRes.data || []) as Record<string, unknown>[];
+  const attendanceDays = attendanceRows.filter((row) => String(row.status || "present") !== "absent").length;
+  const lateMinutes = attendanceRows.reduce((sum, row) => sum + Number(row.late_minutes || 0), 0);
   
-  // Calculate basic deductions based on attendance if required
-  // E.g. (baseSalary / 30) * attendanceDays
   const dailyRate = baseSalary / 30;
-  const netSalary = Math.min(baseSalary, dailyRate * attendanceDays);
+  const absenceDeduction = Math.max(0, baseSalary - Math.min(baseSalary, dailyRate * attendanceDays));
+  const lateDeduction = lateMinutes > 0 ? Math.round((baseSalary / 30 / 8 / 60) * lateMinutes * 100) / 100 : 0;
+  const totalAllowances = fixedBonus;
+  const totalDeductions = fixedDeductions + absenceDeduction + lateDeduction;
+  const netSalary = Math.max(0, baseSalary + totalAllowances - totalDeductions);
 
   const values = {
     org_id: orgId,
     employee_id: employeeId,
     month,
     base_salary: baseSalary,
-    total_allowances: 0,
-    total_deductions: baseSalary - netSalary,
+    total_allowances: totalAllowances,
+    total_deductions: totalDeductions,
     net_salary: netSalary,
     attendance_days: attendanceDays,
+    allowances_details: fixedBonus > 0 ? [{ label: "Fixed bonus", amount: fixedBonus }] : [],
+    deductions_details: [
+      fixedDeductions > 0 ? { label: "Fixed deductions", amount: fixedDeductions } : null,
+      absenceDeduction > 0 ? { label: "Attendance absence deduction", amount: absenceDeduction } : null,
+      lateDeduction > 0 ? { label: "Late arrival deduction", amount: lateDeduction } : null,
+    ].filter(Boolean),
+    payroll_notes: `Attendance days: ${attendanceDays}; late minutes: ${lateMinutes}`,
     status: 'draft'
   };
 
   const result = await supabase
     .from("payslips")
-    .insert(values as never)
+    .upsert(values as never, { onConflict: "org_id,employee_id,month" })
     .select()
     .single();
 
