@@ -33,6 +33,15 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 const MAX_SELFIE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_SELFIE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+function getOrCreateDeviceFingerprint() {
+  const key = "tatwir-attendance-device-id";
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+  const next = `${Date.now()}-${crypto.randomUUID()}`;
+  window.localStorage.setItem(key, next);
+  return next;
+}
+
 export default function AttendancePage() {
   const { currentUser } = useRoleContext();
   const today = new Date().toISOString().split("T")[0];
@@ -45,7 +54,7 @@ export default function AttendancePage() {
   const [error, setError] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
 
-  const isAdmin = currentUser?.role === "Admin";
+  const canViewTeam = ["Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
   const myAttendance = attendance.find((row) => row.employee_id === currentUser?.employeeId);
 
   const assignedLocation = useMemo(() => {
@@ -65,15 +74,11 @@ export default function AttendancePage() {
       setError("You have already checked in today.");
       return;
     }
-    if (!photoFile) {
-      setError("Please attach a selfie for check-in.");
-      return;
-    }
-    if (!ALLOWED_SELFIE_TYPES.has(photoFile.type)) {
+    if (photoFile && !ALLOWED_SELFIE_TYPES.has(photoFile.type)) {
       setError("Selfie must be a JPG, PNG, or WebP image.");
       return;
     }
-    if (photoFile.size > MAX_SELFIE_BYTES) {
+    if (photoFile && photoFile.size > MAX_SELFIE_BYTES) {
       setError("Selfie must be 5 MB or smaller.");
       return;
     }
@@ -105,6 +110,7 @@ export default function AttendancePage() {
 
     const now = new Date();
     const deviceInfo = navigator.userAgent;
+    const deviceFingerprint = getOrCreateDeviceFingerprint();
     let status = "present";
     let lateMinutes = 0;
 
@@ -118,17 +124,21 @@ export default function AttendancePage() {
       }
     }
 
-    const { data: uploadData, error: uploadError } = await uploadAttendanceSelfie(
-      currentUser.orgId,
-      currentUser.employeeId,
-      today,
-      photoFile
-    );
+    let photoPath: string | undefined;
+    if (photoFile) {
+      const { data: uploadData, error: uploadError } = await uploadAttendanceSelfie(
+        currentUser.orgId,
+        currentUser.employeeId,
+        today,
+        photoFile
+      );
 
-    if (uploadError) {
-      setError(uploadError.message);
-      setSubmitting(false);
-      return;
+      if (uploadError) {
+        setError(uploadError.message);
+        setSubmitting(false);
+        return;
+      }
+      photoPath = uploadData?.path;
     }
 
     const { error: err } = await createCheckIn({
@@ -140,7 +150,8 @@ export default function AttendancePage() {
       check_in_lat: latitude,
       check_in_lng: longitude,
       check_in_device: deviceInfo,
-      check_in_photo_path: uploadData?.path || undefined,
+      device_fingerprint: deviceFingerprint,
+      check_in_photo_path: photoPath,
       status,
       late_minutes: lateMinutes,
       within_geofence: withinGeofence,
@@ -184,16 +195,33 @@ export default function AttendancePage() {
 
     const now = new Date();
     const deviceInfo = navigator.userAgent;
+    const deviceFingerprint = getOrCreateDeviceFingerprint();
+    const { latitude, longitude } = position.coords;
+    const radius = Number(assignedLocation?.radius_meters ?? 100);
+    const distance = assignedLocation?.latitude && assignedLocation?.longitude
+      ? haversineDistance(latitude, longitude, Number(assignedLocation.latitude), Number(assignedLocation.longitude))
+      : 0;
+    const withinGeofence = !assignedLocation || distance <= radius;
+
+    if (!withinGeofence) {
+      setError("You are outside the allowed radius. Please move closer to your assigned location.");
+      setSubmitting(false);
+      return;
+    }
+
     const checkInAt = typeof myAttendance.check_in_at === "string" ? myAttendance.check_in_at : null;
     const startTime = checkInAt ? new Date(checkInAt).getTime() : now.getTime();
     const totalMinutes = Math.max(0, Math.round((now.getTime() - startTime) / 60000));
 
     const { error: err } = await updateCheckOut(attendanceId, {
       check_out_at: now.toISOString(),
-      check_out_lat: position.coords.latitude,
-      check_out_lng: position.coords.longitude,
+      check_out_lat: latitude,
+      check_out_lng: longitude,
       check_out_device: deviceInfo,
+      device_fingerprint: deviceFingerprint,
       total_minutes: totalMinutes,
+      check_out_within_geofence: withinGeofence,
+      check_out_distance_meters: distance,
     });
 
     if (err) {
@@ -281,7 +309,7 @@ export default function AttendancePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(isAdmin ? attendance : attendance.filter((row) => row.employee_id === currentUser?.employeeId)).map((row) => {
+                {(canViewTeam ? attendance : attendance.filter((row) => row.employee_id === currentUser?.employeeId)).map((row) => {
                   const rowStatus = typeof row.status === "string" ? row.status : "present";
                   const checkInAt = typeof row.check_in_at === "string" ? row.check_in_at : null;
                   const checkOutAt = typeof row.check_out_at === "string" ? row.check_out_at : null;

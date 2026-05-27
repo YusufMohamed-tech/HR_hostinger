@@ -35,9 +35,8 @@ export async function getEmployeeAttendance(employeeId: string, workDate?: strin
 export async function createCheckIn(values: Record<string, unknown>) {
   const supabase = createClient();
   const employeeId = values.employee_id as string;
-  const currentDevice = values.check_in_device as string;
+  const currentDevice = values.device_fingerprint as string || values.check_in_device as string;
 
-  // Device locking logic
   const empRes = await supabase.from("employees").select("registered_device_id").eq("id", employeeId).single();
   const employee = empRes.data as { registered_device_id?: string | null } | null;
   const registeredDevice = employee?.registered_device_id;
@@ -45,9 +44,13 @@ export async function createCheckIn(values: Record<string, unknown>) {
   if (registeredDevice && registeredDevice !== currentDevice) {
     return { data: null, error: { message: "Attendance locked to your registered device. Please use your primary device." } };
   } else if (!registeredDevice) {
-    // Register this device implicitly on first use
-    await supabase.from("employees").update({ registered_device_id: currentDevice } as never).eq("id", employeeId);
+    await supabase.from("employees").update({
+      registered_device_id: currentDevice,
+      registered_device_name: values.check_in_device || "Registered mobile device",
+    } as never).eq("id", employeeId);
   }
+
+  values.is_registered_device = true;
 
   const result = await supabase
     .from("attendance_records")
@@ -64,6 +67,22 @@ export async function createCheckIn(values: Record<string, unknown>) {
 
 export async function updateCheckOut(id: string, values: Record<string, unknown>) {
   const supabase = createClient();
+  const currentDevice = values.device_fingerprint as string | undefined;
+
+  if (currentDevice) {
+    const recordResult = await supabase
+      .from("attendance_records")
+      .select("employee_id, employee:employee_id(registered_device_id)")
+      .eq("id", id)
+      .single();
+
+    const record = recordResult.data as { employee?: { registered_device_id?: string | null } | null } | null;
+    const registeredDevice = record?.employee?.registered_device_id;
+    if (registeredDevice && registeredDevice !== currentDevice) {
+      return { data: null, error: { message: "Checkout must be recorded from the registered device." } };
+    }
+  }
+
   const result = await supabase
     .from("attendance_records")
     .update(values as never)

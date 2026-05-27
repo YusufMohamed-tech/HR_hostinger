@@ -65,52 +65,52 @@ type CandidateScore = {
 };
 
 const PIPELINE = [
-  { value: "new", label: "New" },
-  { value: "screening", label: "Screening" },
-  { value: "shortlisted", label: "Shortlisted" },
-  { value: "interview", label: "Interview" },
-  { value: "technical_test", label: "Technical Test" },
-  { value: "offer", label: "Offer" },
-  { value: "hired", label: "Hired" },
-  { value: "rejected", label: "Rejected" },
+  { value: "new", label: "جديد" },
+  { value: "screening", label: "فرز أولي" },
+  { value: "shortlisted", label: "قائمة مختصرة" },
+  { value: "interview", label: "مقابلة" },
+  { value: "technical_test", label: "اختبار فني" },
+  { value: "offer", label: "عرض وظيفي" },
+  { value: "hired", label: "تم التعيين" },
+  { value: "rejected", label: "مرفوض" },
 ];
 
 const MESSAGE_TEMPLATES = [
   {
     key: "received",
-    label: "Application received",
-    subject: "Application received",
-    body: "Hi {{name}},\n\nThank you for applying for the {{job}} position. Our recruitment team will review your application and update you soon.",
+    label: "استلام الطلب",
+    subject: "تم استلام طلبك",
+    body: "مرحبا {{name}}،\n\nشكرا لتقديمك على وظيفة {{job}}. سيقوم فريق التوظيف بمراجعة طلبك وتحديث حالته داخل المنصة.",
   },
   {
     key: "interview",
-    label: "Interview invitation",
-    subject: "Interview invitation",
-    body: "Hi {{name}},\n\nThank you for applying for the {{job}} position. We would like to invite you to an interview next week.",
+    label: "دعوة مقابلة",
+    subject: "دعوة للمقابلة",
+    body: "مرحبا {{name}}،\n\nنرغب في دعوتك لمقابلة بخصوص وظيفة {{job}}. يرجى مشاركة الأوقات المناسبة لك.",
   },
   {
     key: "test",
-    label: "Technical test request",
-    subject: "Technical test request",
-    body: "Hi {{name}},\n\nWe would like to move you to the technical test stage for the {{job}} position. Please reply with your availability.",
+    label: "طلب اختبار فني",
+    subject: "اختبار فني",
+    body: "مرحبا {{name}}،\n\nتم نقلك إلى مرحلة الاختبار الفني لوظيفة {{job}}. يرجى متابعة التعليمات داخل المنصة.",
   },
   {
     key: "rejection",
-    label: "Rejection message",
-    subject: "Application update",
-    body: "Hi {{name}},\n\nThank you for your interest in {{job}}. After review, we will not move forward at this stage. We appreciate your time.",
+    label: "رسالة اعتذار",
+    subject: "تحديث على طلبك",
+    body: "مرحبا {{name}}،\n\nشكرا لاهتمامك بوظيفة {{job}}. بعد المراجعة لن نكمل في هذه المرحلة، ونقدر وقتك واهتمامك.",
   },
   {
     key: "offer",
-    label: "Offer message",
-    subject: "Offer update",
-    body: "Hi {{name}},\n\nWe are pleased to move forward with your application for {{job}}. Our team will contact you with next steps.",
+    label: "رسالة عرض",
+    subject: "تحديث العرض الوظيفي",
+    body: "مرحبا {{name}}،\n\nيسعدنا إبلاغك بالانتقال للخطوات التالية في طلبك على وظيفة {{job}}.",
   },
   {
     key: "more_info",
-    label: "Request more information",
-    subject: "More information requested",
-    body: "Hi {{name}},\n\nCould you please share more information about your experience related to the {{job}} position?",
+    label: "طلب معلومات إضافية",
+    subject: "مطلوب معلومات إضافية",
+    body: "مرحبا {{name}}،\n\nيرجى إضافة معلومات أكثر عن خبرتك المرتبطة بوظيفة {{job}}.",
   },
 ];
 
@@ -202,8 +202,8 @@ export default function RecruitmentPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-900">Recruiter Dashboard</h1>
-          <p className="text-sm text-gray-500">Manage job links, score candidates, move pipeline stages, and message applicants.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-gray-900">لوحة التوظيف</h1>
+          <p className="text-sm text-gray-500">إدارة روابط الوظائف، تقييم المرشحين، نقل المراحل، ومتابعة رسائل المرشحين داخل المنصة.</p>
         </div>
         {canManageRecruitment && (
           <CreateJobDialog departments={departments} locations={locations} onSuccess={loadRecruitment} />
@@ -211,9 +211,9 @@ export default function RecruitmentPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard label="Published jobs" value={String(activeJobs)} />
-        <MetricCard label="Applications" value={String(applications.length)} />
-        <MetricCard label="Average score" value={`${averageScore(scoredApplications.map((item) => item.score.score))}%`} />
+        <MetricCard label="الوظائف المنشورة" value={String(activeJobs)} />
+        <MetricCard label="طلبات التقديم" value={String(applications.length)} />
+        <MetricCard label="متوسط المطابقة" value={`${averageScore(scoredApplications.map((item) => item.score.score))}%`} />
       </div>
 
       <JobDashboard
@@ -229,12 +229,12 @@ export default function RecruitmentPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <CardTitle className="flex items-center gap-2">
               <FileSearch className="h-5 w-5 text-brand" />
-              Candidate Ranking
+              ترتيب المرشحين
             </CardTitle>
             <Select value={selectedJobId} onValueChange={(value) => setSelectedJobId(value || "all")}>
               <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All jobs</SelectItem>
+                <SelectItem value="all">كل الوظائف</SelectItem>
                 {jobs.map((job) => (
                   <SelectItem key={String(job.id)} value={String(job.id)}>{String(job.title || "Untitled")}</SelectItem>
                 ))}
@@ -245,41 +245,41 @@ export default function RecruitmentPage() {
             <Select value={sortBy} onValueChange={(value) => setSortBy(value || "newest")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="newest">Newest</SelectItem>
-                <SelectItem value="score">Highest match score</SelectItem>
-                <SelectItem value="experience">Most experience</SelectItem>
-                <SelectItem value="salary">Salary expectation</SelectItem>
-                <SelectItem value="status">Status</SelectItem>
-                <SelectItem value="source">Application source</SelectItem>
+                <SelectItem value="newest">الأحدث</SelectItem>
+                <SelectItem value="score">أعلى مطابقة</SelectItem>
+                <SelectItem value="experience">الأكثر خبرة</SelectItem>
+                <SelectItem value="salary">الراتب المتوقع</SelectItem>
+                <SelectItem value="status">الحالة</SelectItem>
+                <SelectItem value="source">مصدر الطلب</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value || "all")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="all">كل الحالات</SelectItem>
                 {PIPELINE.map((stage) => <SelectItem key={stage.value} value={stage.value}>{stage.label}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Input placeholder="Skill" value={skillFilter} onChange={(event) => setSkillFilter(event.target.value)} />
-            <Input placeholder="Location" value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)} />
-            <Input placeholder="Education" value={educationFilter} onChange={(event) => setEducationFilter(event.target.value)} />
-            <Input placeholder="Max salary" type="number" value={salaryFilter} onChange={(event) => setSalaryFilter(event.target.value)} />
+            <Input placeholder="مهارة" value={skillFilter} onChange={(event) => setSkillFilter(event.target.value)} />
+            <Input placeholder="مدينة" value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)} />
+            <Input placeholder="تعليم" value={educationFilter} onChange={(event) => setEducationFilter(event.target.value)} />
+            <Input placeholder="أقصى راتب" type="number" value={salaryFilter} onChange={(event) => setSalaryFilter(event.target.value)} />
           </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
-            <EmptyRow text="Loading applications..." />
+            <EmptyRow text="جاري تحميل الطلبات..." />
           ) : visibleApplications.length === 0 ? (
-            <EmptyRow text="No candidates match the selected filters." />
+            <EmptyRow text="لا يوجد مرشحون مطابقون للفلاتر." />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Candidate</TableHead>
-                  <TableHead>Match</TableHead>
-                  <TableHead>Highlights</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Review</TableHead>
+                  <TableHead>المرشح</TableHead>
+                  <TableHead>المطابقة</TableHead>
+                  <TableHead>المؤشرات</TableHead>
+                  <TableHead>الحالة</TableHead>
+                  <TableHead>المراجعة</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -288,12 +288,12 @@ export default function RecruitmentPage() {
                   return (
                     <TableRow key={String(application.id)}>
                       <TableCell>
-                        <div className="font-medium">{String(application.candidate_name || "Candidate")}</div>
+                        <div className="font-medium">{String(application.candidate_name || "مرشح")}</div>
                         <div className="text-xs text-gray-500">{String(application.email || "")}</div>
                       </TableCell>
                       <TableCell>
                         <div className="text-lg font-semibold text-brand-dark">{score.score}%</div>
-                        <div className="text-xs text-gray-500">{score.years || 0} yrs exp</div>
+                        <div className="text-xs text-gray-500">{score.years || 0} سنة خبرة</div>
                       </TableCell>
                       <TableCell>
                         <SignalList score={score} compact />
@@ -347,12 +347,12 @@ function JobDashboard({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Briefcase className="h-5 w-5 text-brand" />
-          Job Dashboard
+          لوحة الوظائف
         </CardTitle>
       </CardHeader>
       <CardContent>
         {jobs.length === 0 ? (
-          <EmptyRow text="No jobs yet. Create the first posting to generate a public application link." />
+          <EmptyRow text="لا توجد وظائف حتى الآن. أنشئ أول إعلان لتوليد رابط التقديم." />
         ) : (
           <div className="grid gap-3 xl:grid-cols-2">
             {jobs.map((job) => {
@@ -368,20 +368,20 @@ function JobDashboard({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-gray-900">{String(job.title || "Untitled")}</p>
-                      <p className="text-xs text-gray-500">Source: public link - {daysRemaining(job.application_deadline)} days remaining</p>
+                      <p className="font-semibold text-gray-900">{String(job.title || "بدون عنوان")}</p>
+                      <p className="text-xs text-gray-500">المصدر: رابط عام - متبقي {daysRemaining(job.application_deadline)} يوم</p>
                     </div>
                     <StatusBadge status={String(job.status || "open")} />
                   </div>
                   <div className="mt-4 grid grid-cols-4 gap-2 text-center text-xs">
-                    <MiniStat label="Applications" value={String(scopedApps.length)} />
-                    <MiniStat label="New" value={String(countByStatus(scopedApps, "new"))} />
-                    <MiniStat label="Shortlisted" value={String(countByStatus(scopedApps, "shortlisted"))} />
-                    <MiniStat label="Interviews" value={String(countByStatus(scopedApps, "interview"))} />
-                    <MiniStat label="Rejected" value={String(countByStatus(scopedApps, "rejected"))} />
-                    <MiniStat label="Avg score" value={`${averageScore(scores)}%`} />
-                    <MiniStat label="Source" value="Link" />
-                    <MiniStat label="Deadline" value={`${daysRemaining(job.application_deadline)}d`} />
+                    <MiniStat label="الطلبات" value={String(scopedApps.length)} />
+                    <MiniStat label="جديد" value={String(countByStatus(scopedApps, "new"))} />
+                    <MiniStat label="مختصر" value={String(countByStatus(scopedApps, "shortlisted"))} />
+                    <MiniStat label="مقابلات" value={String(countByStatus(scopedApps, "interview"))} />
+                    <MiniStat label="مرفوض" value={String(countByStatus(scopedApps, "rejected"))} />
+                    <MiniStat label="المتوسط" value={`${averageScore(scores)}%`} />
+                    <MiniStat label="المصدر" value="رابط" />
+                    <MiniStat label="الموعد" value={`${daysRemaining(job.application_deadline)}ي`} />
                   </div>
                   <div className="mt-3 flex justify-end gap-1">
                     <Button
@@ -423,7 +423,7 @@ function PipelineBoard({
   return (
     <Card className="border-none shadow-sm">
       <CardHeader>
-        <CardTitle>Candidate Pipeline Board</CardTitle>
+        <CardTitle>مسار المرشحين</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid gap-3 overflow-x-auto pb-2 lg:grid-cols-4 2xl:grid-cols-8">
@@ -452,10 +452,10 @@ function PipelineBoard({
                       onClick={() => onOpenCandidate(application)}
                       className="w-full rounded-md border bg-white p-3 text-right shadow-sm transition hover:border-brand"
                     >
-                      <p className="text-sm font-medium text-gray-900">{String(application.candidate_name || "Candidate")}</p>
+                      <p className="text-sm font-medium text-gray-900">{String(application.candidate_name || "مرشح")}</p>
                       <div className="mt-2 flex items-center justify-between gap-2">
                         <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">{score.score}%</Badge>
-                        <span className="text-xs text-gray-500">{score.skills.slice(0, 2).join(", ") || "No skills"}</span>
+                        <span className="text-xs text-gray-500">{score.skills.slice(0, 2).join(", ") || "لا توجد مهارات"}</span>
                       </div>
                     </button>
                   ))}
@@ -507,11 +507,11 @@ function StatusBadge({ status }: { status: string }) {
 
 function SignalList({ score, compact = false }: { score: CandidateScore; compact?: boolean }) {
   const items = [...score.highlights.slice(0, compact ? 2 : 4), ...score.redFlags.slice(0, compact ? 1 : 3)];
-  if (items.length === 0) return <span className="text-xs text-gray-500">No signals</span>;
+  if (items.length === 0) return <span className="text-xs text-gray-500">لا توجد مؤشرات</span>;
   return (
     <div className="flex flex-wrap gap-1">
       {items.map((item) => {
-        const isRisk = item.startsWith("Missing") || item.includes("above") || item.includes("Incomplete");
+        const isRisk = item.startsWith("Missing") || item.includes("above") || item.includes("Incomplete") || item.includes("غير") || item.includes("أعلى") || item.includes("أقل");
         return (
           <Badge key={item} variant="outline" className={isRisk ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200"}>
             {isRisk ? <AlertTriangle className="ml-1 h-3 w-3" /> : <CheckCircle2 className="ml-1 h-3 w-3" />}
@@ -537,10 +537,10 @@ function CreateJobDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [questions, setQuestions] = useState<FormQuestion[]>([
-    { id: crypto.randomUUID(), label: "Years of experience", type: "number", required: true },
-    { id: crypto.randomUUID(), label: "Expected salary", type: "number", required: false },
-    { id: crypto.randomUUID(), label: "Notice period", type: "text", required: false },
-    { id: crypto.randomUUID(), label: "Portfolio link", type: "text", required: false },
+    { id: crypto.randomUUID(), label: "سنوات الخبرة", type: "number", required: true },
+    { id: crypto.randomUUID(), label: "الراتب المتوقع", type: "number", required: false },
+    { id: crypto.randomUUID(), label: "مدة الإشعار", type: "text", required: false },
+    { id: crypto.randomUUID(), label: "رابط الأعمال", type: "text", required: false },
   ]);
   const [form, setForm] = useState({
     title: "",
@@ -567,7 +567,19 @@ function CreateJobDialog({
 
   const handleSubmit = async () => {
     if (!currentUser?.orgId || !form.title.trim()) {
-      setError("Job title is required.");
+      setError("عنوان الوظيفة مطلوب.");
+      return;
+    }
+    if (!form.application_deadline) {
+      setError("تاريخ نهاية التقديم مطلوب.");
+      return;
+    }
+    if (new Date(form.application_deadline) < new Date(new Date().toISOString().slice(0, 10))) {
+      setError("تاريخ نهاية التقديم يجب أن يكون اليوم أو تاريخا مستقبليا.");
+      return;
+    }
+    if (!form.requirements.trim()) {
+      setError("المهارات أو المتطلبات مطلوبة لحساب المطابقة.");
       return;
     }
     const cleanedQuestions = questions
@@ -617,78 +629,78 @@ function CreateJobDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
-        <Plus className="h-4 w-4 ml-2" /> Create job form
+        <Plus className="h-4 w-4 ml-2" /> إنشاء إعلان وظيفة
       </DialogTrigger>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Create job announcement</DialogTitle>
-          <DialogDescription>Define the job details, deadline, and application questions.</DialogDescription>
+          <DialogTitle>إنشاء إعلان وظيفة</DialogTitle>
+          <DialogDescription>حدد بيانات الوظيفة، آخر موعد للتقديم، وأسئلة نموذج المرشح.</DialogDescription>
         </DialogHeader>
         <div className="grid max-h-[70vh] gap-4 overflow-y-auto py-4 pr-1">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Job title"><Input value={form.title} onChange={(event) => set("title", event.target.value)} /></Field>
-            <Field label="Status">
+            <Field label="عنوان الوظيفة"><Input value={form.title} onChange={(event) => set("title", event.target.value)} /></Field>
+            <Field label="الحالة">
               <Select value={form.status} onValueChange={(value) => set("status", value)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="published">Published</SelectItem>
-                  <SelectItem value="open">Open</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="published">منشور</SelectItem>
+                  <SelectItem value="open">مفتوح</SelectItem>
+                  <SelectItem value="draft">مسودة</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Department">
+            <Field label="القسم">
               <Select value={form.department_id} onValueChange={(value) => set("department_id", value)}>
-                <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="اختر القسم" /></SelectTrigger>
                 <SelectContent>
                   {departments.map((department) => <SelectItem key={String(department.id)} value={String(department.id)}>{String(department.name || "")}</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Location">
+            <Field label="الموقع">
               <Select value={form.location_id} onValueChange={(value) => set("location_id", value)}>
-                <SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="اختر الموقع" /></SelectTrigger>
                 <SelectContent>
                   {locations.map((location) => <SelectItem key={String(location.id)} value={String(location.id)}>{String(location.name || "")}</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Employment type"><Input value={form.employment_type} onChange={(event) => set("employment_type", event.target.value)} /></Field>
-            <Field label="Minimum experience"><Input value={form.experience_level} onChange={(event) => set("experience_level", event.target.value)} placeholder="Example: 3 years" /></Field>
-            <Field label="Salary range"><Input value={form.salary_range} onChange={(event) => set("salary_range", event.target.value)} placeholder="Example: 8000-12000" /></Field>
-            <Field label="Application deadline"><Input type="date" value={form.application_deadline} onChange={(event) => set("application_deadline", event.target.value)} /></Field>
+            <Field label="نوع التوظيف"><Input value={form.employment_type} onChange={(event) => set("employment_type", event.target.value)} /></Field>
+            <Field label="الخبرة المطلوبة"><Input value={form.experience_level} onChange={(event) => set("experience_level", event.target.value)} placeholder="مثال: 3 سنوات" /></Field>
+            <Field label="نطاق الراتب"><Input value={form.salary_range} onChange={(event) => set("salary_range", event.target.value)} placeholder="مثال: 8000-12000" /></Field>
+            <Field label="آخر موعد للتقديم"><Input type="date" value={form.application_deadline} onChange={(event) => set("application_deadline", event.target.value)} /></Field>
           </div>
-          <Field label="Job description"><Input value={form.description} onChange={(event) => set("description", event.target.value)} /></Field>
-          <Field label="Requirements / required skills"><Input value={form.requirements} onChange={(event) => set("requirements", event.target.value)} placeholder="React, TypeScript, 3 years experience..." /></Field>
+          <Field label="وصف الوظيفة"><Input value={form.description} onChange={(event) => set("description", event.target.value)} /></Field>
+          <Field label="المتطلبات / المهارات المطلوبة"><Input value={form.requirements} onChange={(event) => set("requirements", event.target.value)} placeholder="React, TypeScript, 3 years experience..." /></Field>
 
           <div className="rounded-md border p-4">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <p className="font-medium">Application form questions</p>
-                <p className="text-xs text-gray-500">These fields feed scoring, filters, highlights, and candidate profiles.</p>
+                <p className="font-medium">أسئلة نموذج التقديم</p>
+                <p className="text-xs text-gray-500">هذه الحقول تغذي التقييم والفلاتر والمؤشرات وملف المرشح.</p>
               </div>
-              <Button variant="outline" size="sm" onClick={addQuestion}>Add question</Button>
+              <Button variant="outline" size="sm" onClick={addQuestion}>إضافة سؤال</Button>
             </div>
             <div className="space-y-3">
               {questions.map((question, index) => (
                 <div key={question.id} className="grid gap-2 rounded-md bg-gray-50 p-3 md:grid-cols-[1fr_140px_100px]">
-                  <Input placeholder={`Question ${index + 1}`} value={question.label} onChange={(event) => updateQuestion(question.id, { label: event.target.value })} />
+                  <Input placeholder={`سؤال ${index + 1}`} value={question.label} onChange={(event) => updateQuestion(question.id, { label: event.target.value })} />
                   <Select value={question.type} onValueChange={(value) => updateQuestion(question.id, { type: value as FormQuestion["type"] })}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="text">Text</SelectItem>
-                      <SelectItem value="textarea">Long text</SelectItem>
-                      <SelectItem value="number">Number</SelectItem>
-                      <SelectItem value="date">Date</SelectItem>
-                      <SelectItem value="select">Options</SelectItem>
+                      <SelectItem value="text">نص</SelectItem>
+                      <SelectItem value="textarea">نص طويل</SelectItem>
+                      <SelectItem value="number">رقم</SelectItem>
+                      <SelectItem value="date">تاريخ</SelectItem>
+                      <SelectItem value="select">اختيارات</SelectItem>
                     </SelectContent>
                   </Select>
                   <label className="flex items-center gap-2 text-sm text-gray-600">
                     <input type="checkbox" checked={question.required} onChange={(event) => updateQuestion(question.id, { required: event.target.checked })} />
-                    Required
+                    مطلوب
                   </label>
                   {question.type === "select" && (
-                    <Input className="md:col-span-3" placeholder="Comma-separated options" value={question.options || ""} onChange={(event) => updateQuestion(question.id, { options: event.target.value })} />
+                    <Input className="md:col-span-3" placeholder="اختيارات مفصولة بفواصل" value={question.options || ""} onChange={(event) => updateQuestion(question.id, { options: event.target.value })} />
                   )}
                 </div>
               ))}
@@ -697,10 +709,10 @@ function CreateJobDialog({
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting}>
             <Save className="h-4 w-4 ml-2" />
-            {submitting ? "Creating..." : "Create and generate link"}
+            {submitting ? "جاري الإنشاء..." : "إنشاء وتوليد الرابط"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -986,53 +998,60 @@ function ProfileLine({ label, value }: { label: string; value: string }) {
 
 function scoreCandidate(application: Record<string, unknown>, job?: Record<string, unknown> | null): CandidateScore {
   const answers = (application.application_answers ?? {}) as Record<string, unknown>;
+  const storedSkills = Array.isArray(application.extracted_skills) ? application.extracted_skills.map(String) : [];
+  const storedHighlights = Array.isArray(application.highlights) ? application.highlights.map(String) : [];
+  const storedRedFlags = Array.isArray(application.red_flags) ? application.red_flags.map(String) : [];
+  const storedScore = Number(application.match_score || 0);
   const text = [
     application.cover_letter,
     ...Object.values(answers),
   ].map(String).join(" ").toLowerCase();
   const requirements = String(job?.requirements || "").toLowerCase();
   const requiredSkills = SKILL_KEYWORDS.filter((skill) => requirements.includes(skill.toLowerCase()));
-  const candidateSkills = SKILL_KEYWORDS.filter((skill) => text.includes(skill.toLowerCase()) || requirements.includes(skill.toLowerCase()) && text.includes(skill.split(".")[0].toLowerCase()));
+  const candidateSkills = Array.from(new Set([
+    ...storedSkills,
+    ...SKILL_KEYWORDS.filter((skill) => text.includes(skill.toLowerCase()) || requirements.includes(skill.toLowerCase()) && text.includes(skill.split(".")[0].toLowerCase())),
+  ]));
   const missing = requiredSkills.filter((skill) => !candidateSkills.includes(skill));
-  const years = extractNumberByKeys(answers, ["experience", "years"]);
+  const years = extractNumberByKeys(answers, ["experience", "years", "خبرة", "سنوات"]);
   const minYears = extractNumber(String(job?.experience_level || job?.requirements || ""));
-  const salaryExpectation = extractNumberByKeys(answers, ["salary", "expected"]);
+  const salaryExpectation = extractNumberByKeys(answers, ["salary", "expected", "راتب"]);
   const salaryRange = extractSalaryRange(String(job?.salary_range || ""));
-  const noticePeriod = findAnswerByKeys(answers, ["notice"]);
-  const education = findAnswerByKeys(answers, ["education", "degree", "university"]);
-  const portfolio = findAnswerByKeys(answers, ["portfolio", "github", "behance", "linkedin"]);
-  const location = findAnswerByKeys(answers, ["location", "city"]);
+  const noticePeriod = findAnswerByKeys(answers, ["notice", "إشعار"]);
+  const education = findAnswerByKeys(answers, ["education", "degree", "university", "تعليم", "جامعة"]);
+  const portfolio = findAnswerByKeys(answers, ["portfolio", "github", "behance", "linkedin", "أعمال"]);
+  const location = findAnswerByKeys(answers, ["location", "city", "مدينة", "موقع"]);
 
-  let score = 20;
-  const highlights: string[] = [];
-  const redFlags: string[] = [];
+  let score = storedScore || 20;
+  const highlights: string[] = [...storedHighlights];
+  const redFlags: string[] = [...storedRedFlags];
 
   if (requiredSkills.length) {
     score += Math.round((candidateSkills.filter((skill) => requiredSkills.includes(skill)).length / requiredSkills.length) * 35);
   }
   if (years && minYears && years >= minYears) {
     score += 20;
-    highlights.push(`Has ${years} years experience`);
+    highlights.push(`خبرة ${years} سنوات`);
   } else if (minYears && years < minYears) {
-    redFlags.push(`Missing required experience (${minYears}+ years)`);
+    redFlags.push(`الخبرة أقل من المطلوب (${minYears}+ سنوات)`);
   }
   if (salaryExpectation && salaryRange.max && salaryExpectation <= salaryRange.max) {
     score += 10;
   } else if (salaryExpectation && salaryRange.max && salaryExpectation > salaryRange.max) {
-    redFlags.push("Salary expectation is above budget");
+    redFlags.push("الراتب المتوقع أعلى من الميزانية");
   }
   if (location && String(job?.location || "").toLowerCase().includes(location.toLowerCase())) score += 10;
   if (noticePeriod && /immediate|now|available|0|فور/i.test(noticePeriod)) {
     score += 5;
-    highlights.push("Available immediately");
+    highlights.push("متاح فورا");
   }
   if (portfolio) {
     score += 5;
-    highlights.push("Strong portfolio link");
+    highlights.push("يوجد رابط أعمال قوي");
   }
-  if (!application.resume_url) redFlags.push("Incomplete application: missing CV");
-  missing.slice(0, 3).forEach((skill) => redFlags.push(`Missing required skill: ${skill}`));
-  candidateSkills.slice(0, 4).forEach((skill) => highlights.push(`Strong match: ${skill}`));
+  if (!application.resume_url) redFlags.push("الطلب غير مكتمل: السيرة الذاتية غير مرفقة");
+  missing.slice(0, 3).forEach((skill) => redFlags.push(`مهارة مطلوبة غير موجودة: ${skill}`));
+  candidateSkills.slice(0, 4).forEach((skill) => highlights.push(`مطابقة قوية: ${skill}`));
 
   return {
     score: Math.max(0, Math.min(100, score)),

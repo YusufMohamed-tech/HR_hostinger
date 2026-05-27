@@ -24,6 +24,18 @@ type FormQuestion = {
   options?: string;
 };
 
+const ALLOWED_RESUME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+const MAX_RESUME_BYTES = 10 * 1024 * 1024;
+const SKILL_KEYWORDS = [
+  "react", "typescript", "javascript", "node", "next", "vue", "angular", "python", "java",
+  "sql", "postgres", "supabase", "excel", "power bi", "sales", "customer service", "hr",
+  "recruitment", "payroll", "training", "operations", "leadership", "arabic", "english",
+];
+
 export default function PublicApplicationPage() {
   const params = useParams();
   const postingId = typeof params.postingId === "string" ? params.postingId : "";
@@ -81,7 +93,11 @@ export default function PublicApplicationPage() {
     setError("");
     setAuthMessage("");
     if (!authForm.email.trim() || !authForm.password.trim()) {
-      setError("Email and password are required.");
+      setError("البريد الإلكتروني وكلمة المرور مطلوبان.");
+      return;
+    }
+    if (authMode === "signup" && authForm.password.length < 8) {
+      setError("كلمة المرور يجب ألا تقل عن 8 أحرف.");
       return;
     }
 
@@ -103,7 +119,7 @@ export default function PublicApplicationPage() {
 
     const user = result.data.user;
     if (!user) {
-      setAuthMessage("Account created. Please confirm your email, then sign in to complete the application.");
+      setAuthMessage("تم إنشاء الحساب. أكد بريدك الإلكتروني ثم سجل الدخول لإكمال الطلب.");
       setAuthMode("signin");
       return;
     }
@@ -119,32 +135,50 @@ export default function PublicApplicationPage() {
 
   const handleSubmit = async () => {
     if (!candidateUserId) {
-      setError("Please create an account or sign in first.");
+      setError("سجل الدخول أو أنشئ حسابا أولا.");
       return;
     }
     if (!posting?.org_id || !form.candidate_name.trim() || !form.email.trim()) {
-      setError("Name and email are required.");
+      setError("الاسم والبريد الإلكتروني مطلوبان.");
+      return;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(form.email.trim())) {
+      setError("اكتب بريدا إلكترونيا صحيحا.");
+      return;
+    }
+    if (isClosed) {
+      setError("انتهى استقبال الطلبات لهذه الوظيفة.");
+      return;
+    }
+    if (!resumeFile) {
+      setError("يرجى إرفاق السيرة الذاتية.");
+      return;
+    }
+    if (!ALLOWED_RESUME_TYPES.has(resumeFile.type)) {
+      setError("السيرة الذاتية يجب أن تكون PDF أو DOC أو DOCX.");
+      return;
+    }
+    if (resumeFile.size > MAX_RESUME_BYTES) {
+      setError("حجم السيرة الذاتية يجب ألا يتجاوز 10MB.");
       return;
     }
     for (const question of questions) {
       if (question.required && !String(answers[question.label] || "").trim()) {
-        setError(`Please answer: ${question.label}`);
+        setError(`يرجى الإجابة على: ${question.label}`);
         return;
       }
     }
 
     setSubmitting(true);
     setError("");
-    let resumePath: string | undefined;
-    if (resumeFile) {
-      const { data: uploadData, error: uploadError } = await uploadRecruitmentResume(postingId, resumeFile);
-      if (uploadError) {
-        setError(uploadError.message);
-        setSubmitting(false);
-        return;
-      }
-      resumePath = uploadData?.path;
+    const { data: uploadData, error: uploadError } = await uploadRecruitmentResume(postingId, resumeFile);
+    if (uploadError) {
+      setError(uploadError.message);
+      setSubmitting(false);
+      return;
     }
+    const resumePath = uploadData?.path;
+    const insights = getApplicationInsights(posting, answers, form.cover_letter);
 
     const { data, error: submitError } = await createJobApplication({
       org_id: posting.org_id,
@@ -158,6 +192,10 @@ export default function PublicApplicationPage() {
       application_answers: answers,
       status: "new",
       status_history: [{ status: "new", at: new Date().toISOString(), by: "candidate", note: "Application submitted" }],
+      extracted_skills: insights.extractedSkills,
+      highlights: insights.highlights,
+      red_flags: insights.redFlags,
+      match_score: insights.matchScore,
       source: "public_link",
     });
     setSubmitting(false);
@@ -172,7 +210,9 @@ export default function PublicApplicationPage() {
   const department = (posting?.department ?? null) as Record<string, unknown> | null;
   const location = (posting?.location ?? null) as Record<string, unknown> | null;
   const status = typeof posting?.status === "string" ? posting.status : "";
-  const isClosed = ["closed", "filled", "draft"].includes(status);
+  const deadline = typeof posting?.application_deadline === "string" ? posting.application_deadline : "";
+  const isDeadlinePassed = Boolean(deadline && new Date(deadline) < new Date(new Date().toISOString().slice(0, 10)));
+  const isClosed = ["closed", "filled", "draft"].includes(status) || isDeadlinePassed;
   const description = typeof posting?.description === "string" ? posting.description : "";
   const requirements = typeof posting?.requirements === "string" ? posting.requirements : "";
   const jobMeta = [posting?.employment_type, posting?.experience_level, posting?.salary_range]
@@ -188,11 +228,11 @@ export default function PublicApplicationPage() {
             <Network className="h-5 w-5" />
           </div>
           <div>
-            <p className="font-semibold text-slate-900">Tatwir Talent</p>
-            <p className="text-xs text-slate-500">Career application</p>
+            <p className="font-semibold text-slate-900">تطوير تالنت</p>
+            <p className="text-xs text-slate-500">بوابة التقديم</p>
           </div>
           <Button variant="outline" className="mr-auto" asChild>
-            <Link href="/candidate/applications">My applications</Link>
+            <Link href="/candidate/applications">طلباتي</Link>
           </Button>
         </div>
 
@@ -200,24 +240,24 @@ export default function PublicApplicationPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Briefcase className="h-5 w-5 text-brand" />
-              {loading ? "Loading position..." : String(posting?.title || "Position unavailable")}
+              {loading ? "جاري تحميل الوظيفة..." : String(posting?.title || "الوظيفة غير متاحة")}
             </CardTitle>
             {posting && (
               <p className="text-sm text-gray-500">
-                {String(department?.name || "All departments")} - {String(location?.name || "Flexible location")}
+                {String(department?.name || "كل الأقسام")} - {String(location?.name || "موقع مرن")}
               </p>
             )}
           </CardHeader>
           <CardContent className="space-y-5">
-            {!loading && !posting && <p className="text-sm text-red-600">This job posting is not available.</p>}
-            {isClosed && <p className="text-sm text-red-600">This position is not accepting applications.</p>}
+            {!loading && !posting && <p className="text-sm text-red-600">رابط الوظيفة غير متاح.</p>}
+            {isClosed && <p className="text-sm text-red-600">هذه الوظيفة لا تستقبل طلبات حاليا.</p>}
             {(submitted || existingApplication) && (
               <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-green-700">
                 <CheckCircle className="mb-2 h-5 w-5" />
-                <p className="font-medium">Application received.</p>
-                <p className="text-sm">Current status: {String((existingApplication?.status || "new"))}</p>
+                <p className="font-medium">تم استلام الطلب.</p>
+                <p className="text-sm">الحالة الحالية: {String((existingApplication?.status || "new"))}</p>
                 <Button variant="outline" className="mt-3" asChild>
-                  <Link href="/candidate/applications">Track all applications</Link>
+                  <Link href="/candidate/applications">متابعة كل الطلبات</Link>
                 </Button>
               </div>
             )}
@@ -234,21 +274,21 @@ export default function PublicApplicationPage() {
                   <div className="rounded-lg border p-4">
                     <div className="mb-3 flex items-center gap-2">
                       <UserPlus className="h-4 w-4 text-brand" />
-                      <p className="font-medium">{authMode === "signup" ? "Create candidate account" : "Sign in to continue"}</p>
+                      <p className="font-medium">{authMode === "signup" ? "إنشاء حساب مرشح" : "تسجيل الدخول للمتابعة"}</p>
                     </div>
                     <div className="grid gap-3">
                       {authMode === "signup" && (
-                        <Input placeholder="Full name" value={authForm.name} onChange={(event) => setAuthForm((prev) => ({ ...prev, name: event.target.value }))} />
+                        <Input placeholder="الاسم الكامل" value={authForm.name} onChange={(event) => setAuthForm((prev) => ({ ...prev, name: event.target.value }))} />
                       )}
-                      <Input placeholder="Email" type="email" value={authForm.email} onChange={(event) => setAuthForm((prev) => ({ ...prev, email: event.target.value }))} />
-                      <Input placeholder="Password" type="password" value={authForm.password} onChange={(event) => setAuthForm((prev) => ({ ...prev, password: event.target.value }))} />
+                      <Input placeholder="البريد الإلكتروني" type="email" value={authForm.email} onChange={(event) => setAuthForm((prev) => ({ ...prev, email: event.target.value }))} />
+                      <Input placeholder="كلمة المرور" type="password" value={authForm.password} onChange={(event) => setAuthForm((prev) => ({ ...prev, password: event.target.value }))} />
                       {authMessage && <p className="text-sm text-green-700">{authMessage}</p>}
                       <div className="flex flex-wrap gap-2">
                         <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleAuth}>
-                          {authMode === "signup" ? "Create account" : "Sign in"}
+                          {authMode === "signup" ? "إنشاء حساب" : "تسجيل الدخول"}
                         </Button>
                         <Button variant="ghost" onClick={() => setAuthMode(authMode === "signup" ? "signin" : "signup")}>
-                          {authMode === "signup" ? "I already have an account" : "Create a new account"}
+                          {authMode === "signup" ? "لدي حساب بالفعل" : "إنشاء حساب جديد"}
                         </Button>
                       </div>
                     </div>
@@ -258,25 +298,25 @@ export default function PublicApplicationPage() {
                 {candidateUserId && (
                   <div className="grid gap-4">
                     <div className="space-y-2">
-                      <Label>Full name</Label>
+                      <Label>الاسم الكامل</Label>
                       <Input value={form.candidate_name} onChange={(event) => set("candidate_name", event.target.value)} />
                     </div>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
-                        <Label>Email</Label>
+                        <Label>البريد الإلكتروني</Label>
                         <Input type="email" value={form.email} onChange={(event) => set("email", event.target.value)} />
                       </div>
                       <div className="space-y-2">
-                        <Label>Phone</Label>
+                        <Label>الجوال</Label>
                         <Input value={form.phone} onChange={(event) => set("phone", event.target.value)} />
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label>CV / Resume</Label>
+                      <Label>السيرة الذاتية</Label>
                       <Input type="file" accept=".pdf,.doc,.docx,image/*" onChange={(event) => setResumeFile(event.target.files?.[0] ?? null)} />
                     </div>
                     <div className="space-y-2">
-                      <Label>Cover letter</Label>
+                      <Label>خطاب تعريفي</Label>
                       <Input value={form.cover_letter} onChange={(event) => set("cover_letter", event.target.value)} />
                     </div>
                     {questions.map((question) => (
@@ -289,7 +329,7 @@ export default function PublicApplicationPage() {
                     ))}
                     {error && <p className="text-sm text-red-600">{error}</p>}
                     <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting}>
-                      {submitting ? "Submitting..." : "Submit application"}
+                      {submitting ? "جاري الإرسال..." : "إرسال الطلب"}
                     </Button>
                   </div>
                 )}
@@ -313,7 +353,7 @@ function QuestionField({ question, value, onChange }: { question: FormQuestion; 
           value={value}
           onChange={(event) => onChange(event.target.value)}
         >
-          <option value="">Select an option</option>
+          <option value="">اختر</option>
           {options.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
       ) : question.type === "textarea" ? (
@@ -331,4 +371,37 @@ function QuestionField({ question, value, onChange }: { question: FormQuestion; 
       )}
     </div>
   );
+}
+
+function getApplicationInsights(
+  posting: Record<string, unknown>,
+  answers: Record<string, string>,
+  coverLetter: string
+) {
+  const candidateText = `${Object.values(answers).join(" ")} ${coverLetter}`.toLowerCase();
+  const requirementText = String(posting.requirements || "").toLowerCase();
+  const extractedSkills = SKILL_KEYWORDS.filter((skill) => candidateText.includes(skill));
+  const requiredSkills = SKILL_KEYWORDS.filter((skill) => requirementText.includes(skill));
+  const matchedRequired = requiredSkills.filter((skill) => extractedSkills.includes(skill));
+  const missingRequired = requiredSkills.filter((skill) => !extractedSkills.includes(skill));
+  const answeredCount = Object.values(answers).filter((value) => value.trim()).length;
+  const requiredScore = requiredSkills.length > 0
+    ? Math.round((matchedRequired.length / requiredSkills.length) * 70)
+    : 35;
+  const answerScore = Math.min(20, answeredCount * 5);
+  const coverLetterScore = coverLetter.trim().length >= 80 ? 10 : coverLetter.trim() ? 5 : 0;
+  const matchScore = Math.min(100, requiredScore + answerScore + coverLetterScore);
+
+  return {
+    extractedSkills,
+    matchScore,
+    highlights: [
+      ...matchedRequired.map((skill) => `Matches required skill: ${skill}`),
+      coverLetter.trim().length >= 80 ? "Detailed cover letter" : null,
+    ].filter(Boolean),
+    redFlags: [
+      ...missingRequired.map((skill) => `Missing required skill: ${skill}`),
+      extractedSkills.length === 0 ? "No recognized skills in answers" : null,
+    ].filter(Boolean),
+  };
 }

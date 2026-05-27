@@ -13,9 +13,18 @@ export async function getLeaveRequests(orgId: string) {
 
 export async function createLeaveRequest(values: Record<string, unknown>) {
   const supabase = createClient();
+  const now = new Date().toISOString();
   const result = await supabase
     .from("leave_requests")
-    .insert(values as never)
+    .insert({
+      ...values,
+      status: "pending",
+      manager_approval_status: "pending",
+      hr_approval_status: "pending",
+      current_step: 1,
+      total_steps: 2,
+      approval_history: [{ step: 1, status: "submitted", at: now }],
+    } as never)
     .select()
     .single();
 
@@ -103,6 +112,62 @@ export async function approveLeaveRequest(
     data: updateResult.data as Record<string, unknown> | null,
     error: balanceUpdateError as { message: string } | null,
   };
+}
+
+export async function advanceLeaveApproval(
+  request: Record<string, unknown>,
+  decision: "approved" | "rejected",
+  actorUserId?: string,
+  note?: string
+) {
+  const requestId = typeof request.id === "string" ? request.id : "";
+  const currentStep = Number(request.current_step || 1);
+  const history = Array.isArray(request.approval_history) ? request.approval_history : [];
+  const now = new Date().toISOString();
+
+  if (!requestId) {
+    return { data: null, error: { message: "Leave request is missing an id." } };
+  }
+
+  const historyEntry = {
+    step: currentStep,
+    status: decision,
+    at: now,
+    by: actorUserId || null,
+    note: note || null,
+  };
+
+  if (decision === "rejected") {
+    return updateLeaveRequest(requestId, {
+      status: "rejected",
+      manager_approval_status: currentStep === 1 ? "rejected" : request.manager_approval_status || "approved",
+      hr_approval_status: currentStep >= 2 ? "rejected" : request.hr_approval_status || "pending",
+      decision_note: note || undefined,
+      decided_at: now,
+      decided_by: actorUserId || undefined,
+      approval_history: [...history, historyEntry],
+    });
+  }
+
+  if (currentStep < 2) {
+    return updateLeaveRequest(requestId, {
+      status: "pending",
+      manager_approval_status: "approved",
+      current_step: 2,
+      approval_history: [...history, historyEntry],
+    });
+  }
+
+  return approveLeaveRequest(request, {
+    status: "approved",
+    manager_approval_status: request.manager_approval_status === "approved" ? "approved" : "approved",
+    hr_approval_status: "approved",
+    current_step: 2,
+    decision_note: note || undefined,
+    decided_at: now,
+    decided_by: actorUserId || undefined,
+    approval_history: [...history, historyEntry],
+  });
 }
 
 export async function getLeaveBalances(orgId: string, employeeId?: string) {
