@@ -18,6 +18,19 @@ interface Props {
   onSuccess: () => void;
 }
 
+const employmentTypeLabels: Record<string, string> = {
+  full_time: "دوام كامل",
+  part_time: "دوام جزئي",
+  intern: "تدريب",
+  contract: "عقد",
+};
+
+const statusLabels: Record<string, string> = {
+  Active: "نشط",
+  Inactive: "غير نشط",
+  "On Leave": "في إجازة",
+};
+
 export function EditEmployeeDialog({ employee, onSuccess }: Props) {
   const { data: departments } = useDepartments();
   const { data: locations } = useLocations();
@@ -128,87 +141,87 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark" />}>
-        <Pencil className="w-3.5 h-3.5 mr-1" />
-        Edit
+        <Pencil className="w-3.5 h-3.5 ml-1" />
+        تعديل
       </DialogTrigger>
       <DialogContent className="sm:max-w-[720px]">
         <DialogHeader>
-          <DialogTitle>Edit Employee</DialogTitle>
-          <DialogDescription>Update employee details and role settings.</DialogDescription>
+          <DialogTitle>تعديل بيانات الموظف</DialogTitle>
+          <DialogDescription>حدّث بيانات الموظف وإعدادات العمل والراتب.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-6 py-2">
           <div className="space-y-4">
-            <p className="text-sm font-semibold text-slate-700">Basic Info</p>
+            <p className="text-sm font-semibold text-slate-700">البيانات الأساسية</p>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Full Name *</Label>
+                <Label>الاسم الكامل *</Label>
                 <Input value={form.full_name} onChange={(e) => set("full_name", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Employee ID</Label>
+                <Label>رقم الموظف</Label>
                 <Input value={form.employee_code} onChange={(e) => set("employee_code", e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Email</Label>
+                <Label>البريد الإلكتروني</Label>
                 <Input value={form.email} onChange={(e) => set("email", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Phone</Label>
+                <Label>الجوال</Label>
                 <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Address</Label>
+                <Label>العنوان</Label>
                 <Input value={form.address} onChange={(e) => set("address", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>National ID</Label>
+                <Label>رقم الهوية</Label>
                 <Input value={form.national_id} onChange={(e) => set("national_id", e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Date of Birth</Label>
+                <Label>تاريخ الميلاد</Label>
                 <Input type="date" value={form.date_of_birth} onChange={(e) => set("date_of_birth", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Gender</Label>
+                <Label>الجنس</Label>
                 <Select value={form.gender} onValueChange={(v) => set("gender", v || "")}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="male">Male</SelectItem>
-                    <SelectItem value="female">Female</SelectItem>
+                    <SelectItem value="male">ذكر</SelectItem>
+                    <SelectItem value="female">أنثى</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Hiring Date</Label>
+                <Label>تاريخ التعيين</Label>
                 <Input type="date" value={form.hiring_date} onChange={(e) => set("hiring_date", e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Emergency Contact Name</Label>
+                <Label>اسم جهة الطوارئ</Label>
                 <Input value={form.emergency_contact_name} onChange={(e) => set("emergency_contact_name", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Emergency Contact Phone</Label>
+                <Label>جوال جهة الطوارئ</Label>
                 <Input value={form.emergency_contact_phone} onChange={(e) => set("emergency_contact_phone", e.target.value)} />
               </div>
             </div>
           </div>
 
           <div className="space-y-4">
-            <p className="text-sm font-semibold text-slate-700">Work Info</p>
+            <p className="text-sm font-semibold text-slate-700">بيانات العمل</p>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Department</Label>
+                <Label>القسم</Label>
                 <Select value={form.department_id} onValueChange={(v) => set("department_id", v || "")}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
                   <SelectContent>
                     {departments.map((d) => (
                       <SelectItem key={String(d.id)} value={String(d.id)}>{String(d.name)}</SelectItem>
@@ -217,15 +230,15 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Job Title</Label>
+                <Label>المسمى الوظيفي</Label>
                 <Input value={form.job_title} onChange={(e) => set("job_title", e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Manager</Label>
+                <Label>المدير المباشر</Label>
                 <Select value={form.manager_id} onValueChange={(v) => set("manager_id", v || "")}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
                   <SelectContent>
                     {employees.map((emp) => (
                       <SelectItem key={String(emp.id)} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
@@ -234,9 +247,9 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Location</Label>
+                <Label>الموقع</Label>
                 <Select value={form.location_id} onValueChange={(v) => set("location_id", v || "")}>
-                  <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
                   <SelectContent>
                     {locations.map((l) => (
                       <SelectItem key={String(l.id)} value={String(l.id)}>{String(l.name)}</SelectItem>
@@ -247,54 +260,61 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Employment Type</Label>
+                <Label>نوع التوظيف</Label>
                 <Select value={form.employment_type} onValueChange={(v) => set("employment_type", v || "")}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue>
+                      {(value: string | null) => (value ? employmentTypeLabels[value] || value : "اختر")}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="full_time">Full-time</SelectItem>
-                    <SelectItem value="part_time">Part-time</SelectItem>
-                    <SelectItem value="intern">Intern</SelectItem>
-                    <SelectItem value="contract">Contract</SelectItem>
+                    {Object.entries(employmentTypeLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Status</Label>
+                <Label>الحالة</Label>
                 <Select value={form.status} onValueChange={(v) => set("status", v || "")}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue>
+                      {(value: string | null) => (value ? statusLabels[value] || value : "اختر")}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Active">Active</SelectItem>
-                    <SelectItem value="Inactive">Inactive</SelectItem>
-                    <SelectItem value="On Leave">On Leave</SelectItem>
+                    {Object.entries(statusLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Payment Method</Label>
+                <Label>طريقة الدفع</Label>
                 <Input value={form.payment_method} onChange={(e) => set("payment_method", e.target.value)} />
               </div>
             </div>
           </div>
 
           <div className="space-y-4">
-            <p className="text-sm font-semibold text-slate-700">Salary Info</p>
+            <p className="text-sm font-semibold text-slate-700">بيانات الراتب</p>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Base Salary</Label>
+                <Label>الراتب الأساسي</Label>
                 <Input type="number" value={form.base_salary} onChange={(e) => set("base_salary", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Bonus</Label>
+                <Label>البدلات / المكافآت</Label>
                 <Input type="number" value={form.bonus} onChange={(e) => set("bonus", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Deductions</Label>
+                <Label>الخصومات الثابتة</Label>
                 <Input type="number" value={form.deductions} onChange={(e) => set("deductions", e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Bank Account</Label>
+                <Label>الحساب البنكي</Label>
                 <Input value={form.bank_account} onChange={(e) => set("bank_account", e.target.value)} />
               </div>
             </div>
@@ -304,9 +324,9 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.full_name}>
-            {submitting ? "Saving..." : "Save Changes"}
+            {submitting ? "جاري الحفظ..." : "حفظ التعديلات"}
           </Button>
         </DialogFooter>
       </DialogContent>
