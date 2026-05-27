@@ -85,11 +85,9 @@ export function Header() {
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-gray-200 px-6 bg-white shadow-[0_1px_2px_0_rgba(0,0,0,0.03)] z-20 relative">
       <div className="flex items-center gap-4 lg:hidden">
         <Sheet>
-          <SheetTrigger>
-            <Button variant="ghost" size="icon" className="shrink-0 -ml-2 hover:bg-slate-100">
-              <Menu className="h-5 w-5" />
-              <span className="sr-only">فتح أو إغلاق قائمة التنقل</span>
-            </Button>
+          <SheetTrigger render={<Button variant="ghost" size="icon" className="shrink-0 -ml-2 hover:bg-slate-100" />}>
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">فتح أو إغلاق قائمة التنقل</span>
           </SheetTrigger>
           <SheetContent side="right" className="w-[280px] p-0 border-r-0">
             <SheetTitle className="sr-only">قائمة التنقل</SheetTitle>
@@ -146,12 +144,10 @@ export function Header() {
           </span>
         </div>
         <DropdownMenu>
-          <DropdownMenuTrigger>
-            <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-              <Avatar className="h-9 w-9">
-                <AvatarFallback>{currentUser.name.charAt(0)}</AvatarFallback>
-              </Avatar>
-            </Button>
+          <DropdownMenuTrigger render={<Button variant="ghost" className="relative h-8 w-8 rounded-full" />}>
+            <Avatar className="h-9 w-9">
+              <AvatarFallback>{currentUser.name.charAt(0)}</AvatarFallback>
+            </Avatar>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-56" align="end">
             <DropdownMenuLabel className="font-normal">
