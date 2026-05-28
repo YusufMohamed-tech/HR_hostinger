@@ -31,6 +31,11 @@ const statusLabels: Record<string, string> = {
   "On Leave": "في إجازة",
 };
 
+const employeeDialogContentClass =
+  "max-h-[calc(100dvh-1.5rem)] overflow-y-auto p-3 sm:max-w-[760px] sm:p-4";
+const twoColumnGridClass = "grid grid-cols-1 gap-4 md:grid-cols-2";
+const threeColumnGridClass = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3";
+
 export function AddEmployeeDialog({ onSuccess }: Props) {
   const { currentUser } = useRoleContext();
   const { data: departments } = useDepartments();
@@ -127,7 +132,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
         <Plus className="w-4 h-4 ml-2" />
         إضافة موظف
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[720px]">
+      <DialogContent className={employeeDialogContentClass}>
         <DialogHeader>
           <DialogTitle>إضافة موظف</DialogTitle>
           <DialogDescription>أكمل بيانات الموظف. الحقول المطلوبة عليها علامة *.</DialogDescription>
@@ -136,7 +141,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
         <div className="grid gap-6 py-2">
           <div className="space-y-4">
             <p className="text-sm font-semibold text-slate-700">البيانات الأساسية</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>الاسم الكامل *</Label>
                 <Input value={form.full_name} onChange={(e) => set("full_name", e.target.value)} placeholder="أحمد يوسف" />
@@ -146,7 +151,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Input value={form.employee_code} onChange={(e) => set("employee_code", e.target.value)} placeholder="EMP-001" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>البريد الإلكتروني</Label>
                 <Input value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="employee@company.com" />
@@ -156,7 +161,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+966 55 123 4567" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>العنوان</Label>
                 <Input value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="الشارع، المدينة" />
@@ -166,7 +171,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Input value={form.national_id} onChange={(e) => set("national_id", e.target.value)} placeholder="رقم الهوية" />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className={threeColumnGridClass}>
               <div className="space-y-2">
                 <Label>تاريخ الميلاد</Label>
                 <Input type="date" value={form.date_of_birth} onChange={(e) => set("date_of_birth", e.target.value)} />
@@ -186,7 +191,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Input type="date" value={form.hiring_date} onChange={(e) => set("hiring_date", e.target.value)} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>اسم جهة الطوارئ</Label>
                 <Input value={form.emergency_contact_name} onChange={(e) => set("emergency_contact_name", e.target.value)} />
@@ -200,7 +205,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
           <div className="space-y-4">
             <p className="text-sm font-semibold text-slate-700">بيانات العمل</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>القسم</Label>
                 <Select value={form.department_id} onValueChange={(v) => set("department_id", v || "")}>
@@ -217,7 +222,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Input value={form.job_title} onChange={(e) => set("job_title", e.target.value)} placeholder="مشغل ميداني" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>المدير المباشر</Label>
                 <Select value={form.manager_id} onValueChange={(v) => set("manager_id", v || "")}>
@@ -241,7 +246,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
+            <div className={threeColumnGridClass}>
               <div className="space-y-2">
                 <Label>نوع التوظيف</Label>
                 <Select value={form.employment_type} onValueChange={(v) => set("employment_type", v || "")}>
@@ -281,7 +286,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
           <div className="space-y-4">
             <p className="text-sm font-semibold text-slate-700">بيانات الراتب</p>
-            <div className="grid grid-cols-3 gap-4">
+            <div className={threeColumnGridClass}>
               <div className="space-y-2">
                 <Label>الراتب الأساسي</Label>
                 <Input type="number" value={form.base_salary} onChange={(e) => set("base_salary", e.target.value)} placeholder="0" />
@@ -295,7 +300,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Input type="number" value={form.deductions} onChange={(e) => set("deductions", e.target.value)} placeholder="0" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>الحساب البنكي</Label>
                 <Input value={form.bank_account} onChange={(e) => set("bank_account", e.target.value)} placeholder="IBAN / رقم الحساب" />
