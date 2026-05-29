@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useAttendance, useEmployees, useLocations } from "@/hooks/use-data";
 import { createCheckIn, updateCheckOut } from "@/lib/services/attendance";
@@ -41,6 +41,10 @@ export function AutoAttendanceRecorder() {
   const lastCheckOutAttemptRef = useRef(false);
 
   const myAttendance = attendance.find((row) => row.employee_id === currentUser?.employeeId);
+  const myAttendanceRecord = myAttendance as Record<string, unknown> | undefined;
+  const myAttendanceId = typeof myAttendanceRecord?.id === "string" ? myAttendanceRecord.id : "";
+  const myAttendanceCheckInAt = typeof myAttendanceRecord?.check_in_at === "string" ? myAttendanceRecord.check_in_at : "";
+  const myAttendanceCheckOutAt = typeof myAttendanceRecord?.check_out_at === "string" ? myAttendanceRecord.check_out_at : "";
 
   const assignedLocation = useMemo(() => {
     if (!currentUser?.employeeId) return null;
@@ -52,7 +56,7 @@ export function AutoAttendanceRecorder() {
   const locationLatitude = assignedLocation ? Number(assignedLocation.latitude) : NaN;
   const locationLongitude = assignedLocation ? Number(assignedLocation.longitude) : NaN;
 
-  const attemptCheckIn = async () => {
+  const attemptCheckIn = useCallback(async () => {
     if (!currentUser?.orgId || !currentUser?.employeeId) return;
     if (lastCheckInAttemptRef.current) return;
     if (!assignedLocation || !Number.isFinite(locationLatitude) || !Number.isFinite(locationLongitude)) return;
@@ -107,9 +111,17 @@ export function AutoAttendanceRecorder() {
     setStatus("تم تسجيل حضورك تلقائيًا بنجاح.");
     await refetch();
     window.setTimeout(() => setStatus(""), 5000);
-  };
+  }, [
+    assignedLocation,
+    currentUser?.employeeId,
+    currentUser?.orgId,
+    locationLatitude,
+    locationLongitude,
+    refetch,
+    today,
+  ]);
 
-  const attemptCheckOut = async (attendanceId: string) => {
+  const attemptCheckOut = useCallback(async (attendanceId: string) => {
     if (!currentUser?.orgId || !currentUser?.employeeId) return;
     if (lastCheckOutAttemptRef.current) return;
     if (!assignedLocation || !Number.isFinite(locationLatitude) || !Number.isFinite(locationLongitude)) return;
@@ -131,12 +143,9 @@ export function AutoAttendanceRecorder() {
     if (distance <= 200) return;
 
     lastCheckOutAttemptRef.current = true;
-    const checkInAt = typeof (myAttendance as Record<string, unknown>)?.check_in_at === "string"
-      ? String((myAttendance as Record<string, unknown>).check_in_at)
-      : null;
     const now = new Date();
-    const totalMinutes = checkInAt
-      ? Math.max(0, Math.round((now.getTime() - new Date(checkInAt).getTime()) / 60000))
+    const totalMinutes = myAttendanceCheckInAt
+      ? Math.max(0, Math.round((now.getTime() - new Date(myAttendanceCheckInAt).getTime()) / 60000))
       : 0;
 
     const { error } = await updateCheckOut(attendanceId, {
@@ -157,7 +166,15 @@ export function AutoAttendanceRecorder() {
     } else {
       lastCheckOutAttemptRef.current = false;
     }
-  };
+  }, [
+    assignedLocation,
+    currentUser?.employeeId,
+    currentUser?.orgId,
+    locationLatitude,
+    locationLongitude,
+    myAttendanceCheckInAt,
+    refetch,
+  ]);
 
   // Periodic polling: check-in on range entry, check-out on range exit
   useEffect(() => {
@@ -166,16 +183,10 @@ export function AutoAttendanceRecorder() {
 
     const poll = async () => {
       // Need latest attendance state — this runs inside effect so reads from closure
-      const checkedIn = myAttendance?.check_in_at;
-      const checkedOut = (myAttendance as Record<string, unknown>)?.check_out_at;
-      const attendanceId = typeof (myAttendance as Record<string, unknown>)?.id === "string"
-        ? String((myAttendance as Record<string, unknown>).id)
-        : "";
-
-      if (!checkedIn && !lastCheckInAttemptRef.current) {
+      if (!myAttendanceCheckInAt && !lastCheckInAttemptRef.current) {
         await attemptCheckIn();
-      } else if (checkedIn && !checkedOut && attendanceId) {
-        await attemptCheckOut(attendanceId);
+      } else if (myAttendanceCheckInAt && !myAttendanceCheckOutAt && myAttendanceId) {
+        await attemptCheckOut(myAttendanceId);
       }
     };
 
@@ -187,16 +198,18 @@ export function AutoAttendanceRecorder() {
       window.clearTimeout(initTimer);
       window.clearInterval(interval);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     assignedLocation,
+    attemptCheckIn,
+    attemptCheckOut,
     currentUser?.employeeId,
     currentUser?.orgId,
     currentUser?.role,
-    myAttendance?.check_in_at,
-    (myAttendance as Record<string, unknown>)?.check_out_at,
     locationLatitude,
     locationLongitude,
+    myAttendanceCheckInAt,
+    myAttendanceCheckOutAt,
+    myAttendanceId,
   ]);
 
   if (!status || currentUser?.role !== "Employee") return null;

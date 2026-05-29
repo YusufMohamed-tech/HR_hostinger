@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-const allowedCreatorRoles = new Set(["super_admin", "admin", "hr_admin"]);
+const allowedCreatorRoles = new Set(["admin", "hr_admin"]);
 const allowedEmployeeRoles = new Set(["employee", "training_manager"]);
-const privilegedRoles = new Set(["super_admin", "admin", "hr_admin", "hr_recruitment"]);
+const privilegedRoles = new Set(["admin", "hr_admin", "hr_recruitment"]);
 
 async function requireHrAccess() {
   const supabase = await createServerSupabaseClient();
