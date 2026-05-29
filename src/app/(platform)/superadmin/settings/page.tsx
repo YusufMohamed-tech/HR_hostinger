@@ -26,7 +26,7 @@ export default function SuperadminSettingsPage() {
     { label: "البريد الإلكتروني", value: currentUser.email, icon: Mail },
     { label: "الدور", value: currentUser.role, icon: Shield },
     { label: "رقم المستخدم", value: currentUser.id, icon: KeyRound },
-    { label: "معرف المنظمة القديم", value: currentUser.orgId || "غير مرتبط", icon: Building2 },
+    { label: "نطاق الحساب", value: currentUser.orgId ? `منظمة: ${currentUser.orgId}` : "منصة مستقلة", icon: Building2 },
   ];
 
   return (
@@ -73,8 +73,8 @@ export default function SuperadminSettingsPage() {
             <CardDescription>الخروج ينهي جلسة المشرف العام ويعيدك إلى صفحة تسجيل الدخول.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-lg border border-amber-100 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">
-              المرحلة الحالية ما زالت تستخدم ربطًا قديمًا عبر المنظمة. الخطوة التالية ستنقل المشرف العام إلى جدول منصة مستقل.
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800">
+              تم نقل حساب المشرف العام إلى جدول المنصة المستقل platform_admins، ولم يعد يعمل كمستخدم HR داخل منظمة.
             </div>
             <Button
               variant="outline"
