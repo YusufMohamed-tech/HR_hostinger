@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import React, { useState } from "react";
 import { CheckSquare, ListChecks, MessageSquare, Plus, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -56,6 +57,127 @@ const priorityLabels: Record<string, string> = {
   urgent: "عاجل",
 };
 
+type TaskRecord = Record<string, unknown>;
+
+function TasksTable({
+  tasks,
+  currentUser,
+  refetch,
+}: {
+  tasks: TaskRecord[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  currentUser: any;
+  refetch: () => void;
+}) {
+  if (tasks.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <CheckSquare className="h-10 w-10 text-gray-300 mb-3" />
+        <p className="text-sm font-medium text-gray-900">لا توجد مهام حتى الآن</p>
+        <p className="text-xs text-gray-500 mt-1">أنشئ أول مهمة لبدء إسناد الأعمال.</p>
+      </div>
+    );
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
+          <TableHead className="font-semibold text-gray-600">المهمة</TableHead>
+          <TableHead className="font-semibold text-gray-600">الأولوية</TableHead>
+          <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
+          <TableHead className="font-semibold text-gray-600">الاستحقاق</TableHead>
+          <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
+          <TableHead className="font-semibold text-gray-600">المكلفون</TableHead>
+          <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {tasks.map((taskRecord) => {
+          const assignments = Array.isArray(taskRecord.assignments)
+            ? (taskRecord.assignments as TaskRecord[])
+            : [];
+          const myAssignment = assignments.find(
+            (a) => String((a.employee as TaskRecord | undefined)?.id ?? "") === currentUser?.employeeId
+          );
+          const updates = Array.isArray(taskRecord.updates)
+            ? (taskRecord.updates as TaskRecord[])
+            : [];
+          const latestUpdate = updates
+            .slice()
+            .sort((a, b) => {
+              const aTime = a.created_at ? new Date(String(a.created_at)).getTime() : 0;
+              const bTime = b.created_at ? new Date(String(b.created_at)).getTime() : 0;
+              return bTime - aTime;
+            })[0];
+          const taskId = String(taskRecord.id ?? "");
+          const title = typeof taskRecord.title === "string" ? taskRecord.title : "—";
+          const description = typeof taskRecord.description === "string" ? taskRecord.description : "";
+          const priority = typeof taskRecord.priority === "string" ? taskRecord.priority : "medium";
+          const status = typeof taskRecord.status === "string" ? taskRecord.status : "pending";
+          const dueDate = typeof taskRecord.due_date === "string" ? taskRecord.due_date : "—";
+          const location = (taskRecord.location ?? null) as TaskRecord | null;
+          const locationName = typeof location?.name === "string" ? location.name : "—";
+          const assignees = assignments
+            .map((a) => {
+              const emp = (a.employee ?? null) as TaskRecord | null;
+              return typeof emp?.full_name === "string" ? emp.full_name : null;
+            })
+            .filter((n): n is string => Boolean(n));
+
+          return (
+            <TableRow key={taskId}>
+              <TableCell>
+                <div className="flex flex-col">
+                  <span className="font-medium text-gray-900">{title}</span>
+                  <span className="text-xs text-gray-500">
+                    {description}
+                    {latestUpdate?.note ? ` · ${latestUpdate.note}` : ""}
+                  </span>
+                </div>
+              </TableCell>
+              <TableCell className="text-gray-600">{priorityLabels[priority] || priority}</TableCell>
+              <TableCell>
+                <Badge variant="outline" className={statusStyles[status] || "bg-gray-100 text-gray-600 border-gray-200"}>
+                  {statusLabels[status] || status}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-gray-600">{dueDate}</TableCell>
+              <TableCell className="text-gray-600">{locationName}</TableCell>
+              <TableCell className="text-gray-600">
+                {assignees.length ? assignees.join("، ") : "—"}
+              </TableCell>
+              <TableCell className="text-right">
+                <div className="flex items-center justify-end gap-1">
+                  <TaskHistoryDialog title={title} updates={updates} />
+                  {myAssignment && (
+                    <TaskNoteDialog
+                      taskId={taskId}
+                      orgId={currentUser?.orgId || ""}
+                      employeeId={currentUser?.employeeId || ""}
+                      status={status}
+                      onSuccess={refetch}
+                    />
+                  )}
+                  {myAssignment && (
+                    <TaskUpdateButtons
+                      assignmentId={String(myAssignment.id ?? "")}
+                      taskId={taskId}
+                      orgId={currentUser?.orgId || ""}
+                      employeeId={currentUser?.employeeId || ""}
+                      onSuccess={refetch}
+                    />
+                  )}
+                </div>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
+}
+
 export default function TasksPage() {
   const { currentUser } = useRoleContext();
   const { data: tasks, loading, refetch } = useTasks();
@@ -66,6 +188,31 @@ export default function TasksPage() {
 
   if (loading) return <PageSkeleton />;
 
+  const allTaskRecords = tasks as TaskRecord[];
+
+  const myTasks = allTaskRecords.filter((t) => {
+    const assignments = Array.isArray(t.assignments) ? (t.assignments as TaskRecord[]) : [];
+    return assignments.some(
+      (a) => String((a.employee as TaskRecord | undefined)?.id ?? "") === currentUser?.employeeId
+    );
+  });
+
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col gap-6">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">المهام</h1>
+          <p className="text-gray-500 text-sm mt-1">إسناد ومتابعة المهام التشغيلية وتتبعها.</p>
+        </div>
+        <Card className="border-none shadow-sm">
+          <CardContent className="p-0">
+            <TasksTable tasks={myTasks} currentUser={currentUser} refetch={refetch} />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -73,116 +220,31 @@ export default function TasksPage() {
           <h1 className="text-2xl font-bold tracking-tight">المهام</h1>
           <p className="text-gray-500 text-sm mt-1">إسناد ومتابعة المهام التشغيلية وتتبعها.</p>
         </div>
-        {isAdmin && (
-          <CreateTaskDialog
-            employees={employees}
-            locations={locations}
-            onSuccess={refetch}
-          />
-        )}
+        <CreateTaskDialog employees={employees} locations={locations} onSuccess={refetch} />
       </div>
 
-      <Card className="border-none shadow-sm">
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                <TableHead className="font-semibold text-gray-600">المهمة</TableHead>
-                <TableHead className="font-semibold text-gray-600">الأولوية</TableHead>
-                <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
-                <TableHead className="font-semibold text-gray-600">الاستحقاق</TableHead>
-                <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
-                <TableHead className="font-semibold text-gray-600">المكلفون</TableHead>
-                <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tasks.map((task) => {
-                const taskRecord = task as Record<string, unknown>;
-                const assignments = Array.isArray(taskRecord.assignments) ? taskRecord.assignments as Record<string, unknown>[] : [];
-                const myAssignment = assignments.find((a) => String((a.employee as Record<string, unknown> | undefined)?.id ?? "") === currentUser?.employeeId);
-                const updates = Array.isArray(taskRecord.updates) ? taskRecord.updates as Record<string, unknown>[] : [];
-                const latestUpdate = updates
-                  .slice()
-                  .sort((a, b) => {
-                    const aTime = a.created_at ? new Date(String(a.created_at)).getTime() : 0;
-                    const bTime = b.created_at ? new Date(String(b.created_at)).getTime() : 0;
-                    return bTime - aTime;
-                  })[0];
-                const taskId = String(taskRecord.id ?? "");
-                const title = typeof taskRecord.title === "string" ? taskRecord.title : "—";
-                const description = typeof taskRecord.description === "string" ? taskRecord.description : "—";
-                const priority = typeof taskRecord.priority === "string" ? taskRecord.priority : "medium";
-                const status = typeof taskRecord.status === "string" ? taskRecord.status : "pending";
-                const dueDate = typeof taskRecord.due_date === "string" ? taskRecord.due_date : "—";
-                const location = (taskRecord.location ?? null) as Record<string, unknown> | null;
-                const locationName = typeof location?.name === "string" ? location.name : "—";
-                const assignees = assignments
-                  .map((a) => {
-                    const employee = (a.employee ?? null) as Record<string, unknown> | null;
-                    return typeof employee?.full_name === "string" ? employee.full_name : null;
-                  })
-                  .filter((name): name is string => Boolean(name));
-                return (
-                  <TableRow key={taskId}>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-gray-900">{title}</span>
-                        <span className="text-xs text-gray-500">
-                          {description}
-                          {latestUpdate?.note ? ` · ${latestUpdate.note}` : ""}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-gray-600">{priorityLabels[priority] || priority}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={statusStyles[status] || "bg-gray-100 text-gray-600 border-gray-200"}>
-                        {statusLabels[status] || status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-gray-600">{dueDate}</TableCell>
-                    <TableCell className="text-gray-600">{locationName}</TableCell>
-                    <TableCell className="text-gray-600">
-                      {assignees.length ? assignees.join(", ") : "—"}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <TaskHistoryDialog title={title} updates={updates} />
-                        {myAssignment && (
-                          <TaskNoteDialog
-                            taskId={taskId}
-                            orgId={currentUser?.orgId || ""}
-                            employeeId={currentUser?.employeeId || ""}
-                            status={status}
-                            onSuccess={refetch}
-                          />
-                        )}
-                        {myAssignment && (
-                          <TaskUpdateButtons
-                            assignmentId={String(myAssignment.id ?? "")}
-                            taskId={taskId}
-                            orgId={currentUser?.orgId || ""}
-                            employeeId={currentUser?.employeeId || ""}
-                            onSuccess={refetch}
-                          />
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+      <Tabs defaultValue="assigned">
+        <TabsList className="mb-2">
+          <TabsTrigger value="assigned">إسناد المهام</TabsTrigger>
+          <TabsTrigger value="mine">مهامي</TabsTrigger>
+        </TabsList>
 
-          {tasks.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <CheckSquare className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">لا توجد مهام حتى الآن</p>
-              <p className="text-xs text-gray-500 mt-1">أنشئ أول مهمة لبدء إسناد الأعمال.</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        <TabsContent value="assigned">
+          <Card className="border-none shadow-sm">
+            <CardContent className="p-0">
+              <TasksTable tasks={allTaskRecords} currentUser={currentUser} refetch={refetch} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="mine">
+          <Card className="border-none shadow-sm">
+            <CardContent className="p-0">
+              <TasksTable tasks={myTasks} currentUser={currentUser} refetch={refetch} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -211,7 +273,8 @@ function CreateTaskDialog({
     employee_id: "",
   });
 
-  const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
+  const set = (key: string, value: string | null) =>
+    setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
   const handleSubmit = async () => {
     if (!currentUser?.orgId) return;
@@ -236,7 +299,7 @@ function CreateTaskDialog({
     });
 
     if (err || !data) {
-      setError(err?.message || "Failed to create task");
+      setError(err?.message || "فشل إنشاء المهمة");
       setSubmitting(false);
       return;
     }
@@ -260,60 +323,83 @@ function CreateTaskDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
-        <Plus className="w-4 h-4 mr-2" />
-        Create Task
+        <Plus className="w-4 h-4 ml-2" />
+        إنشاء مهمة
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent className="sm:max-w-[540px]">
         <DialogHeader>
-          <DialogTitle>Create Task</DialogTitle>
-          <DialogDescription>Assign work with priority and due dates.</DialogDescription>
+          <DialogTitle>إنشاء مهمة جديدة</DialogTitle>
+          <DialogDescription>حدد تفاصيل المهمة وكلّف بها الموظف المناسب.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
-            <Label>Title *</Label>
-            <Input value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="Audit check-in logs" />
+            <Label>العنوان *</Label>
+            <Input
+              value={form.title}
+              onChange={(e) => set("title", e.target.value)}
+              placeholder="مثال: مراجعة سجلات الحضور"
+            />
           </div>
           <div className="space-y-2">
-            <Label>Description</Label>
-            <Input value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Details and expectations" />
+            <Label>الوصف</Label>
+            <Input
+              value={form.description}
+              onChange={(e) => set("description", e.target.value)}
+              placeholder="تفاصيل المهمة والتوقعات"
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Priority</Label>
+              <Label>الأولوية</Label>
               <Select value={form.priority} onValueChange={(v) => set("priority", v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="low">منخفض</SelectItem>
+                  <SelectItem value="medium">متوسط</SelectItem>
+                  <SelectItem value="high">عالي</SelectItem>
+                  <SelectItem value="urgent">عاجل</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Due Date</Label>
-              <Input type="date" value={form.due_date} onChange={(e) => set("due_date", e.target.value)} />
+              <Label>تاريخ الاستحقاق</Label>
+              <Input
+                type="date"
+                value={form.due_date}
+                onChange={(e) => set("due_date", e.target.value)}
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Location</Label>
+              <Label>الموقع</Label>
               <Select value={form.location_id} onValueChange={(v) => set("location_id", v)}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="اختر الموقع" />
+                </SelectTrigger>
                 <SelectContent>
                   {locations.map((loc) => (
-                    <SelectItem key={loc.id} value={String(loc.id)}>{String(loc.name)}</SelectItem>
+                    <SelectItem key={loc.id} value={String(loc.id)}>
+                      {String(loc.name)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Assign To</Label>
+              <Label>تكليف إلى</Label>
               <Select value={form.employee_id} onValueChange={(v) => set("employee_id", v)}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="اختر الموظف" />
+                </SelectTrigger>
                 <SelectContent>
                   {employees.map((emp) => (
-                    <SelectItem key={emp.id} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
+                    <SelectItem key={emp.id} value={String(emp.id)}>
+                      {String(emp.full_name || emp.name)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -324,9 +410,13 @@ function CreateTaskDialog({
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.title}>
-            {submitting ? "Creating..." : "Create Task"}
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
+          <Button
+            className="bg-brand hover:bg-brand-dark text-white"
+            onClick={handleSubmit}
+            disabled={submitting || !form.title}
+          >
+            {submitting ? "جارٍ الإنشاء..." : "إنشاء المهمة"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -368,11 +458,11 @@ function TaskUpdateButtons({
       employee_id: employeeId || undefined,
       status,
       progress: status === "completed" ? 100 : 50,
-      note: status === "completed" ? "Marked complete" : "Started work",
+      note: status === "completed" ? "تم الإنجاز" : "بدأ العمل",
     });
 
     if (taskError || updateError) {
-      setError(taskError?.message || updateError?.message || "Failed to update task");
+      setError(taskError?.message || updateError?.message || "فشل تحديث المهمة");
     }
 
     setSubmitting(false);
@@ -380,22 +470,24 @@ function TaskUpdateButtons({
   };
 
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex items-center gap-1">
       <Button
         variant="ghost"
         size="sm"
-        className="text-blue-600 hover:text-blue-700"
+        className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
         disabled={submitting}
         onClick={() => updateStatus("in_progress")}
+        title="قيد التنفيذ"
       >
         <Timer className="w-4 h-4" />
       </Button>
       <Button
         variant="ghost"
         size="sm"
-        className="text-green-600 hover:text-green-700"
+        className="text-green-600 hover:text-green-700 hover:bg-green-50"
         disabled={submitting}
         onClick={() => updateStatus("completed")}
+        title="مكتمل"
       >
         <CheckSquare className="w-4 h-4" />
       </Button>
@@ -409,7 +501,7 @@ function TaskHistoryDialog({
   updates,
 }: {
   title: string;
-  updates: Record<string, unknown>[];
+  updates: TaskRecord[];
 }) {
   const sortedUpdates = updates
     .slice()
@@ -421,24 +513,23 @@ function TaskHistoryDialog({
 
   return (
     <Dialog>
-      <DialogTrigger render={<Button variant="ghost" size="sm" />}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" title="سجل التحديثات" />}>
         <ListChecks className="w-4 h-4" />
-        <span className="sr-only">History</span>
+        <span className="sr-only">السجل</span>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>Task Updates</DialogTitle>
+          <DialogTitle>سجل تحديثات المهمة</DialogTitle>
           <DialogDescription>{title}</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="space-y-3 max-h-80 overflow-y-auto">
           {sortedUpdates.map((update, index) => {
-            const updateRecord = update as Record<string, unknown>;
-            const employee = (updateRecord.employee ?? null) as Record<string, unknown> | null;
+            const employee = (update.employee ?? null) as TaskRecord | null;
             const employeeName = typeof employee?.full_name === "string" ? employee.full_name : "";
-            const status = typeof updateRecord.status === "string" ? updateRecord.status : "update";
-            const note = typeof updateRecord.note === "string" ? updateRecord.note : "No note";
-            const createdAt = typeof updateRecord.created_at === "string" ? updateRecord.created_at : "";
+            const status = typeof update.status === "string" ? update.status : "update";
+            const note = typeof update.note === "string" ? update.note : "لا توجد ملاحظة";
+            const createdAt = typeof update.created_at === "string" ? update.created_at : "";
 
             return (
               <div
@@ -450,16 +541,16 @@ function TaskHistoryDialog({
                     variant="outline"
                     className={statusStyles[status] || "bg-gray-100 text-gray-600 border-gray-200"}
                   >
-                    {status}
+                    {statusLabels[status] || status}
                   </Badge>
                   <span className="text-xs text-gray-500">
-                    {createdAt ? new Date(createdAt).toLocaleString() : ""}
+                    {createdAt ? new Date(createdAt).toLocaleString("ar-EG") : ""}
                   </span>
                 </div>
                 <div className="mt-2 space-y-1">
                   <p className="text-sm text-gray-700">{note}</p>
                   {employeeName && (
-                    <p className="text-xs text-gray-500">By {employeeName}</p>
+                    <p className="text-xs text-gray-500">بواسطة {employeeName}</p>
                   )}
                 </div>
               </div>
@@ -467,13 +558,13 @@ function TaskHistoryDialog({
           })}
           {sortedUpdates.length === 0 && (
             <div className="rounded-lg border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500">
-              No updates yet.
+              لا توجد تحديثات بعد.
             </div>
           )}
         </div>
 
         <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Close</DialogClose>
+          <DialogClose render={<Button variant="outline" />}>إغلاق</DialogClose>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -526,23 +617,23 @@ function TaskNoteDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" size="sm" />}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" title="إضافة ملاحظة" />}>
         <MessageSquare className="w-4 h-4" />
-        <span className="sr-only">Add note</span>
+        <span className="sr-only">إضافة ملاحظة</span>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle>Add Task Note</DialogTitle>
-          <DialogDescription>Share progress or context for this task.</DialogDescription>
+          <DialogTitle>إضافة ملاحظة</DialogTitle>
+          <DialogDescription>شارك تقدمك أو أي سياق متعلق بهذه المهمة.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-3 py-4">
           <div className="space-y-2">
-            <Label>Note</Label>
+            <Label>الملاحظة</Label>
             <Input
               value={note}
               onChange={(event) => setNote(event.target.value)}
-              placeholder="Work started, blockers identified, etc."
+              placeholder="مثال: بدأت العمل، واجهت عائقاً..."
             />
           </div>
         </div>
@@ -550,9 +641,13 @@ function TaskNoteDialog({
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !note.trim()}>
-            {submitting ? "Saving..." : "Add Note"}
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
+          <Button
+            className="bg-brand hover:bg-brand-dark text-white"
+            onClick={handleSubmit}
+            disabled={submitting || !note.trim()}
+          >
+            {submitting ? "جارٍ الحفظ..." : "حفظ الملاحظة"}
           </Button>
         </DialogFooter>
       </DialogContent>
