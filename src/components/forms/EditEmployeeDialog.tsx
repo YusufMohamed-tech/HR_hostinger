@@ -11,6 +11,7 @@ import {
 import { Pencil } from "lucide-react";
 import { useDepartments, useLocations, useEmployees } from "@/hooks/use-data";
 import { updateEmployee } from "@/lib/services/employees";
+import { updateDepartment } from "@/lib/services/departments";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -43,6 +44,7 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [isDepartmentManager, setIsDepartmentManager] = useState(false);
 
   const [form, setForm] = useState({
     full_name: "",
@@ -95,8 +97,13 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
         payment_method: employee.payment_method || "",
         bank_account: employee.bank_account || "",
       });
+      const managedDepartment = departments.find((department) => {
+        const departmentRecord = department as Record<string, unknown>;
+        return String(departmentRecord.manager_employee_id || "") === String(employee.id || "");
+      });
+      setIsDepartmentManager(Boolean(managedDepartment));
     }
-  }, [employee, open]);
+  }, [departments, employee, open]);
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
@@ -136,6 +143,34 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
       setError(err.message);
       setSubmitting(false);
       return;
+    }
+
+    const managedDepartments = departments.filter((department) => {
+      const departmentRecord = department as Record<string, unknown>;
+      return String(departmentRecord.manager_employee_id || "") === String(employee.id || "");
+    });
+
+    for (const department of managedDepartments) {
+      const departmentId = String((department as Record<string, unknown>).id || "");
+      if (departmentId && (!isDepartmentManager || departmentId !== form.department_id)) {
+        const { error: clearError } = await updateDepartment(departmentId, { manager_employee_id: null });
+        if (clearError) {
+          setError(clearError.message);
+          setSubmitting(false);
+          return;
+        }
+      }
+    }
+
+    if (isDepartmentManager && form.department_id) {
+      const { error: deptError } = await updateDepartment(form.department_id, {
+        manager_employee_id: employee.id,
+      });
+      if (deptError) {
+        setError(deptError.message);
+        setSubmitting(false);
+        return;
+      }
     }
 
     setSubmitting(false);
@@ -239,6 +274,15 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
                 <Input value={form.job_title} onChange={(e) => set("job_title", e.target.value)} />
               </div>
             </div>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
+                checked={isDepartmentManager}
+                onChange={(event) => setIsDepartmentManager(event.target.checked)}
+              />
+              <span>تعيين هذا الشخص كمدير للقسم المختار</span>
+            </label>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>المدير المباشر</Label>

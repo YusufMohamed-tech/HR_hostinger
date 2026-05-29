@@ -9,7 +9,8 @@
     "lint": "next lint",
     "apply:schema": "node scripts/apply-schema.mjs",
     "seed:admin": "node scripts/seed-initial-admin.mjs",
-    "seed:demo": "node scripts/seed-demo-users.mjs"
+    "seed:demo": "node scripts/seed-demo-users.mjs",
+    "seed:production-users": "node scripts/seed-production-users.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

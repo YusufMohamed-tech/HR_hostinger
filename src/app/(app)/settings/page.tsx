@@ -8,12 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { LogOut, Shield, User, Building2, Mail, Key, Save, CheckCircle } from "lucide-react";
+import { LogOut, Shield, User, Building2, Mail, Key, Save, CheckCircle, UserPlus } from "lucide-react";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 import { getOrganizations, updateOrganization } from "@/lib/services/organizations";
+import { getOrgMembers } from "@/lib/services/members";
+import { createManagedUser } from "@/lib/services/admin-users";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -25,6 +28,7 @@ export default function SettingsPage() {
   };
 
   const roleBadgeColors: Record<string, string> = {
+    Superadmin: "bg-slate-900 text-white border-slate-900",
     Admin: "bg-blue-50 text-blue-700 border-blue-200",
     Employee: "bg-green-50 text-green-700 border-green-200",
     HR_Admin: "bg-indigo-50 text-indigo-700 border-indigo-200",
@@ -95,8 +99,10 @@ export default function SettingsPage() {
       </Card>
 
       {/* System Settings (Admin only) */}
-      {currentUser?.role === "Admin" && (
+      {["Superadmin", "Admin"].includes(currentUser?.role || "") && (
         <div className="grid gap-4 md:grid-cols-2">
+          {currentUser?.role === "Superadmin" && <UserManagementCard />}
+
           <EditCompanyDialog />
 
           <Card className="border-none shadow-sm">
@@ -180,6 +186,153 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function UserManagementCard() {
+  const { currentUser } = useRoleContext();
+  const [members, setMembers] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    full_name: "",
+    email: "",
+    password: "",
+    role: "hr_admin" as "hr_admin" | "hr_recruitment",
+  });
+
+  const roleLabels: Record<string, string> = {
+    super_admin: "Superadmin",
+    admin: "Admin",
+    hr_admin: "HR",
+    hr_recruitment: "Recruiter",
+    training_manager: "Training Manager",
+    employee: "Employee",
+  };
+
+  const loadMembers = async () => {
+    if (!currentUser?.orgId) return;
+    setLoading(true);
+    const result = await getOrgMembers(currentUser.orgId);
+    setMembers(result.data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    loadMembers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.orgId]);
+
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const handleCreate = async () => {
+    setSubmitting(true);
+    setError("");
+    setMessage("");
+
+    const result = await createManagedUser(form);
+    setSubmitting(false);
+
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+
+    setMessage("تم إنشاء الحساب وتحديث الصلاحية.");
+    setForm({ full_name: "", email: "", password: "", role: "hr_admin" });
+    await loadMembers();
+    setTimeout(() => {
+      setMessage("");
+      setOpen(false);
+    }, 1200);
+  };
+
+  return (
+    <Card className="border-none shadow-sm md:col-span-2">
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-brand" />
+            Superadmin Users
+          </CardTitle>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
+              Create HR / Recruiter
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[460px]">
+              <DialogHeader>
+                <DialogTitle>Create Managed User</DialogTitle>
+                <DialogDescription>Create an HR or recruiter account inside this organization.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label>Full Name</Label>
+                  <Input value={form.full_name} onChange={(event) => set("full_name", event.target.value)} placeholder="HR Team" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input type="email" value={form.email} onChange={(event) => set("email", event.target.value)} placeholder="hr@tatwir.sa" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Password</Label>
+                  <Input type="password" value={form.password} onChange={(event) => set("password", event.target.value)} placeholder="At least 8 characters" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <Select value={form.role} onValueChange={(value) => set("role", value || "hr_admin")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hr_admin">HR Admin</SelectItem>
+                      <SelectItem value="hr_recruitment">HR Recruiter</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {error && <p className="text-sm text-red-600">{error}</p>}
+                {message && <p className="text-sm text-green-700">{message}</p>}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>Cancel</Button>
+                <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleCreate} disabled={submitting}>
+                  {submitting ? "Creating..." : "Create User"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="rounded-lg border border-gray-200 overflow-hidden">
+          <div className="grid grid-cols-3 gap-3 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500">
+            <span>Name</span>
+            <span>Email</span>
+            <span>Role</span>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {members.map((member) => {
+              const memberId = String(member.id || member.user_id || "");
+              const profile = (member.profiles ?? null) as Record<string, unknown> | null;
+              const role = String(member.role || "employee");
+              return (
+                <div key={memberId} className="grid grid-cols-3 gap-3 px-3 py-3 text-sm">
+                  <span className="font-medium text-gray-900">{String(profile?.full_name || "-")}</span>
+                  <span className="text-gray-600">{String(profile?.email || "-")}</span>
+                  <Badge variant="outline">{roleLabels[role] || role}</Badge>
+                </div>
+              );
+            })}
+            {!loading && members.length === 0 && (
+              <div className="px-3 py-6 text-center text-sm text-gray-500">No users found.</div>
+            )}
+            {loading && (
+              <div className="px-3 py-6 text-center text-sm text-gray-500">Loading users...</div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

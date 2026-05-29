@@ -30,7 +30,8 @@ export function SidebarContent() {
 
   const getSections = () => {
     const role = currentUser?.role ?? "Employee";
-    const isAdmin = role === "Admin";
+    const isSuperAdmin = role === "Superadmin";
+    const isAdmin = role === "Admin" || isSuperAdmin;
 
     const core = [
       { name: "لوحة التحكم", href: "/", icon: LayoutDashboard },
@@ -51,6 +52,7 @@ export function SidebarContent() {
       { name: "الأرصدة والعهد", href: "/balances", icon: WalletCards },
       { name: "الأصول", href: "/assets", icon: Package },
     ];
+    const hrAdminOps = fullAdminOps.filter((link) => link.href !== "/recruitment");
 
     const recruitmentOps = [
       { name: "التوظيف", href: "/recruitment", icon: Briefcase },
@@ -68,7 +70,7 @@ export function SidebarContent() {
 
     return [
       { title: "الأساسي", links: core },
-      { title: "الإدارة", links: isAdmin || role === "HR_Admin" ? fullAdminOps : [] },
+      { title: "الإدارة", links: isAdmin ? fullAdminOps : role === "HR_Admin" ? hrAdminOps : [] },
       { title: "النظام", links: system },
     ];
   };

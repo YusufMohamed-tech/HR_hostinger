@@ -81,7 +81,7 @@ export default function EmployeesPage() {
           </p>
         </div>
 
-        {["Admin", "HR_Admin"].includes(currentUser?.role || "") && (
+        {["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "") && (
           <AddEmployeeDialog onSuccess={refetch} />
         )}
       </div>
@@ -176,13 +176,13 @@ export default function EmployeesPage() {
                     <TableCell className="text-gray-600">{locationName}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {["Admin", "HR_Admin"].includes(currentUser?.role || "") && (
+                        {["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "") && (
                           <EditEmployeeDialog employee={emp} onSuccess={refetch} />
                         )}
                         <Button asChild variant="ghost" size="sm" className="text-brand hover:text-brand-dark">
                           <Link href={`/employees/${empId}`}>عرض</Link>
                         </Button>
-                        {["Admin", "HR_Admin"].includes(currentUser?.role || "") && (
+                        {["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "") && (
                           <Button
                             variant="ghost"
                             size="sm"

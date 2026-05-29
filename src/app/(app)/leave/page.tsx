@@ -36,7 +36,7 @@ export default function LeavePage() {
   const { currentUser } = useRoleContext();
   const { data: leaveRequests, loading, refetch } = useLeaveRequests();
   const { data: balances } = useLeaveBalances(currentUser?.employeeId);
-  const canApprove = ["Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
+  const canApprove = ["Superadmin", "Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
   const visibleRequests = canApprove
     ? leaveRequests
     : leaveRequests.filter((req) => String((req as Record<string, unknown>).employee_id ?? "") === currentUser?.employeeId);
