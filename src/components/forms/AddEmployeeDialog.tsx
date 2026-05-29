@@ -11,7 +11,7 @@ import {
 import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useDepartments, useLocations, useEmployees } from "@/hooks/use-data";
-import { createEmployee } from "@/lib/services/employees";
+import { createEmployee, createEmployeeAccount } from "@/lib/services/employees";
 import { updateDepartment } from "@/lib/services/departments";
 import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
 
@@ -46,6 +46,9 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
+  const [createLoginAccount, setCreateLoginAccount] = useState(false);
+  const [accountRole, setAccountRole] = useState<"employee" | "training_manager">("employee");
+  const [accountPassword, setAccountPassword] = useState("");
 
   const [form, setForm] = useState({
     full_name: "",
@@ -74,6 +77,14 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
+  const handleDepartmentManagerChange = (checked: boolean) => {
+    setIsDepartmentManager(checked);
+    if (checked) {
+      setCreateLoginAccount(true);
+      setAccountRole("training_manager");
+    }
+  };
+
   const handleSubmit = async () => {
     if (!currentUser?.orgId) return;
 
@@ -81,6 +92,17 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     if (!parsed.success) {
       setError(getValidationMessage(parsed.error));
       return;
+    }
+
+    if (createLoginAccount) {
+      if (!parsed.data.email) {
+        setError("البريد الإلكتروني مطلوب لإنشاء حساب الدخول.");
+        return;
+      }
+      if (accountPassword.length < 8) {
+        setError("كلمة مرور حساب الدخول يجب ألا تقل عن 8 أحرف.");
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -107,6 +129,23 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       if (deptError) {
         setError(deptError.message);
         setSubmitting(false);
+        return;
+      }
+    }
+
+    if (createLoginAccount && createdEmployee?.id && parsed.data.email) {
+      const { error: accountError } = await createEmployeeAccount({
+        employee_id: String(createdEmployee.id),
+        email: parsed.data.email,
+        password: accountPassword,
+        full_name: parsed.data.full_name,
+        role: accountRole,
+      });
+
+      if (accountError) {
+        setError(`تم حفظ الموظف، لكن فشل إنشاء حساب الدخول: ${accountError.message}`);
+        setSubmitting(false);
+        onSuccess();
         return;
       }
     }
@@ -138,6 +177,9 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       bank_account: "",
     });
     setIsDepartmentManager(false);
+    setCreateLoginAccount(false);
+    setAccountRole("employee");
+    setAccountPassword("");
     onSuccess();
   };
 
@@ -242,7 +284,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 type="checkbox"
                 className="rounded border-gray-300"
                 checked={isDepartmentManager}
-                onChange={(event) => setIsDepartmentManager(event.target.checked)}
+                onChange={(event) => handleDepartmentManagerChange(event.target.checked)}
               />
               <span>تعيين هذا الشخص كمدير للقسم المختار</span>
             </label>
@@ -306,6 +348,46 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Input value={form.payment_method} onChange={(e) => set("payment_method", e.target.value)} placeholder="تحويل بنكي" />
               </div>
             </div>
+          </div>
+
+          <div className="space-y-4">
+            <p className="text-sm font-semibold text-slate-700">حساب الدخول</p>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
+                checked={createLoginAccount}
+                onChange={(event) => setCreateLoginAccount(event.target.checked)}
+              />
+              <span>إنشاء حساب دخول لهذا الموظف</span>
+            </label>
+            {createLoginAccount && (
+              <div className={twoColumnGridClass}>
+                <div className="space-y-2">
+                  <Label>نوع الحساب</Label>
+                  <Select value={accountRole} onValueChange={(value) => setAccountRole(value as "employee" | "training_manager")}>
+                    <SelectTrigger>
+                      <SelectValue>
+                        {(value: string | null) => value === "training_manager" ? "مدير تدريب / موقع" : "موظف"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="employee">موظف</SelectItem>
+                      <SelectItem value="training_manager">مدير تدريب / موقع</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>كلمة المرور المؤقتة *</Label>
+                  <Input
+                    type="password"
+                    value={accountPassword}
+                    onChange={(event) => setAccountPassword(event.target.value)}
+                    placeholder="8 أحرف على الأقل"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">

@@ -40,7 +40,7 @@ export default function SchedulePage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">الجداول</h1>
           <p className="text-gray-500 text-sm mt-1">
-            Manage shift templates and assign schedules to employees.
+            إدارة قوالب الورديات وتعيين الجداول للموظفين.
           </p>
         </div>
         {isAdmin && (

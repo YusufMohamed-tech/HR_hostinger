@@ -43,6 +43,13 @@ function getOrCreateDeviceFingerprint() {
   return next;
 }
 
+const attendanceStatusLabels: Record<string, string> = {
+  present: "حاضر",
+  late: "متأخر",
+  absent: "غائب",
+  "half-day": "نصف يوم",
+};
+
 export default function AttendancePage() {
   const { currentUser } = useRoleContext();
   const today = new Date().toISOString().split("T")[0];
@@ -72,15 +79,15 @@ export default function AttendancePage() {
   const handleCheckIn = async () => {
     if (!currentUser?.orgId || !currentUser?.employeeId) return;
     if (myAttendance?.check_in_at) {
-      setError("You have already checked in today.");
+      setError("لقد سجّلت حضورك اليوم بالفعل.");
       return;
     }
     if (photoFile && !ALLOWED_SELFIE_TYPES.has(photoFile.type)) {
-      setError("Selfie must be a JPG, PNG, or WebP image.");
+      setError("يجب أن تكون الصورة بصيغة JPG أو PNG أو WebP.");
       return;
     }
     if (photoFile && photoFile.size > MAX_SELFIE_BYTES) {
-      setError("Selfie must be 5 MB or smaller.");
+      setError("يجب ألا يتجاوز حجم الصورة 5 ميجابايت.");
       return;
     }
     setSubmitting(true);
@@ -91,7 +98,7 @@ export default function AttendancePage() {
     }).catch(() => null);
 
     if (!position) {
-      setError("Unable to fetch GPS location. Please enable location services.");
+      setError("تعذّر تحديد موقعك. يرجى تفعيل خدمات الموقع.");
       setSubmitting(false);
       return;
     }
@@ -179,7 +186,7 @@ export default function AttendancePage() {
 
     const attendanceId = typeof myAttendance.id === "string" ? myAttendance.id : "";
     if (!attendanceId) {
-      setError("Unable to resolve attendance record.");
+      setError("تعذّر إيجاد سجل الحضور.");
       setSubmitting(false);
       return;
     }
@@ -189,7 +196,7 @@ export default function AttendancePage() {
     }).catch(() => null);
 
     if (!position) {
-      setError("Unable to fetch GPS location. Please enable location services.");
+      setError("تعذّر تحديد موقعك. يرجى تفعيل خدمات الموقع.");
       setSubmitting(false);
       return;
     }
@@ -252,7 +259,7 @@ export default function AttendancePage() {
             <div className="space-y-2">
               <p className="text-xs text-gray-500">الحالة</p>
               <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">
-                {myAttendance?.status ? String(myAttendance.status) : "Not checked"}
+                {myAttendance?.status ? (attendanceStatusLabels[String(myAttendance.status)] || String(myAttendance.status)) : "لم يُسجّل"}
               </Badge>
             </div>
             <div className="space-y-2">
@@ -264,11 +271,11 @@ export default function AttendancePage() {
                   const nextFile = event.target.files?.[0] ?? null;
                   setPhotoFile(nextFile);
                   if (nextFile && !ALLOWED_SELFIE_TYPES.has(nextFile.type)) {
-                    setError("Selfie must be a JPG, PNG, or WebP image.");
+                    setError("يجب أن تكون الصورة بصيغة JPG أو PNG أو WebP.");
                     return;
                   }
                   if (nextFile && nextFile.size > MAX_SELFIE_BYTES) {
-                    setError("Selfie must be 5 MB or smaller.");
+                    setError("يجب ألا يتجاوز حجم الصورة 5 ميجابايت.");
                     return;
                   }
                   setError("");
@@ -280,7 +287,7 @@ export default function AttendancePage() {
               onClick={handleCheckIn}
               disabled={submitting || Boolean(myAttendance?.check_in_at)}
             >
-              {myAttendance?.check_in_at ? "Checked In" : "I Arrived"}
+              {myAttendance?.check_in_at ? "مسجّل الحضور" : "تسجيل الحضور"}
             </Button>
             <Button
               variant="outline"
@@ -288,7 +295,7 @@ export default function AttendancePage() {
               onClick={handleCheckOut}
               disabled={submitting || !myAttendance?.check_in_at || Boolean(myAttendance?.check_out_at)}
             >
-              {myAttendance?.check_out_at ? "Checked Out" : "I Left"}
+              {myAttendance?.check_out_at ? "مسجّل الانصراف" : "تسجيل الانصراف"}
             </Button>
             {error && <p className="text-sm text-red-600">{error}</p>}
           </CardContent>
@@ -321,8 +328,8 @@ export default function AttendancePage() {
                     <TableRow key={String(row.id)}>
                       <TableCell className="font-medium text-gray-900">{employeeName}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={rowStatus === "late" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-green-50 text-green-700 border-green-200"}>
-                          {rowStatus}
+                        <Badge variant="outline" className={rowStatus === "late" ? "bg-amber-50 text-amber-700 border-amber-200" : rowStatus === "absent" ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200"}>
+                          {attendanceStatusLabels[rowStatus] || rowStatus}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-gray-600">{checkInAt ? new Date(checkInAt).toLocaleTimeString() : "—"}</TableCell>

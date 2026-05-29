@@ -41,17 +41,35 @@ const buttonVariants = cva(
   }
 )
 
+type ButtonProps = ButtonPrimitive.Props & VariantProps<typeof buttonVariants> & { asChild?: boolean };
+
 const Button = React.forwardRef<
   React.ElementRef<typeof ButtonPrimitive>,
-  ButtonPrimitive.Props & VariantProps<typeof buttonVariants> & { asChild?: boolean }
->(({ className, variant = "default", size = "default", ...props }, ref) => {
+  ButtonProps
+>(({ asChild, children, className, variant = "default", size = "default", ...props }, ref) => {
+  const classes = cn(buttonVariants({ variant, size, className }));
+
+  if (asChild && React.isValidElement(children)) {
+    const child = children as React.ReactElement<Record<string, unknown>>;
+    const childClassName = typeof child.props.className === "string" ? child.props.className : undefined;
+
+    return React.cloneElement(child, {
+      ...props,
+      ref,
+      "data-slot": "button",
+      className: cn(classes, childClassName),
+    });
+  }
+
   return (
     <ButtonPrimitive
       ref={ref}
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={classes}
       {...props}
-    />
+    >
+      {children}
+    </ButtonPrimitive>
   )
 })
 Button.displayName = "Button"

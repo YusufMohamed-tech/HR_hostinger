@@ -33,3 +33,4 @@
 - All tables include org_id
 - SELECT, INSERT, UPDATE, DELETE scoped by org_id
 - Super Admin has global access
+ 

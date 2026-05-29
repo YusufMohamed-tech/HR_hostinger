@@ -41,6 +41,21 @@ const statusStyles: Record<string, string> = {
   delayed: "bg-slate-100 text-slate-600 border-slate-200",
 };
 
+const statusLabels: Record<string, string> = {
+  pending: "معلق",
+  in_progress: "قيد التنفيذ",
+  completed: "مكتمل",
+  rejected: "مرفوض",
+  delayed: "متأخر",
+};
+
+const priorityLabels: Record<string, string> = {
+  low: "منخفض",
+  medium: "متوسط",
+  high: "عالي",
+  urgent: "عاجل",
+};
+
 export default function TasksPage() {
   const { currentUser } = useRoleContext();
   const { data: tasks, loading, refetch } = useTasks();
@@ -55,8 +70,8 @@ export default function TasksPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Tasks</h1>
-          <p className="text-gray-500 text-sm mt-1">Assign, track, and complete operational work.</p>
+          <h1 className="text-2xl font-bold tracking-tight">المهام</h1>
+          <p className="text-gray-500 text-sm mt-1">إسناد ومتابعة المهام التشغيلية وتتبعها.</p>
         </div>
         {isAdmin && (
           <CreateTaskDialog
@@ -72,13 +87,13 @@ export default function TasksPage() {
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                <TableHead className="font-semibold text-gray-600">Task</TableHead>
-                <TableHead className="font-semibold text-gray-600">Priority</TableHead>
-                <TableHead className="font-semibold text-gray-600">Status</TableHead>
-                <TableHead className="font-semibold text-gray-600">Due</TableHead>
-                <TableHead className="font-semibold text-gray-600">Location</TableHead>
-                <TableHead className="font-semibold text-gray-600">Assignees</TableHead>
-                <TableHead className="text-right font-semibold text-gray-600">Actions</TableHead>
+                <TableHead className="font-semibold text-gray-600">المهمة</TableHead>
+                <TableHead className="font-semibold text-gray-600">الأولوية</TableHead>
+                <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
+                <TableHead className="font-semibold text-gray-600">الاستحقاق</TableHead>
+                <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
+                <TableHead className="font-semibold text-gray-600">المكلفون</TableHead>
+                <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -119,10 +134,10 @@ export default function TasksPage() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="text-gray-600">{priority}</TableCell>
+                    <TableCell className="text-gray-600">{priorityLabels[priority] || priority}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={statusStyles[status] || "bg-gray-100 text-gray-600 border-gray-200"}>
-                        {status}
+                        {statusLabels[status] || status}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-gray-600">{dueDate}</TableCell>
@@ -162,8 +177,8 @@ export default function TasksPage() {
           {tasks.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <CheckSquare className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">No tasks yet</p>
-              <p className="text-xs text-gray-500 mt-1">Create your first task to start assigning work.</p>
+              <p className="text-sm font-medium text-gray-900">لا توجد مهام حتى الآن</p>
+              <p className="text-xs text-gray-500 mt-1">أنشئ أول مهمة لبدء إسناد الأعمال.</p>
             </div>
           )}
         </CardContent>

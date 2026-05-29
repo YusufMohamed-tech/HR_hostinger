@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { FileText, ShieldCheck } from "lucide-react";
+import { AlertCircle, Bell, FileText, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,7 @@ import {
   uploadPersonnelFile,
   upsertSocialInsurance,
 } from "@/lib/services/personnel";
+import { createNotification } from "@/lib/services/notifications";
 
 export default function PersonnelPage() {
   const { currentUser } = useRoleContext();
@@ -30,6 +31,7 @@ export default function PersonnelPage() {
   const [insurance, setInsurance] = useState<Record<string, unknown>[]>([]);
   const [contracts, setContracts] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reminderSent, setReminderSent] = useState(false);
   const isAdmin = currentUser?.role !== "Employee";
 
   const loadPersonnel = useCallback(async () => {
@@ -57,6 +59,24 @@ export default function PersonnelPage() {
     return diff >= 0 && diff <= 30 * 86400000;
   });
 
+  const handleSendReminders = async () => {
+    if (!currentUser?.orgId || !currentUser?.id) return;
+    for (const file of expiringFiles) {
+      const employee = (file.employee ?? null) as Record<string, unknown> | null;
+      const daysLeft = Math.ceil((new Date(String(file.expiry_date)).getTime() - Date.now()) / 86400000);
+      await createNotification({
+        org_id: currentUser.orgId,
+        user_id: currentUser.id,
+        title: "تنبيه: مستند يقترب من الانتهاء",
+        message: `مستند "${String(file.category || "ملف")}" للموظف ${String(employee?.full_name || "غير معروف")} سينتهي خلال ${daysLeft} يوم.`,
+        type: "expiry_alert",
+        link: "/personnel",
+      });
+    }
+    setReminderSent(true);
+    window.setTimeout(() => setReminderSent(false), 5000);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -66,12 +86,41 @@ export default function PersonnelPage() {
         </div>
         {isAdmin && (
           <div className="flex gap-2">
+            {expiringFiles.length > 0 && (
+              <Button
+                variant="outline"
+                className="border-orange-300 text-orange-700 hover:bg-orange-50"
+                onClick={handleSendReminders}
+                disabled={reminderSent}
+              >
+                <Bell className="h-4 w-4 ml-2" />
+                {reminderSent ? "تم الإرسال!" : `إرسال تذكيرات (${expiringFiles.length})`}
+              </Button>
+            )}
             <AddFileDialog employees={employees} onSuccess={loadPersonnel} />
             <AddInsuranceDialog employees={employees} onSuccess={loadPersonnel} />
             <AddContractDialog employees={employees} onSuccess={loadPersonnel} />
           </div>
         )}
       </div>
+
+      {/* Expiry alert banner */}
+      {expiringFiles.length > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+          <AlertCircle className="h-5 w-5 text-orange-600 shrink-0" />
+          <div>
+            <p className="text-sm font-medium text-orange-800">
+              {expiringFiles.length} مستند{expiringFiles.length > 1 ? "ات" : ""} تنتهي خلال 30 يومًا
+            </p>
+            <p className="text-xs text-orange-600">
+              {expiringFiles.map((f) => {
+                const emp = (f.employee ?? null) as Record<string, unknown> | null;
+                return String(emp?.full_name || "موظف");
+              }).join("، ")}
+            </p>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="border-none shadow-sm"><CardContent className="py-4"><p className="text-xs text-gray-500">الملفات</p><p className="text-2xl font-semibold">{files.length}</p></CardContent></Card>
@@ -87,12 +136,34 @@ export default function PersonnelPage() {
             <TableBody>
               {files.map((file) => {
                 const employee = (file.employee ?? null) as Record<string, unknown> | null;
+                const isExpiringSoon = expiringFiles.some((f) => f.id === file.id);
                 return (
-                  <TableRow key={String(file.id)}>
+                  <TableRow key={String(file.id)} className={isExpiringSoon ? "bg-orange-50/50" : undefined}>
                     <TableCell>{String(employee?.full_name || "الموظف")}</TableCell>
                     <TableCell>{String(file.category || "other")}</TableCell>
-                    <TableCell>{String(file.file_name || "-")}</TableCell>
-                    <TableCell>{String(file.expiry_date || "-")}</TableCell>
+                    <TableCell>
+                      {file.file_url ? (
+                        <a
+                          href={String(file.file_url)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-brand hover:underline text-sm"
+                        >
+                          {String(file.file_name || "عرض الملف")}
+                        </a>
+                      ) : (
+                        String(file.file_name || "-")
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {isExpiringSoon ? (
+                        <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-200">
+                          {String(file.expiry_date)} ⚠
+                        </Badge>
+                      ) : (
+                        String(file.expiry_date || "-")
+                      )}
+                    </TableCell>
                     <TableCell>{file.is_verified ? <ShieldCheck className="h-4 w-4 text-green-600" /> : "-"}</TableCell>
                   </TableRow>
                 );

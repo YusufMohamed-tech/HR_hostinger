@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import process from "node:process";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
@@ -20,24 +21,43 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
   },
 });
 
+// Passwords must be provided via environment variables.
+// Never commit passwords to source code.
+const superadminPassword = process.env.PROD_SUPERADMIN_PASSWORD;
+const hrPassword = process.env.PROD_HR_PASSWORD;
+const recruiterPassword = process.env.PROD_RECRUITER_PASSWORD;
+
+const missingVars = [
+  !superadminPassword && "PROD_SUPERADMIN_PASSWORD",
+  !hrPassword && "PROD_HR_PASSWORD",
+  !recruiterPassword && "PROD_RECRUITER_PASSWORD",
+].filter(Boolean);
+
+if (missingVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingVars.join(", ")}`);
+  console.error("Set these in .env.local before running this seed script.");
+  console.error("You can generate secure passwords with: node -e \"require('crypto').randomBytes(20).toString('hex')\"");
+  process.exit(1);
+}
+
 const productionUsers = [
   {
     email: "superadmin@tatwir.sa",
-    password: "superadmin12345678",
+    password: superadminPassword,
     fullName: "Super Admin",
     title: "Superadmin",
     role: "super_admin",
   },
   {
     email: "hr@tatwir.sa",
-    password: "hr12345678",
+    password: hrPassword,
     fullName: "HR",
     title: "HR Admin",
     role: "hr_admin",
   },
   {
     email: "recruiter@tatwir.sa",
-    password: "recruiter12345678",
+    password: recruiterPassword,
     fullName: "HR Recruiter",
     title: "HR Recruiter",
     role: "hr_recruitment",

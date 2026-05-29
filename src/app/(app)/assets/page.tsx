@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Package, PenLine, Plus, RotateCcw } from "lucide-react";
+import { AlertTriangle, Package, PenLine, Plus, RotateCcw, Trash2, ArrowRightLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,10 +11,29 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEmployees } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { acknowledgeAssetAssignment, createAssetAssignment, getAssets, updateAssetAssignment, uploadAssetSignature } from "@/lib/services/assets";
+
+const assetStatusLabels: Record<string, string> = {
+  assigned: "مُسلَّم",
+  returned: "مُستعاد",
+  damaged: "تالف",
+  lost: "مفقود",
+  transferred: "محوَّل",
+};
+
+const assetStatusColors: Record<string, string> = {
+  assigned: "bg-blue-50 text-blue-700 border-blue-200",
+  returned: "bg-gray-50 text-gray-600 border-gray-200",
+  damaged: "bg-red-50 text-red-700 border-red-200",
+  lost: "bg-orange-50 text-orange-700 border-orange-200",
+  transferred: "bg-purple-50 text-purple-700 border-purple-200",
+};
 
 export default function AssetsPage() {
   const { currentUser } = useRoleContext();
@@ -35,6 +54,25 @@ export default function AssetsPage() {
     loadAssets();
   }, [loadAssets]);
 
+  const handleStatusChange = async (assetId: string, newStatus: string) => {
+    const updateData: Record<string, unknown> = {
+      status: newStatus,
+      updated_by: currentUser?.id,
+    };
+    if (newStatus === "returned") {
+      updateData.returned_date = new Date().toISOString().slice(0, 10);
+      updateData.returned_by = currentUser?.id;
+    }
+    await updateAssetAssignment(assetId, updateData as never);
+    loadAssets();
+  };
+
+  // Summary counts
+  const assigned = assets.filter(a => a.status === "assigned").length;
+  const returned = assets.filter(a => a.status === "returned").length;
+  const damaged = assets.filter(a => a.status === "damaged").length;
+  const lost = assets.filter(a => a.status === "lost").length;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -43,6 +81,34 @@ export default function AssetsPage() {
           <p className="text-sm text-gray-500">متابعة الأصول المملوكة للشركة والمسلّمة للموظفين.</p>
         </div>
         {isAdmin && <AssignAssetDialog employees={employees} onSuccess={loadAssets} />}
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <Card className="border-none shadow-sm">
+          <CardContent className="py-4">
+            <p className="text-xs text-gray-500">مُسلَّم</p>
+            <p className="text-2xl font-semibold text-blue-600">{assigned}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-none shadow-sm">
+          <CardContent className="py-4">
+            <p className="text-xs text-gray-500">مُستعاد</p>
+            <p className="text-2xl font-semibold text-gray-600">{returned}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-none shadow-sm">
+          <CardContent className="py-4">
+            <p className="text-xs text-gray-500">تالف</p>
+            <p className="text-2xl font-semibold text-red-600">{damaged}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-none shadow-sm">
+          <CardContent className="py-4">
+            <p className="text-xs text-gray-500">مفقود</p>
+            <p className="text-2xl font-semibold text-orange-600">{lost}</p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card className="border-none shadow-sm">
@@ -56,48 +122,74 @@ export default function AssetsPage() {
                 <TableHead>تاريخ التسليم</TableHead>
                 <TableHead>الحالة</TableHead>
                 <TableHead>الإقرار</TableHead>
-                {isAdmin && <TableHead className="text-left">الإجراءات</TableHead>}
+                {isAdmin && <TableHead className="text-right">الإجراءات</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {assets.map((asset) => {
                 const employee = (asset.employee ?? null) as Record<string, unknown> | null;
                 const status = typeof asset.status === "string" ? asset.status : "assigned";
+                const isActive = status === "assigned";
                 return (
                   <TableRow key={String(asset.id)}>
                     <TableCell className="font-medium">{String(employee?.full_name || "غير معروف")}</TableCell>
-                    <TableCell>{String(asset.asset_name || asset.asset_type || "أصل")}</TableCell>
+                    <TableCell>
+                      <div>
+                        <p>{String(asset.asset_name || asset.asset_type || "أصل")}</p>
+                        {Boolean(asset.notes) && <p className="text-xs text-gray-500">{String(asset.notes)}</p>}
+                      </div>
+                    </TableCell>
                     <TableCell>{String(asset.serial_number || "-")}</TableCell>
                     <TableCell>{String(asset.assigned_date || "-")}</TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={status === "assigned" ? "bg-blue-50 text-blue-700" : "bg-gray-50 text-gray-700"}>
-                        {status}
+                      <Badge variant="outline" className={assetStatusColors[status] || "bg-gray-50 text-gray-700"}>
+                        {assetStatusLabels[status] || status}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       {asset.acknowledgment_signature_url ? (
-                        <Badge variant="outline" className="bg-green-50 text-green-700">تم التوقيع</Badge>
-                      ) : status === "assigned" ? (
+                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">تم التوقيع</Badge>
+                      ) : isActive ? (
                         <AcknowledgeAssetDialog assetId={String(asset.id)} onSuccess={loadAssets} />
                       ) : "-"}
                     </TableCell>
                     {isAdmin && (
-                      <TableCell className="text-left">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={status !== "assigned"}
-                          onClick={async () => {
-                            await updateAssetAssignment(String(asset.id), {
-                              status: "returned",
-                              returned_date: new Date().toISOString().slice(0, 10),
-                              returned_by: currentUser?.id,
-                            });
-                            loadAssets();
-                          }}
-                        >
-                          <RotateCcw className="h-4 w-4" />
-                        </Button>
+                      <TableCell className="text-right">
+                        {isActive ? (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger render={<Button variant="ghost" size="sm" />}>
+                              تغيير الحالة
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                className="text-gray-700"
+                                onClick={() => handleStatusChange(String(asset.id), "returned")}
+                              >
+                                <RotateCcw className="h-4 w-4 ml-2" /> استعادة
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-purple-600"
+                                onClick={() => handleStatusChange(String(asset.id), "transferred")}
+                              >
+                                <ArrowRightLeft className="h-4 w-4 ml-2" /> تحويل
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-red-600"
+                                onClick={() => handleStatusChange(String(asset.id), "damaged")}
+                              >
+                                <AlertTriangle className="h-4 w-4 ml-2" /> تالف
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-orange-600"
+                                onClick={() => handleStatusChange(String(asset.id), "lost")}
+                              >
+                                <Trash2 className="h-4 w-4 ml-2" /> مفقود
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        ) : (
+                          <span className="text-xs text-gray-400">لا إجراءات</span>
+                        )}
                       </TableCell>
                     )}
                   </TableRow>
@@ -133,7 +225,7 @@ function AcknowledgeAssetDialog({ assetId, onSuccess }: { assetId: string; onSuc
         </DialogHeader>
         <div className="space-y-2 py-4">
           <Label>التوقيع الإلكتروني</Label>
-          <Input value={signature} onChange={(event) => setSignature(event.target.value)} />
+          <Input value={signature} onChange={(event) => setSignature(event.target.value)} placeholder="اسمك الكامل..." />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
@@ -149,7 +241,7 @@ function AcknowledgeAssetDialog({ assetId, onSuccess }: { assetId: string; onSuc
               onSuccess();
             }}
           >
-            تأكيد
+            تأكيد الاستلام
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -219,7 +311,7 @@ function AssignAssetDialog({ employees, onSuccess }: { employees: Record<string,
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>اسم الأصل</Label>
-              <Input value={form.asset_name} onChange={(event) => set("asset_name", event.target.value)} />
+              <Input value={form.asset_name} onChange={(event) => set("asset_name", event.target.value)} placeholder="حاسب محمول، جوال..." />
             </div>
             <div className="space-y-2">
               <Label>النوع</Label>
@@ -244,5 +336,6 @@ function AssignAssetDialog({ employees, onSuccess }: { employees: Record<string,
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
   );
 }
