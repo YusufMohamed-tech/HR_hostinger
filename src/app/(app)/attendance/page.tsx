@@ -3,8 +3,6 @@
 import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -16,7 +14,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useAttendance, useEmployees, useLocations, useEmployeeShifts } from "@/hooks/use-data";
-import { createCheckIn, updateCheckOut, uploadAttendanceSelfie } from "@/lib/services/attendance";
+import { createCheckIn, updateCheckOut } from "@/lib/services/attendance";
 import { notifyHrLateArrival } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 
@@ -30,8 +28,6 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return Math.round(R * c);
 }
 
-const MAX_SELFIE_BYTES = 5 * 1024 * 1024;
-const ALLOWED_SELFIE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ATTENDANCE_RADIUS_METERS = 50;
 
 function getOrCreateDeviceFingerprint() {
@@ -60,7 +56,6 @@ export default function AttendancePage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
 
   const canViewTeam = ["Superadmin", "Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
   const myAttendance = attendance.find((row) => row.employee_id === currentUser?.employeeId);
@@ -80,14 +75,6 @@ export default function AttendancePage() {
     if (!currentUser?.orgId || !currentUser?.employeeId) return;
     if (myAttendance?.check_in_at) {
       setError("لقد سجّلت حضورك اليوم بالفعل.");
-      return;
-    }
-    if (photoFile && !ALLOWED_SELFIE_TYPES.has(photoFile.type)) {
-      setError("يجب أن تكون الصورة بصيغة JPG أو PNG أو WebP.");
-      return;
-    }
-    if (photoFile && photoFile.size > MAX_SELFIE_BYTES) {
-      setError("يجب ألا يتجاوز حجم الصورة 5 ميجابايت.");
       return;
     }
     setSubmitting(true);
@@ -132,23 +119,6 @@ export default function AttendancePage() {
       }
     }
 
-    let photoPath: string | undefined;
-    if (photoFile) {
-      const { data: uploadData, error: uploadError } = await uploadAttendanceSelfie(
-        currentUser.orgId,
-        currentUser.employeeId,
-        today,
-        photoFile
-      );
-
-      if (uploadError) {
-        setError(uploadError.message);
-        setSubmitting(false);
-        return;
-      }
-      photoPath = uploadData?.path;
-    }
-
     const { error: err } = await createCheckIn({
       org_id: currentUser.orgId,
       employee_id: currentUser.employeeId,
@@ -159,7 +129,6 @@ export default function AttendancePage() {
       check_in_lng: longitude,
       check_in_device: deviceInfo,
       device_fingerprint: deviceFingerprint,
-      check_in_photo_path: photoPath,
       status,
       late_minutes: lateMinutes,
       within_geofence: withinGeofence,
@@ -174,7 +143,6 @@ export default function AttendancePage() {
         await notifyHrLateArrival(currentUser.orgId, empName, lateMinutes);
       }
       refetch();
-      setPhotoFile(null);
     }
     setSubmitting(false);
   };
@@ -261,26 +229,6 @@ export default function AttendancePage() {
               <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">
                 {myAttendance?.status ? (attendanceStatusLabels[String(myAttendance.status)] || String(myAttendance.status)) : "لم يُسجّل"}
               </Badge>
-            </div>
-            <div className="space-y-2">
-              <Label>صورة شخصية (عند تسجيل الحضور فقط)</Label>
-              <Input
-                type="file"
-                accept="image/*"
-                onChange={(event) => {
-                  const nextFile = event.target.files?.[0] ?? null;
-                  setPhotoFile(nextFile);
-                  if (nextFile && !ALLOWED_SELFIE_TYPES.has(nextFile.type)) {
-                    setError("يجب أن تكون الصورة بصيغة JPG أو PNG أو WebP.");
-                    return;
-                  }
-                  if (nextFile && nextFile.size > MAX_SELFIE_BYTES) {
-                    setError("يجب ألا يتجاوز حجم الصورة 5 ميجابايت.");
-                    return;
-                  }
-                  setError("");
-                }}
-              />
             </div>
             <Button
               className="w-full bg-brand hover:bg-brand-dark text-white"
