@@ -37,7 +37,7 @@ export default function DashboardPage() {
     return null;
   }
 
-  const isAdmin = currentUser?.role === "Admin";
+  const canViewOrgStats = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
 
   const todayRecords = allAttendance.filter(row => (row as Record<string, unknown>).work_date === today);
   const presentCount = todayRecords.filter((row) => String((row as Record<string, unknown>).status ?? "") === "present").length;
@@ -65,7 +65,7 @@ export default function DashboardPage() {
 
   const nextShift = myShifts.length > 0 ? String(((myShifts[0] as Record<string, unknown>).shift as Record<string, unknown>)?.name || "مخصصة") : "لا يوجد";
 
-  const stats = isAdmin
+  const stats = canViewOrgStats
     ? [
         { label: "الموظفون", value: String(employees.length), icon: Users, change: "الإجمالي النشط" },
         { label: "الحاضرون اليوم", value: String(presentCount), icon: Clock, change: `${lateCount} متأخر، ${absentCount} غائب` },

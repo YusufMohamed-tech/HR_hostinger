@@ -32,6 +32,7 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 
 const MAX_SELFIE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_SELFIE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ATTENDANCE_RADIUS_METERS = 50;
 
 function getOrCreateDeviceFingerprint() {
   const key = "tatwir-attendance-device-id";
@@ -54,7 +55,7 @@ export default function AttendancePage() {
   const [error, setError] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
 
-  const canViewTeam = ["Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
+  const canViewTeam = ["Superadmin", "Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
   const myAttendance = attendance.find((row) => row.employee_id === currentUser?.employeeId);
 
   const assignedLocation = useMemo(() => {
@@ -96,14 +97,14 @@ export default function AttendancePage() {
     }
 
     const { latitude, longitude } = position.coords;
-    const radius = Number(assignedLocation?.radius_meters ?? 100);
+    const radius = ATTENDANCE_RADIUS_METERS;
     const distance = assignedLocation?.latitude && assignedLocation?.longitude
       ? haversineDistance(latitude, longitude, Number(assignedLocation.latitude), Number(assignedLocation.longitude))
       : 0;
-    const withinGeofence = !assignedLocation || distance <= radius;
+    const withinGeofence = Boolean(assignedLocation) && distance <= radius;
 
     if (!withinGeofence) {
-      setError("You are outside the allowed radius. Please move closer to your assigned location.");
+      setError("يجب أن تكون داخل نطاق 50 متر من موقعك لتسجيل الانصراف.");
       setSubmitting(false);
       return;
     }
@@ -197,14 +198,14 @@ export default function AttendancePage() {
     const deviceInfo = navigator.userAgent;
     const deviceFingerprint = getOrCreateDeviceFingerprint();
     const { latitude, longitude } = position.coords;
-    const radius = Number(assignedLocation?.radius_meters ?? 100);
+    const radius = ATTENDANCE_RADIUS_METERS;
     const distance = assignedLocation?.latitude && assignedLocation?.longitude
       ? haversineDistance(latitude, longitude, Number(assignedLocation.latitude), Number(assignedLocation.longitude))
       : 0;
-    const withinGeofence = !assignedLocation || distance <= radius;
+    const withinGeofence = Boolean(assignedLocation) && distance <= radius;
 
     if (!withinGeofence) {
-      setError("You are outside the allowed radius. Please move closer to your assigned location.");
+      setError("يجب أن تكون داخل نطاق 50 متر من موقعك لتسجيل الحضور.");
       setSubmitting(false);
       return;
     }

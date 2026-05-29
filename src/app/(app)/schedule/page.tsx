@@ -30,7 +30,7 @@ export default function SchedulePage() {
   const { data: employees } = useEmployees();
   const { data: assignments, loading: loadingAssignments, refetch: refetchAssignments } = useEmployeeShifts();
 
-  const isAdmin = currentUser?.role === "Admin";
+  const isAdmin = ["Superadmin", "Admin"].includes(currentUser?.role || "");
 
   if (loadingShifts || loadingAssignments) return <PageSkeleton />;
 

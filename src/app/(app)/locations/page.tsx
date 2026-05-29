@@ -23,6 +23,7 @@ import { PageSkeleton } from "@/components/Skeletons";
 export default function LocationsPage() {
   const { currentUser } = useRoleContext();
   const { data: locations, loading, refetch } = useLocations();
+  const canManageLocations = ["Superadmin", "Admin"].includes(currentUser?.role || "");
 
   if (loading) {
     return <PageSkeleton />;
@@ -37,7 +38,7 @@ export default function LocationsPage() {
           </p>
         </div>
 
-        {currentUser?.role === "Admin" && (
+        {canManageLocations && (
           <AddLocationDialog onSuccess={refetch} />
         )}
       </div>
@@ -86,10 +87,10 @@ export default function LocationsPage() {
                     <TableCell className="text-gray-600">{coordinates}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {currentUser?.role === "Admin" && (
+                        {canManageLocations && (
                           <EditLocationDialog location={location} onSuccess={refetch} />
                         )}
-                        {currentUser?.role === "Admin" && (
+                        {canManageLocations && (
                           <Button
                             variant="ghost"
                             size="sm"

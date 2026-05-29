@@ -34,8 +34,10 @@ const ALL_SEARCH_ITEMS = [
 const RECRUITER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
   ["/recruitment", "/notifications", "/settings"].includes(item.href)
 );
+const HR_ADMIN_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) => item.href !== "/recruitment");
 
 const ROLE_LABELS: Record<string, string> = {
+  Superadmin: "المشرف العام",
   Admin: "مسؤول النظام",
   HR_Admin: "مسؤول الموارد البشرية",
   HR_Recruitment: "مسؤول التوظيف",
@@ -51,7 +53,9 @@ export function Header() {
   const searchRef = useRef<HTMLDivElement>(null);
 
   const searchItems = useMemo(() => {
-    return currentUser?.role === "HR_Recruitment" ? RECRUITER_SEARCH_ITEMS : ALL_SEARCH_ITEMS;
+    if (currentUser?.role === "HR_Recruitment") return RECRUITER_SEARCH_ITEMS;
+    if (currentUser?.role === "HR_Admin") return HR_ADMIN_SEARCH_ITEMS;
+    return ALL_SEARCH_ITEMS;
   }, [currentUser?.role]);
 
   const filtered = query.trim().length > 0
@@ -108,7 +112,11 @@ export function Header() {
           <Search className="absolute right-2.5 top-2.5 h-4 w-4 text-slate-400" />
           <Input
             type="search"
-            placeholder={currentUser.role === "HR_Recruitment" ? "ابحث في التوظيف أو الإشعارات..." : "ابحث عن موظفين أو أقسام أو ورديات..."}
+            placeholder={
+              currentUser.role === "HR_Recruitment"
+                ? "ابحث في التوظيف أو الإشعارات..."
+                : "ابحث عن موظفين أو أقسام أو ورديات..."
+            }
             className="w-full bg-muted border-none shadow-none pr-9 py-2 hover:bg-gray-100 focus-visible:bg-gray-100 focus-visible:ring-1 focus-visible:ring-brand transition-colors h-9"
             value={query}
             onChange={(e) => { setQuery(e.target.value); setShowResults(true); }}

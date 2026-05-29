@@ -135,7 +135,7 @@ export default function RecruitmentPage() {
   const [salaryFilter, setSalaryFilter] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const canManageRecruitment = ["Admin", "HR_Admin", "HR_Recruitment"].includes(currentUser?.role || "");
+  const canManageRecruitment = ["Superadmin", "Admin", "HR_Recruitment"].includes(currentUser?.role || "");
 
   const loadRecruitment = useCallback(async () => {
     if (!currentUser?.orgId) return;
@@ -185,6 +185,19 @@ export default function RecruitmentPage() {
   }, [educationFilter, salaryFilter, scoredApplications, skillFilter, sortBy, statusFilter, locationFilter]);
 
   const activeJobs = jobs.filter((job) => ["open", "published"].includes(String(job.status || ""))).length;
+
+  if (!canManageRecruitment) {
+    return (
+      <Card className="border-none shadow-sm">
+        <CardHeader>
+          <CardTitle>غير مصرح</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-gray-500">
+          لا تملك صلاحية عرض أو إدارة التوظيف.
+        </CardContent>
+      </Card>
+    );
+  }
 
   const moveCandidate = async (application: Record<string, unknown>, status: string) => {
     const history = Array.isArray(application.status_history) ? application.status_history : [];

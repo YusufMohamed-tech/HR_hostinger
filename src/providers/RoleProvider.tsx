@@ -50,7 +50,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
 
     const rawRole = (membership as unknown as Record<string, unknown>)?.role;
     let role: Role = "Employee";
-    if (rawRole === "admin") role = "Admin";
+    if (rawRole === "super_admin") role = "Superadmin";
+    else if (rawRole === "admin") role = "Admin";
     else if (rawRole === "hr_admin") role = "HR_Admin";
     else if (rawRole === "hr_recruitment") role = "HR_Recruitment";
     else if (rawRole === "training_manager") role = "Training_Manager";

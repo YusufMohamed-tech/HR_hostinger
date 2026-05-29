@@ -23,6 +23,7 @@ export default function DepartmentsPage() {
   const { currentUser } = useRoleContext();
   const { data: departments, loading, refetch } = useDepartments();
   const { data: employees } = useEmployees();
+  const canManageDepartments = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
 
   if (loading) {
     return <PageSkeleton />;
@@ -37,7 +38,7 @@ export default function DepartmentsPage() {
           </p>
         </div>
 
-        {currentUser?.role === "Admin" && (
+        {canManageDepartments && (
           <AddDepartmentDialog onSuccess={refetch} />
         )}
       </div>
@@ -77,11 +78,11 @@ export default function DepartmentsPage() {
                     <TableCell className="text-gray-600">{headcount}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {currentUser?.role === "Admin" && (
+                        {canManageDepartments && (
                           <EditDepartmentDialog department={dept} onSuccess={refetch} />
                         )}
                         <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">عرض</Button>
-                        {currentUser?.role === "Admin" && (
+                        {canManageDepartments && (
                           <Button
                             variant="ghost"
                             size="sm"

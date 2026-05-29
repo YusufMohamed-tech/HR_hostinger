@@ -12,6 +12,7 @@ import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useDepartments, useLocations, useEmployees } from "@/hooks/use-data";
 import { createEmployee } from "@/lib/services/employees";
+import { updateDepartment } from "@/lib/services/departments";
 import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
 
 interface Props {
@@ -44,6 +45,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [isDepartmentManager, setIsDepartmentManager] = useState(false);
 
   const [form, setForm] = useState({
     full_name: "",
@@ -89,12 +91,24 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       ...parsed.data,
     };
 
-    const { error: err } = await createEmployee(payload);
+    const { data: createdEmployee, error: err } = await createEmployee(payload);
 
     if (err) {
       setError(err.message);
       setSubmitting(false);
       return;
+    }
+
+    if (isDepartmentManager && parsed.data.department_id && createdEmployee?.id) {
+      const { error: deptError } = await updateDepartment(parsed.data.department_id, {
+        manager_employee_id: String(createdEmployee.id),
+      });
+
+      if (deptError) {
+        setError(deptError.message);
+        setSubmitting(false);
+        return;
+      }
     }
 
     setSubmitting(false);
@@ -123,6 +137,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       payment_method: "",
       bank_account: "",
     });
+    setIsDepartmentManager(false);
     onSuccess();
   };
 
@@ -222,6 +237,15 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Input value={form.job_title} onChange={(e) => set("job_title", e.target.value)} placeholder="مشغل ميداني" />
               </div>
             </div>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
+                checked={isDepartmentManager}
+                onChange={(event) => setIsDepartmentManager(event.target.checked)}
+              />
+              <span>تعيين هذا الشخص كمدير للقسم المختار</span>
+            </label>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>المدير المباشر</Label>
