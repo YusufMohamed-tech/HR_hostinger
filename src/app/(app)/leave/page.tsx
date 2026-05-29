@@ -299,7 +299,7 @@ function CreateLeaveDialog({
   onSuccess: () => void;
   description?: string;
 }) {
-  const { currentUser } = useRoleContext();
+  const { currentUser, refresh } = useRoleContext();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -308,7 +308,10 @@ function CreateLeaveDialog({
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
   const handleSubmit = async () => {
-    if (!currentUser?.orgId || !currentUser?.employeeId) return;
+    if (!currentUser?.orgId) {
+      setError("تعذر تحديد بيانات المستخدم الحالية.");
+      return;
+    }
 
     const parsed = leaveRequestFormSchema.safeParse(form);
     if (!parsed.success) {
@@ -319,11 +322,7 @@ function CreateLeaveDialog({
     setSubmitting(true);
     setError("");
 
-    const { error: err } = await createLeaveRequest({
-      org_id: currentUser.orgId,
-      employee_id: currentUser.employeeId,
-      ...parsed.data,
-    });
+    const { error: err } = await createLeaveRequest(parsed.data);
 
     if (err) {
       setError(err.message);
@@ -331,6 +330,7 @@ function CreateLeaveDialog({
       return;
     }
 
+    await refresh();
     setSubmitting(false);
     setOpen(false);
     setForm({ leave_type: "vacation", start_date: "", end_date: "", reason: "" });
