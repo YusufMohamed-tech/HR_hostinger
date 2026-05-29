@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useRoleContext } from "@/providers/RoleProvider";
 import {
   Bell,
@@ -26,7 +26,9 @@ import { cn } from "@/lib/utils";
 
 export function SidebarContent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { currentUser } = useRoleContext();
+  const leaveView = searchParams.get("view");
 
   const getSections = () => {
     const role = currentUser?.role ?? "Employee";
@@ -41,11 +43,18 @@ export function SidebarContent() {
         ]
       : [{ name: "مهامي", href: "/tasks", icon: CheckSquare }];
 
+    const leaveLinks = isHRAdmin
+      ? [
+          { name: "إدارة الإجازات", href: "/leave", icon: ClipboardList, match: "leave-manage" },
+          { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, indent: true, match: "leave-mine" },
+        ]
+      : [{ name: "الإجازات", href: "/leave", icon: ClipboardList }];
+
     const core = [
       { name: "لوحة التحكم", href: "/", icon: LayoutDashboard },
       { name: "الحضور", href: "/attendance", icon: Clock },
       ...taskLinks,
-      { name: "الإجازات", href: "/leave", icon: ClipboardList },
+      ...leaveLinks,
       { name: "الجداول", href: "/schedule", icon: CalendarDays },
       { name: "المواقع", href: "/locations", icon: MapPin },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
@@ -103,7 +112,12 @@ export function SidebarContent() {
                 </p>
                 {section.links.map((link) => {
                   const Icon = link.icon;
-                  const isActive = pathname === link.href;
+                  const linkMatch = (link as Record<string, unknown>).match;
+                  const isActive = linkMatch === "leave-mine"
+                    ? pathname === "/leave" && leaveView === "mine"
+                    : linkMatch === "leave-manage"
+                      ? pathname === "/leave" && leaveView !== "mine"
+                      : pathname === link.href;
                   const indent = (link as Record<string, unknown>).indent === true;
                   return (
                     <Link

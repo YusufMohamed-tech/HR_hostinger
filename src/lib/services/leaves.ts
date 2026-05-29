@@ -1,14 +1,106 @@
 import { createClient } from "@/lib/supabase/client";
+import { roleFromOrgRole } from "@/lib/rbac";
+import type { Role } from "@/types";
 
 export async function getLeaveRequests(orgId: string) {
   const supabase = createClient();
   const result = await supabase
     .from("leave_requests")
-    .select("*, employee:employee_id(full_name)")
+    .select("*, employee:employee_id(full_name,user_id)")
     .eq("org_id", orgId)
     .order("requested_at", { ascending: false });
 
-  return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+  if (result.error || !result.data) {
+    return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+  }
+
+  const requests = result.data as Record<string, unknown>[];
+  const userIds = Array.from(
+    new Set(
+      requests
+        .map((request) => {
+          const employee = request.employee as Record<string, unknown> | null | undefined;
+          return typeof employee?.user_id === "string" ? employee.user_id : null;
+        })
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  if (userIds.length === 0) {
+    return { data: requests, error: null };
+  }
+
+  const membershipResult = await supabase
+    .from("org_members")
+    .select("user_id, role")
+    .eq("org_id", orgId)
+    .in("user_id", userIds);
+
+  if (membershipResult.error) {
+    return {
+      data: requests,
+      error: membershipResult.error as { message: string } | null,
+    };
+  }
+
+  const roleByUserId = new Map(
+    ((membershipResult.data ?? []) as Record<string, unknown>[]).map((member) => {
+      const rawRole = typeof member.role === "string" ? member.role : null;
+      return [String(member.user_id ?? ""), roleFromOrgRole(rawRole)];
+    })
+  );
+
+  return {
+    data: requests.map((request) => {
+      const employee = request.employee as Record<string, unknown> | null | undefined;
+      const userId = typeof employee?.user_id === "string" ? employee.user_id : "";
+      return {
+        ...request,
+        requester_role: roleByUserId.get(userId) ?? null,
+      };
+    }),
+    error: null,
+  };
+}
+
+async function getLeaveRequesterRole(orgId: string, employeeId: string) {
+  const supabase = createClient();
+  const employeeResult = await supabase
+    .from("employees")
+    .select("user_id")
+    .eq("id", employeeId)
+    .maybeSingle();
+
+  if (employeeResult.error) {
+    return { data: null, error: employeeResult.error as { message: string } | null };
+  }
+
+  const employeeData = employeeResult.data as Record<string, unknown> | null;
+  const userId = typeof employeeData?.user_id === "string"
+    ? String(employeeData.user_id)
+    : "";
+
+  if (!userId) {
+    return { data: null, error: null };
+  }
+
+  const membershipResult = await supabase
+    .from("org_members")
+    .select("role")
+    .eq("org_id", orgId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (membershipResult.error) {
+    return { data: null, error: membershipResult.error as { message: string } | null };
+  }
+
+  const membershipData = membershipResult.data as Record<string, unknown> | null;
+  const rawRole = typeof membershipData?.role === "string"
+    ? String(membershipData.role)
+    : null;
+
+  return { data: roleFromOrgRole(rawRole), error: null };
 }
 
 export async function createLeaveRequest(values: Record<string, unknown>) {
@@ -117,16 +209,36 @@ export async function approveLeaveRequest(
 export async function advanceLeaveApproval(
   request: Record<string, unknown>,
   decision: "approved" | "rejected",
-  actorUserId?: string,
+  actor?: { userId?: string; role?: Role | null },
   note?: string
 ) {
   const requestId = typeof request.id === "string" ? request.id : "";
+  const orgId = typeof request.org_id === "string" ? request.org_id : "";
+  const employeeId = typeof request.employee_id === "string" ? request.employee_id : "";
   const currentStep = Number(request.current_step || 1);
   const history = Array.isArray(request.approval_history) ? request.approval_history : [];
   const now = new Date().toISOString();
+  const actorUserId = actor?.userId;
+  const actorRole = actor?.role ?? null;
 
   if (!requestId) {
     return { data: null, error: { message: "Leave request is missing an id." } };
+  }
+
+  const existingRequesterRole = typeof request.requester_role === "string" ? request.requester_role : null;
+  const requesterRoleResult = existingRequesterRole
+    ? { data: existingRequesterRole, error: null }
+    : await getLeaveRequesterRole(orgId, employeeId);
+
+  if (requesterRoleResult.error) {
+    return { data: null, error: requesterRoleResult.error };
+  }
+
+  if (requesterRoleResult.data === "HR_Admin" && actorRole !== "Superadmin") {
+    return {
+      data: null,
+      error: { message: "طلبات إجازة مسؤول الموارد البشرية تعتمد من المشرف العام فقط." },
+    };
   }
 
   const historyEntry = {
