@@ -5,7 +5,6 @@ import { CheckSquare, ListChecks, MessageSquare, Plus, Timer } from "lucide-reac
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -197,54 +196,23 @@ export default function TasksPage() {
     );
   });
 
-  if (!isAdmin) {
-    return (
-      <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">المهام</h1>
-          <p className="text-gray-500 text-sm mt-1">إسناد ومتابعة المهام التشغيلية وتتبعها.</p>
-        </div>
-        <Card className="border-none shadow-sm">
-          <CardContent className="p-0">
-            <TasksTable tasks={myTasks} currentUser={currentUser} refetch={refetch} />
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">المهام</h1>
+          <h1 className="text-2xl font-bold tracking-tight">إسناد المهام</h1>
           <p className="text-gray-500 text-sm mt-1">إسناد ومتابعة المهام التشغيلية وتتبعها.</p>
         </div>
-        <CreateTaskDialog employees={employees} locations={locations} onSuccess={refetch} />
+        {isAdmin && (
+          <CreateTaskDialog employees={employees} locations={locations} onSuccess={refetch} />
+        )}
       </div>
 
-      <Tabs defaultValue="assigned">
-        <TabsList className="mb-2">
-          <TabsTrigger value="assigned">إسناد المهام</TabsTrigger>
-          <TabsTrigger value="mine">مهامي</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="assigned">
-          <Card className="border-none shadow-sm">
-            <CardContent className="p-0">
-              <TasksTable tasks={allTaskRecords} currentUser={currentUser} refetch={refetch} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="mine">
-          <Card className="border-none shadow-sm">
-            <CardContent className="p-0">
-              <TasksTable tasks={myTasks} currentUser={currentUser} refetch={refetch} />
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <Card className="border-none shadow-sm">
+        <CardContent className="p-0">
+          <TasksTable tasks={isAdmin ? allTaskRecords : myTasks} currentUser={currentUser} refetch={refetch} />
+        </CardContent>
+      </Card>
     </div>
   );
 }
