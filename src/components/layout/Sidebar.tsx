@@ -73,6 +73,8 @@ export function SidebarContent() {
 
     const recruitmentOps = [
       { name: "التوظيف", href: "/recruitment", icon: Briefcase },
+      { name: "مهامي", href: "/tasks", icon: CheckSquare },
+      { name: "إجازاتي", href: "/leave", icon: ClipboardList },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 

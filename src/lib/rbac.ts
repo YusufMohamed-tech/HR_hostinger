@@ -83,10 +83,12 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return ["Admin", "HR_Admin", "Employee"].includes(role);
   }
 
+  if (normalizedPath.startsWith("/tasks") || normalizedPath.startsWith("/leave")) {
+    return true;
+  }
+
   if (
     normalizedPath.startsWith("/attendance") ||
-    normalizedPath.startsWith("/tasks") ||
-    normalizedPath.startsWith("/leave") ||
     normalizedPath.startsWith("/schedule") ||
     normalizedPath.startsWith("/locations") ||
     normalizedPath.startsWith("/notifications") ||

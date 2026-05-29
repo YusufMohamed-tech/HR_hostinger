@@ -27,6 +27,10 @@ const PAGE_META: Record<string, { title: string; description: string }> = {
     title: "إدارة المنظمات",
     description: "إنشاء الجهات ومراجعة حالتها ومتابعة توزيع مستخدميها من مركز تحكم موحد.",
   },
+  "/superadmin/approvals": {
+    title: "اعتمادات HR والمهام",
+    description: "مراجعة إجازات HR وRecruiters وإسناد مهام مباشرة لهم عبر المنظمات.",
+  },
   "/superadmin/settings": {
     title: "إعدادات المنصة",
     description: "إدارة حساب المشرف العام وجلسة الدخول من مساحة المنصة المستقلة.",

@@ -7,6 +7,7 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import { cn } from "@/lib/utils";
 import {
   Building2,
+  ClipboardCheck,
   History,
   LayoutDashboard,
   Network,
@@ -20,6 +21,7 @@ const PLATFORM_SECTIONS = [
     links: [
       { name: "لوحة المنصة", href: "/superadmin", icon: LayoutDashboard },
       { name: "المنظمات", href: "/superadmin/organizations", icon: Building2 },
+      { name: "اعتمادات HR والمهام", href: "/superadmin/approvals", icon: ClipboardCheck },
       { name: "سجل التدقيق", href: "/superadmin/audit", icon: History },
     ],
   },

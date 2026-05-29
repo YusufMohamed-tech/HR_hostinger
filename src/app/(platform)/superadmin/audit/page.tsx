@@ -28,6 +28,9 @@ const actionLabels: Record<string, string> = {
   "organization_user.suspended": "إيقاف مستخدم",
   "organization_user.activated": "تفعيل مستخدم",
   "organization_user.password_reset": "إعادة تعيين كلمة مرور",
+  "leave_request.approved": "اعتماد طلب إجازة",
+  "leave_request.rejected": "رفض طلب إجازة",
+  "platform_task.created": "إسناد مهمة",
 };
 
 export default function SuperadminAuditPage() {
