@@ -32,11 +32,19 @@ export function SidebarContent() {
     const role = currentUser?.role ?? "Employee";
     const isSuperAdmin = role === "Superadmin";
     const isAdmin = role === "Admin" || isSuperAdmin;
+    const isHRAdmin = role === "HR_Admin";
+
+    const taskLinks = (isAdmin || isHRAdmin)
+      ? [
+          { name: "إسناد المهام", href: "/tasks", icon: CheckSquare },
+          { name: "مهامي", href: "/tasks/mine", icon: CheckSquare, indent: true },
+        ]
+      : [{ name: "مهامي", href: "/tasks", icon: CheckSquare }];
 
     const core = [
       { name: "لوحة التحكم", href: "/", icon: LayoutDashboard },
       { name: "الحضور", href: "/attendance", icon: Clock },
-      { name: "المهام", href: "/tasks", icon: CheckSquare },
+      ...taskLinks,
       { name: "الإجازات", href: "/leave", icon: ClipboardList },
       { name: "الجداول", href: "/schedule", icon: CalendarDays },
       { name: "المواقع", href: "/locations", icon: MapPin },
@@ -70,7 +78,7 @@ export function SidebarContent() {
 
     return [
       { title: "الأساسي", links: core },
-      { title: "الإدارة", links: isAdmin ? fullAdminOps : role === "HR_Admin" ? hrAdminOps : [] },
+      { title: "الإدارة", links: isAdmin ? fullAdminOps : isHRAdmin ? hrAdminOps : [] },
       { title: "النظام", links: system },
     ];
   };
@@ -96,18 +104,20 @@ export function SidebarContent() {
                 {section.links.map((link) => {
                   const Icon = link.icon;
                   const isActive = pathname === link.href;
+                  const indent = (link as Record<string, unknown>).indent === true;
                   return (
                     <Link
                       key={link.name}
                       href={link.href}
                       className={cn(
-                        "flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-150",
+                        "flex items-center gap-3 rounded-lg py-2 transition-all duration-150",
+                        indent ? "px-5 text-[13px]" : "px-3 py-2.5",
                         isActive
                           ? "bg-brand text-white shadow-sm font-medium"
                           : "text-slate-300 hover:bg-slate-800 hover:text-white"
                       )}
                     >
-                      <Icon className="h-4 w-4" />
+                      <Icon className={cn("h-4 w-4", indent && "h-3.5 w-3.5")} />
                       {link.name}
                     </Link>
                   );
