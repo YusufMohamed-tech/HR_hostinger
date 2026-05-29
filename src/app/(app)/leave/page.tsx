@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CalendarDays, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,17 +46,33 @@ const leaveTypeLabels: Record<string, string> = {
 };
 
 export default function LeavePage() {
+  const searchParams = useSearchParams();
   const { currentUser } = useRoleContext();
   const { data: leaveRequests, loading, refetch } = useLeaveRequests();
   const { data: balances } = useLeaveBalances(currentUser?.employeeId);
-  const canApprove = ["Superadmin", "Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
-  const visibleRequests = canApprove
-    ? leaveRequests
-    : leaveRequests.filter((req) => String((req as Record<string, unknown>).employee_id ?? "") === currentUser?.employeeId);
+  const role = currentUser?.role || "";
+  const isHRAdmin = role === "HR_Admin";
+  const isApprover = ["Superadmin", "Admin", "HR_Admin", "Training_Manager"].includes(role);
+  const isSelfServiceView = !isApprover || (isHRAdmin && searchParams.get("view") === "mine");
+  const canApprove = isApprover && !isSelfServiceView;
+  const isOwnRequest = (req: Record<string, unknown>) => String(req.employee_id ?? "") === currentUser?.employeeId;
+  const visibleRequests = isSelfServiceView
+    ? leaveRequests.filter((req) => isOwnRequest(req as Record<string, unknown>))
+    : isHRAdmin
+      ? leaveRequests.filter((req) => !isOwnRequest(req as Record<string, unknown>))
+      : leaveRequests;
   const balance = (balances[0] ?? null) as Record<string, unknown> | null;
   const sickRemaining = typeof balance?.sick_remaining === "number" ? balance.sick_remaining : 0;
   const vacationRemaining = typeof balance?.vacation_remaining === "number" ? balance.vacation_remaining : 0;
   const emergencyRemaining = typeof balance?.emergency_remaining === "number" ? balance.emergency_remaining : 0;
+  const pageTitle = isSelfServiceView ? "طلب إجازتي" : "طلبات الإجازات";
+  const pageDescription = isSelfServiceView
+    ? isHRAdmin
+      ? "إرسال طلب إجازة لاعتماد المشرف العام ومتابعة حالته."
+      : "إرسال طلبات الإجازة الخاصة بك ومتابعة حالتها."
+    : "تقديم طلبات الإجازة واعتمادها ومتابعتها.";
+  const emptyTitle = isSelfServiceView ? "لا توجد طلبات إجازة خاصة بك بعد" : "لا توجد طلبات إجازة بعد";
+  const emptyDescription = isSelfServiceView ? "أرسل طلبًا جديدًا ليظهر هنا." : "أرسل طلبًا للبدء.";
 
   if (loading) return <PageSkeleton />;
 
@@ -63,13 +80,18 @@ export default function LeavePage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">طلبات الإجازات</h1>
-          <p className="text-gray-500 text-sm mt-1">تقديم طلبات الإجازة واعتمادها ومتابعتها.</p>
+          <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
+          <p className="text-gray-500 text-sm mt-1">{pageDescription}</p>
         </div>
-        {!canApprove && <CreateLeaveDialog onSuccess={refetch} />}
+        {isSelfServiceView && (
+          <CreateLeaveDialog
+            onSuccess={refetch}
+            description={isHRAdmin ? "إرسال طلب إجازة لاعتماد المشرف العام." : undefined}
+          />
+        )}
       </div>
 
-      {!canApprove && balances.length > 0 && (
+      {isSelfServiceView && balances.length > 0 && (
         <Card className="border-none shadow-sm">
           <CardContent className="py-4 grid grid-cols-3 gap-4 text-sm">
             <div>
@@ -106,6 +128,11 @@ export default function LeavePage() {
               {visibleRequests.map((req) => {
                 const reqRecord = req as Record<string, unknown>;
                 const reqId = String(reqRecord.id ?? "");
+                const requesterRole = typeof reqRecord.requester_role === "string" ? reqRecord.requester_role : null;
+                const requiresSuperadminApproval = requesterRole === "HR_Admin";
+                const canReviewRequest = canApprove
+                  && !isOwnRequest(reqRecord)
+                  && (!requiresSuperadminApproval || role === "Superadmin");
                 const employee = (reqRecord.employee ?? null) as Record<string, unknown> | null;
                 const employeeName = typeof employee?.full_name === "string" ? employee.full_name : "—";
                 const leaveType = typeof reqRecord.leave_type === "string" ? reqRecord.leave_type : "—";
@@ -137,14 +164,14 @@ export default function LeavePage() {
                             reqRecord={reqRecord}
                             decision="approved"
                             leaveType={leaveType}
-                            disabled={status !== "pending"}
+                            disabled={status !== "pending" || !canReviewRequest}
                             onSuccess={refetch}
                           />
                           <LeaveDecisionDialog
                             reqRecord={reqRecord}
                             decision="rejected"
                             leaveType={leaveType}
-                            disabled={status !== "pending"}
+                            disabled={status !== "pending" || !canReviewRequest}
                             onSuccess={refetch}
                           />
                         </div>
@@ -159,8 +186,8 @@ export default function LeavePage() {
           {visibleRequests.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <CalendarDays className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">لا توجد طلبات إجازة بعد</p>
-              <p className="text-xs text-gray-500 mt-1">أرسل طلبًا للبدء.</p>
+              <p className="text-sm font-medium text-gray-900">{emptyTitle}</p>
+              <p className="text-xs text-gray-500 mt-1">{emptyDescription}</p>
             </div>
           )}
         </CardContent>
@@ -195,7 +222,12 @@ function LeaveDecisionDialog({
   const handleDecide = async () => {
     setSubmitting(true);
     setError("");
-    const { data, error: decisionError } = await advanceLeaveApproval(reqRecord, decision, currentUser?.id, note);
+    const { data, error: decisionError } = await advanceLeaveApproval(
+      reqRecord,
+      decision,
+      { userId: currentUser?.id, role: currentUser?.role },
+      note
+    );
     setSubmitting(false);
 
     if (decisionError) {
@@ -260,7 +292,13 @@ function LeaveDecisionDialog({
   );
 }
 
-function CreateLeaveDialog({ onSuccess }: { onSuccess: () => void }) {
+function CreateLeaveDialog({
+  onSuccess,
+  description = "إرسال طلب إجازة للاعتماد.",
+}: {
+  onSuccess: () => void;
+  description?: string;
+}) {
   const { currentUser } = useRoleContext();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -307,7 +345,7 @@ function CreateLeaveDialog({ onSuccess }: { onSuccess: () => void }) {
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
           <DialogTitle>طلب إجازة</DialogTitle>
-          <DialogDescription>إرسال طلب إجازة للاعتماد.</DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 py-4">
