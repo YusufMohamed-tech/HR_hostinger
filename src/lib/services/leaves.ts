@@ -104,23 +104,25 @@ async function getLeaveRequesterRole(orgId: string, employeeId: string) {
 }
 
 export async function createLeaveRequest(values: Record<string, unknown>) {
-  const supabase = createClient();
-  const now = new Date().toISOString();
-  const result = await supabase
-    .from("leave_requests")
-    .insert({
-      ...values,
-      status: "pending",
-      manager_approval_status: "pending",
-      hr_approval_status: "pending",
-      current_step: 1,
-      total_steps: 2,
-      approval_history: [{ step: 1, status: "submitted", at: now }],
-    } as never)
-    .select()
-    .single();
+    const response = await fetch("/api/leave-requests/self", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    });
 
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      return {
+        data: null,
+        error: { message: String(data?.message || "Unable to create leave request.") },
+      };
+    }
+
+    return {
+      data: (data?.request ?? data ?? null) as Record<string, unknown> | null,
+      error: null,
+    } as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
 export async function updateLeaveRequest(id: string, values: Record<string, unknown>) {
@@ -234,7 +236,9 @@ export async function advanceLeaveApproval(
     return { data: null, error: requesterRoleResult.error };
   }
 
-  if (requesterRoleResult.data === "HR_Admin" && actorRole !== "Superadmin") {
+  const isHrAdminRequest = requesterRoleResult.data === "HR_Admin";
+
+  if (isHrAdminRequest && actorRole !== "Superadmin") {
     return {
       data: null,
       error: { message: "طلبات إجازة مسؤول الموارد البشرية تعتمد من المشرف العام فقط." },
@@ -252,8 +256,26 @@ export async function advanceLeaveApproval(
   if (decision === "rejected") {
     return updateLeaveRequest(requestId, {
       status: "rejected",
-      manager_approval_status: currentStep === 1 ? "rejected" : request.manager_approval_status || "approved",
-      hr_approval_status: currentStep >= 2 ? "rejected" : request.hr_approval_status || "pending",
+      manager_approval_status: isHrAdminRequest
+        ? "rejected"
+        : currentStep === 1 ? "rejected" : request.manager_approval_status || "approved",
+      hr_approval_status: isHrAdminRequest || currentStep >= 2
+        ? "rejected"
+        : request.hr_approval_status || "pending",
+      decision_note: note || undefined,
+      decided_at: now,
+      decided_by: actorUserId || undefined,
+      approval_history: [...history, historyEntry],
+    });
+  }
+
+  if (isHrAdminRequest) {
+    return approveLeaveRequest(request, {
+      status: "approved",
+      manager_approval_status: "approved",
+      hr_approval_status: "approved",
+      current_step: 1,
+      total_steps: 1,
       decision_note: note || undefined,
       decided_at: now,
       decided_by: actorUserId || undefined,
