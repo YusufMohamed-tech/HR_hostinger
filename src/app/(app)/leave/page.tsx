@@ -32,6 +32,18 @@ const statusStyle: Record<string, string> = {
   rejected: "bg-red-50 text-red-700 border-red-200",
 };
 
+const statusLabels: Record<string, string> = {
+  pending: "بانتظار الاعتماد",
+  approved: "معتمدة",
+  rejected: "مرفوضة",
+};
+
+const leaveTypeLabels: Record<string, string> = {
+  sick: "مرضية",
+  vacation: "سنوية",
+  emergency: "طارئة",
+};
+
 export default function LeavePage() {
   const { currentUser } = useRoleContext();
   const { data: leaveRequests, loading, refetch } = useLeaveRequests();
@@ -61,16 +73,16 @@ export default function LeavePage() {
         <Card className="border-none shadow-sm">
           <CardContent className="py-4 grid grid-cols-3 gap-4 text-sm">
             <div>
-              <p className="text-xs text-gray-500">مرضية</p>
-              <p className="font-semibold text-gray-900">{sickRemaining}</p>
+              <p className="text-xs text-gray-500">رصيد مرضية</p>
+              <p className="font-semibold text-gray-900">{sickRemaining} يوم</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">سنوية</p>
-              <p className="font-semibold text-gray-900">{vacationRemaining}</p>
+              <p className="text-xs text-gray-500">رصيد سنوية</p>
+              <p className="font-semibold text-gray-900">{vacationRemaining} يوم</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500">طارئة</p>
-              <p className="font-semibold text-gray-900">{emergencyRemaining}</p>
+              <p className="text-xs text-gray-500">رصيد طارئة</p>
+              <p className="font-semibold text-gray-900">{emergencyRemaining} يوم</p>
             </div>
           </CardContent>
         </Card>
@@ -108,63 +120,37 @@ export default function LeavePage() {
                   : null;
                 return (
                   <TableRow key={reqId}>
-                  <TableCell className="font-medium text-gray-900">{employeeName}</TableCell>
-                  <TableCell className="text-gray-600">{leaveType}</TableCell>
-                  <TableCell className="text-gray-600">{startDateStr || "—"} → {endDateStr || "—"}</TableCell>
-                  <TableCell className="text-gray-600">{dayCount ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={statusStyle[status] || "bg-gray-100 text-gray-600 border-gray-200"}>
-                      {status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-gray-600">{reason}</TableCell>
-                  {canApprove && (
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-green-600 hover:text-green-700"
-                          disabled={status !== "pending"}
-                          onClick={async () => {
-                            const note = window.prompt("ملاحظة الاعتماد:") || "";
-                            const { data, error: approveError } = await advanceLeaveApproval(reqRecord, "approved", currentUser?.id, note);
-                            if (approveError) {
-                              window.alert(approveError.message);
-                              return;
-                            }
-                            if (currentUser?.orgId && reqRecord.employee_id && String(data?.status || "") === "approved") {
-                              await notifyLeaveDecision(currentUser.orgId, String(reqRecord.employee_id), leaveType, "approved");
-                            }
-                            refetch();
-                          }}
-                        >
-                          <Check className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600 hover:text-red-700"
-                          disabled={status !== "pending"}
-                          onClick={async () => {
-                            const note = window.prompt("سبب الرفض:") || "";
-                            const { error: rejectError } = await advanceLeaveApproval(reqRecord, "rejected", currentUser?.id, note);
-                            if (rejectError) {
-                              window.alert(rejectError.message);
-                              return;
-                            }
-                            if (currentUser?.orgId && reqRecord.employee_id) {
-                              await notifyLeaveDecision(currentUser.orgId, String(reqRecord.employee_id), leaveType, "rejected");
-                            }
-                            refetch();
-                          }}
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
-                      </div>
+                    <TableCell className="font-medium text-gray-900">{employeeName}</TableCell>
+                    <TableCell className="text-gray-600">{leaveTypeLabels[leaveType] || leaveType}</TableCell>
+                    <TableCell className="text-gray-600">{startDateStr || "—"} ← {endDateStr || "—"}</TableCell>
+                    <TableCell className="text-gray-600">{dayCount ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={statusStyle[status] || "bg-gray-100 text-gray-600 border-gray-200"}>
+                        {statusLabels[status] || status}
+                      </Badge>
                     </TableCell>
-                  )}
-                </TableRow>
+                    <TableCell className="text-gray-600">{reason}</TableCell>
+                    {canApprove && (
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <LeaveDecisionDialog
+                            reqRecord={reqRecord}
+                            decision="approved"
+                            leaveType={leaveType}
+                            disabled={status !== "pending"}
+                            onSuccess={refetch}
+                          />
+                          <LeaveDecisionDialog
+                            reqRecord={reqRecord}
+                            decision="rejected"
+                            leaveType={leaveType}
+                            disabled={status !== "pending"}
+                            onSuccess={refetch}
+                          />
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
                 );
               })}
             </TableBody>
@@ -180,6 +166,97 @@ export default function LeavePage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+/* ─── Leave Decision Dialog (replaces window.prompt/alert) ─── */
+
+function LeaveDecisionDialog({
+  reqRecord,
+  decision,
+  leaveType,
+  disabled,
+  onSuccess,
+}: {
+  reqRecord: Record<string, unknown>;
+  decision: "approved" | "rejected";
+  leaveType: string;
+  disabled: boolean;
+  onSuccess: () => void;
+}) {
+  const { currentUser } = useRoleContext();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const isApprove = decision === "approved";
+
+  const handleDecide = async () => {
+    setSubmitting(true);
+    setError("");
+    const { data, error: decisionError } = await advanceLeaveApproval(reqRecord, decision, currentUser?.id, note);
+    setSubmitting(false);
+
+    if (decisionError) {
+      setError(decisionError.message);
+      return;
+    }
+
+    if (currentUser?.orgId && reqRecord.employee_id) {
+      const finalStatus = String(data?.status || "");
+      if (finalStatus === "approved" || decision === "rejected") {
+        await notifyLeaveDecision(currentUser.orgId, String(reqRecord.employee_id), leaveType, decision);
+      }
+    }
+
+    setNote("");
+    setOpen(false);
+    onSuccess();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={
+        <Button
+          variant="ghost"
+          size="sm"
+          className={isApprove ? "text-green-600 hover:text-green-700" : "text-red-600 hover:text-red-700"}
+          disabled={disabled}
+        />
+      }>
+        {isApprove ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle>{isApprove ? "اعتماد طلب الإجازة" : "رفض طلب الإجازة"}</DialogTitle>
+          <DialogDescription>
+            {isApprove
+              ? "هل تريد اعتماد هذا الطلب؟ يمكنك إضافة ملاحظة."
+              : "هل تريد رفض هذا الطلب؟ يُرجى ذكر سبب الرفض."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="py-4 space-y-2">
+          <Label>{isApprove ? "ملاحظة (اختياري)" : "سبب الرفض"}</Label>
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={isApprove ? "ملاحظة الاعتماد..." : "سبب الرفض..."}
+          />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>إلغاء</Button>
+          <Button
+            className={isApprove ? "bg-green-600 hover:bg-green-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}
+            onClick={handleDecide}
+            disabled={submitting || (!isApprove && !note.trim())}
+          >
+            {submitting ? "جار المعالجة..." : isApprove ? "اعتماد" : "رفض"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -256,8 +333,8 @@ function CreateLeaveDialog({ onSuccess }: { onSuccess: () => void }) {
             </div>
           </div>
           <div className="space-y-2">
-            <Label>السبب</Label>
-            <Input value={form.reason} onChange={(e) => set("reason", e.target.value)} placeholder="Optional" />
+            <Label>السبب (اختياري)</Label>
+            <Input value={form.reason} onChange={(e) => set("reason", e.target.value)} placeholder="اذكر سبب الإجازة..." />
           </div>
         </div>
 
@@ -273,3 +350,4 @@ function CreateLeaveDialog({ onSuccess }: { onSuccess: () => void }) {
     </Dialog>
   );
 }
+

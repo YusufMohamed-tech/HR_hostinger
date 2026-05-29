@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Pencil } from "lucide-react";
 import { useDepartments, useLocations, useEmployees } from "@/hooks/use-data";
-import { updateEmployee } from "@/lib/services/employees";
+import { createEmployeeAccount, updateEmployee } from "@/lib/services/employees";
 import { updateDepartment } from "@/lib/services/departments";
 
 interface Props {
@@ -45,6 +45,9 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
+  const [createLoginAccount, setCreateLoginAccount] = useState(false);
+  const [accountRole, setAccountRole] = useState<"employee" | "training_manager">("employee");
+  const [accountPassword, setAccountPassword] = useState("");
 
   const [form, setForm] = useState({
     full_name: "",
@@ -102,13 +105,34 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
         return String(departmentRecord.manager_employee_id || "") === String(employee.id || "");
       });
       setIsDepartmentManager(Boolean(managedDepartment));
+      setCreateLoginAccount(false);
+      setAccountRole(Boolean(managedDepartment) ? "training_manager" : "employee");
+      setAccountPassword("");
     }
   }, [departments, employee, open]);
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
+  const handleDepartmentManagerChange = (checked: boolean) => {
+    setIsDepartmentManager(checked);
+    if (checked && !employee?.user_id) {
+      setCreateLoginAccount(true);
+      setAccountRole("training_manager");
+    }
+  };
+
   const handleSubmit = async () => {
     if (!form.full_name) return;
+    if (createLoginAccount && !employee?.user_id) {
+      if (!form.email.trim()) {
+        setError("البريد الإلكتروني مطلوب لإنشاء حساب الدخول.");
+        return;
+      }
+      if (accountPassword.length < 8) {
+        setError("كلمة مرور حساب الدخول يجب ألا تقل عن 8 أحرف.");
+        return;
+      }
+    }
     setSubmitting(true);
     setError("");
 
@@ -169,6 +193,23 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
       if (deptError) {
         setError(deptError.message);
         setSubmitting(false);
+        return;
+      }
+    }
+
+    if (createLoginAccount && !employee.user_id) {
+      const { error: accountError } = await createEmployeeAccount({
+        employee_id: String(employee.id),
+        email: form.email.trim(),
+        password: accountPassword,
+        full_name: form.full_name,
+        role: accountRole,
+      });
+
+      if (accountError) {
+        setError(`تم حفظ بيانات الموظف، لكن فشل إنشاء حساب الدخول: ${accountError.message}`);
+        setSubmitting(false);
+        onSuccess();
         return;
       }
     }
@@ -279,7 +320,7 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
                 type="checkbox"
                 className="rounded border-gray-300"
                 checked={isDepartmentManager}
-                onChange={(event) => setIsDepartmentManager(event.target.checked)}
+                onChange={(event) => handleDepartmentManagerChange(event.target.checked)}
               />
               <span>تعيين هذا الشخص كمدير للقسم المختار</span>
             </label>
@@ -344,6 +385,48 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
               </div>
             </div>
           </div>
+
+          {!employee?.user_id && (
+            <div className="space-y-4">
+              <p className="text-sm font-semibold text-slate-700">حساب الدخول</p>
+              <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="rounded border-gray-300"
+                  checked={createLoginAccount}
+                  onChange={(event) => setCreateLoginAccount(event.target.checked)}
+                />
+                <span>إنشاء حساب دخول لهذا الموظف</span>
+              </label>
+              {createLoginAccount && (
+                <div className={twoColumnGridClass}>
+                  <div className="space-y-2">
+                    <Label>نوع الحساب</Label>
+                    <Select value={accountRole} onValueChange={(value) => setAccountRole(value as "employee" | "training_manager")}>
+                      <SelectTrigger>
+                        <SelectValue>
+                          {(value: string | null) => value === "training_manager" ? "مدير تدريب / موقع" : "موظف"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="employee">موظف</SelectItem>
+                        <SelectItem value="training_manager">مدير تدريب / موقع</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>كلمة المرور المؤقتة *</Label>
+                    <Input
+                      type="password"
+                      value={accountPassword}
+                      onChange={(event) => setAccountPassword(event.target.value)}
+                      placeholder="8 أحرف على الأقل"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-4">
             <p className="text-sm font-semibold text-slate-700">بيانات الراتب</p>

@@ -33,6 +33,33 @@ export async function createEmployee(values: Record<string, unknown>) {
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
+export async function createEmployeeAccount(values: {
+  employee_id: string;
+  email: string;
+  password: string;
+  full_name?: string;
+  role: "employee" | "training_manager";
+}) {
+  const response = await fetch("/api/hr/employee-accounts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(values),
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    return {
+      data: null,
+      error: { message: String(data?.message || "Unable to create employee account.") },
+    };
+  }
+
+  return {
+    data,
+    error: null,
+  } as { data: Record<string, unknown> | null; error: { message: string } | null };
+}
+
 export async function updateEmployee(id: string, values: Record<string, unknown>) {
   const supabase = createClient();
   const result = await supabase

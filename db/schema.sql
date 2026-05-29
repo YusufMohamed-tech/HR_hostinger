@@ -1,6 +1,41 @@
--- Phase 1 Core Workforce OS schema (Supabase Postgres)
+-- Phase 1 Core Workforce OS schema (Supabase Postgres) - Production Clean Version
+-- This version excludes auth table manipulations and removes duplicates
 
 create extension if not exists "pgcrypto";
+
+-- Drop existing triggers first (only if they exist)
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
+-- Drop all existing tables in reverse dependency order
+DROP TABLE IF EXISTS public.notifications CASCADE;
+DROP TABLE IF EXISTS public.leave_requests CASCADE;
+DROP TABLE IF EXISTS public.leave_balances CASCADE;
+DROP TABLE IF EXISTS public.task_attachments CASCADE;
+DROP TABLE IF EXISTS public.task_updates CASCADE;
+DROP TABLE IF EXISTS public.task_assignments CASCADE;
+DROP TABLE IF EXISTS public.tasks CASCADE;
+DROP TABLE IF EXISTS public.attendance_records CASCADE;
+DROP TABLE IF EXISTS public.employee_shifts CASCADE;
+DROP TABLE IF EXISTS public.shifts CASCADE;
+DROP TABLE IF EXISTS public.employee_actions CASCADE;
+DROP TABLE IF EXISTS public.employee_reviews CASCADE;
+DROP TABLE IF EXISTS public.employee_kpis CASCADE;
+DROP TABLE IF EXISTS public.salary_history CASCADE;
+DROP TABLE IF EXISTS public.employee_documents CASCADE;
+DROP TABLE IF EXISTS public.employees CASCADE;
+DROP TABLE IF EXISTS public.locations CASCADE;
+DROP TABLE IF EXISTS public.departments CASCADE;
+DROP TABLE IF EXISTS public.profiles CASCADE;
+DROP TABLE IF EXISTS public.org_members CASCADE;
+DROP TABLE IF EXISTS public.organizations CASCADE;
+
+-- Drop existing functions
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
+DROP FUNCTION IF EXISTS public.touch_updated_at() CASCADE;
+DROP FUNCTION IF EXISTS public.current_org_id() CASCADE;
+DROP FUNCTION IF EXISTS public.current_role() CASCADE;
+DROP FUNCTION IF EXISTS public.is_admin() CASCADE;
+DROP FUNCTION IF EXISTS public.current_employee_id() CASCADE;
 
 -- Enums
 DO $$
@@ -36,35 +71,6 @@ BEGIN
     CREATE TYPE public.location_type AS ENUM ('branch', 'booth', 'office', 'area');
   END IF;
 END$$;
-
--- Utility functions
-CREATE OR REPLACE FUNCTION public.touch_updated_at()
-RETURNS trigger AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE OR REPLACE FUNCTION public.current_org_id()
-RETURNS uuid AS $$
-  SELECT org_id FROM public.org_members WHERE user_id = auth.uid() LIMIT 1;
-$$ LANGUAGE sql STABLE;
-
-CREATE OR REPLACE FUNCTION public.current_role()
-RETURNS text AS $$
-  SELECT role::text FROM public.org_members WHERE user_id = auth.uid() LIMIT 1;
-$$ LANGUAGE sql STABLE;
-
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS boolean AS $$
-  SELECT COALESCE((SELECT role = 'admin' FROM public.org_members WHERE user_id = auth.uid() LIMIT 1), false);
-$$ LANGUAGE sql STABLE;
-
-CREATE OR REPLACE FUNCTION public.current_employee_id()
-RETURNS uuid AS $$
-  SELECT id FROM public.employees WHERE user_id = auth.uid() LIMIT 1;
-$$ LANGUAGE sql STABLE;
 
 -- Core tables
 CREATE TABLE IF NOT EXISTS public.organizations (
@@ -103,7 +109,7 @@ CREATE TABLE IF NOT EXISTS public.departments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   name text NOT NULL,
-  manager_employee_id uuid REFERENCES public.employees(id) ON DELETE SET NULL,
+  manager_employee_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -116,7 +122,7 @@ CREATE TABLE IF NOT EXISTS public.locations (
   latitude numeric,
   longitude numeric,
   radius_meters integer DEFAULT 100,
-  manager_employee_id uuid REFERENCES public.employees(id) ON DELETE SET NULL,
+  manager_employee_id uuid,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
@@ -152,6 +158,13 @@ CREATE TABLE IF NOT EXISTS public.employees (
   UNIQUE (org_id, employee_code)
 );
 
+-- Add cross-reference foreign keys (resolves circular dependency)
+ALTER TABLE public.departments ADD CONSTRAINT fk_departments_manager
+  FOREIGN KEY (manager_employee_id) REFERENCES public.employees(id) ON DELETE SET NULL;
+ALTER TABLE public.locations ADD CONSTRAINT fk_locations_manager
+  FOREIGN KEY (manager_employee_id) REFERENCES public.employees(id) ON DELETE SET NULL;
+
+-- Additional tables (same as original)
 CREATE TABLE IF NOT EXISTS public.employee_documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -250,7 +263,8 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
   within_geofence boolean DEFAULT true,
   distance_meters integer DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (org_id, employee_id, work_date)
 );
 
 -- Tasks
@@ -337,6 +351,73 @@ CREATE TABLE IF NOT EXISTS public.notifications (
   is_read boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  actor_user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  action text NOT NULL,
+  entity text NOT NULL,
+  entity_id text,
+  old_values jsonb,
+  new_values jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_org_created ON public.audit_logs(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON public.audit_logs(entity, entity_id);
+
+-- Utility functions
+CREATE OR REPLACE FUNCTION public.touch_updated_at()
+RETURNS trigger AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION public.current_org_id()
+RETURNS uuid AS $$
+  SELECT org_id FROM public.org_members WHERE user_id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.current_role()
+RETURNS text AS $$
+  SELECT role::text FROM public.org_members WHERE user_id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean AS $$
+  SELECT COALESCE((SELECT role = 'admin' FROM public.org_members WHERE user_id = auth.uid() LIMIT 1), false);
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.current_employee_id()
+RETURNS uuid AS $$
+  SELECT id FROM public.employees WHERE user_id = auth.uid() LIMIT 1;
+$$ LANGUAGE sql STABLE SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (user_id, email, full_name)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1))
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Only create trigger if auth.users is accessible
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users' AND table_schema = 'auth') THEN
+    DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+    CREATE TRIGGER on_auth_user_created
+      AFTER INSERT ON auth.users
+      FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+  END IF;
+END$$;
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_org_members_user ON public.org_members(user_id);
@@ -391,25 +472,6 @@ BEGIN
   END IF;
 END$$;
 
--- Auto-create profile when a new user signs up via Supabase Auth
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
-BEGIN
-  INSERT INTO public.profiles (user_id, email, full_name)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1))
-  );
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
 -- RLS
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.org_members ENABLE ROW LEVEL SECURITY;
@@ -432,6 +494,7 @@ ALTER TABLE public.task_attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.leave_balances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.leave_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 -- Organizations policies
 DROP POLICY IF EXISTS org_select ON public.organizations;
@@ -455,7 +518,7 @@ DROP POLICY IF EXISTS org_members_update ON public.org_members;
 DROP POLICY IF EXISTS org_members_delete ON public.org_members;
 
 CREATE POLICY org_members_select ON public.org_members
-  FOR SELECT USING (org_id = public.current_org_id());
+  FOR SELECT USING (user_id = auth.uid() OR org_id = public.current_org_id());
 CREATE POLICY org_members_insert ON public.org_members
   FOR INSERT WITH CHECK (public.is_admin() OR auth.role() = 'service_role');
 CREATE POLICY org_members_update ON public.org_members
@@ -558,6 +621,15 @@ CREATE POLICY leave_requests_self_select ON public.leave_requests
 CREATE POLICY leave_requests_self_insert ON public.leave_requests
   FOR INSERT WITH CHECK (employee_id = public.current_employee_id() AND org_id = public.current_org_id());
 
+
+-- Audit logs: admins can read org logs; writes are server/admin only.
+DROP POLICY IF EXISTS audit_logs_select ON public.audit_logs;
+DROP POLICY IF EXISTS audit_logs_insert ON public.audit_logs;
+
+CREATE POLICY audit_logs_select ON public.audit_logs
+  FOR SELECT USING (public.is_admin() AND org_id = public.current_org_id());
+CREATE POLICY audit_logs_insert ON public.audit_logs
+  FOR INSERT WITH CHECK (public.is_admin() OR auth.role() = 'service_role');
 -- Notifications: employee sees own notifications; admin sees all
 DROP POLICY IF EXISTS notifications_select ON public.notifications;
 DROP POLICY IF EXISTS notifications_insert ON public.notifications;
@@ -570,3 +642,151 @@ CREATE POLICY notifications_insert ON public.notifications
 CREATE POLICY notifications_update ON public.notifications
   FOR UPDATE USING (user_id = auth.uid() OR public.is_admin())
   WITH CHECK (user_id = auth.uid() OR public.is_admin());
+
+-- Part 2 Enhancements: Payroll, Assets, Recruitment, Financial Balances
+
+-- 1. Recruitment Module
+CREATE TABLE IF NOT EXISTS public.job_postings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  title text NOT NULL,
+  department_id uuid REFERENCES public.departments(id) ON DELETE SET NULL,
+  location_id uuid REFERENCES public.locations(id) ON DELETE SET NULL,
+  description text,
+  requirements text,
+  status text DEFAULT 'open',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.job_applications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  job_posting_id uuid NOT NULL REFERENCES public.job_postings(id) ON DELETE CASCADE,
+  candidate_name text NOT NULL,
+  email text NOT NULL,
+  phone text,
+  resume_url text,
+  status text DEFAULT 'new',
+  applied_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.interviews (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  job_application_id uuid NOT NULL REFERENCES public.job_applications(id) ON DELETE CASCADE,
+  interviewer_id uuid REFERENCES public.employees(id) ON DELETE SET NULL,
+  interview_date timestamptz NOT NULL,
+  notes text,
+  result text DEFAULT 'pending',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 2. Payroll Module
+CREATE TABLE IF NOT EXISTS public.payslips (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  month date NOT NULL, -- e.g., 2026-05-01 for May 2026
+  base_salary numeric DEFAULT 0,
+  total_allowances numeric DEFAULT 0,
+  total_deductions numeric DEFAULT 0,
+  net_salary numeric DEFAULT 0,
+  attendance_days integer DEFAULT 0,
+  status text DEFAULT 'draft',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 3. Asset Handover
+CREATE TABLE IF NOT EXISTS public.employee_assets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  asset_name text NOT NULL,
+  asset_type text NOT NULL,
+  serial_number text,
+  assigned_date date NOT NULL DEFAULT CURRENT_DATE,
+  returned_date date,
+  status text DEFAULT 'assigned',
+  notes text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 4. Financial Balances / Deficit
+CREATE TABLE IF NOT EXISTS public.financial_balances (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+  employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
+  balance_type text NOT NULL, -- 'deficit', 'loan', 'advance_payment'
+  amount numeric DEFAULT 0,
+  status text DEFAULT 'unpaid',
+  description text,
+  acknowledgment_signature_url text, -- For e-signature
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Note: Device locking for attendance can use a new column on employees.
+ALTER TABLE public.employees ADD COLUMN IF NOT EXISTS registered_device_id text;
+
+-- Note: Multi-level leave approval
+ALTER TABLE public.leave_requests ADD COLUMN IF NOT EXISTS manager_approval_status text DEFAULT 'pending';
+ALTER TABLE public.leave_requests ADD COLUMN IF NOT EXISTS hr_approval_status text DEFAULT 'pending';
+
+-- RLS & Security for new tables
+ALTER TABLE public.job_postings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.job_applications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.interviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.payslips ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.employee_assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.financial_balances ENABLE ROW LEVEL SECURITY;
+
+-- We can create basic policies similar to others:
+CREATE POLICY org_select_job_postings ON public.job_postings FOR SELECT USING (org_id = public.current_org_id());
+CREATE POLICY org_insert_job_postings ON public.job_postings FOR INSERT WITH CHECK (public.is_admin());
+CREATE POLICY org_update_job_postings ON public.job_postings FOR UPDATE USING (public.is_admin());
+CREATE POLICY org_delete_job_postings ON public.job_postings FOR DELETE USING (public.is_admin());
+
+CREATE POLICY org_select_job_applications ON public.job_applications FOR SELECT USING (org_id = public.current_org_id());
+CREATE POLICY org_insert_job_applications ON public.job_applications FOR INSERT WITH CHECK (public.is_admin());
+CREATE POLICY org_update_job_applications ON public.job_applications FOR UPDATE USING (public.is_admin());
+CREATE POLICY org_delete_job_applications ON public.job_applications FOR DELETE USING (public.is_admin());
+
+CREATE POLICY org_select_interviews ON public.interviews FOR SELECT USING (org_id = public.current_org_id());
+CREATE POLICY org_insert_interviews ON public.interviews FOR INSERT WITH CHECK (public.is_admin());
+CREATE POLICY org_update_interviews ON public.interviews FOR UPDATE USING (public.is_admin());
+CREATE POLICY org_delete_interviews ON public.interviews FOR DELETE USING (public.is_admin());
+
+CREATE POLICY org_select_payslips ON public.payslips FOR SELECT USING (org_id = public.current_org_id() AND (public.is_admin() OR employee_id = public.current_employee_id()));
+CREATE POLICY org_insert_payslips ON public.payslips FOR INSERT WITH CHECK (public.is_admin());
+CREATE POLICY org_update_payslips ON public.payslips FOR UPDATE USING (public.is_admin());
+CREATE POLICY org_delete_payslips ON public.payslips FOR DELETE USING (public.is_admin());
+
+CREATE POLICY org_select_employee_assets ON public.employee_assets FOR SELECT USING (org_id = public.current_org_id() AND (public.is_admin() OR employee_id = public.current_employee_id()));
+CREATE POLICY org_insert_employee_assets ON public.employee_assets FOR INSERT WITH CHECK (public.is_admin());
+CREATE POLICY org_update_employee_assets ON public.employee_assets FOR UPDATE USING (public.is_admin());
+CREATE POLICY org_delete_employee_assets ON public.employee_assets FOR DELETE USING (public.is_admin());
+
+CREATE POLICY org_select_fin_balances ON public.financial_balances FOR SELECT USING (org_id = public.current_org_id() AND (public.is_admin() OR employee_id = public.current_employee_id()));
+CREATE POLICY org_insert_fin_balances ON public.financial_balances FOR INSERT WITH CHECK (public.is_admin());
+CREATE POLICY org_update_fin_balances ON public.financial_balances FOR UPDATE USING (public.is_admin());
+CREATE POLICY org_delete_fin_balances ON public.financial_balances FOR DELETE USING (public.is_admin());
+
+ALTER TYPE public.org_role ADD VALUE IF NOT EXISTS 'hr_admin';
+ALTER TYPE public.org_role ADD VALUE IF NOT EXISTS 'hr_recruitment';
+ALTER TYPE public.org_role ADD VALUE IF NOT EXISTS 'training_manager';
+
+-- Enable RLS logic for training managers so they only see employees in their location
+-- Drop old employee select policy and replace
+DROP POLICY IF EXISTS org_select_employees ON public.employees;
+CREATE POLICY org_select_employees ON public.employees FOR SELECT USING (
+  org_id = public.current_org_id() AND (
+    public.is_admin() OR 
+    (public.current_role() = 'hr_admin') OR 
+    (public.current_role() = 'hr_recruitment') OR
+    (public.current_role() = 'training_manager' AND location_id = (SELECT location_id FROM public.employees WHERE id = public.current_employee_id())) OR
+    user_id = auth.uid()
+  )
+);

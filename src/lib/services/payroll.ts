@@ -80,3 +80,14 @@ export async function generatePayslip(orgId: string, employeeId: string, month: 
 
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
+
+export async function updatePayslipStatus(payslipId: string, status: "draft" | "approved" | "paid") {
+  const supabase = createClient();
+  const result = await supabase
+    .from("payslips")
+    .update({ status } as never)
+    .eq("id", payslipId)
+    .select()
+    .single();
+  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+}

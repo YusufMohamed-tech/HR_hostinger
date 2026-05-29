@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import process from "node:process";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
@@ -22,17 +23,27 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 const orgId = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
 const employeeRecordId = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a44";
 
+// Passwords are read from env vars. If absent, a secure random password is generated
+// and printed once to stdout so you can store it safely.
+const hrPassword = process.env.DEMO_HR_PASSWORD || crypto.randomBytes(16).toString("hex");
+const employeePassword = process.env.DEMO_EMPLOYEE_PASSWORD || crypto.randomBytes(16).toString("hex");
+
+console.log("\n=== Demo user passwords (store these securely) ===");
+if (!process.env.DEMO_HR_PASSWORD) console.log(`DEMO_HR_PASSWORD=${hrPassword}`);
+if (!process.env.DEMO_EMPLOYEE_PASSWORD) console.log(`DEMO_EMPLOYEE_PASSWORD=${employeePassword}`);
+console.log("===================================================\n");
+
 const demoUsers = [
   {
     email: "hr@tatwir.sa",
-    password: "12345678",
+    password: hrPassword,
     fullName: "HR Admin",
     title: "HR Manager",
     role: "admin",
   },
   {
     email: "employee@tatwir.sa",
-    password: "123456789",
+    password: employeePassword,
     fullName: "Test Employee",
     title: "Software Engineer",
     role: "employee",

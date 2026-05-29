@@ -3,9 +3,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useAttendance, useEmployees, useLocations } from "@/hooks/use-data";
-import { createCheckIn } from "@/lib/services/attendance";
+import { createCheckIn, updateCheckOut } from "@/lib/services/attendance";
 
 const AUTO_ATTENDANCE_RADIUS_METERS = 50;
+// Poll every 90 seconds to detect if user entered/left geofence
+const POLL_INTERVAL_MS = 90_000;
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (value: number) => (value * Math.PI) / 180;
@@ -34,8 +36,9 @@ export function AutoAttendanceRecorder() {
   const { data: attendance, refetch } = useAttendance(today);
   const { data: employees } = useEmployees();
   const { data: locations } = useLocations();
-  const attemptedRef = useRef(false);
   const [status, setStatus] = useState("");
+  const lastCheckInAttemptRef = useRef(false);
+  const lastCheckOutAttemptRef = useRef(false);
 
   const myAttendance = attendance.find((row) => row.employee_id === currentUser?.employeeId);
 
@@ -46,63 +49,155 @@ export function AutoAttendanceRecorder() {
     return locations.find((location) => location.id === employee.location_id) || null;
   }, [currentUser?.employeeId, employees, locations]);
 
-  useEffect(() => {
-    if (currentUser?.role !== "Employee" || !currentUser.orgId || !currentUser.employeeId) return;
-    if (attemptedRef.current || myAttendance?.check_in_at) return;
-    if (!assignedLocation) return;
+  const locationLatitude = assignedLocation ? Number(assignedLocation.latitude) : NaN;
+  const locationLongitude = assignedLocation ? Number(assignedLocation.longitude) : NaN;
 
-    const locationLatitude = Number(assignedLocation.latitude);
-    const locationLongitude = Number(assignedLocation.longitude);
-    if (!Number.isFinite(locationLatitude) || !Number.isFinite(locationLongitude)) {
-      attemptedRef.current = true;
-      setStatus("لا يمكن تسجيل الحضور تلقائيًا لأن موقعك لا يحتوي على إحداثيات.");
+  const attemptCheckIn = async () => {
+    if (!currentUser?.orgId || !currentUser?.employeeId) return;
+    if (lastCheckInAttemptRef.current) return;
+    if (!assignedLocation || !Number.isFinite(locationLatitude) || !Number.isFinite(locationLongitude)) return;
+
+    setStatus("جاري طلب موقعك لتسجيل الحضور تلقائيًا...");
+
+    const position = await new Promise<GeolocationPosition | null>((resolve) => {
+      navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
+        enableHighAccuracy: true,
+        maximumAge: 30000,
+        timeout: 15000,
+      });
+    });
+
+    if (!position) {
+      setStatus("لم يتم تسجيل الحضور. يرجى السماح للموقع من المتصفح.");
       return;
     }
 
-    attemptedRef.current = true;
-    setStatus("جاري طلب موقعك لتسجيل الحضور تلقائيًا...");
+    const { latitude, longitude } = position.coords;
+    const distance = haversineDistance(latitude, longitude, locationLatitude, locationLongitude);
 
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude } = position.coords;
-        const distance = haversineDistance(latitude, longitude, locationLatitude, locationLongitude);
+    if (distance > AUTO_ATTENDANCE_RADIUS_METERS) {
+      setStatus(`أنت خارج نطاق الحضور. المسافة الحالية ${distance}م والحد المسموح 50م.`);
+      return;
+    }
 
-        if (distance > AUTO_ATTENDANCE_RADIUS_METERS) {
-          setStatus(`أنت خارج نطاق الحضور. المسافة الحالية ${distance}م والحد المسموح 50م.`);
-          return;
-        }
+    lastCheckInAttemptRef.current = true;
+    const now = new Date();
+    const { error } = await createCheckIn({
+      org_id: currentUser.orgId,
+      employee_id: currentUser.employeeId,
+      work_date: today,
+      check_in_at: now.toISOString(),
+      check_in_lat: latitude,
+      check_in_lng: longitude,
+      check_in_device: navigator.userAgent,
+      device_fingerprint: getOrCreateDeviceFingerprint(),
+      status: "present",
+      late_minutes: 0,
+      within_geofence: true,
+      distance_meters: distance,
+    });
 
-        const now = new Date();
-        const { error } = await createCheckIn({
-          org_id: currentUser.orgId,
-          employee_id: currentUser.employeeId,
-          work_date: today,
-          check_in_at: now.toISOString(),
-          check_in_lat: latitude,
-          check_in_lng: longitude,
-          check_in_device: navigator.userAgent,
-          device_fingerprint: getOrCreateDeviceFingerprint(),
-          status: "present",
-          late_minutes: 0,
-          within_geofence: true,
-          distance_meters: distance,
-        });
+    if (error) {
+      // Already checked in or device mismatch — clear status silently
+      lastCheckInAttemptRef.current = false;
+      setStatus("");
+      return;
+    }
 
-        if (error) {
-          setStatus(error.message);
-          return;
-        }
+    setStatus("تم تسجيل حضورك تلقائيًا بنجاح.");
+    await refetch();
+    window.setTimeout(() => setStatus(""), 5000);
+  };
 
-        setStatus("تم تسجيل حضورك تلقائيًا بنجاح.");
-        await refetch();
-        window.setTimeout(() => setStatus(""), 5000);
-      },
-      () => {
-        setStatus("لم يتم تسجيل الحضور. يرجى السماح للموقع من المتصفح.");
-      },
-      { enableHighAccuracy: true, maximumAge: 30000, timeout: 15000 }
-    );
-  }, [assignedLocation, currentUser, myAttendance?.check_in_at, refetch, today]);
+  const attemptCheckOut = async (attendanceId: string) => {
+    if (!currentUser?.orgId || !currentUser?.employeeId) return;
+    if (lastCheckOutAttemptRef.current) return;
+    if (!assignedLocation || !Number.isFinite(locationLatitude) || !Number.isFinite(locationLongitude)) return;
+
+    const position = await new Promise<GeolocationPosition | null>((resolve) => {
+      navigator.geolocation.getCurrentPosition(resolve, () => resolve(null), {
+        enableHighAccuracy: true,
+        maximumAge: 30000,
+        timeout: 15000,
+      });
+    });
+
+    if (!position) return;
+
+    const { latitude, longitude } = position.coords;
+    const distance = haversineDistance(latitude, longitude, locationLatitude, locationLongitude);
+
+    // Auto checkout only when user has left the geofence (> 200m away to avoid noise)
+    if (distance <= 200) return;
+
+    lastCheckOutAttemptRef.current = true;
+    const checkInAt = typeof (myAttendance as Record<string, unknown>)?.check_in_at === "string"
+      ? String((myAttendance as Record<string, unknown>).check_in_at)
+      : null;
+    const now = new Date();
+    const totalMinutes = checkInAt
+      ? Math.max(0, Math.round((now.getTime() - new Date(checkInAt).getTime()) / 60000))
+      : 0;
+
+    const { error } = await updateCheckOut(attendanceId, {
+      check_out_at: now.toISOString(),
+      check_out_lat: latitude,
+      check_out_lng: longitude,
+      check_out_device: navigator.userAgent,
+      device_fingerprint: getOrCreateDeviceFingerprint(),
+      total_minutes: totalMinutes,
+      check_out_within_geofence: false,
+      check_out_distance_meters: distance,
+    });
+
+    if (!error) {
+      setStatus("تم تسجيل انصرافك تلقائيًا.");
+      await refetch();
+      window.setTimeout(() => setStatus(""), 5000);
+    } else {
+      lastCheckOutAttemptRef.current = false;
+    }
+  };
+
+  // Periodic polling: check-in on range entry, check-out on range exit
+  useEffect(() => {
+    if (currentUser?.role !== "Employee" || !currentUser.orgId || !currentUser.employeeId) return;
+    if (!assignedLocation || !Number.isFinite(locationLatitude) || !Number.isFinite(locationLongitude)) return;
+
+    const poll = async () => {
+      // Need latest attendance state — this runs inside effect so reads from closure
+      const checkedIn = myAttendance?.check_in_at;
+      const checkedOut = (myAttendance as Record<string, unknown>)?.check_out_at;
+      const attendanceId = typeof (myAttendance as Record<string, unknown>)?.id === "string"
+        ? String((myAttendance as Record<string, unknown>).id)
+        : "";
+
+      if (!checkedIn && !lastCheckInAttemptRef.current) {
+        await attemptCheckIn();
+      } else if (checkedIn && !checkedOut && attendanceId) {
+        await attemptCheckOut(attendanceId);
+      }
+    };
+
+    // Initial run after a short delay
+    const initTimer = window.setTimeout(poll, 3000);
+    const interval = window.setInterval(poll, POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearTimeout(initTimer);
+      window.clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    assignedLocation,
+    currentUser?.employeeId,
+    currentUser?.orgId,
+    currentUser?.role,
+    myAttendance?.check_in_at,
+    (myAttendance as Record<string, unknown>)?.check_out_at,
+    locationLatitude,
+    locationLongitude,
+  ]);
 
   if (!status || currentUser?.role !== "Employee") return null;
 

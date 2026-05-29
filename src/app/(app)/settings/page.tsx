@@ -40,9 +40,9 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+        <h1 className="text-2xl font-bold tracking-tight">الإعدادات</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Manage your account, permissions, and system preferences.
+          إدارة حسابك وصلاحياتك وتفضيلات النظام.
         </p>
       </div>
 
@@ -52,7 +52,7 @@ export default function SettingsPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
               <User className="w-5 h-5 text-brand" />
-              Account Profile
+              الملف الشخصي
             </CardTitle>
             <EditProfileButton />
           </div>
@@ -62,35 +62,35 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
               <User className="w-4 h-4 text-gray-500" />
               <div>
-                <p className="text-xs text-gray-500">Full Name</p>
+                <p className="text-xs text-gray-500">الاسم الكامل</p>
                 <p className="text-sm font-medium text-gray-900">{currentUser?.name}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
               <Mail className="w-4 h-4 text-gray-500" />
               <div>
-                <p className="text-xs text-gray-500">Email</p>
+                <p className="text-xs text-gray-500">البريد الإلكتروني</p>
                 <p className="text-sm font-medium text-gray-900">{currentUser?.email}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
               <Shield className="w-4 h-4 text-gray-500" />
               <div>
-                <p className="text-xs text-gray-500">Role</p>
+                <p className="text-xs text-gray-500">الدور الوظيفي</p>
                 <Badge variant="outline" className={roleBadgeColor}>{currentUser?.role}</Badge>
               </div>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
               <Building2 className="w-4 h-4 text-gray-500" />
               <div>
-                <p className="text-xs text-gray-500">Organization ID</p>
+                <p className="text-xs text-gray-500">رقم المنظمة</p>
                 <p className="text-sm font-medium text-gray-900 font-mono">{currentUser?.orgId}</p>
               </div>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50">
               <Key className="w-4 h-4 text-gray-500" />
               <div>
-                <p className="text-xs text-gray-500">User ID</p>
+                <p className="text-xs text-gray-500">رقم المستخدم</p>
                 <p className="text-sm font-medium text-gray-900 font-mono">{currentUser?.id}</p>
               </div>
             </div>
@@ -107,18 +107,18 @@ export default function SettingsPage() {
 
           <Card className="border-none shadow-sm">
             <CardHeader>
-              <CardTitle>Roles and Permissions</CardTitle>
+              <CardTitle>الأدوار والصلاحيات</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-gray-500">Access control for Admin and Employee roles.</p>
+              <p className="text-sm text-gray-500">التحكم في الوصول لأدوار المسؤول والموظف.</p>
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700">Admin</span>
-                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Manage + View</Badge>
+                  <span className="text-gray-700">مسؤول</span>
+                  <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">إدارة + عرض</Badge>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700">Employee</span>
-                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">View Only</Badge>
+                  <span className="text-gray-700">موظف</span>
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">عرض فقط</Badge>
                 </div>
               </div>
             </CardContent>
@@ -126,21 +126,21 @@ export default function SettingsPage() {
 
           <Card className="border-none shadow-sm">
             <CardHeader>
-              <CardTitle>Notifications</CardTitle>
+              <CardTitle>الإشعارات</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-gray-500">Configure alerts for attendance, tasks, and leave approvals.</p>
+              <p className="text-sm text-gray-500">ضبط التنبيهات للحضور والمهام واعتمادات الإجازات.</p>
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2">
                 <label className="flex items-center justify-between text-sm cursor-pointer">
-                  <span className="text-gray-700">Late arrival alerts</span>
+                  <span className="text-gray-700">تنبيهات التأخر</span>
                   <input type="checkbox" className="rounded border-gray-300" defaultChecked />
                 </label>
                 <label className="flex items-center justify-between text-sm cursor-pointer">
-                  <span className="text-gray-700">New task assignments</span>
+                  <span className="text-gray-700">تعيينات المهام الجديدة</span>
                   <input type="checkbox" className="rounded border-gray-300" defaultChecked />
                 </label>
                 <label className="flex items-center justify-between text-sm cursor-pointer">
-                  <span className="text-gray-700">Leave approvals</span>
+                  <span className="text-gray-700">اعتمادات الإجازات</span>
                   <input type="checkbox" className="rounded border-gray-300" defaultChecked />
                 </label>
               </div>
@@ -149,18 +149,18 @@ export default function SettingsPage() {
 
           <Card className="border-none shadow-sm">
             <CardHeader>
-              <CardTitle>Security</CardTitle>
+              <CardTitle>الأمان</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <p className="text-sm text-gray-500">Session controls and authentication settings.</p>
+              <p className="text-sm text-gray-500">إعدادات الجلسة والتوثيق.</p>
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-700">Two-factor auth</span>
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Planned</Badge>
+                  <span className="text-gray-700">التحقق بعاملين</span>
+                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">مخطط</Badge>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-700">Password policy</span>
-                  <span className="text-gray-900 font-medium">Standard</span>
+                  <span className="text-gray-700">سياسة كلمة المرور</span>
+                  <span className="text-gray-900 font-medium">قياسية</span>
                 </div>
               </div>
             </CardContent>
@@ -172,8 +172,8 @@ export default function SettingsPage() {
       <Card className="shadow-sm border-red-200">
         <CardContent className="flex items-center justify-between p-6">
           <div>
-            <p className="font-medium text-gray-900">Sign Out</p>
-            <p className="text-sm text-gray-500">End your current session and return to the login page.</p>
+            <p className="font-medium text-gray-900">تسجيل الخروج</p>
+            <p className="text-sm text-gray-500">إنهاء الجلسة الحالية والعودة إلى صفحة تسجيل الدخول.</p>
           </div>
           <Button
             variant="outline"
@@ -181,7 +181,7 @@ export default function SettingsPage() {
             onClick={handleLogout}
           >
             <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
+            تسجيل الخروج
           </Button>
         </CardContent>
       </Card>
@@ -205,12 +205,12 @@ function UserManagementCard() {
   });
 
   const roleLabels: Record<string, string> = {
-    super_admin: "Superadmin",
-    admin: "Admin",
-    hr_admin: "HR",
-    hr_recruitment: "Recruiter",
-    training_manager: "Training Manager",
-    employee: "Employee",
+    super_admin: "مسؤول أعلى",
+    admin: "مسؤول",
+    hr_admin: "موارد بشرية",
+    hr_recruitment: "مسؤول توظيف",
+    training_manager: "مدير تدريب",
+    employee: "موظف",
   };
 
   const loadMembers = async () => {
@@ -256,37 +256,37 @@ function UserManagementCard() {
         <div className="flex items-center justify-between gap-3">
           <CardTitle className="flex items-center gap-2">
             <UserPlus className="w-5 h-5 text-brand" />
-            Superadmin Users
+            إدارة المستخدمين
           </CardTitle>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
-              Create HR / Recruiter
+              إنشاء حساب HR
             </DialogTrigger>
             <DialogContent className="sm:max-w-[460px]">
               <DialogHeader>
-                <DialogTitle>Create Managed User</DialogTitle>
-                <DialogDescription>Create an HR or recruiter account inside this organization.</DialogDescription>
+                <DialogTitle>إنشاء مستخدم مُدار</DialogTitle>
+                <DialogDescription>إنشاء حساب HR أو مسؤول توظيف داخل هذه المنظمة.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
-                  <Label>Full Name</Label>
-                  <Input value={form.full_name} onChange={(event) => set("full_name", event.target.value)} placeholder="HR Team" />
+                  <Label>الاسم الكامل</Label>
+                  <Input value={form.full_name} onChange={(event) => set("full_name", event.target.value)} placeholder="فريق الموارد البشرية" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Email</Label>
+                  <Label>البريد الإلكتروني</Label>
                   <Input type="email" value={form.email} onChange={(event) => set("email", event.target.value)} placeholder="hr@tatwir.sa" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Password</Label>
-                  <Input type="password" value={form.password} onChange={(event) => set("password", event.target.value)} placeholder="At least 8 characters" />
+                  <Label>كلمة المرور</Label>
+                  <Input type="password" value={form.password} onChange={(event) => set("password", event.target.value)} placeholder="8 أحرف على الأقل" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Role</Label>
+                  <Label>الدور</Label>
                   <Select value={form.role} onValueChange={(value) => set("role", value || "hr_admin")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="hr_admin">HR Admin</SelectItem>
-                      <SelectItem value="hr_recruitment">HR Recruiter</SelectItem>
+                      <SelectItem value="hr_admin">مسؤول موارد بشرية</SelectItem>
+                      <SelectItem value="hr_recruitment">مسؤول توظيف</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -294,9 +294,9 @@ function UserManagementCard() {
                 {message && <p className="text-sm text-green-700">{message}</p>}
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>Cancel</Button>
+                <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>إلغاء</Button>
                 <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleCreate} disabled={submitting}>
-                  {submitting ? "Creating..." : "Create User"}
+                  {submitting ? "جار الإنشاء..." : "إنشاء المستخدم"}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -306,9 +306,9 @@ function UserManagementCard() {
       <CardContent>
         <div className="rounded-lg border border-gray-200 overflow-hidden">
           <div className="grid grid-cols-3 gap-3 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500">
-            <span>Name</span>
-            <span>Email</span>
-            <span>Role</span>
+            <span>الاسم</span>
+            <span>البريد الإلكتروني</span>
+            <span>الدور</span>
           </div>
           <div className="divide-y divide-gray-100">
             {members.map((member) => {
@@ -324,10 +324,10 @@ function UserManagementCard() {
               );
             })}
             {!loading && members.length === 0 && (
-              <div className="px-3 py-6 text-center text-sm text-gray-500">No users found.</div>
+              <div className="px-3 py-6 text-center text-sm text-gray-500">لم يتم إيجاد مستخدمين.</div>
             )}
             {loading && (
-              <div className="px-3 py-6 text-center text-sm text-gray-500">Loading users...</div>
+              <div className="px-3 py-6 text-center text-sm text-gray-500">جار التحميل...</div>
             )}
           </div>
         </div>
@@ -376,7 +376,7 @@ function EditCompanyDialog() {
 
     const companyName = form.companyName.trim();
     if (!companyName) {
-      setError("Company name is required.");
+      setError("اسم الشركة مطلوب.");
       return;
     }
 
@@ -391,7 +391,7 @@ function EditCompanyDialog() {
     setSubmitting(false);
 
     if (result.error) {
-      setError(result.error.message || "Failed to save company profile.");
+      setError(result.error.message || "فشل في حفظ ملف الشركة.");
       return;
     }
 
@@ -402,37 +402,37 @@ function EditCompanyDialog() {
   return (
     <Card className="border-none shadow-sm">
       <CardHeader>
-        <CardTitle>Company Profile</CardTitle>
+        <CardTitle>ملف الشركة</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <p className="text-sm text-gray-500">Business details, locations, and branding.</p>
+        <p className="text-sm text-gray-500">بيانات الأعمال والمواقع والعلامة التجارية.</p>
         <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger render={<Button variant="outline" />}>Edit Profile</DialogTrigger>
+          <DialogTrigger render={<Button variant="outline" />}>تعديل الملف</DialogTrigger>
           <DialogContent className="sm:max-w-[420px]">
             <DialogHeader>
-              <DialogTitle>Company Profile</DialogTitle>
-              <DialogDescription>Update your organization details.</DialogDescription>
+              <DialogTitle>ملف الشركة</DialogTitle>
+              <DialogDescription>تحديث بيانات مؤسستك.</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <Label>Company Name</Label>
+                <Label>اسم الشركة</Label>
                 <Input value={form.companyName} onChange={(e) => set("companyName", e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Status</Label>
+                <Label>الحالة</Label>
                 <Input value={form.status} onChange={(e) => set("status", e.target.value)} />
               </div>
               {error && <p className="text-sm text-red-600">{error}</p>}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>Cancel</Button>
+              <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>إلغاء</Button>
               <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSave} disabled={submitting}>
                 {saved ? (
-                  <><CheckCircle className="w-4 h-4 mr-2" />Saved!</>
+                  <><CheckCircle className="w-4 h-4 mr-2" />تم الحفظ!</>
                 ) : submitting ? (
-                  "Saving..."
+                  "جار الحفظ..."
                 ) : (
-                  <><Save className="w-4 h-4 mr-2" />Save Changes</>
+                  <><Save className="w-4 h-4 mr-2" />حفظ التغييرات</>
                 )}
               </Button>
             </DialogFooter>
@@ -460,6 +460,11 @@ function EditProfileButton() {
 
   const [submitting, setSubmitting] = useState(false);
 
+  // Sync name from context when it changes
+  React.useEffect(() => {
+    setForm((prev) => ({ ...prev, full_name: currentUser?.name || prev.full_name }));
+  }, [currentUser?.name]);
+
   const handleSave = async () => {
     if (!currentUser?.id) return;
     setSubmitting(true);
@@ -483,36 +488,36 @@ function EditProfileButton() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>
-        Edit Profile
+        تعديل الملف الشخصي
       </DialogTrigger>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>Edit Profile</DialogTitle>
-          <DialogDescription>Update your personal details.</DialogDescription>
+          <DialogTitle>تعديل الملف الشخصي</DialogTitle>
+          <DialogDescription>تحديث بياناتك الشخصية.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
-            <Label>Full Name</Label>
+            <Label>الاسم الكامل</Label>
             <Input value={form.full_name} onChange={(e) => set("full_name", e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>Phone</Label>
+            <Label>الهاتف</Label>
             <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+966..." />
           </div>
           <div className="space-y-2">
-            <Label>Job Title</Label>
-            <Input value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="HR Manager" />
+            <Label>المسمى الوظيفي</Label>
+            <Input value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="مدير موارد بشرية" />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSave} disabled={submitting}>
             {saved ? (
-              <><CheckCircle className="w-4 h-4 mr-2" />Saved!</>
+              <><CheckCircle className="w-4 h-4 mr-2" />تم الحفظ!</>
             ) : submitting ? (
-              "Saving..."
+              "جار الحفظ..."
             ) : (
-              <><Save className="w-4 h-4 mr-2" />Save Profile</>
+              <><Save className="w-4 h-4 mr-2" />حفظ الملف الشخصي</>
             )}
           </Button>
         </DialogFooter>
