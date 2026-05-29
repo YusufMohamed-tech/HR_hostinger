@@ -62,7 +62,7 @@ export default function TasksPage() {
   const { data: employees } = useEmployees();
   const { data: locations } = useLocations();
 
-  const isAdmin = ["Superadmin", "Admin"].includes(currentUser?.role || "");
+  const isAdmin = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
 
   if (loading) return <PageSkeleton />;
 
