@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
 
-const allowedSelfServiceRoles = new Set(["employee", "training_manager", "hr_admin"]);
+const allowedSelfServiceRoles = new Set(["employee", "training_manager", "hr_admin", "hr_recruitment"]);
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date().toISOString();
-  const totalSteps = rawRole === "hr_admin" ? 1 : 2;
+  const totalSteps = rawRole === "hr_admin" || rawRole === "hr_recruitment" ? 1 : 2;
 
   const { data: leaveRequest, error: leaveRequestError } = await admin
     .from("leave_requests")
