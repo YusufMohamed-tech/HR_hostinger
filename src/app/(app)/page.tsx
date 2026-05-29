@@ -28,16 +28,21 @@ export default function DashboardPage() {
   const { data: myShifts } = useEmployeeShifts(currentUser?.employeeId);
 
   useEffect(() => {
+    if (currentUser?.role === "Superadmin") {
+      router.replace("/superadmin");
+      return;
+    }
+
     if (currentUser?.role === "HR_Recruitment") {
       router.replace("/recruitment");
     }
   }, [currentUser?.role, router]);
 
-  if (currentUser?.role === "HR_Recruitment") {
+  if (currentUser?.role === "Superadmin" || currentUser?.role === "HR_Recruitment") {
     return null;
   }
 
-  const canViewOrgStats = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
+  const canViewOrgStats = ["Admin", "HR_Admin"].includes(currentUser?.role || "");
 
   const todayRecords = allAttendance.filter(row => (row as Record<string, unknown>).work_date === today);
   const presentCount = todayRecords.filter((row) => String((row as Record<string, unknown>).status ?? "") === "present").length;

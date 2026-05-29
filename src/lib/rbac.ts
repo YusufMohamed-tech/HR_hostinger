@@ -28,6 +28,7 @@ export function roleFromOrgRole(role: string | null | undefined): Role | null {
 }
 
 export function getDefaultPathForRole(role: Role): string {
+  if (role === "Superadmin") return "/superadmin";
   if (role === "HR_Recruitment") return "/recruitment";
   return "/";
 }
@@ -35,6 +36,7 @@ export function getDefaultPathForRole(role: Role): string {
 export function isPublicPath(pathname: string): boolean {
   return (
     pathname === "/login" ||
+    pathname === "/suspended" ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/apply/") ||
     pathname === "/candidate/applications"
@@ -48,20 +50,24 @@ export function isCandidatePath(pathname: string): boolean {
 export function canAccessPath(role: Role, pathname: string): boolean {
   const normalizedPath = normalizePath(pathname);
 
+  if (role === "Superadmin") {
+    return normalizedPath.startsWith("/superadmin") || normalizedPath.startsWith("/api/superadmin");
+  }
+
+  if (normalizedPath.startsWith("/superadmin") || normalizedPath.startsWith("/api/superadmin")) {
+    return false;
+  }
+
   if (normalizedPath === "/") {
     return role !== "HR_Recruitment";
   }
 
-  if (normalizedPath.startsWith("/api/superadmin")) {
-    return role === "Superadmin";
-  }
-
   if (normalizedPath.startsWith("/api/hr")) {
-    return ["Superadmin", "Admin", "HR_Admin"].includes(role);
+    return ["Admin", "HR_Admin"].includes(role);
   }
 
   if (normalizedPath.startsWith("/recruitment")) {
-    return ["Superadmin", "Admin", "HR_Recruitment"].includes(role);
+    return ["Admin", "HR_Recruitment"].includes(role);
   }
 
   if (
@@ -70,11 +76,11 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     normalizedPath.startsWith("/personnel") ||
     normalizedPath.startsWith("/payroll")
   ) {
-    return ["Superadmin", "Admin", "HR_Admin"].includes(role);
+    return ["Admin", "HR_Admin"].includes(role);
   }
 
   if (normalizedPath.startsWith("/balances") || normalizedPath.startsWith("/assets")) {
-    return ["Superadmin", "Admin", "HR_Admin", "Employee"].includes(role);
+    return ["Admin", "HR_Admin", "Employee"].includes(role);
   }
 
   if (

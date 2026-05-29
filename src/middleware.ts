@@ -7,6 +7,7 @@ import {
   isPublicPath,
   roleFromOrgRole,
 } from "./lib/rbac";
+import type { Role } from "./types";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });
@@ -36,6 +37,7 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
   const isAuthPage = pathname === "/login";
+  const isSuspendedPage = pathname === "/suspended";
   const isCallback = pathname.startsWith("/auth/");
   const isApi = pathname.startsWith("/api/");
 
@@ -53,13 +55,61 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  const { data: membership } = await supabase
-    .from("org_members")
-    .select("role")
+  if (isSuspendedPage) {
+    return response;
+  }
+
+  const { data: platformAdmin, error: platformAdminError } = await supabase
+    .from("platform_admins")
+    .select("role, status")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const role = roleFromOrgRole(String((membership as { role?: string } | null)?.role || ""));
+  const platformAdminRecord = platformAdmin as { role?: string; status?: string } | null;
+  const platformTableMissing = platformAdminError?.code === "42P01";
+  let role: Role | null = platformAdminRecord?.role === "superadmin" && platformAdminRecord.status === "active"
+    ? "Superadmin" as const
+    : null;
+
+  if (!role && platformAdminRecord?.status !== "suspended") {
+    const { data: membership } = await supabase
+      .from("org_members")
+      .select("org_id, role")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const membershipRecord = membership as { org_id?: string; role?: string } | null;
+    const rawMembershipRole = String(membershipRecord?.role || "");
+    role = !platformTableMissing && rawMembershipRole === "super_admin"
+      ? null
+      : roleFromOrgRole(rawMembershipRole);
+
+    if (role && membershipRecord?.org_id) {
+      const [{ data: profile }, { data: organization }] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("account_status")
+          .eq("user_id", user.id)
+          .maybeSingle(),
+        supabase
+          .from("organizations")
+          .select("status")
+          .eq("id", membershipRecord.org_id)
+          .maybeSingle(),
+      ]);
+
+      const accountStatus = String((profile as { account_status?: string } | null)?.account_status || "active").toLowerCase();
+      const organizationStatus = String((organization as { status?: string } | null)?.status || "active").toLowerCase();
+      const blocked = accountStatus !== "active" || organizationStatus !== "active";
+
+      if (blocked) {
+        if (isApi) {
+          return NextResponse.json({ message: "Account or organization is suspended." }, { status: 403 });
+        }
+        return NextResponse.redirect(new URL("/suspended", request.url));
+      }
+    }
+  }
 
   if (!role) {
     if (isAuthPage) return response;

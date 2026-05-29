@@ -40,14 +40,17 @@ if (missingVars.length > 0) {
   process.exit(1);
 }
 
-const productionUsers = [
+const platformUsers = [
   {
     email: "superadmin@tatwir.sa",
     password: superadminPassword,
     fullName: "Super Admin",
     title: "Superadmin",
-    role: "super_admin",
+    role: "superadmin",
   },
+];
+
+const organizationUsers = [
   {
     email: "hr@tatwir.sa",
     password: hrPassword,
@@ -126,7 +129,36 @@ async function upsertAuthUser({ email, password, fullName }) {
 async function main() {
   const organization = await getOrganization();
 
-  for (const account of productionUsers) {
+  for (const account of platformUsers) {
+    const authUser = await upsertAuthUser(account);
+
+    const { error: profileError } = await supabase.from("profiles").upsert(
+      {
+        user_id: authUser.id,
+        org_id: null,
+        full_name: account.fullName,
+        email: account.email,
+        title: account.title,
+        account_status: "active",
+      },
+      { onConflict: "user_id" }
+    );
+    if (profileError) throw profileError;
+
+    const { error: platformError } = await supabase.from("platform_admins").upsert(
+      {
+        user_id: authUser.id,
+        role: account.role,
+        status: "active",
+      },
+      { onConflict: "user_id" }
+    );
+    if (platformError) throw platformError;
+
+    console.log(`Ready: ${account.email} (${account.role})`);
+  }
+
+  for (const account of organizationUsers) {
     const authUser = await upsertAuthUser(account);
 
     const { error: profileError } = await supabase.from("profiles").upsert(

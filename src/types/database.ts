@@ -16,6 +16,68 @@ export type LocationType = "branch" | "booth" | "office" | "area";
 export interface Database {
   public: {
     Tables: {
+      platform_admins: {
+        Row: {
+          id: string;
+          user_id: string;
+          role: "superadmin";
+          status: "active" | "suspended";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          role?: "superadmin";
+          status?: "active" | "suspended";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          role?: "superadmin";
+          status?: "active" | "suspended";
+          updated_at?: string;
+        };
+      };
+      platform_audit_logs: {
+        Row: {
+          id: string;
+          actor_user_id: string | null;
+          actor_role: string;
+          action: string;
+          target_org_id: string | null;
+          target_user_id: string | null;
+          target_type: string | null;
+          target_id: string | null;
+          metadata: Record<string, unknown>;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          actor_user_id?: string | null;
+          actor_role?: string;
+          action: string;
+          target_org_id?: string | null;
+          target_user_id?: string | null;
+          target_type?: string | null;
+          target_id?: string | null;
+          metadata?: Record<string, unknown>;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          actor_user_id?: string | null;
+          actor_role?: string;
+          action?: string;
+          target_org_id?: string | null;
+          target_user_id?: string | null;
+          target_type?: string | null;
+          target_id?: string | null;
+          metadata?: Record<string, unknown>;
+        };
+      };
       organizations: {
         Row: {
           id: string;
