@@ -12,6 +12,7 @@ import { Pencil } from "lucide-react";
 import { useEmployees } from "@/hooks/use-data";
 import { updateLocation } from "@/lib/services/locations";
 import { locationFormSchema, getValidationMessage } from "@/lib/validation";
+import { LocationMapPicker } from "@/components/locations/LocationMapPicker";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -48,6 +49,9 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
   }, [location, open]);
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
+  const setMapCoordinates = (latitude: string, longitude: string) => {
+    setForm((prev) => ({ ...prev, latitude, longitude }));
+  };
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -86,7 +90,7 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
         <Pencil className="w-3.5 h-3.5 mr-1" />
         تعديل
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent className="sm:max-w-[720px]">
         <DialogHeader>
           <DialogTitle>تعديل موقع</DialogTitle>
           <DialogDescription>تحديث بيانات الموقع ونطاق الحضور الجغرافي.</DialogDescription>
@@ -122,7 +126,7 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
               <Label>خط العرض</Label>
               <Input value={form.latitude} onChange={(e) => set("latitude", e.target.value)} />
@@ -136,6 +140,12 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
               <Input type="number" value={form.radius_meters} onChange={(e) => set("radius_meters", e.target.value)} />
             </div>
           </div>
+          <LocationMapPicker
+            latitude={form.latitude}
+            longitude={form.longitude}
+            radiusMeters={form.radius_meters}
+            onChange={setMapCoordinates}
+          />
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
