@@ -263,8 +263,7 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
   within_geofence boolean DEFAULT true,
   distance_meters integer DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (org_id, employee_id, work_date)
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 -- Tasks
