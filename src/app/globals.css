@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+.tatwir-location-marker {
+  align-items: center;
+  background: hsl(var(--primary));
+  border: 3px solid #fff;
+  border-radius: 9999px;
+  box-shadow: 0 8px 22px rgb(15 23 42 / 0.24);
+  display: flex;
+  justify-content: center;
+}
+
+.tatwir-location-marker span {
+  background: #fff;
+  border-radius: 9999px;
+  display: block;
+  height: 6px;
+  width: 6px;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

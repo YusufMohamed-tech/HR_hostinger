@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Noto_Sans_Arabic } from "next/font/google";
+import "leaflet/dist/leaflet.css";
 import "./globals.css";
 import { RoleProvider } from "@/providers/RoleProvider";
 

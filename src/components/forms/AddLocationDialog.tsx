@@ -13,6 +13,7 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import { useEmployees } from "@/hooks/use-data";
 import { createLocation } from "@/lib/services/locations";
 import { locationFormSchema, getValidationMessage } from "@/lib/validation";
+import { LocationMapPicker } from "@/components/locations/LocationMapPicker";
 
 interface Props {
   onSuccess: () => void;
@@ -35,6 +36,9 @@ export function AddLocationDialog({ onSuccess }: Props) {
   });
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
+  const setMapCoordinates = (latitude: string, longitude: string) => {
+    setForm((prev) => ({ ...prev, latitude, longitude }));
+  };
 
   const handleSubmit = async () => {
     if (!currentUser?.orgId) return;
@@ -76,7 +80,7 @@ export function AddLocationDialog({ onSuccess }: Props) {
         <Plus className="w-4 h-4 mr-2" />
         إضافة موقع
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[520px]">
+      <DialogContent className="sm:max-w-[720px]">
         <DialogHeader>
           <DialogTitle>إضافة موقع</DialogTitle>
           <DialogDescription>تسجيل فرع أو كشك أو مكتب جديد مع إعدادات النطاق الجغرافي.</DialogDescription>
@@ -112,7 +116,7 @@ export function AddLocationDialog({ onSuccess }: Props) {
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">
               <Label>خط العرض</Label>
               <Input value={form.latitude} onChange={(e) => set("latitude", e.target.value)} placeholder="24.7136" />
@@ -126,6 +130,12 @@ export function AddLocationDialog({ onSuccess }: Props) {
               <Input type="number" value={form.radius_meters} onChange={(e) => set("radius_meters", e.target.value)} />
             </div>
           </div>
+          <LocationMapPicker
+            latitude={form.latitude}
+            longitude={form.longitude}
+            radiusMeters={form.radius_meters}
+            onChange={setMapCoordinates}
+          />
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
