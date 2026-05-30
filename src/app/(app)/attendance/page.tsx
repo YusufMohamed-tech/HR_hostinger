@@ -73,10 +73,6 @@ export default function AttendancePage() {
 
   const handleCheckIn = async () => {
     if (!currentUser?.orgId || !currentUser?.employeeId) return;
-    if (myAttendance?.check_in_at) {
-      setError("لقد سجّلت حضورك اليوم بالفعل.");
-      return;
-    }
     setSubmitting(true);
     setError("");
 
@@ -233,9 +229,9 @@ export default function AttendancePage() {
             <Button
               className="w-full bg-brand hover:bg-brand-dark text-white"
               onClick={handleCheckIn}
-              disabled={submitting || Boolean(myAttendance?.check_in_at)}
+              disabled={submitting}
             >
-              {myAttendance?.check_in_at ? "مسجّل الحضور" : "تسجيل الحضور"}
+              تسجيل الحضور
             </Button>
             <Button
               variant="outline"
