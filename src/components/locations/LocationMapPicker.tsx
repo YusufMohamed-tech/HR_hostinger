@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useEffect, useRef } from "react";
-import { Crosshair } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Crosshair, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type LeafletModule = typeof import("leaflet");
 type LeafletMap = import("leaflet").Map;
@@ -14,6 +15,14 @@ interface LocationMapPickerProps {
   longitude: string;
   radiusMeters: string;
   onChange: (latitude: string, longitude: string) => void;
+}
+
+interface PlaceSearchResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+  type?: string;
 }
 
 const DEFAULT_CENTER: [number, number] = [24.7136, 46.6753];
@@ -38,6 +47,10 @@ export function LocationMapPicker({
   const markerRef = useRef<LeafletMarker | null>(null);
   const circleRef = useRef<LeafletCircle | null>(null);
   const leafletRef = useRef<LeafletModule | null>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PlaceSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -142,8 +155,94 @@ export function LocationMapPicker({
     });
   };
 
+  const selectPlace = (place: PlaceSearchResult) => {
+    const nextLatitude = formatCoordinate(Number(place.lat));
+    const nextLongitude = formatCoordinate(Number(place.lon));
+
+    onChange(nextLatitude, nextLongitude);
+    mapRef.current?.setView([Number(place.lat), Number(place.lon)], 17);
+    setResults([]);
+    setQuery(place.display_name);
+  };
+
+  const searchPlaces = async () => {
+    const trimmedQuery = query.trim();
+    if (trimmedQuery.length < 3) {
+      setSearchError("اكتب 3 أحرف على الأقل للبحث.");
+      return;
+    }
+
+    setSearching(true);
+    setSearchError("");
+
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=ar,en&q=${encodeURIComponent(trimmedQuery)}`,
+        {
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Search failed");
+      }
+
+      const payload = await response.json();
+      const nextResults = Array.isArray(payload) ? payload as PlaceSearchResult[] : [];
+      setResults(nextResults);
+      if (nextResults.length === 0) {
+        setSearchError("لم يتم العثور على نتائج.");
+      }
+    } catch {
+      setResults([]);
+      setSearchError("تعذر البحث الآن. جرّب مرة أخرى.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                searchPlaces();
+              }
+            }}
+            placeholder="ابحث عن مدينة، فرع، شارع أو مكان..."
+          />
+          <Button type="button" variant="outline" onClick={searchPlaces} disabled={searching}>
+            <Search className="ml-2 h-4 w-4" />
+            {searching ? "بحث..." : "بحث"}
+          </Button>
+        </div>
+
+        {(results.length > 0 || searchError) && (
+          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            {results.map((place) => (
+              <button
+                key={place.place_id}
+                type="button"
+                className="block w-full border-b border-slate-100 px-3 py-2 text-right text-sm text-slate-700 last:border-b-0 hover:bg-slate-50"
+                onClick={() => selectPlace(place)}
+              >
+                <span className="line-clamp-2">{place.display_name}</span>
+              </button>
+            ))}
+            {searchError && results.length === 0 && (
+              <p className="px-3 py-2 text-sm text-red-600">{searchError}</p>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="h-[260px] overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
         <div ref={containerRef} className="h-full w-full" />
       </div>
