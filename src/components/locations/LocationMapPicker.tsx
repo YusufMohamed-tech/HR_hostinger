@@ -225,7 +225,7 @@ export function LocationMapPicker({
         </div>
 
         {(results.length > 0 || searchError) && (
-          <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 bg-white">
             {results.map((place) => (
               <button
                 key={place.place_id}
@@ -243,7 +243,7 @@ export function LocationMapPicker({
         )}
       </div>
 
-      <div className="h-[260px] overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+      <div className="h-[210px] overflow-hidden rounded-lg border border-slate-200 bg-slate-100 sm:h-[260px]">
         <div ref={containerRef} className="h-full w-full" />
       </div>
       <div className="flex justify-end">

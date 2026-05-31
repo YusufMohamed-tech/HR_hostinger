@@ -80,13 +80,13 @@ export function AddLocationDialog({ onSuccess }: Props) {
         <Plus className="w-4 h-4 mr-2" />
         إضافة موقع
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[720px]">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden p-0 sm:max-w-[720px]">
+        <DialogHeader className="shrink-0 px-4 pt-4 pr-12">
           <DialogTitle>إضافة موقع</DialogTitle>
           <DialogDescription>تسجيل فرع أو كشك أو مكتب جديد مع إعدادات النطاق الجغرافي.</DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 py-4">
+        <div className="grid flex-1 gap-4 overflow-y-auto px-4 py-4">
           <div className="space-y-2">
             <Label>اسم الموقع *</Label>
             <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Nasr City Branch" />
@@ -138,9 +138,9 @@ export function AddLocationDialog({ onSuccess }: Props) {
           />
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="shrink-0 px-4 text-sm text-red-600">{error}</p>}
 
-        <DialogFooter>
+        <DialogFooter className="mx-0 mb-0 shrink-0 rounded-b-xl">
           <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.name}>
             {submitting ? "جار الإضافة..." : "إضافة موقع"}
