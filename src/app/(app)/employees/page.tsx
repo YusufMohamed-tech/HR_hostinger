@@ -33,23 +33,29 @@ const statusLabels: Record<string, string> = {
 export default function EmployeesPage() {
   const { currentUser } = useRoleContext();
   const { data: employees, loading, refetch } = useEmployees();
+  const isManagerView = currentUser?.role === "Training_Manager";
+  const canManageEmployees = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
+  const scopedEmployees = useMemo(() => {
+    if (!isManagerView) return employees;
+    return employees.filter((emp) => String((emp as Record<string, unknown>).manager_id || "") === currentUser?.employeeId);
+  }, [currentUser?.employeeId, employees, isManagerView]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("الكل");
 
   const uniqueDepartments = useMemo(() => {
     const depts = new Set<string>();
-    employees.forEach(emp => {
+    scopedEmployees.forEach(emp => {
       const empRecord = emp as Record<string, unknown>;
       const department = (empRecord.department ?? null) as Record<string, unknown> | null;
       const departmentName = typeof department?.name === "string" ? department.name : typeof empRecord.department === "string" ? empRecord.department : "-";
       if (departmentName !== "-") depts.add(departmentName);
     });
     return ["الكل", ...Array.from(depts)];
-  }, [employees]);
+  }, [scopedEmployees]);
 
   const filteredEmployees = useMemo(() => {
-    return employees.filter((emp) => {
+    return scopedEmployees.filter((emp) => {
       const empRecord = emp as Record<string, unknown>;
       const empName = typeof empRecord.full_name === "string" ? empRecord.full_name : typeof empRecord.name === "string" ? empRecord.name : "";
       const empEmail = typeof empRecord.email === "string" ? empRecord.email : "";
@@ -65,7 +71,7 @@ export default function EmployeesPage() {
       
       return matchesSearch && matchesDept;
     });
-  }, [employees, searchQuery, departmentFilter]);
+  }, [scopedEmployees, searchQuery, departmentFilter]);
 
   if (loading) {
     return <PageSkeleton />;
@@ -77,11 +83,13 @@ export default function EmployeesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">الموظفون</h1>
           <p className="text-gray-500 text-sm mt-1">
-            إدارة بيانات الموظفين، مواقع العمل، الأقسام، والرواتب.
+            {isManagerView
+              ? "متابعة الموظفين المعينين لك من HR ومراجعة بياناتهم الأساسية."
+              : "إدارة بيانات الموظفين، مواقع العمل، الأقسام، والرواتب."}
           </p>
         </div>
 
-        {["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "") && (
+        {canManageEmployees && (
           <AddEmployeeDialog onSuccess={refetch} />
         )}
       </div>
@@ -176,13 +184,13 @@ export default function EmployeesPage() {
                     <TableCell className="text-gray-600">{locationName}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "") && (
+                        {canManageEmployees && (
                           <EditEmployeeDialog employee={emp} onSuccess={refetch} />
                         )}
                         <Button asChild variant="ghost" size="sm" className="text-brand hover:text-brand-dark">
                           <Link href={`/employees/${empId}`}>عرض</Link>
                         </Button>
-                        {["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "") && (
+                        {canManageEmployees && (
                           <Button
                             variant="ghost"
                             size="sm"

@@ -785,7 +785,10 @@ CREATE POLICY org_select_employees ON public.employees FOR SELECT USING (
     public.is_admin() OR 
     (public.current_role() = 'hr_admin') OR 
     (public.current_role() = 'hr_recruitment') OR
-    (public.current_role() = 'training_manager' AND location_id = (SELECT location_id FROM public.employees WHERE id = public.current_employee_id())) OR
+    (public.current_role() = 'training_manager' AND (
+      manager_id = public.current_employee_id() OR
+      location_id = (SELECT location_id FROM public.employees WHERE id = public.current_employee_id())
+    )) OR
     user_id = auth.uid()
   )
 );

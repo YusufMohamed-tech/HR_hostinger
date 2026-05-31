@@ -4,7 +4,7 @@ export async function getAttendance(orgId: string, workDate?: string) {
   const supabase = createClient();
   let query = supabase
     .from("attendance_records")
-    .select("*, employee:employee_id(full_name, employee_code), shift:shift_id(name, shift_type, location:location_id(name))")
+    .select("*, employee:employee_id(full_name, employee_code, manager_id), shift:shift_id(name, shift_type, location:location_id(name))")
     .eq("org_id", orgId)
     .order("check_in_at", { ascending: false });
 

@@ -58,6 +58,14 @@ export default function AttendancePage() {
   const [error, setError] = useState("");
 
   const canViewTeam = ["Superadmin", "Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
+  const visibleAttendance = canViewTeam
+    ? currentUser?.role === "Training_Manager"
+      ? attendance.filter((row) => {
+          const employee = (row.employee ?? null) as Record<string, unknown> | null;
+          return String(employee?.manager_id || "") === currentUser?.employeeId;
+        })
+      : attendance
+    : attendance.filter((row) => row.employee_id === currentUser?.employeeId);
   const myAttendance = attendance.find((row) => row.employee_id === currentUser?.employeeId);
 
   const assignedLocation = useMemo(() => {
@@ -261,7 +269,7 @@ export default function AttendancePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(canViewTeam ? attendance : attendance.filter((row) => row.employee_id === currentUser?.employeeId)).map((row) => {
+                {visibleAttendance.map((row) => {
                   const rowStatus = typeof row.status === "string" ? row.status : "present";
                   const checkInAt = typeof row.check_in_at === "string" ? row.check_in_at : null;
                   const checkOutAt = typeof row.check_out_at === "string" ? row.check_out_at : null;

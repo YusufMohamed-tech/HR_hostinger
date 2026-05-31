@@ -46,8 +46,13 @@ AS $$
         JOIN public.employees me ON me.id = public.current_employee_id()
         WHERE target.id = target_employee_id
           AND target.org_id = public.current_org_id()
-          AND me.location_id IS NOT NULL
-          AND target.location_id = me.location_id
+          AND (
+            target.manager_id = me.id
+            OR (
+              me.location_id IS NOT NULL
+              AND target.location_id = me.location_id
+            )
+          )
       )
     ),
     false
