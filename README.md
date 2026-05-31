@@ -27,7 +27,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-## Apply Database Schema
+## Apply Database Changes
 Add your database connection string to `.env.local`:
 ```
 SUPABASE_DB_URL=postgresql://...
@@ -35,9 +35,16 @@ NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-Then run:
+For production or any database that contains real data, apply only the needed migration:
 ```bash
-npm run apply:schema
+npm run apply:migration -- db/schema_v12_safe_saves_and_policy_fix.sql
+```
+
+`npm run apply:schema` is a full reset command for local/staging only. It runs `db/schema-production-clean.sql`, which drops and recreates application tables. It is protected and will refuse to run unless you explicitly set `ALLOW_DESTRUCTIVE_SCHEMA_APPLY=true`.
+
+For an intentional local/staging reset only:
+```bash
+ALLOW_DESTRUCTIVE_SCHEMA_APPLY=true npm run apply:schema
 ```
 
 For production, create the first admin through the Supabase Admin API:
