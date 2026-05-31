@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -15,7 +16,6 @@ import { Badge } from "@/components/ui/badge";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useAttendance, useEmployees, useLocations, useEmployeeShifts } from "@/hooks/use-data";
 import { createCheckIn, updateCheckOut } from "@/lib/services/attendance";
-import { notifyHrLateArrival } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -49,13 +49,15 @@ const attendanceStatusLabels: Record<string, string> = {
 export default function AttendancePage() {
   const { currentUser } = useRoleContext();
   const today = new Date().toISOString().split("T")[0];
-  const { data: attendance, loading, refetch } = useAttendance(today);
+  const [selectedDate, setSelectedDate] = useState(today);
+  const { data: attendance, loading, refetch } = useAttendance(selectedDate);
   const { data: employees } = useEmployees();
   const { data: locations } = useLocations();
   const { data: employeeShifts } = useEmployeeShifts(currentUser?.employeeId);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const isViewingToday = selectedDate === today;
 
   const canViewTeam = ["Superadmin", "Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
   const visibleAttendance = canViewTeam
@@ -81,6 +83,10 @@ export default function AttendancePage() {
 
   const handleCheckIn = async () => {
     if (!currentUser?.orgId || !currentUser?.employeeId) return;
+    if (!isViewingToday) {
+      setError("يمكن تسجيل الحضور لليوم الحالي فقط. غيّر التاريخ إلى اليوم للتسجيل.");
+      return;
+    }
     setSubmitting(true);
     setError("");
 
@@ -142,10 +148,6 @@ export default function AttendancePage() {
     if (err) {
       setError(err.message);
     } else {
-      if (status === "late" && currentUser.orgId) {
-        const empName = employees.find(e => e.id === currentUser.employeeId)?.full_name as string || currentUser.name || "Employee";
-        await notifyHrLateArrival(currentUser.orgId, empName, lateMinutes);
-      }
       refetch();
     }
     setSubmitting(false);
@@ -153,6 +155,10 @@ export default function AttendancePage() {
 
   const handleCheckOut = async () => {
     if (!currentUser?.employeeId || !myAttendance) return;
+    if (!isViewingToday) {
+      setError("يمكن تسجيل الانصراف لليوم الحالي فقط. غيّر التاريخ إلى اليوم للتسجيل.");
+      return;
+    }
     setSubmitting(true);
     setError("");
 
@@ -217,9 +223,19 @@ export default function AttendancePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">الحضور</h1>
-        <p className="text-gray-500 text-sm mt-1">التحقق من التواجد، متابعة التأخير، وتسجيل ساعات العمل.</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">الحضور</h1>
+          <p className="text-gray-500 text-sm mt-1">التحقق من التواجد، متابعة التأخير، وتسجيل ساعات العمل.</p>
+        </div>
+        <div className="w-full sm:w-56">
+          <label className="mb-2 block text-sm font-medium text-gray-700">تاريخ السجل</label>
+          <Input
+            type="date"
+            value={selectedDate}
+            onChange={(event) => setSelectedDate(event.target.value || today)}
+          />
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -237,7 +253,7 @@ export default function AttendancePage() {
             <Button
               className="w-full bg-brand hover:bg-brand-dark text-white"
               onClick={handleCheckIn}
-              disabled={submitting}
+              disabled={submitting || !isViewingToday}
             >
               تسجيل الحضور
             </Button>
@@ -245,7 +261,7 @@ export default function AttendancePage() {
               variant="outline"
               className="w-full"
               onClick={handleCheckOut}
-              disabled={submitting || !myAttendance?.check_in_at || Boolean(myAttendance?.check_out_at)}
+              disabled={submitting || !isViewingToday || !myAttendance?.check_in_at || Boolean(myAttendance?.check_out_at)}
             >
               {myAttendance?.check_out_at ? "مسجّل الانصراف" : "تسجيل الانصراف"}
             </Button>
