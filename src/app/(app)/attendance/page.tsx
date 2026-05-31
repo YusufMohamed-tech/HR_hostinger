@@ -46,6 +46,18 @@ const attendanceStatusLabels: Record<string, string> = {
   "half-day": "نصف يوم",
 };
 
+const arrivalStatusLabels: Record<string, string> = {
+  early: "حضور مبكر",
+  on_time: "في الموعد",
+  late: "حضور متأخر",
+};
+
+const departureStatusLabels: Record<string, string> = {
+  early_leave: "انصراف مبكر",
+  on_time: "في الموعد",
+  overtime: "انصراف متأخر",
+};
+
 export default function AttendancePage() {
   const { currentUser } = useRoleContext();
   const today = new Date().toISOString().split("T")[0];
@@ -281,7 +293,9 @@ export default function AttendancePage() {
                   <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
                   <TableHead className="font-semibold text-gray-600">تسجيل الحضور</TableHead>
                   <TableHead className="font-semibold text-gray-600">تسجيل الانصراف</TableHead>
-                  <TableHead className="font-semibold text-gray-600">التأخير (دقيقة)</TableHead>
+                  <TableHead className="font-semibold text-gray-600">حالة الحضور</TableHead>
+                  <TableHead className="font-semibold text-gray-600">حالة الانصراف</TableHead>
+                  <TableHead className="font-semibold text-gray-600">الفروقات</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -290,8 +304,19 @@ export default function AttendancePage() {
                   const checkInAt = typeof row.check_in_at === "string" ? row.check_in_at : null;
                   const checkOutAt = typeof row.check_out_at === "string" ? row.check_out_at : null;
                   const lateMinutes = typeof row.late_minutes === "number" ? row.late_minutes : 0;
+                  const earlyArrivalMinutes = typeof row.early_arrival_minutes === "number" ? row.early_arrival_minutes : 0;
+                  const earlyLeaveMinutes = typeof row.early_leave_minutes === "number" ? row.early_leave_minutes : 0;
+                  const overtimeMinutes = typeof row.overtime_minutes === "number" ? row.overtime_minutes : 0;
+                  const arrivalStatus = typeof row.arrival_status === "string" ? row.arrival_status : "on_time";
+                  const departureStatus = typeof row.departure_status === "string" ? row.departure_status : "";
                   const employee = (row.employee ?? null) as Record<string, unknown> | null;
                   const employeeName = typeof employee?.full_name === "string" ? employee.full_name : "—";
+                  const differences = [
+                    lateMinutes > 0 ? `تأخير ${lateMinutes}د` : "",
+                    earlyArrivalMinutes > 0 ? `مبكر ${earlyArrivalMinutes}د` : "",
+                    earlyLeaveMinutes > 0 ? `انصراف مبكر ${earlyLeaveMinutes}د` : "",
+                    overtimeMinutes > 0 ? `إضافي ${overtimeMinutes}د` : "",
+                  ].filter(Boolean);
                   return (
                     <TableRow key={String(row.id)}>
                       <TableCell className="font-medium text-gray-900">{employeeName}</TableCell>
@@ -302,7 +327,9 @@ export default function AttendancePage() {
                       </TableCell>
                       <TableCell className="text-gray-600">{checkInAt ? new Date(checkInAt).toLocaleTimeString() : "—"}</TableCell>
                       <TableCell className="text-gray-600">{checkOutAt ? new Date(checkOutAt).toLocaleTimeString() : "—"}</TableCell>
-                      <TableCell className="text-gray-600">{lateMinutes}</TableCell>
+                      <TableCell className="text-gray-600">{arrivalStatusLabels[arrivalStatus] || arrivalStatus}</TableCell>
+                      <TableCell className="text-gray-600">{departureStatus ? departureStatusLabels[departureStatus] || departureStatus : "—"}</TableCell>
+                      <TableCell className="text-gray-600">{differences.length > 0 ? differences.join("، ") : "—"}</TableCell>
                     </TableRow>
                   );
                 })}
