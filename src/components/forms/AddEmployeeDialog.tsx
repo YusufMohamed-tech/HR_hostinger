@@ -10,8 +10,9 @@ import {
 } from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { useDepartments, useLocations, useEmployees } from "@/hooks/use-data";
+import { useDepartments, useLocations, useEmployees, useShifts } from "@/hooks/use-data";
 import { createEmployee, createEmployeeAccount } from "@/lib/services/employees";
+import { assignEmployeeShift } from "@/lib/services/schedule";
 import { updateDepartment } from "@/lib/services/departments";
 import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
 
@@ -36,12 +37,14 @@ const employeeDialogContentClass =
   "max-h-[calc(100dvh-1.5rem)] overflow-y-auto p-3 sm:max-w-[760px] sm:p-4";
 const twoColumnGridClass = "grid grid-cols-1 gap-4 md:grid-cols-2";
 const threeColumnGridClass = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3";
+const todayString = () => new Date().toISOString().split("T")[0];
 
 export function AddEmployeeDialog({ onSuccess }: Props) {
   const { currentUser } = useRoleContext();
   const { data: departments } = useDepartments();
   const { data: locations } = useLocations();
   const { data: employees } = useEmployees();
+  const { data: shifts } = useShifts();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -74,8 +77,14 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     payment_method: "",
     bank_account: "",
   });
+  const [shiftForm, setShiftForm] = useState({
+    shift_id: "",
+    start_date: "",
+    end_date: "",
+  });
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
+  const setShift = (key: string, value: string | null) => setShiftForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
   const handleDepartmentManagerChange = (checked: boolean) => {
     setIsDepartmentManager(checked);
@@ -133,6 +142,23 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       }
     }
 
+    if (shiftForm.shift_id && createdEmployee?.id) {
+      const { error: shiftError } = await assignEmployeeShift({
+        org_id: currentUser.orgId,
+        employee_id: String(createdEmployee.id),
+        shift_id: shiftForm.shift_id,
+        start_date: shiftForm.start_date || parsed.data.hiring_date || todayString(),
+        end_date: shiftForm.end_date || undefined,
+      });
+
+      if (shiftError) {
+        setError(`تم حفظ الموظف، لكن فشل إسناد الشيفت: ${shiftError.message}`);
+        setSubmitting(false);
+        onSuccess();
+        return;
+      }
+    }
+
     if (createLoginAccount && createdEmployee?.id && parsed.data.email) {
       const { error: accountError } = await createEmployeeAccount({
         employee_id: String(createdEmployee.id),
@@ -177,6 +203,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       bank_account: "",
     });
     setIsDepartmentManager(false);
+    setShiftForm({ shift_id: "", start_date: "", end_date: "" });
     setCreateLoginAccount(false);
     setAccountRole("employee");
     setAccountPassword("");
@@ -256,6 +283,39 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
               <div className="space-y-2">
                 <Label>جوال جهة الطوارئ</Label>
                 <Input value={form.emergency_contact_phone} onChange={(e) => set("emergency_contact_phone", e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-700">الشيفت وساعات العمل</p>
+                <p className="mt-1 text-xs text-gray-500">اختيار الشيفت هنا يربط الموظف بساعات دخول وانصراف محددة لحساب الحضور المبكر والتأخير والانصراف المبكر أو المتأخر.</p>
+              </div>
+              <div className={threeColumnGridClass}>
+                <div className="space-y-2">
+                  <Label>الشيفت</Label>
+                  <Select value={shiftForm.shift_id} onValueChange={(v) => setShift("shift_id", v || "")}>
+                    <SelectTrigger><SelectValue placeholder="اختر شيفت" /></SelectTrigger>
+                    <SelectContent>
+                      {shifts.map((shift) => {
+                        const start = typeof shift.start_time === "string" ? shift.start_time.slice(0, 5) : "--:--";
+                        const end = typeof shift.end_time === "string" ? shift.end_time.slice(0, 5) : "--:--";
+                        return (
+                          <SelectItem key={String(shift.id)} value={String(shift.id)}>
+                            {String(shift.name)} ({start} - {end})
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>بداية تطبيق الشيفت</Label>
+                  <Input type="date" value={shiftForm.start_date} onChange={(e) => setShift("start_date", e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>نهاية تطبيق الشيفت</Label>
+                  <Input type="date" value={shiftForm.end_date} onChange={(e) => setShift("end_date", e.target.value)} />
+                </div>
               </div>
             </div>
           </div>
