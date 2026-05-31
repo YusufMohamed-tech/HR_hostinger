@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "apply:schema": "node scripts/apply-schema.mjs",
+    "apply:migration": "node scripts/apply-migration.mjs",
     "seed:admin": "node scripts/seed-initial-admin.mjs",
     "seed:demo": "node scripts/seed-demo-users.mjs",
     "seed:production-users": "node scripts/seed-production-users.mjs"

@@ -22,6 +22,14 @@ if (!connectionString) {
 const schemaPath = path.resolve(process.cwd(), "db", "schema-production-clean.sql");
 const sql = fs.readFileSync(schemaPath, "utf8");
 
+if (process.env.ALLOW_DESTRUCTIVE_SCHEMA_APPLY !== "true") {
+  console.error("Refusing to apply db/schema-production-clean.sql because it drops live tables.");
+  console.error("This command is only for a full local/staging reset.");
+  console.error("Use `npm run apply:migration -- db/<migration>.sql` for production-safe changes.");
+  console.error("If you intentionally want a full reset, set ALLOW_DESTRUCTIVE_SCHEMA_APPLY=true.");
+  process.exit(1);
+}
+
 const client = new pg.Client({
   connectionString,
   ssl: connectionString.includes('supabase') ? { rejectUnauthorized: false } : false,
