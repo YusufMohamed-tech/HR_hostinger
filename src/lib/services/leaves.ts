@@ -6,7 +6,7 @@ export async function getLeaveRequests(orgId: string) {
   const supabase = createClient();
   const result = await supabase
     .from("leave_requests")
-    .select("*, employee:employee_id(full_name,user_id)")
+    .select("*, employee:employee_id(full_name,user_id,manager_id)")
     .eq("org_id", orgId)
     .order("requested_at", { ascending: false });
 
@@ -211,7 +211,7 @@ export async function approveLeaveRequest(
 export async function advanceLeaveApproval(
   request: Record<string, unknown>,
   decision: "approved" | "rejected",
-  actor?: { userId?: string; role?: Role | null },
+  actor?: { userId?: string; employeeId?: string; role?: Role | null },
   note?: string
 ) {
   const requestId = typeof request.id === "string" ? request.id : "";
@@ -221,7 +221,11 @@ export async function advanceLeaveApproval(
   const history = Array.isArray(request.approval_history) ? request.approval_history : [];
   const now = new Date().toISOString();
   const actorUserId = actor?.userId;
+  const actorEmployeeId = actor?.employeeId || "";
   const actorRole = actor?.role ?? null;
+  const employee = request.employee as Record<string, unknown> | null | undefined;
+  const managerId = typeof employee?.manager_id === "string" ? employee.manager_id : "";
+  const totalSteps = Number(request.total_steps || 2);
 
   if (!requestId) {
     return { data: null, error: { message: "Leave request is missing an id." } };
@@ -237,12 +241,34 @@ export async function advanceLeaveApproval(
   }
 
   const isHrAdminRequest = requesterRoleResult.data === "HR_Admin";
+  const isHrRecruitmentRequest = requesterRoleResult.data === "HR_Recruitment";
 
-  if (isHrAdminRequest && actorRole !== "Superadmin") {
+  if ((isHrAdminRequest || isHrRecruitmentRequest) && actorRole !== "Superadmin") {
     return {
       data: null,
-      error: { message: "طلبات إجازة مسؤول الموارد البشرية تعتمد من المشرف العام فقط." },
+      error: { message: "طلبات إجازة HR أو Recruiter تعتمد من المشرف العام فقط." },
     };
+  }
+
+  const canApproveManagerStep = actorRole === "Admin"
+    || actorRole === "Superadmin"
+    || (!!actorEmployeeId && !!managerId && actorEmployeeId === managerId);
+  const canApproveHrStep = actorRole === "Admin" || actorRole === "HR_Admin" || actorRole === "Superadmin";
+
+  if (!isHrAdminRequest && !isHrRecruitmentRequest) {
+    if (currentStep <= 1 && !canApproveManagerStep) {
+      return {
+        data: null,
+        error: { message: "هذا الطلب ينتظر موافقة المدير المباشر أولًا." },
+      };
+    }
+
+    if (currentStep >= 2 && !canApproveHrStep) {
+      return {
+        data: null,
+        error: { message: "هذا الطلب ينتظر موافقة HR." },
+      };
+    }
   }
 
   const historyEntry = {
@@ -269,7 +295,7 @@ export async function advanceLeaveApproval(
     });
   }
 
-  if (isHrAdminRequest) {
+  if (isHrAdminRequest || isHrRecruitmentRequest) {
     return approveLeaveRequest(request, {
       status: "approved",
       manager_approval_status: "approved",
@@ -283,7 +309,7 @@ export async function advanceLeaveApproval(
     });
   }
 
-  if (currentStep < 2) {
+  if (currentStep < totalSteps) {
     return updateLeaveRequest(requestId, {
       status: "pending",
       manager_approval_status: "approved",

@@ -45,6 +45,22 @@ const leaveTypeLabels: Record<string, string> = {
   emergency: "طارئة",
 };
 
+function getWorkflowStageLabel(request: Record<string, unknown>) {
+  const status = typeof request.status === "string" ? request.status : "pending";
+  const currentStep = Number(request.current_step || 1);
+  const managerStatus = typeof request.manager_approval_status === "string" ? request.manager_approval_status : "pending";
+  const hrStatus = typeof request.hr_approval_status === "string" ? request.hr_approval_status : "pending";
+
+  if (status === "approved") return "تم الاعتماد";
+  if (status === "rejected") {
+    if (managerStatus === "rejected") return "مرفوض من المدير";
+    if (hrStatus === "rejected") return "مرفوض من HR";
+    return "مرفوض";
+  }
+  if (currentStep <= 1) return "بانتظار المدير";
+  return "بانتظار HR";
+}
+
 export default function LeavePage() {
   const searchParams = useSearchParams();
   const { currentUser } = useRoleContext();
@@ -56,11 +72,22 @@ export default function LeavePage() {
   const isSelfServiceView = !isApprover || (isHRAdmin && searchParams.get("view") === "mine");
   const canApprove = isApprover && !isSelfServiceView;
   const isOwnRequest = (req: Record<string, unknown>) => String(req.employee_id ?? "") === currentUser?.employeeId;
+  const isManagedRequest = (req: Record<string, unknown>) => {
+    const employee = (req.employee ?? null) as Record<string, unknown> | null;
+    return Boolean(currentUser?.employeeId && employee?.manager_id === currentUser.employeeId);
+  };
+  const isHrReviewableRequest = (req: Record<string, unknown>) => {
+    const currentStep = Number(req.current_step || 1);
+    const status = typeof req.status === "string" ? req.status : "pending";
+    return currentStep >= 2 || status !== "pending";
+  };
   const visibleRequests = isSelfServiceView
     ? leaveRequests.filter((req) => isOwnRequest(req as Record<string, unknown>))
     : isHRAdmin
-      ? leaveRequests.filter((req) => !isOwnRequest(req as Record<string, unknown>))
-      : leaveRequests;
+      ? leaveRequests.filter((req) => !isOwnRequest(req as Record<string, unknown>) && isHrReviewableRequest(req as Record<string, unknown>))
+      : role === "Training_Manager"
+        ? leaveRequests.filter((req) => isManagedRequest(req as Record<string, unknown>))
+        : leaveRequests;
   const balance = (balances[0] ?? null) as Record<string, unknown> | null;
   const sickRemaining = typeof balance?.sick_remaining === "number" ? balance.sick_remaining : 0;
   const vacationRemaining = typeof balance?.vacation_remaining === "number" ? balance.vacation_remaining : 0;
@@ -119,6 +146,7 @@ export default function LeavePage() {
                 <TableHead className="font-semibold text-gray-600">النوع</TableHead>
                 <TableHead className="font-semibold text-gray-600">التواريخ</TableHead>
                 <TableHead className="font-semibold text-gray-600">الأيام</TableHead>
+                <TableHead className="font-semibold text-gray-600">مرحلة الاعتماد</TableHead>
                 <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
                 <TableHead className="font-semibold text-gray-600">السبب</TableHead>
                 {canApprove && <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>}
@@ -128,11 +156,13 @@ export default function LeavePage() {
               {visibleRequests.map((req) => {
                 const reqRecord = req as Record<string, unknown>;
                 const reqId = String(reqRecord.id ?? "");
-                const requesterRole = typeof reqRecord.requester_role === "string" ? reqRecord.requester_role : null;
-                const requiresSuperadminApproval = requesterRole === "HR_Admin";
+                const currentStep = Number(reqRecord.current_step || 1);
+                const canReviewCurrentStep = role === "Admin"
+                  || (role === "Training_Manager" && currentStep <= 1 && isManagedRequest(reqRecord))
+                  || (role === "HR_Admin" && currentStep >= 2);
                 const canReviewRequest = canApprove
                   && !isOwnRequest(reqRecord)
-                  && (!requiresSuperadminApproval || role === "Superadmin");
+                  && canReviewCurrentStep;
                 const employee = (reqRecord.employee ?? null) as Record<string, unknown> | null;
                 const employeeName = typeof employee?.full_name === "string" ? employee.full_name : "—";
                 const leaveType = typeof reqRecord.leave_type === "string" ? reqRecord.leave_type : "—";
@@ -151,6 +181,7 @@ export default function LeavePage() {
                     <TableCell className="text-gray-600">{leaveTypeLabels[leaveType] || leaveType}</TableCell>
                     <TableCell className="text-gray-600">{startDateStr || "—"} ← {endDateStr || "—"}</TableCell>
                     <TableCell className="text-gray-600">{dayCount ?? "—"}</TableCell>
+                    <TableCell className="text-gray-600">{getWorkflowStageLabel(reqRecord)}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={statusStyle[status] || "bg-gray-100 text-gray-600 border-gray-200"}>
                         {statusLabels[status] || status}
@@ -225,7 +256,7 @@ function LeaveDecisionDialog({
     const { data, error: decisionError } = await advanceLeaveApproval(
       reqRecord,
       decision,
-      { userId: currentUser?.id, role: currentUser?.role },
+      { userId: currentUser?.id, employeeId: currentUser?.employeeId, role: currentUser?.role },
       note
     );
     setSubmitting(false);
