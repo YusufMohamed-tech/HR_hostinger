@@ -4,7 +4,7 @@ export async function getEmployees(orgId: string) {
   const supabase = createClient();
   const result = await supabase
     .from("employees")
-    .select("*, department:department_id(name), location:location_id(name)")
+    .select("*, department:department_id(name), location:location_id(name), manager:manager_id(full_name)")
     .eq("org_id", orgId)
     .order("full_name");
 

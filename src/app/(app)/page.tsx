@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRoleContext } from "@/providers/RoleProvider";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MiniLineChart } from "@/components/charts/MiniLineChart";
@@ -15,6 +17,10 @@ import {
   Bell,
   CalendarDays
 } from "lucide-react";
+
+function getEmployeeFromRow(row: Record<string, unknown>) {
+  return (row.employee ?? null) as Record<string, unknown> | null;
+}
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -42,19 +48,36 @@ export default function DashboardPage() {
     return null;
   }
 
+  const isManager = currentUser?.role === "Training_Manager";
   const canViewOrgStats = ["Admin", "HR_Admin"].includes(currentUser?.role || "");
+  const teamEmployees = isManager
+    ? employees.filter((employee) => String((employee as Record<string, unknown>).manager_id || "") === currentUser?.employeeId)
+    : [];
+  const dashboardEmployees = isManager ? teamEmployees : employees;
+  const teamEmployeeIds = new Set(teamEmployees.map((employee) => String((employee as Record<string, unknown>).id || "")));
 
-  const todayRecords = allAttendance.filter(row => (row as Record<string, unknown>).work_date === today);
+  const scopedAttendance = isManager
+    ? allAttendance.filter((row) => {
+        const employee = getEmployeeFromRow(row as Record<string, unknown>);
+        return String(employee?.manager_id || "") === currentUser?.employeeId;
+      })
+    : allAttendance;
+  const todayRecords = scopedAttendance.filter(row => (row as Record<string, unknown>).work_date === today);
   const presentCount = todayRecords.filter((row) => String((row as Record<string, unknown>).status ?? "") === "present").length;
   const lateCount = todayRecords.filter((row) => String((row as Record<string, unknown>).status ?? "") === "late").length;
   const onLeaveCount = todayRecords.filter((row) => String((row as Record<string, unknown>).status ?? "") === "on_leave").length;
-  const absentCount = Math.max(0, employees.length - presentCount - lateCount - onLeaveCount);
+  const absentCount = Math.max(0, dashboardEmployees.length - presentCount - lateCount - onLeaveCount);
 
   const pendingTasks = tasks.filter((task) => {
     const status = String((task as Record<string, unknown>).status ?? "");
     return status === "pending" || status === "in_progress";
   }).length;
-  const pendingLeaves = leaves.filter((req) => String((req as Record<string, unknown>).status ?? "") === "pending").length;
+  const pendingLeaves = leaves.filter((req) => {
+    const request = req as Record<string, unknown>;
+    const isPending = String(request.status ?? "") === "pending";
+    if (!isManager) return isPending;
+    return isPending && Number(request.current_step || 1) <= 1 && teamEmployeeIds.has(String(request.employee_id || ""));
+  }).length;
   
   const firstAttendance = todayRecords.find(r => (r as Record<string, unknown>).employee_id === currentUser?.employeeId);
   const myStatus = typeof firstAttendance?.status === "string" ? firstAttendance.status : "لم يسجل";
@@ -65,7 +88,7 @@ export default function DashboardPage() {
     return d.toISOString().split("T")[0];
   });
   const chartData = last7Days.map(date => {
-    return allAttendance.filter(row => (row as Record<string, unknown>).work_date === date).length;
+    return scopedAttendance.filter(row => (row as Record<string, unknown>).work_date === date).length;
   });
 
   const nextShift = myShifts.length > 0 ? String(((myShifts[0] as Record<string, unknown>).shift as Record<string, unknown>)?.name || "مخصصة") : "لا يوجد";
@@ -78,10 +101,21 @@ export default function DashboardPage() {
         { label: "طلبات إجازة معلقة", value: String(pendingLeaves), icon: ClipboardList, change: "تحتاج مراجعة" },
       ]
     : [
+        ...(isManager
+          ? [
+              { label: "فريقي", value: String(teamEmployees.length), icon: Users, change: "موظفون معينون لك" },
+              { label: "حضور الفريق اليوم", value: String(presentCount + lateCount), icon: Clock, change: `${lateCount} متأخر، ${absentCount} غائب` },
+              { label: "إجازات تنتظر موافقتك", value: String(pendingLeaves), icon: ClipboardList, change: "مرحلة المدير المباشر" },
+            ]
+          : []),
         { label: "مهامي", value: String(pendingTasks), icon: CheckSquare, change: "مستحقة قريبًا" },
-        { label: "الحضور", value: todayRecords.some(r => String((r as Record<string, unknown>).employee_id) === currentUser?.employeeId) ? myStatus : "لم يسجل", icon: Clock, change: "اليوم" },
-        { label: "الوردية التالية", value: nextShift, icon: CalendarDays, change: "قادمة" },
-        { label: "التنبيهات", value: String(notifications.length), icon: Bell, change: "جديد" },
+        ...(!isManager
+          ? [
+              { label: "الحضور", value: todayRecords.some(r => String((r as Record<string, unknown>).employee_id) === currentUser?.employeeId) ? myStatus : "لم يسجل", icon: Clock, change: "اليوم" },
+              { label: "الوردية التالية", value: nextShift, icon: CalendarDays, change: "قادمة" },
+              { label: "التنبيهات", value: String(notifications.length), icon: Bell, change: "جديد" },
+            ]
+          : [{ label: "التنبيهات", value: String(notifications.length), icon: Bell, change: "جديد" }]),
       ];
 
   return (
@@ -114,6 +148,54 @@ export default function DashboardPage() {
           );
         })}
       </div>
+
+      {isManager && (
+        <Card>
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>فريقي</CardTitle>
+              <CardDescription>الموظفون الذين تم تعيينك كمدير مباشر لهم من HR.</CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link href="/employees">عرض الموظفين</Link>
+              </Button>
+              <Button asChild className="bg-brand text-white hover:bg-brand-dark" size="sm">
+                <Link href="/leave">مراجعة الإجازات</Link>
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {teamEmployees.slice(0, 6).map((employee) => {
+                const record = employee as Record<string, unknown>;
+                const employeeId = String(record.id || "");
+                const name = String(record.full_name || "موظف");
+                const title = String(record.job_title || "بدون مسمى");
+                const location = (record.location ?? null) as Record<string, unknown> | null;
+                const locationName = typeof location?.name === "string" ? location.name : "بدون موقع";
+
+                return (
+                  <Link
+                    key={employeeId}
+                    href={`/employees/${employeeId}`}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 transition-colors hover:border-brand/40 hover:bg-brand-light/40"
+                  >
+                    <p className="font-medium text-slate-950">{name}</p>
+                    <p className="mt-1 text-xs text-slate-500">{title}</p>
+                    <p className="mt-2 text-xs text-slate-400">{locationName}</p>
+                  </Link>
+                );
+              })}
+            </div>
+            {teamEmployees.length === 0 && (
+              <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center text-sm text-slate-500">
+                لا يوجد موظفون معينون لك حتى الآن. HR يمكنه تعيين المدير المباشر من ملف الموظف.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
         <Card className="col-span-4">

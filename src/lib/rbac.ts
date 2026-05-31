@@ -76,6 +76,9 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     normalizedPath.startsWith("/personnel") ||
     normalizedPath.startsWith("/payroll")
   ) {
+    if (normalizedPath.startsWith("/employees")) {
+      return ["Admin", "HR_Admin", "Training_Manager"].includes(role);
+    }
     return ["Admin", "HR_Admin"].includes(role);
   }
 
