@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback, useMemo } from "react";
+import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback, useMemo, useRef } from "react";
 import { OrgMembershipRole, User, WorkspaceRole } from "@/types";
 import { createClient } from "@/lib/supabase/client";
 import { roleFromOrgRole } from "@/lib/rbac";
@@ -18,10 +18,16 @@ const RoleContext = createContext<RoleContextProps | undefined>(undefined);
 export function RoleProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const currentUserRef = useRef<User | null>(null);
   const supabase = useMemo(() => createClient(), []);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  const refresh = useCallback(async (options?: { showLoading?: boolean }) => {
+    const showLoading = options?.showLoading ?? !currentUserRef.current;
+    if (showLoading) setLoading(true);
     const { data: userData, error: userError } = await supabase.auth.getUser();
     const user = userData?.user;
 
@@ -115,9 +121,15 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   useEffect(() => {
-    refresh();
-    const { data: listener } = supabase.auth.onAuthStateChange(() => {
-      refresh();
+    refresh({ showLoading: true });
+    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "TOKEN_REFRESHED") return;
+      if (event === "SIGNED_OUT") {
+        setCurrentUser(null);
+        setLoading(false);
+        return;
+      }
+      refresh({ showLoading: false });
     });
     return () => {
       listener.subscription.unsubscribe();
