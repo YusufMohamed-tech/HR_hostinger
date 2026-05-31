@@ -28,7 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useTasks, useEmployees, useLocations } from "@/hooks/use-data";
-import { createTask, assignTask, updateTask, updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
+import { createManagerTask, createTask, assignTask, updateTask, updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
 import { notifyTaskAssigned } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 import { getValidationMessage, taskFormSchema } from "@/lib/validation";
@@ -184,10 +184,15 @@ export default function TasksPage() {
   const { data: locations } = useLocations();
 
   const isAdmin = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
+  const isManager = currentUser?.role === "Training_Manager";
 
   if (loading) return <PageSkeleton />;
 
   const allTaskRecords = tasks as TaskRecord[];
+  const teamEmployees = isManager
+    ? employees.filter((employee) => String((employee as TaskRecord).manager_id || "") === currentUser?.employeeId)
+    : employees;
+  const teamEmployeeIds = new Set(teamEmployees.map((employee) => String((employee as TaskRecord).id || "")));
 
   const myTasks = allTaskRecords.filter((t) => {
     const assignments = Array.isArray(t.assignments) ? (t.assignments as TaskRecord[]) : [];
@@ -195,6 +200,14 @@ export default function TasksPage() {
       (a) => String((a.employee as TaskRecord | undefined)?.id ?? "") === currentUser?.employeeId
     );
   });
+  const managerTasks = allTaskRecords.filter((task) => {
+    const assignments = Array.isArray(task.assignments) ? (task.assignments as TaskRecord[]) : [];
+    return assignments.some((assignment) => {
+      const employeeId = String((assignment.employee as TaskRecord | undefined)?.id ?? "");
+      return employeeId === currentUser?.employeeId || teamEmployeeIds.has(employeeId);
+    });
+  });
+  const visibleTasks = isAdmin ? allTaskRecords : isManager ? managerTasks : myTasks;
 
   return (
     <div className="flex flex-col gap-6">
@@ -203,14 +216,14 @@ export default function TasksPage() {
           <h1 className="text-2xl font-bold tracking-tight">إسناد المهام</h1>
           <p className="text-gray-500 text-sm mt-1">إسناد ومتابعة المهام التشغيلية وتتبعها.</p>
         </div>
-        {isAdmin && (
-          <CreateTaskDialog employees={employees} locations={locations} onSuccess={refetch} />
+        {(isAdmin || isManager) && (
+          <CreateTaskDialog employees={teamEmployees} locations={locations} onSuccess={refetch} managerMode={isManager} />
         )}
       </div>
 
       <Card className="border-none shadow-sm">
         <CardContent className="p-0">
-          <TasksTable tasks={isAdmin ? allTaskRecords : myTasks} currentUser={currentUser} refetch={refetch} />
+          <TasksTable tasks={visibleTasks} currentUser={currentUser} refetch={refetch} />
         </CardContent>
       </Card>
     </div>
@@ -221,12 +234,14 @@ function CreateTaskDialog({
   employees,
   locations,
   onSuccess,
+  managerMode = false,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   employees: any[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   locations: any[];
   onSuccess: () => void;
+  managerMode?: boolean;
 }) {
   const { currentUser } = useRoleContext();
   const [open, setOpen] = useState(false);
@@ -246,6 +261,10 @@ function CreateTaskDialog({
 
   const handleSubmit = async () => {
     if (!currentUser?.orgId) return;
+    if (managerMode && !form.employee_id) {
+      setError("اختر موظفًا من فريقك لتكليفه بالمهمة.");
+      return;
+    }
 
     const parsed = taskFormSchema.safeParse(form);
     if (!parsed.success) {
@@ -256,15 +275,24 @@ function CreateTaskDialog({
     setSubmitting(true);
     setError("");
 
-    const { data, error: err } = await createTask({
-      org_id: currentUser.orgId,
-      title: parsed.data.title,
-      description: parsed.data.description,
-      priority: parsed.data.priority,
-      due_date: parsed.data.due_date,
-      location_id: parsed.data.location_id,
-      created_by: currentUser.id,
-    });
+    const { data, error: err } = managerMode
+      ? await createManagerTask({
+          title: parsed.data.title,
+          description: parsed.data.description,
+          priority: parsed.data.priority,
+          due_date: parsed.data.due_date,
+          location_id: parsed.data.location_id,
+          employee_id: parsed.data.employee_id,
+        })
+      : await createTask({
+          org_id: currentUser.orgId,
+          title: parsed.data.title,
+          description: parsed.data.description,
+          priority: parsed.data.priority,
+          due_date: parsed.data.due_date,
+          location_id: parsed.data.location_id,
+          created_by: currentUser.id,
+        });
 
     if (err || !data) {
       setError(err?.message || "فشل إنشاء المهمة");
@@ -272,7 +300,7 @@ function CreateTaskDialog({
       return;
     }
 
-    if (parsed.data.employee_id) {
+    if (!managerMode && parsed.data.employee_id) {
       await assignTask({
         org_id: currentUser.orgId,
         task_id: data.id,
@@ -363,13 +391,18 @@ function CreateTaskDialog({
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="اختر الموظف" />
                 </SelectTrigger>
-                <SelectContent>
-                  {employees.map((emp) => (
+              <SelectContent>
+                {employees.map((emp) => (
                     <SelectItem key={emp.id} value={String(emp.id)}>
                       {String(emp.full_name || emp.name)}
                     </SelectItem>
-                  ))}
-                </SelectContent>
+                ))}
+                {employees.length === 0 && (
+                  <SelectItem value="__empty" disabled>
+                    لا يوجد موظفون في فريقك
+                  </SelectItem>
+                )}
+              </SelectContent>
               </Select>
             </div>
           </div>

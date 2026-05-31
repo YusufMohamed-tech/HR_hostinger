@@ -66,6 +66,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return ["Admin", "HR_Admin"].includes(role);
   }
 
+  if (normalizedPath.startsWith("/api/manager")) {
+    return role === "Training_Manager";
+  }
+
   if (normalizedPath.startsWith("/recruitment")) {
     return ["Admin", "HR_Recruitment"].includes(role);
   }

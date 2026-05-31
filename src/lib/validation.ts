@@ -58,7 +58,7 @@ export const leaveRequestFormSchema = z
 export const taskFormSchema = z.object({
   title: z.string().trim().min(2, "Title is required.").max(160),
   description: optionalLongString,
-  priority: z.enum(["low", "medium", "high"]),
+  priority: z.enum(["low", "medium", "high", "urgent"]),
   due_date: optionalDate,
   location_id: optionalUuid,
   employee_id: optionalUuid,
