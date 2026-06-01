@@ -68,7 +68,7 @@ export default function PersonnelPage() {
         org_id: currentUser.orgId,
         user_id: currentUser.id,
         title: "تنبيه: مستند يقترب من الانتهاء",
-        message: `مستند "${String(file.category || "ملف")}" للموظف ${String(employee?.full_name || "غير معروف")} سينتهي خلال ${daysLeft} يوم.`,
+        body: `مستند "${String(file.category || "ملف")}" للموظف ${String(employee?.full_name || "غير معروف")} سينتهي خلال ${daysLeft} يوم.`,
         type: "expiry_alert",
         link: "/personnel",
       });

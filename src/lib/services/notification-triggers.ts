@@ -30,7 +30,14 @@ async function notifyAdmins(orgId: string, title: string, body: string, type: "s
 /**
  * Creates a notification for a specific employee.
  */
-async function notifyEmployee(orgId: string, employeeId: string, title: string, body: string, type: "system" | "attendance" | "task" | "leave" = "system") {
+async function notifyEmployee(
+  orgId: string,
+  employeeId: string,
+  title: string,
+  body: string,
+  type: "system" | "attendance" | "task" | "leave" = "system",
+  link?: string
+) {
   const supabase = createClient();
   
   // Get the user_id for the employee
@@ -48,6 +55,7 @@ async function notifyEmployee(orgId: string, employeeId: string, title: string, 
     title,
     body,
     type,
+    link: link || null,
     is_read: false
   } as never);
 }
@@ -61,13 +69,14 @@ export async function notifyHrLateArrival(orgId: string, employeeName: string, l
   );
 }
 
-export async function notifyTaskAssigned(orgId: string, employeeId: string, taskTitle: string) {
+export async function notifyTaskAssigned(orgId: string, employeeId: string, taskTitle: string, taskId?: string) {
   await notifyEmployee(
     orgId,
     employeeId,
     "New Task Assigned",
     `You have been assigned a new task: "${taskTitle}".`,
-    "task"
+    "task",
+    taskId ? `/tasks/mine?task=${encodeURIComponent(taskId)}` : "/tasks/mine"
   );
 }
 
