@@ -181,3 +181,28 @@ export async function createMyTaskUpdate(values: {
     error: null,
   };
 }
+
+export async function sendTaskMessage(values: {
+  task_id: string;
+  employee_id: string;
+  message: string;
+}) {
+  const response = await fetch("/api/tasks/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(values),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    return {
+      data: null,
+      error: { message: String(payload?.message || "Unable to send task message.") },
+    };
+  }
+
+  return {
+    data: (payload?.data?.update ?? payload?.data ?? null) as Record<string, unknown> | null,
+    error: null,
+  };
+}
