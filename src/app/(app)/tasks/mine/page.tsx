@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useTasks } from "@/hooks/use-data";
-import { updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
+import { updateMyTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
 import { PageSkeleton } from "@/components/Skeletons";
 
 const statusStyles: Record<string, string> = {
@@ -91,7 +91,6 @@ export default function MyTasksPage() {
                   <TableHead className="font-semibold text-gray-600">الأولوية</TableHead>
                   <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
                   <TableHead className="font-semibold text-gray-600">الاستحقاق</TableHead>
-                  <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
                   <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>
                 </TableRow>
               </TableHeader>
@@ -121,9 +120,6 @@ export default function MyTasksPage() {
                     ? myAssignment.status
                     : typeof taskRecord.status === "string" ? taskRecord.status : "pending";
                   const dueDate = typeof taskRecord.due_date === "string" ? taskRecord.due_date : "—";
-                  const location = (taskRecord.location ?? null) as TaskRecord | null;
-                  const locationName = typeof location?.name === "string" ? location.name : "—";
-
                   return (
                     <TableRow key={taskId}>
                       <TableCell>
@@ -142,7 +138,6 @@ export default function MyTasksPage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-gray-600">{dueDate}</TableCell>
-                      <TableCell className="text-gray-600">{locationName}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <TaskHistoryDialog title={title} updates={updates} />
@@ -158,9 +153,6 @@ export default function MyTasksPage() {
                           {myAssignment && (
                             <TaskUpdateButtons
                               assignmentId={String(myAssignment.id ?? "")}
-                              taskId={taskId}
-                              orgId={currentUser?.orgId || ""}
-                              employeeId={currentUser?.employeeId || ""}
                               onSuccess={refetch}
                             />
                           )}
@@ -180,15 +172,9 @@ export default function MyTasksPage() {
 
 function TaskUpdateButtons({
   assignmentId,
-  taskId,
-  orgId,
-  employeeId,
   onSuccess,
 }: {
   assignmentId: string;
-  taskId: string;
-  orgId: string;
-  employeeId: string;
   onSuccess: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -197,16 +183,11 @@ function TaskUpdateButtons({
   const updateStatus = async (status: string) => {
     setSubmitting(true);
     setError("");
-    const { error: assignmentError } = await updateTaskAssignment(assignmentId, { status });
-    if (assignmentError) { setError(assignmentError.message); setSubmitting(false); return; }
-    await createTaskUpdate({
-      org_id: orgId,
-      task_id: taskId,
-      employee_id: employeeId || undefined,
+    const { error: assignmentError } = await updateMyTaskAssignment({
+      assignment_id: assignmentId,
       status,
-      progress: status === "completed" ? 100 : 50,
-      note: status === "completed" ? "تم الإنجاز" : "بدأ العمل",
     });
+    if (assignmentError) { setError(assignmentError.message); setSubmitting(false); return; }
     setSubmitting(false);
     onSuccess();
   };

@@ -120,6 +120,31 @@ export async function updateTaskAssignment(id: string, values: Record<string, un
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
+export async function updateMyTaskAssignment(values: {
+  assignment_id: string;
+  status: string;
+  note?: string;
+}) {
+  const response = await fetch("/api/tasks/mine", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(values),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    return {
+      data: null,
+      error: { message: String(payload?.message || "Unable to update task status.") },
+    };
+  }
+
+  return {
+    data: (payload?.data?.assignment ?? payload?.data ?? null) as Record<string, unknown> | null,
+    error: null,
+  };
+}
+
 export async function createTaskUpdate(values: Record<string, unknown>) {
   const supabase = createClient();
   const result = await supabase
