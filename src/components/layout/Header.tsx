@@ -56,6 +56,11 @@ export function Header() {
   const searchItems = useMemo(() => {
     if (currentUser?.role === "HR_Recruitment") return RECRUITER_SEARCH_ITEMS;
     if (currentUser?.role === "HR_Admin") return HR_ADMIN_SEARCH_ITEMS;
+    if (currentUser?.role === "Employee") {
+      return ALL_SEARCH_ITEMS.map((item) =>
+        item.href === "/tasks" ? { ...item, label: "مهامي", href: "/tasks/mine" } : item
+      );
+    }
     return ALL_SEARCH_ITEMS;
   }, [currentUser?.role]);
 

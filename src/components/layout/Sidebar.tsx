@@ -41,7 +41,7 @@ export function SidebarContent() {
           { name: "إسناد المهام", href: "/tasks", icon: CheckSquare },
           { name: "مهامي", href: "/tasks/mine", icon: CheckSquare, indent: true },
         ]
-      : [{ name: "مهامي", href: "/tasks", icon: CheckSquare }];
+      : [{ name: "مهامي", href: "/tasks/mine", icon: CheckSquare }];
 
     const leaveLinks = isHRAdmin
       ? [

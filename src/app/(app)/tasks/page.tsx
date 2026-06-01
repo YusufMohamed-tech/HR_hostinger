@@ -118,7 +118,10 @@ function TasksTable({
           const title = typeof taskRecord.title === "string" ? taskRecord.title : "—";
           const description = typeof taskRecord.description === "string" ? taskRecord.description : "";
           const priority = typeof taskRecord.priority === "string" ? taskRecord.priority : "medium";
-          const status = typeof taskRecord.status === "string" ? taskRecord.status : "pending";
+          const firstAssignment = assignments[0];
+          const assignmentStatus = typeof firstAssignment?.status === "string" ? firstAssignment.status : "";
+          const myAssignmentStatus = typeof myAssignment?.status === "string" ? myAssignment.status : "";
+          const status = myAssignmentStatus || assignmentStatus || (typeof taskRecord.status === "string" ? taskRecord.status : "pending");
           const dueDate = typeof taskRecord.due_date === "string" ? taskRecord.due_date : "—";
           const assignees = assignments
             .map((a) => {
@@ -225,8 +228,10 @@ export default function TasksPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">إسناد المهام</h1>
-          <p className="text-gray-500 text-sm mt-1">إسناد ومتابعة المهام التشغيلية وتتبعها.</p>
+          <h1 className="text-2xl font-bold tracking-tight">{canAssignTasks || isManager ? "إسناد المهام" : "مهامي"}</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            {canAssignTasks || isManager ? "إسناد ومتابعة المهام التشغيلية وتتبعها." : "المهام المكلَّف بها، تابع تقدمها وأضف ملاحظاتك."}
+          </p>
         </div>
         {(canAssignTasks || isManager) && (
           <CreateTaskDialog employees={teamEmployees} onSuccess={refetch} managerMode={isManager} />
@@ -469,7 +474,6 @@ function TaskUpdateButtons({
       return;
     }
 
-    const { error: taskError } = await updateTask(taskId, { status });
     const { error: updateError } = await createTaskUpdate({
       org_id: orgId,
       task_id: taskId,
@@ -479,8 +483,8 @@ function TaskUpdateButtons({
       note: status === "completed" ? "تم الإنجاز" : "بدأ العمل",
     });
 
-    if (taskError || updateError) {
-      setError(taskError?.message || updateError?.message || "فشل تحديث المهمة");
+    if (updateError) {
+      setError(updateError.message || "فشل تحديث المهمة");
     }
 
     setSubmitting(false);
