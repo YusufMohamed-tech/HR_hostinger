@@ -36,9 +36,14 @@ export default function EmployeesPage() {
   const isManagerView = currentUser?.role === "Training_Manager";
   const canManageEmployees = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
   const scopedEmployees = useMemo(() => {
-    if (!isManagerView) return employees;
-    return employees.filter((emp) => String((emp as Record<string, unknown>).manager_id || "") === currentUser?.employeeId);
-  }, [currentUser?.employeeId, employees, isManagerView]);
+    const hideOwnInternalProfile = ["Admin", "HR_Admin", "HR_Recruitment"].includes(currentUser?.role || "");
+    const visibleEmployees = hideOwnInternalProfile
+      ? employees.filter((emp) => String((emp as Record<string, unknown>).id || "") !== currentUser?.employeeId)
+      : employees;
+
+    if (!isManagerView) return visibleEmployees;
+    return visibleEmployees.filter((emp) => String((emp as Record<string, unknown>).manager_id || "") === currentUser?.employeeId);
+  }, [currentUser?.employeeId, currentUser?.role, employees, isManagerView]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("الكل");
