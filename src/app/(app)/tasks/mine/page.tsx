@@ -1,6 +1,7 @@
 ﻿"use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CheckSquare, ListChecks, MessageSquare, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useTasks } from "@/hooks/use-data";
-import { updateMyTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
+import { updateMyTaskAssignment, createMyTaskUpdate } from "@/lib/services/tasks";
 import { PageSkeleton } from "@/components/Skeletons";
 
 const statusStyles: Record<string, string> = {
@@ -58,6 +59,13 @@ type TaskRecord = Record<string, unknown>;
 export default function MyTasksPage() {
   const { currentUser } = useRoleContext();
   const { data: tasks, loading, refetch } = useTasks();
+  const searchParams = useSearchParams();
+  const selectedTaskId = searchParams.get("task") || "";
+
+  useEffect(() => {
+    if (!selectedTaskId || loading) return;
+    document.getElementById(`task-${selectedTaskId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [selectedTaskId, loading]);
 
   if (loading) return <PageSkeleton />;
 
@@ -121,7 +129,11 @@ export default function MyTasksPage() {
                     : typeof taskRecord.status === "string" ? taskRecord.status : "pending";
                   const dueDate = typeof taskRecord.due_date === "string" ? taskRecord.due_date : "—";
                   return (
-                    <TableRow key={taskId}>
+                    <TableRow
+                      key={taskId}
+                      id={`task-${taskId}`}
+                      className={selectedTaskId === taskId ? "bg-amber-50 ring-1 ring-amber-300" : undefined}
+                    >
                       <TableCell>
                         <div className="flex flex-col">
                           <span className="font-medium text-gray-900">{title}</span>
@@ -144,8 +156,6 @@ export default function MyTasksPage() {
                           {myAssignment && (
                             <TaskNoteDialog
                               taskId={taskId}
-                              orgId={currentUser?.orgId || ""}
-                              employeeId={currentUser?.employeeId || ""}
                               status={status}
                               onSuccess={refetch}
                             />
@@ -254,8 +264,8 @@ function TaskHistoryDialog({ title, updates }: { title: string; updates: TaskRec
   );
 }
 
-function TaskNoteDialog({ taskId, orgId, employeeId, status, onSuccess }: {
-  taskId: string; orgId: string; employeeId: string; status: string; onSuccess: () => void;
+function TaskNoteDialog({ taskId, status, onSuccess }: {
+  taskId: string; status: string; onSuccess: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -265,9 +275,11 @@ function TaskNoteDialog({ taskId, orgId, employeeId, status, onSuccess }: {
   const handleSubmit = async () => {
     if (!note.trim()) return;
     setSubmitting(true);
-    const { error: updateError } = await createTaskUpdate({
-      org_id: orgId, task_id: taskId, employee_id: employeeId || undefined,
-      status, progress: status === "completed" ? 100 : 50, note: note.trim(),
+    const { error: updateError } = await createMyTaskUpdate({
+      task_id: taskId,
+      status,
+      progress: status === "completed" ? 100 : 50,
+      note: note.trim(),
     });
     if (updateError) { setError(updateError.message); setSubmitting(false); return; }
     setSubmitting(false); setOpen(false); setNote(""); onSuccess();

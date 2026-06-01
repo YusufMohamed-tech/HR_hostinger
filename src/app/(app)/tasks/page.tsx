@@ -1,6 +1,7 @@
 ﻿"use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CheckSquare, ListChecks, MessageSquare, Pencil, Plus, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +29,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useTasks, useEmployees } from "@/hooks/use-data";
-import { createManagerTask, createTask, assignTask, updateManagerTask, updateMyTaskAssignment, updateTask, updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
+import { createManagerTask, createTask, assignTask, updateManagerTask, updateMyTaskAssignment, updateTask, updateTaskAssignment, createTaskUpdate, createMyTaskUpdate } from "@/lib/services/tasks";
 import { notifyTaskAssigned } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 import { getValidationMessage, taskFormSchema } from "@/lib/validation";
@@ -65,6 +66,7 @@ function TasksTable({
   employees,
   canEdit,
   managerMode,
+  selectedTaskId,
 }: {
   tasks: TaskRecord[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,6 +75,7 @@ function TasksTable({
   employees: TaskRecord[];
   canEdit: boolean;
   managerMode: boolean;
+  selectedTaskId: string;
 }) {
   if (tasks.length === 0) {
     return (
@@ -131,7 +134,11 @@ function TasksTable({
             .filter((n): n is string => Boolean(n));
 
           return (
-            <TableRow key={taskId}>
+            <TableRow
+              key={taskId}
+              id={`task-${taskId}`}
+              className={selectedTaskId === taskId ? "bg-amber-50 ring-1 ring-amber-300" : undefined}
+            >
               <TableCell>
                 <div className="flex flex-col">
                   <span className="font-medium text-gray-900">{title}</span>
@@ -165,8 +172,6 @@ function TasksTable({
                   {myAssignment && (
                     <TaskNoteDialog
                       taskId={taskId}
-                      orgId={currentUser?.orgId || ""}
-                      employeeId={currentUser?.employeeId || ""}
                       status={status}
                       onSuccess={refetch}
                     />
@@ -191,6 +196,13 @@ export default function TasksPage() {
   const { currentUser } = useRoleContext();
   const { data: tasks, loading, refetch } = useTasks();
   const { data: employees } = useEmployees();
+  const searchParams = useSearchParams();
+  const selectedTaskId = searchParams.get("task") || "";
+
+  useEffect(() => {
+    if (!selectedTaskId || loading) return;
+    document.getElementById(`task-${selectedTaskId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [selectedTaskId, loading]);
 
   const isOrgAdmin = ["Superadmin", "Admin"].includes(currentUser?.role || "");
   const isHrAdmin = currentUser?.role === "HR_Admin";
@@ -244,6 +256,7 @@ export default function TasksPage() {
             employees={teamEmployees}
             canEdit={canAssignTasks || isManager}
             managerMode={isManager}
+            selectedTaskId={selectedTaskId}
           />
         </CardContent>
       </Card>
@@ -333,7 +346,7 @@ function CreateTaskDialog({
         progress: 0,
         note: form.initial_message.trim() || "تم إسناد المهمة.",
       });
-      await notifyTaskAssigned(currentUser.orgId, parsed.data.employee_id, parsed.data.title);
+      await notifyTaskAssigned(currentUser.orgId, parsed.data.employee_id, parsed.data.title, String(data.id));
     }
 
     setSubmitting(false);
@@ -743,14 +756,10 @@ function TaskHistoryDialog({
 
 function TaskNoteDialog({
   taskId,
-  orgId,
-  employeeId,
   status,
   onSuccess,
 }: {
   taskId: string;
-  orgId: string;
-  employeeId: string;
   status: string;
   onSuccess: () => void;
 }) {
@@ -764,10 +773,8 @@ function TaskNoteDialog({
     setSubmitting(true);
     setError("");
 
-    const { error: updateError } = await createTaskUpdate({
-      org_id: orgId,
+    const { error: updateError } = await createMyTaskUpdate({
       task_id: taskId,
-      employee_id: employeeId || undefined,
       status,
       progress: status === "completed" ? 100 : 50,
       note: note.trim(),

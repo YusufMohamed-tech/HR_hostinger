@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useRouter } from "next/navigation";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,18 +12,36 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import { PageSkeleton } from "@/components/Skeletons";
 
 export default function NotificationsPage() {
+  const router = useRouter();
   const { currentUser } = useRoleContext();
   const { data: notifications, loading, refetch } = useNotifications();
   const hasUnread = notifications.some((note) => !note.is_read);
 
   if (loading) return <PageSkeleton />;
 
+  const openNotification = async (note: Record<string, unknown>) => {
+    const noteId = String(note.id ?? "");
+    const isRead = Boolean(note.is_read);
+    const link = typeof note.link === "string" ? note.link : "";
+
+    if (noteId && !isRead) {
+      await markNotificationRead(noteId, true);
+      refetch();
+    }
+
+    if (link) {
+      router.push(link);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">الإشعارات</h1>
-          <p className="text-gray-500 text-sm mt-1">تنبيهات داخل النظام للحضور والمهام والاعتمادات.</p>
+          <p className="text-gray-500 text-sm mt-1">
+            تنبيهات المهام والحضور والإجازات مع فتح مباشر لمكان التحديث.
+          </p>
         </div>
         <Button
           variant="outline"
@@ -33,7 +52,7 @@ export default function NotificationsPage() {
             refetch();
           }}
         >
-          Mark all read
+          تحديد الكل كمقروء
         </Button>
       </div>
 
@@ -42,33 +61,33 @@ export default function NotificationsPage() {
           {notifications.map((note) => {
             const noteRecord = note as Record<string, unknown>;
             const noteId = String(noteRecord.id ?? "");
-            const noteType = typeof noteRecord.type === "string" ? noteRecord.type : "update";
-            const noteTitle = typeof noteRecord.title === "string" ? noteRecord.title : "Notification";
+            const noteType = typeof noteRecord.type === "string" ? noteRecord.type : "system";
+            const noteTitle = typeof noteRecord.title === "string" ? noteRecord.title : "إشعار";
             const noteBody = typeof noteRecord.body === "string" ? noteRecord.body : "";
+            const noteLink = typeof noteRecord.link === "string" ? noteRecord.link : "";
             const isRead = Boolean(noteRecord.is_read);
 
             return (
               <div key={noteId} className="flex items-center justify-between gap-4 border-b border-gray-100 px-6 py-4">
-                <div>
+                <button
+                  type="button"
+                  onClick={() => openNotification(noteRecord)}
+                  className="min-w-0 flex-1 text-right"
+                >
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className={isRead ? "bg-gray-100 text-gray-600 border-gray-200" : "bg-brand-light text-brand-dark border-brand/20"}>
+                    <Badge
+                      variant="outline"
+                      className={isRead ? "bg-gray-100 text-gray-600 border-gray-200" : "bg-red-50 text-red-700 border-red-200"}
+                    >
                       {noteType}
                     </Badge>
                     <span className="text-sm font-semibold text-gray-900">{noteTitle}</span>
+                    {!isRead && <span className="h-2 w-2 rounded-full bg-red-600" />}
                   </div>
                   <p className="text-xs text-gray-500 mt-1">{noteBody}</p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={async () => {
-                    if (!noteId) return;
-                    await markNotificationRead(noteId, true);
-                    refetch();
-                  }}
-                  disabled={isRead}
-                >
-                  {isRead ? "Read" : "Mark read"}
+                </button>
+                <Button variant="ghost" size="sm" onClick={() => openNotification(noteRecord)}>
+                  {noteLink ? "فتح" : isRead ? "مقروء" : "تحديد كمقروء"}
                 </Button>
               </div>
             );

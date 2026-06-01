@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { notifyTaskStakeholders } from "@/lib/server/task-notifications";
 
 const allowedStatuses = new Set(["pending", "in_progress", "completed", "rejected", "delayed"]);
 
@@ -85,6 +86,16 @@ export async function PATCH(request: NextRequest) {
   if (taskUpdateError) {
     return NextResponse.json({ message: taskUpdateError.message }, { status: 500 });
   }
+
+  await notifyTaskStakeholders(admin, {
+    orgId,
+    taskId,
+    actorUserId: user.id,
+    actorEmployeeId: employeeId,
+    action: "status",
+    status,
+    note: updateNote,
+  });
 
   return NextResponse.json({ data: { assignment: updatedAssignment } });
 }

@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useRoleContext } from "@/providers/RoleProvider";
+import { useNotifications } from "@/hooks/use-data";
 import {
   Bell,
   Briefcase,
@@ -28,7 +29,9 @@ export function SidebarContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { currentUser } = useRoleContext();
+  const { data: notifications } = useNotifications();
   const leaveView = searchParams.get("view");
+  const unreadNotifications = notifications.filter((note) => !note.is_read).length;
 
   const getSections = () => {
     const role = currentUser?.role ?? "Employee";
@@ -121,6 +124,7 @@ export function SidebarContent() {
                       ? pathname === "/leave" && leaveView !== "mine"
                       : pathname === link.href;
                   const indent = (link as Record<string, unknown>).indent === true;
+                  const isNotificationsLink = link.href === "/notifications";
                   return (
                     <Link
                       key={link.name}
@@ -134,7 +138,12 @@ export function SidebarContent() {
                       )}
                     >
                       <Icon className={cn("h-4 w-4", indent && "h-3.5 w-3.5")} />
-                      {link.name}
+                      <span className="min-w-0 flex-1">{link.name}</span>
+                      {isNotificationsLink && unreadNotifications > 0 && (
+                        <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[11px] font-bold leading-5 text-white">
+                          {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                        </span>
+                      )}
                     </Link>
                   );
                 })}

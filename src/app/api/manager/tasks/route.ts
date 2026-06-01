@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
       title: "تم إسناد مهمة جديدة",
       body: initialMessage || parsed.data.title,
       type: "task",
-      link: "/tasks",
+      link: `/tasks/mine?task=${encodeURIComponent(taskId)}`,
       is_read: false,
     } as never);
   }

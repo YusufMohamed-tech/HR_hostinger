@@ -16,7 +16,7 @@ export async function createNotification(values: {
   org_id: string;
   user_id: string;
   title: string;
-  message: string;
+  body: string;
   type?: string;
   link?: string;
 }) {

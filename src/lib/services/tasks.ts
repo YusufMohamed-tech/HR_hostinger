@@ -155,3 +155,29 @@ export async function createTaskUpdate(values: Record<string, unknown>) {
 
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
+
+export async function createMyTaskUpdate(values: {
+  task_id: string;
+  status: string;
+  progress?: number;
+  note: string;
+}) {
+  const response = await fetch("/api/tasks/updates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(values),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    return {
+      data: null,
+      error: { message: String(payload?.message || "Unable to add task update.") },
+    };
+  }
+
+  return {
+    data: (payload?.data?.update ?? payload?.data ?? null) as Record<string, unknown> | null,
+    error: null,
+  };
+}
