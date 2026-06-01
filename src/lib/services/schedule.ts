@@ -13,9 +13,36 @@ export async function getShifts(orgId: string) {
 
 export async function createShift(values: Record<string, unknown>) {
   const supabase = createClient();
+  const orgId = String(values.org_id || "");
+  const name = String(values.name || "").trim();
+  const normalizedName = name.toLowerCase();
+
+  if (!orgId || !name) {
+    return {
+      data: null,
+      error: { message: "اسم الوردية مطلوب." },
+    };
+  }
+
+  const existing = await supabase
+    .from("shifts")
+    .select("id, name")
+    .eq("org_id", orgId);
+
+  const hasDuplicate = (existing.data || []).some((shift: Record<string, unknown>) =>
+    String(shift.name || "").trim().toLowerCase() === normalizedName
+  );
+
+  if (hasDuplicate) {
+    return {
+      data: null,
+      error: { message: "يوجد وردية بنفس الاسم بالفعل. اختر اسمًا مختلفًا." },
+    };
+  }
+
   const result = await supabase
     .from("shifts")
-    .insert(values as never)
+    .insert({ ...values, name } as never)
     .select()
     .single();
 

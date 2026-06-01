@@ -15,9 +15,10 @@ import { createShift } from "@/lib/services/schedule";
 
 interface Props {
   onSuccess: () => void;
+  existingShifts?: Record<string, unknown>[];
 }
 
-export function AddShiftDialog({ onSuccess }: Props) {
+export function AddShiftDialog({ onSuccess, existingShifts = [] }: Props) {
   const { currentUser } = useRoleContext();
   const { data: locations } = useLocations();
   const [open, setOpen] = useState(false);
@@ -36,6 +37,16 @@ export function AddShiftDialog({ onSuccess }: Props) {
 
   const handleSubmit = async () => {
     if (!form.name || !currentUser?.orgId) return;
+    const normalizedName = form.name.trim().toLowerCase();
+    const hasDuplicate = existingShifts.some((shift) =>
+      String(shift.name || "").trim().toLowerCase() === normalizedName
+    );
+
+    if (hasDuplicate) {
+      setError("يوجد وردية بنفس الاسم بالفعل. اختر اسمًا مختلفًا.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
