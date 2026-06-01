@@ -27,7 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useTasks } from "@/hooks/use-data";
-import { updateTask, updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
+import { updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
 import { PageSkeleton } from "@/components/Skeletons";
 
 const statusStyles: Record<string, string> = {
@@ -117,7 +117,9 @@ export default function MyTasksPage() {
                   const title = typeof taskRecord.title === "string" ? taskRecord.title : "—";
                   const description = typeof taskRecord.description === "string" ? taskRecord.description : "";
                   const priority = typeof taskRecord.priority === "string" ? taskRecord.priority : "medium";
-                  const status = typeof taskRecord.status === "string" ? taskRecord.status : "pending";
+                  const status = typeof myAssignment?.status === "string"
+                    ? myAssignment.status
+                    : typeof taskRecord.status === "string" ? taskRecord.status : "pending";
                   const dueDate = typeof taskRecord.due_date === "string" ? taskRecord.due_date : "—";
                   const location = (taskRecord.location ?? null) as TaskRecord | null;
                   const locationName = typeof location?.name === "string" ? location.name : "—";
@@ -197,7 +199,6 @@ function TaskUpdateButtons({
     setError("");
     const { error: assignmentError } = await updateTaskAssignment(assignmentId, { status });
     if (assignmentError) { setError(assignmentError.message); setSubmitting(false); return; }
-    await updateTask(taskId, { status });
     await createTaskUpdate({
       org_id: orgId,
       task_id: taskId,

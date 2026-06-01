@@ -80,7 +80,7 @@ export function AutoAttendanceRecorder() {
     const distance = haversineDistance(latitude, longitude, locationLatitude, locationLongitude);
 
     if (distance > AUTO_ATTENDANCE_RADIUS_METERS) {
-      setStatus(`أنت خارج نطاق الحضور. المسافة الحالية ${distance}م والحد المسموح 50م.`);
+      setStatus("");
       return;
     }
 
