@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { CalendarDays, Trash2 } from "lucide-react";
+import { CalendarDays, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -19,8 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { useEmployees, useShifts, useEmployeeShifts } from "@/hooks/use-data";
-import { assignEmployeeShift, removeEmployeeShift } from "@/lib/services/schedule";
+import { useEmployees, useShifts, useEmployeeShifts, useLocations } from "@/hooks/use-data";
+import { assignEmployeeShift, deleteShift, removeEmployeeShift, updateShift } from "@/lib/services/schedule";
 import { AddShiftDialog } from "@/components/forms/AddShiftDialog";
 import { PageSkeleton } from "@/components/Skeletons";
 
@@ -68,6 +68,7 @@ export default function SchedulePage() {
                 <TableHead className="font-semibold text-gray-600">النوع</TableHead>
                 <TableHead className="font-semibold text-gray-600">الوقت</TableHead>
                 <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
+                {canManageSchedule && <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -87,6 +88,34 @@ export default function SchedulePage() {
                     <TableCell className="text-gray-600">{shiftType}</TableCell>
                     <TableCell className="text-gray-600">{shiftStart} - {shiftEnd}</TableCell>
                     <TableCell className="text-gray-600">{shiftLocationName}</TableCell>
+                    {canManageSchedule && (
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <EditShiftDialog
+                            shift={shiftRecord}
+                            existingShifts={shifts}
+                            onSuccess={() => {
+                              refetchShifts();
+                              refetchAssignments();
+                            }}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                            title="حذف الوردية"
+                            onClick={async () => {
+                              if (!confirm("حذف الوردية سيحذف إسناداتها من الموظفين. هل تريد المتابعة؟")) return;
+                              await deleteShift(shiftId);
+                              refetchShifts();
+                              refetchAssignments();
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}
@@ -183,6 +212,137 @@ export default function SchedulePage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function EditShiftDialog({
+  shift,
+  existingShifts,
+  onSuccess,
+}: {
+  shift: Record<string, unknown>;
+  existingShifts: Record<string, unknown>[];
+  onSuccess: () => void;
+}) {
+  const { currentUser } = useRoleContext();
+  const { data: locations } = useLocations();
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    name: String(shift.name || ""),
+    shift_type: String(shift.shift_type || "morning"),
+    start_time: String(shift.start_time || "08:00"),
+    end_time: String(shift.end_time || "16:00"),
+    location_id: String(shift.location_id || ""),
+  });
+
+  const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
+
+  const handleSubmit = async () => {
+    const shiftId = String(shift.id || "");
+    const orgId = currentUser?.orgId || String(shift.org_id || "");
+    const normalizedName = form.name.trim().toLowerCase();
+
+    if (!shiftId || !orgId || !normalizedName) return;
+
+    const hasDuplicate = existingShifts.some((existingShift) =>
+      String(existingShift.id || "") !== shiftId &&
+      String(existingShift.name || "").trim().toLowerCase() === normalizedName
+    );
+
+    if (hasDuplicate) {
+      setError("يوجد وردية بنفس الاسم بالفعل. اختر اسمًا مختلفًا.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError("");
+
+    const { error: err } = await updateShift(shiftId, {
+      org_id: orgId,
+      name: form.name,
+      shift_type: form.shift_type,
+      start_time: form.start_time,
+      end_time: form.end_time,
+      location_id: form.location_id || null,
+    });
+
+    if (err) {
+      setError(err.message);
+      setSubmitting(false);
+      return;
+    }
+
+    setSubmitting(false);
+    setOpen(false);
+    onSuccess();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" title="تعديل الوردية" />}>
+        <Pencil className="w-4 h-4" />
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>تعديل الوردية</DialogTitle>
+          <DialogDescription>عدّل اسم الوردية ووقتها والموقع المرتبط بها.</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2">
+            <Label>الاسم *</Label>
+            <Input value={form.name} onChange={(event) => set("name", event.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>نوع الوردية</Label>
+              <Select value={form.shift_type} onValueChange={(value) => set("shift_type", value)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="morning">صباحية</SelectItem>
+                  <SelectItem value="night">ليلية</SelectItem>
+                  <SelectItem value="flexible">مرنة</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>الموقع</Label>
+              <Select value={form.location_id} onValueChange={(value) => set("location_id", value)}>
+                <SelectTrigger><SelectValue placeholder="اختر الموقع" /></SelectTrigger>
+                <SelectContent>
+                  {locations.map((location) => (
+                    <SelectItem key={String(location.id)} value={String(location.id)}>
+                      {String(location.name)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>وقت البداية</Label>
+              <Input type="time" value={form.start_time} onChange={(event) => set("start_time", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>وقت النهاية</Label>
+              <Input type="time" value={form.end_time} onChange={(event) => set("end_time", event.target.value)} />
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.name.trim()}>
+            {submitting ? "جارٍ الحفظ..." : "حفظ التعديلات"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

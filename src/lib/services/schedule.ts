@@ -51,9 +51,32 @@ export async function createShift(values: Record<string, unknown>) {
 
 export async function updateShift(id: string, values: Record<string, unknown>) {
   const supabase = createClient();
+  const orgId = String(values.org_id || "");
+  const name = typeof values.name === "string" ? values.name.trim() : "";
+
+  if (orgId && name) {
+    const existing = await supabase
+      .from("shifts")
+      .select("id, name")
+      .eq("org_id", orgId);
+
+    const normalizedName = name.toLowerCase();
+    const hasDuplicate = (existing.data || []).some((shift: Record<string, unknown>) =>
+      String(shift.id || "") !== id &&
+      String(shift.name || "").trim().toLowerCase() === normalizedName
+    );
+
+    if (hasDuplicate) {
+      return {
+        data: null,
+        error: { message: "يوجد وردية بنفس الاسم بالفعل. اختر اسمًا مختلفًا." },
+      };
+    }
+  }
+
   const result = await supabase
     .from("shifts")
-    .update(values as never)
+    .update((name ? { ...values, name } : values) as never)
     .eq("id", id)
     .select()
     .single();
