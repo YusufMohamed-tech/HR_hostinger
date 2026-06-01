@@ -28,7 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useTasks, useEmployees } from "@/hooks/use-data";
-import { createManagerTask, createTask, assignTask, updateManagerTask, updateTask, updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
+import { createManagerTask, createTask, assignTask, updateManagerTask, updateMyTaskAssignment, updateTask, updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
 import { notifyTaskAssigned } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 import { getValidationMessage, taskFormSchema } from "@/lib/validation";
@@ -174,9 +174,6 @@ function TasksTable({
                   {myAssignment && (
                     <TaskUpdateButtons
                       assignmentId={String(myAssignment.id ?? "")}
-                      taskId={taskId}
-                      orgId={currentUser?.orgId || ""}
-                      employeeId={currentUser?.employeeId || ""}
                       onSuccess={refetch}
                     />
                   )}
@@ -449,15 +446,9 @@ function CreateTaskDialog({
 
 function TaskUpdateButtons({
   assignmentId,
-  taskId,
-  orgId,
-  employeeId,
   onSuccess,
 }: {
   assignmentId: string;
-  taskId: string;
-  orgId: string;
-  employeeId: string;
   onSuccess: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -467,24 +458,14 @@ function TaskUpdateButtons({
     setSubmitting(true);
     setError("");
 
-    const { error: assignmentError } = await updateTaskAssignment(assignmentId, { status });
+    const { error: assignmentError } = await updateMyTaskAssignment({
+      assignment_id: assignmentId,
+      status,
+    });
     if (assignmentError) {
       setError(assignmentError.message);
       setSubmitting(false);
       return;
-    }
-
-    const { error: updateError } = await createTaskUpdate({
-      org_id: orgId,
-      task_id: taskId,
-      employee_id: employeeId || undefined,
-      status,
-      progress: status === "completed" ? 100 : 50,
-      note: status === "completed" ? "تم الإنجاز" : "بدأ العمل",
-    });
-
-    if (updateError) {
-      setError(updateError.message || "فشل تحديث المهمة");
     }
 
     setSubmitting(false);
