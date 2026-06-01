@@ -30,7 +30,7 @@ export default function SchedulePage() {
   const { data: employees } = useEmployees();
   const { data: assignments, loading: loadingAssignments, refetch: refetchAssignments } = useEmployeeShifts();
 
-  const isAdmin = ["Superadmin", "Admin"].includes(currentUser?.role || "");
+  const canManageSchedule = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
 
   if (loadingShifts || loadingAssignments) return <PageSkeleton />;
 
@@ -43,7 +43,7 @@ export default function SchedulePage() {
             إدارة قوالب الورديات وتعيين الجداول للموظفين.
           </p>
         </div>
-        {isAdmin && (
+        {canManageSchedule && (
           <div className="flex flex-col sm:flex-row gap-2">
             <AddShiftDialog onSuccess={refetchShifts} />
             <AssignShiftDialog
@@ -66,7 +66,7 @@ export default function SchedulePage() {
                 <TableHead className="font-semibold text-gray-600">الوقت</TableHead>
                 <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
                 <TableHead className="font-semibold text-gray-600">التواريخ</TableHead>
-                {isAdmin && <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>}
+                {canManageSchedule && <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -99,7 +99,7 @@ export default function SchedulePage() {
                     <TableCell className="text-gray-600">
                       {startDate} {endDate ? `→ ${endDate}` : ""}
                     </TableCell>
-                    {isAdmin && (
+                    {canManageSchedule && (
                       <TableCell className="text-right">
                         <Button
                           variant="ghost"
