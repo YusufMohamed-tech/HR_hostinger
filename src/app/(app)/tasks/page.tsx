@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import React, { useState } from "react";
-import { CheckSquare, ListChecks, MessageSquare, Plus, Timer } from "lucide-react";
+import { CheckSquare, ListChecks, MessageSquare, Pencil, Plus, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,8 +27,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { useTasks, useEmployees, useLocations } from "@/hooks/use-data";
-import { createManagerTask, createTask, assignTask, updateTask, updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
+import { useTasks, useEmployees } from "@/hooks/use-data";
+import { createManagerTask, createTask, assignTask, updateManagerTask, updateTask, updateTaskAssignment, createTaskUpdate } from "@/lib/services/tasks";
 import { notifyTaskAssigned } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 import { getValidationMessage, taskFormSchema } from "@/lib/validation";
@@ -62,11 +62,17 @@ function TasksTable({
   tasks,
   currentUser,
   refetch,
+  employees,
+  canEdit,
+  managerMode,
 }: {
   tasks: TaskRecord[];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   currentUser: any;
   refetch: () => void;
+  employees: TaskRecord[];
+  canEdit: boolean;
+  managerMode: boolean;
 }) {
   if (tasks.length === 0) {
     return (
@@ -86,7 +92,6 @@ function TasksTable({
           <TableHead className="font-semibold text-gray-600">الأولوية</TableHead>
           <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
           <TableHead className="font-semibold text-gray-600">الاستحقاق</TableHead>
-          <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
           <TableHead className="font-semibold text-gray-600">المكلفون</TableHead>
           <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>
         </TableRow>
@@ -115,8 +120,6 @@ function TasksTable({
           const priority = typeof taskRecord.priority === "string" ? taskRecord.priority : "medium";
           const status = typeof taskRecord.status === "string" ? taskRecord.status : "pending";
           const dueDate = typeof taskRecord.due_date === "string" ? taskRecord.due_date : "—";
-          const location = (taskRecord.location ?? null) as TaskRecord | null;
-          const locationName = typeof location?.name === "string" ? location.name : "—";
           const assignees = assignments
             .map((a) => {
               const emp = (a.employee ?? null) as TaskRecord | null;
@@ -142,13 +145,20 @@ function TasksTable({
                 </Badge>
               </TableCell>
               <TableCell className="text-gray-600">{dueDate}</TableCell>
-              <TableCell className="text-gray-600">{locationName}</TableCell>
               <TableCell className="text-gray-600">
                 {assignees.length ? assignees.join("، ") : "—"}
               </TableCell>
               <TableCell className="text-right">
                 <div className="flex items-center justify-end gap-1">
                   <TaskHistoryDialog title={title} updates={updates} />
+                  {canEdit && (
+                    <EditTaskDialog
+                      task={taskRecord}
+                      employees={employees}
+                      managerMode={managerMode}
+                      onSuccess={refetch}
+                    />
+                  )}
                   {myAssignment && (
                     <TaskNoteDialog
                       taskId={taskId}
@@ -181,7 +191,6 @@ export default function TasksPage() {
   const { currentUser } = useRoleContext();
   const { data: tasks, loading, refetch } = useTasks();
   const { data: employees } = useEmployees();
-  const { data: locations } = useLocations();
 
   const isAdmin = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
   const isManager = currentUser?.role === "Training_Manager";
@@ -217,13 +226,20 @@ export default function TasksPage() {
           <p className="text-gray-500 text-sm mt-1">إسناد ومتابعة المهام التشغيلية وتتبعها.</p>
         </div>
         {(isAdmin || isManager) && (
-          <CreateTaskDialog employees={teamEmployees} locations={locations} onSuccess={refetch} managerMode={isManager} />
+          <CreateTaskDialog employees={teamEmployees} onSuccess={refetch} managerMode={isManager} />
         )}
       </div>
 
       <Card className="border-none shadow-sm">
         <CardContent className="p-0">
-          <TasksTable tasks={visibleTasks} currentUser={currentUser} refetch={refetch} />
+          <TasksTable
+            tasks={visibleTasks}
+            currentUser={currentUser}
+            refetch={refetch}
+            employees={teamEmployees}
+            canEdit={isAdmin || isManager}
+            managerMode={isManager}
+          />
         </CardContent>
       </Card>
     </div>
@@ -232,14 +248,11 @@ export default function TasksPage() {
 
 function CreateTaskDialog({
   employees,
-  locations,
   onSuccess,
   managerMode = false,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   employees: any[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  locations: any[];
   onSuccess: () => void;
   managerMode?: boolean;
 }) {
@@ -252,8 +265,8 @@ function CreateTaskDialog({
     description: "",
     priority: "medium",
     due_date: "",
-    location_id: "",
     employee_id: "",
+    initial_message: "",
   });
 
   const set = (key: string, value: string | null) =>
@@ -261,12 +274,12 @@ function CreateTaskDialog({
 
   const handleSubmit = async () => {
     if (!currentUser?.orgId) return;
-    if (managerMode && !form.employee_id) {
-      setError("اختر موظفًا من فريقك لتكليفه بالمهمة.");
+    if (!form.employee_id) {
+      setError(managerMode ? "اختر موظفًا من فريقك لتكليفه بالمهمة." : "اختر الموظف المكلف بالمهمة.");
       return;
     }
 
-    const parsed = taskFormSchema.safeParse(form);
+    const parsed = taskFormSchema.safeParse({ ...form, location_id: "" });
     if (!parsed.success) {
       setError(getValidationMessage(parsed.error));
       return;
@@ -281,8 +294,8 @@ function CreateTaskDialog({
           description: parsed.data.description,
           priority: parsed.data.priority,
           due_date: parsed.data.due_date,
-          location_id: parsed.data.location_id,
           employee_id: parsed.data.employee_id,
+          initial_message: form.initial_message.trim(),
         })
       : await createTask({
           org_id: currentUser.orgId,
@@ -290,7 +303,7 @@ function CreateTaskDialog({
           description: parsed.data.description,
           priority: parsed.data.priority,
           due_date: parsed.data.due_date,
-          location_id: parsed.data.location_id,
+          location_id: null,
           created_by: currentUser.id,
         });
 
@@ -307,12 +320,20 @@ function CreateTaskDialog({
         employee_id: parsed.data.employee_id,
         status: "pending",
       });
+      await createTaskUpdate({
+        org_id: currentUser.orgId,
+        task_id: data.id,
+        employee_id: currentUser.employeeId || undefined,
+        status: "pending",
+        progress: 0,
+        note: form.initial_message.trim() || "تم إسناد المهمة.",
+      });
       await notifyTaskAssigned(currentUser.orgId, parsed.data.employee_id, parsed.data.title);
     }
 
     setSubmitting(false);
     setOpen(false);
-    setForm({ title: "", description: "", priority: "medium", due_date: "", location_id: "", employee_id: "" });
+    setForm({ title: "", description: "", priority: "medium", due_date: "", employee_id: "", initial_message: "" });
     onSuccess();
   };
 
@@ -345,6 +366,14 @@ function CreateTaskDialog({
               placeholder="تفاصيل المهمة والتوقعات"
             />
           </div>
+          <div className="space-y-2">
+            <Label>رسالة للموظف</Label>
+            <Input
+              value={form.initial_message}
+              onChange={(e) => set("initial_message", e.target.value)}
+              placeholder="اكتب تعليمات أو رسالة تظهر للموظف في سجل المهمة"
+            />
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>الأولوية</Label>
@@ -369,22 +398,7 @@ function CreateTaskDialog({
               />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>الموقع</Label>
-              <Select value={form.location_id} onValueChange={(v) => set("location_id", v)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="اختر الموقع" />
-                </SelectTrigger>
-                <SelectContent>
-                  {locations.map((loc) => (
-                    <SelectItem key={loc.id} value={String(loc.id)}>
-                      {String(loc.name)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="grid gap-4">
             <div className="space-y-2">
               <Label>تكليف إلى</Label>
               <Select value={form.employee_id} onValueChange={(v) => set("employee_id", v)}>
@@ -494,6 +508,173 @@ function TaskUpdateButtons({
       </Button>
       {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
+  );
+}
+
+function EditTaskDialog({
+  task,
+  employees,
+  managerMode,
+  onSuccess,
+}: {
+  task: TaskRecord;
+  employees: TaskRecord[];
+  managerMode: boolean;
+  onSuccess: () => void;
+}) {
+  const { currentUser } = useRoleContext();
+  const assignments = Array.isArray(task.assignments) ? (task.assignments as TaskRecord[]) : [];
+  const firstAssignment = assignments[0];
+  const assignedEmployee = (firstAssignment?.employee ?? null) as TaskRecord | null;
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    title: String(task.title || ""),
+    description: String(task.description || ""),
+    priority: String(task.priority || "medium"),
+    due_date: typeof task.due_date === "string" ? task.due_date : "",
+    employee_id: String(assignedEmployee?.id || ""),
+  });
+
+  const set = (key: string, value: string | null) =>
+    setForm((prev) => ({ ...prev, [key]: value ?? "" }));
+
+  const handleSubmit = async () => {
+    if (!currentUser?.orgId) return;
+    if (!form.employee_id) {
+      setError(managerMode ? "اختر موظفًا من فريقك." : "اختر الموظف المكلف بالمهمة.");
+      return;
+    }
+
+    const parsed = taskFormSchema.safeParse({ ...form, location_id: "" });
+    if (!parsed.success) {
+      setError(getValidationMessage(parsed.error));
+      return;
+    }
+
+    const taskId = String(task.id || "");
+    setSubmitting(true);
+    setError("");
+
+    const { error: taskError } = managerMode
+      ? await updateManagerTask(taskId, {
+          title: parsed.data.title,
+          description: parsed.data.description,
+          priority: parsed.data.priority,
+          due_date: parsed.data.due_date,
+          employee_id: parsed.data.employee_id,
+        })
+      : await updateTask(taskId, {
+          title: parsed.data.title,
+          description: parsed.data.description,
+          priority: parsed.data.priority,
+          due_date: parsed.data.due_date,
+          location_id: null,
+        });
+
+    if (taskError) {
+      setError(taskError.message);
+      setSubmitting(false);
+      return;
+    }
+
+    if (!managerMode) {
+      const assignmentId = String(firstAssignment?.id || "");
+      const assignmentError = assignmentId
+        ? (await updateTaskAssignment(assignmentId, { employee_id: parsed.data.employee_id })).error
+        : (await assignTask({
+            org_id: currentUser.orgId,
+            task_id: taskId,
+            employee_id: parsed.data.employee_id,
+            status: "pending",
+          })).error;
+
+      if (assignmentError) {
+        setError(assignmentError.message);
+        setSubmitting(false);
+        return;
+      }
+
+      await createTaskUpdate({
+        org_id: currentUser.orgId,
+        task_id: taskId,
+        employee_id: currentUser.employeeId || undefined,
+        status: String(task.status || "pending"),
+        progress: 0,
+        note: "تم تعديل تفاصيل المهمة.",
+      });
+    }
+
+    setSubmitting(false);
+    setOpen(false);
+    onSuccess();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" title="تعديل المهمة" />}>
+        <Pencil className="w-4 h-4" />
+        <span className="sr-only">تعديل</span>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[520px]">
+        <DialogHeader>
+          <DialogTitle>تعديل المهمة</DialogTitle>
+          <DialogDescription>عدّل تفاصيل المهمة والموظف المكلف بها.</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2">
+            <Label>العنوان *</Label>
+            <Input value={form.title} onChange={(event) => set("title", event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>الوصف</Label>
+            <Input value={form.description} onChange={(event) => set("description", event.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>الأولوية</Label>
+              <Select value={form.priority} onValueChange={(value) => set("priority", value)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">منخفض</SelectItem>
+                  <SelectItem value="medium">متوسط</SelectItem>
+                  <SelectItem value="high">عالي</SelectItem>
+                  <SelectItem value="urgent">عاجل</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>تاريخ الاستحقاق</Label>
+              <Input type="date" value={form.due_date} onChange={(event) => set("due_date", event.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>تكليف إلى</Label>
+            <Select value={form.employee_id} onValueChange={(value) => set("employee_id", value)}>
+              <SelectTrigger className="w-full"><SelectValue placeholder="اختر الموظف" /></SelectTrigger>
+              <SelectContent>
+                {employees.map((employee) => (
+                  <SelectItem key={String(employee.id)} value={String(employee.id)}>
+                    {String(employee.full_name || employee.name)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.title}>
+            {submitting ? "جارٍ الحفظ..." : "حفظ التعديلات"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

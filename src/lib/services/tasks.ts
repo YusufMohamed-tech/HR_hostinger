@@ -54,6 +54,27 @@ export async function createManagerTask(values: Record<string, unknown>) {
   };
 }
 
+export async function updateManagerTask(id: string, values: Record<string, unknown>) {
+  const response = await fetch("/api/manager/tasks", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...values }),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    return {
+      data: null,
+      error: { message: String(payload?.message || "Unable to update team task.") },
+    };
+  }
+
+  return {
+    data: (payload?.data?.task ?? payload?.data ?? null) as Record<string, unknown> | null,
+    error: null,
+  };
+}
+
 export async function updateTask(id: string, values: Record<string, unknown>) {
   const supabase = createClient();
   const result = await supabase
