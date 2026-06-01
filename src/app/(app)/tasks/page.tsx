@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckSquare, ListChecks, MessageSquare, Pencil, Plus, Timer } from "lucide-react";
+import { CheckSquare, ListChecks, MessageSquare, Pencil, Plus, Send, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,7 +29,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useTasks, useEmployees } from "@/hooks/use-data";
-import { createManagerTask, createTask, assignTask, updateManagerTask, updateMyTaskAssignment, updateTask, updateTaskAssignment, createTaskUpdate, createMyTaskUpdate } from "@/lib/services/tasks";
+import { createManagerTask, createTask, assignTask, updateManagerTask, updateMyTaskAssignment, updateTask, updateTaskAssignment, createTaskUpdate, createMyTaskUpdate, sendTaskMessage } from "@/lib/services/tasks";
 import { notifyTaskAssigned } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 import { getValidationMessage, taskFormSchema } from "@/lib/validation";
@@ -122,6 +122,7 @@ function TasksTable({
           const description = typeof taskRecord.description === "string" ? taskRecord.description : "";
           const priority = typeof taskRecord.priority === "string" ? taskRecord.priority : "medium";
           const firstAssignment = assignments[0];
+          const firstAssignee = (firstAssignment?.employee ?? null) as TaskRecord | null;
           const assignmentStatus = typeof firstAssignment?.status === "string" ? firstAssignment.status : "";
           const myAssignmentStatus = typeof myAssignment?.status === "string" ? myAssignment.status : "";
           const status = myAssignmentStatus || assignmentStatus || (typeof taskRecord.status === "string" ? taskRecord.status : "pending");
@@ -166,6 +167,14 @@ function TasksTable({
                       task={taskRecord}
                       employees={employees}
                       managerMode={managerMode}
+                      onSuccess={refetch}
+                    />
+                  )}
+                  {canEdit && firstAssignee && (
+                    <TaskMessageDialog
+                      taskId={taskId}
+                      assigneeId={String(firstAssignee.id || "")}
+                      assigneeName={String(firstAssignee.full_name || "الموظف")}
                       onSuccess={refetch}
                     />
                   )}
@@ -748,6 +757,86 @@ function TaskHistoryDialog({
 
         <DialogFooter>
           <DialogClose render={<Button variant="outline" />}>إغلاق</DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function TaskMessageDialog({
+  taskId,
+  assigneeId,
+  assigneeName,
+  onSuccess,
+}: {
+  taskId: string;
+  assigneeId: string;
+  assigneeName: string;
+  onSuccess: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = async () => {
+    if (!message.trim()) return;
+    setSubmitting(true);
+    setError("");
+
+    const { error: messageError } = await sendTaskMessage({
+      task_id: taskId,
+      employee_id: assigneeId,
+      message: message.trim(),
+    });
+
+    if (messageError) {
+      setError(messageError.message);
+      setSubmitting(false);
+      return;
+    }
+
+    setSubmitting(false);
+    setOpen(false);
+    setMessage("");
+    onSuccess();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" title={`إرسال رسالة إلى ${assigneeName}`} />}>
+        <MessageSquare className="w-4 h-4" />
+        <span className="sr-only">إرسال رسالة</span>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[480px]">
+        <DialogHeader>
+          <DialogTitle>إرسال رسالة إلى {assigneeName}</DialogTitle>
+          <DialogDescription>ستظهر الرسالة داخل سجل المهمة وسيصل إشعار للموظف.</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-3 py-4">
+          <div className="space-y-2">
+            <Label>الرسالة</Label>
+            <Input
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="اكتب رسالتك للموظف..."
+            />
+          </div>
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
+          <Button
+            className="bg-brand hover:bg-brand-dark text-white"
+            onClick={handleSubmit}
+            disabled={submitting || !message.trim()}
+          >
+            <Send className="w-4 h-4 ml-2" />
+            {submitting ? "جارٍ الإرسال..." : "إرسال"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
