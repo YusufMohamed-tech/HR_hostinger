@@ -192,7 +192,9 @@ export default function TasksPage() {
   const { data: tasks, loading, refetch } = useTasks();
   const { data: employees } = useEmployees();
 
-  const isAdmin = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
+  const isOrgAdmin = ["Superadmin", "Admin"].includes(currentUser?.role || "");
+  const isHrAdmin = currentUser?.role === "HR_Admin";
+  const canAssignTasks = isOrgAdmin || isHrAdmin;
   const isManager = currentUser?.role === "Training_Manager";
 
   if (loading) return <PageSkeleton />;
@@ -216,7 +218,8 @@ export default function TasksPage() {
       return employeeId === currentUser?.employeeId || teamEmployeeIds.has(employeeId);
     });
   });
-  const visibleTasks = isAdmin ? allTaskRecords : isManager ? managerTasks : myTasks;
+  const hrCreatedTasks = allTaskRecords.filter((task) => String(task.created_by || "") === currentUser?.id);
+  const visibleTasks = isOrgAdmin ? allTaskRecords : isHrAdmin ? hrCreatedTasks : isManager ? managerTasks : myTasks;
 
   return (
     <div className="flex flex-col gap-6">
@@ -225,7 +228,7 @@ export default function TasksPage() {
           <h1 className="text-2xl font-bold tracking-tight">إسناد المهام</h1>
           <p className="text-gray-500 text-sm mt-1">إسناد ومتابعة المهام التشغيلية وتتبعها.</p>
         </div>
-        {(isAdmin || isManager) && (
+        {(canAssignTasks || isManager) && (
           <CreateTaskDialog employees={teamEmployees} onSuccess={refetch} managerMode={isManager} />
         )}
       </div>
@@ -237,7 +240,7 @@ export default function TasksPage() {
             currentUser={currentUser}
             refetch={refetch}
             employees={teamEmployees}
-            canEdit={isAdmin || isManager}
+            canEdit={canAssignTasks || isManager}
             managerMode={isManager}
           />
         </CardContent>
