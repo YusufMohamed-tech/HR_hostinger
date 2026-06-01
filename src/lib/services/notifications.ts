@@ -1,5 +1,11 @@
 import { createClient } from "@/lib/supabase/client";
 
+function notifyNotificationsChanged() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("notifications:changed"));
+  }
+}
+
 export async function getNotifications(orgId: string, userId: string) {
   const supabase = createClient();
   const result = await supabase
@@ -26,6 +32,7 @@ export async function createNotification(values: {
     .insert({ ...values, is_read: false } as never)
     .select()
     .single();
+  if (!result.error) notifyNotificationsChanged();
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
@@ -38,6 +45,7 @@ export async function markNotificationRead(id: string, isRead = true) {
     .select()
     .single();
 
+  if (!result.error) notifyNotificationsChanged();
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
@@ -49,6 +57,7 @@ export async function markAllNotificationsRead(orgId: string, userId: string) {
     .eq("org_id", orgId)
     .eq("user_id", userId);
 
+  if (!result.error) notifyNotificationsChanged();
   return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
 }
 

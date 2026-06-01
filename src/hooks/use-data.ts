@@ -174,6 +174,18 @@ export function useNotifications() {
     refetch();
   }, [refetch]);
 
+  useEffect(() => {
+    const handleNotificationsChanged = () => {
+      refetch();
+    };
+    window.addEventListener("notifications:changed", handleNotificationsChanged);
+    window.addEventListener("focus", handleNotificationsChanged);
+    return () => {
+      window.removeEventListener("notifications:changed", handleNotificationsChanged);
+      window.removeEventListener("focus", handleNotificationsChanged);
+    };
+  }, [refetch]);
+
   return { data, loading, refetch };
 }
 
