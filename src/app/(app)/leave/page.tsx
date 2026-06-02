@@ -268,6 +268,14 @@ function LeaveDecisionDialog({
 
     if (currentUser?.orgId && reqRecord.employee_id) {
       const finalStatus = String(data?.status || "");
+      const nextStep = Number(data?.current_step || reqRecord.current_step || 1);
+      if (decision === "approved" && finalStatus === "pending" && nextStep >= 2) {
+        await fetch("/api/leave-requests/notifications", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ event: "manager_approved", requestId: reqRecord.id }),
+        });
+      }
       if (finalStatus === "approved" || decision === "rejected") {
         await notifyLeaveDecision(currentUser.orgId, String(reqRecord.employee_id), leaveType, decision);
       }
