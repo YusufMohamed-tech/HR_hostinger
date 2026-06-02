@@ -5,6 +5,20 @@ import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
 
 const allowedSelfServiceRoles = new Set(["employee", "training_manager", "hr_admin", "hr_recruitment"]);
 
+function getEmployeeApprovalManagerId(employee: Record<string, unknown> | null | undefined) {
+  if (!employee) return "";
+  const directManagerId = typeof employee.manager_id === "string" ? employee.manager_id : "";
+  if (directManagerId) return directManagerId;
+
+  const department = employee.department as Record<string, unknown> | null | undefined;
+  const departmentManagerId = typeof department?.manager_employee_id === "string" ? department.manager_employee_id : "";
+  if (departmentManagerId) return departmentManagerId;
+
+  const location = employee.location as Record<string, unknown> | null | undefined;
+  const locationManagerId = typeof location?.manager_employee_id === "string" ? location.manager_employee_id : "";
+  return locationManagerId;
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -53,7 +67,7 @@ export async function POST(request: NextRequest) {
 
   const { data: existingEmployee, error: employeeLookupError } = await admin
     .from("employees")
-    .select("id")
+    .select("id, full_name, manager_id, department:department_id(manager_employee_id), location:location_id(manager_employee_id)")
     .eq("org_id", orgId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -63,6 +77,7 @@ export async function POST(request: NextRequest) {
   }
 
   const existingEmployeeRecord = existingEmployee as Record<string, unknown> | null;
+  let employeeRecord = existingEmployeeRecord;
   let employeeId = typeof existingEmployeeRecord?.id === "string"
     ? String(existingEmployeeRecord.id)
     : "";
@@ -90,6 +105,7 @@ export async function POST(request: NextRequest) {
     }
 
     employeeId = String((createdEmployee as Record<string, unknown> | null)?.id || "");
+    employeeRecord = createdEmployee as Record<string, unknown> | null;
   }
 
   if (!employeeId) {
@@ -117,6 +133,28 @@ export async function POST(request: NextRequest) {
 
   if (leaveRequestError) {
     return NextResponse.json({ message: leaveRequestError.message }, { status: 500 });
+  }
+
+  const managerEmployeeId = getEmployeeApprovalManagerId(employeeRecord);
+  if (managerEmployeeId) {
+    const { data: manager } = await admin
+      .from("employees")
+      .select("user_id")
+      .eq("id", managerEmployeeId)
+      .maybeSingle();
+    const managerUserId = String((manager as Record<string, unknown> | null)?.user_id || "");
+    if (managerUserId) {
+      const employeeName = String(employeeRecord?.full_name || user.email || "Employee");
+      await admin.from("notifications").insert({
+        org_id: orgId,
+        user_id: managerUserId,
+        title: "طلب إجازة جديد",
+        body: `${employeeName} أرسل طلب إجازة بانتظار موافقة المدير.`,
+        type: "leave",
+        link: "/leave",
+        is_read: false,
+      } as never);
+    }
   }
 
   return NextResponse.json({ request: leaveRequest });
