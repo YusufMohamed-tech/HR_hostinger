@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { AlertCircle, Bell, FileText, ShieldCheck } from "lucide-react";
+import { AlertCircle, Bell, Download, Eye, FileText, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,12 +17,62 @@ import {
   createEmployeeContract,
   createPersonnelFile,
   getEmployeeContracts,
+  getPersonnelFileUrl,
   getPersonnelFiles,
   getSocialInsurance,
   uploadPersonnelFile,
   upsertSocialInsurance,
 } from "@/lib/services/personnel";
 import { createNotification } from "@/lib/services/notifications";
+
+type PersonnelTab = "files" | "insurance" | "contracts";
+
+const personnelTabs: { value: PersonnelTab; label: string }[] = [
+  { value: "files", label: "ملف" },
+  { value: "insurance", label: "التأمينات" },
+  { value: "contracts", label: "عقد" },
+];
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function exportTableAsPdf(title: string, headers: string[], rows: unknown[][]) {
+  const popup = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+  if (!popup) return;
+
+  const headerHtml = headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("");
+  const rowsHtml = rows.length
+    ? rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")
+    : `<tr><td colspan="${headers.length}">لا توجد بيانات للتصدير.</td></tr>`;
+
+  popup.document.write(`<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(title)}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 32px; color: #111827; }
+    h1 { font-size: 24px; margin: 0 0 18px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #d1d5db; padding: 10px; text-align: right; font-size: 13px; }
+    th { background: #f3f4f6; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>
+</body>
+</html>`);
+  popup.document.close();
+  popup.focus();
+  popup.print();
+}
 
 export default function PersonnelPage() {
   const { currentUser } = useRoleContext();
@@ -32,6 +82,7 @@ export default function PersonnelPage() {
   const [contracts, setContracts] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [reminderSent, setReminderSent] = useState(false);
+  const [activeTab, setActiveTab] = useState<PersonnelTab>("files");
   const isAdmin = currentUser?.role !== "Employee";
 
   const loadPersonnel = useCallback(async () => {
@@ -75,6 +126,79 @@ export default function PersonnelPage() {
     }
     setReminderSent(true);
     window.setTimeout(() => setReminderSent(false), 5000);
+  };
+
+  const openStoredFile = async (pathValue: unknown) => {
+    const filePath = String(pathValue || "");
+    if (!filePath) return;
+    if (filePath.startsWith("http")) {
+      window.open(filePath, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const { data, error } = await getPersonnelFileUrl(filePath);
+    if (error || !data?.signedUrl) {
+      window.alert(error?.message || "تعذر فتح الملف.");
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleExport = () => {
+    if (activeTab === "files") {
+      exportTableAsPdf(
+        "ملفات الموظفين الرسمية",
+        ["الموظف", "التصنيف", "اسم الملف", "تاريخ الانتهاء", "موثق"],
+        files.map((file) => {
+          const employee = (file.employee ?? null) as Record<string, unknown> | null;
+          return [
+            employee?.full_name || "الموظف",
+            file.category || "-",
+            file.file_name || "-",
+            file.expiry_date || "-",
+            file.is_verified ? "نعم" : "لا",
+          ];
+        }),
+      );
+      return;
+    }
+
+    if (activeTab === "insurance") {
+      exportTableAsPdf(
+        "التأمينات الاجتماعية",
+        ["الموظف", "رقم التأمينات", "النسبة", "الحالة"],
+        insurance.map((item) => {
+          const employee = (item.employee ?? null) as Record<string, unknown> | null;
+          return [
+            employee?.full_name || "الموظف",
+            item.gosi_number || "-",
+            `${Number(item.contribution_rate || 0)}%`,
+            item.status || "active",
+          ];
+        }),
+      );
+      return;
+    }
+
+    exportTableAsPdf(
+      "عقود الموظفين",
+      ["الموظف", "نوع العقد", "البداية", "النهاية", "الحالة"],
+      contracts.map((contract) => {
+        const employee = (contract.employee ?? null) as Record<string, unknown> | null;
+        return [
+          employee?.full_name || "الموظف",
+          contract.contract_type || "permanent",
+          contract.start_date || "-",
+          contract.end_date || "-",
+          contract.status || "active",
+        ];
+      }),
+    );
+  };
+
+  const tabCount = (tab: PersonnelTab) => {
+    if (tab === "files") return files.length;
+    if (tab === "insurance") return insurance.length;
+    return contracts.length;
   };
 
   return (
@@ -128,6 +252,29 @@ export default function PersonnelPage() {
         <Card className="border-none shadow-sm"><CardContent className="py-4"><p className="text-xs text-gray-500">تنتهي قريبًا</p><p className="text-2xl font-semibold">{expiringFiles.length}</p></CardContent></Card>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {personnelTabs.map((tab) => (
+            <Button
+              key={tab.value}
+              variant={activeTab === tab.value ? "default" : "outline"}
+              className={activeTab === tab.value ? "bg-brand text-white hover:bg-brand-dark" : ""}
+              onClick={() => setActiveTab(tab.value)}
+            >
+              {tab.label}
+              <Badge variant="outline" className="mr-2 bg-white/80 text-slate-700">
+                {tabCount(tab.value)}
+              </Badge>
+            </Button>
+          ))}
+        </div>
+        <Button variant="outline" onClick={handleExport}>
+          <Download className="h-4 w-4 ml-2" />
+          تصدير PDF
+        </Button>
+      </div>
+
+      {activeTab === "files" && (
       <Card className="border-none shadow-sm">
         <CardHeader><CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-brand" /> الملفات الرسمية</CardTitle></CardHeader>
         <CardContent className="p-0">
@@ -142,18 +289,14 @@ export default function PersonnelPage() {
                     <TableCell>{String(employee?.full_name || "الموظف")}</TableCell>
                     <TableCell>{String(file.category || "other")}</TableCell>
                     <TableCell>
-                      {file.file_url ? (
-                        <a
-                          href={String(file.file_url)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-brand hover:underline text-sm"
-                        >
-                          {String(file.file_name || "عرض الملف")}
-                        </a>
-                      ) : (
-                        String(file.file_name || "-")
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openStoredFile(file.file_path || file.file_url)}
+                      >
+                        <Eye className="h-4 w-4 ml-1" />
+                        {String(file.file_name || "عرض")}
+                      </Button>
                     </TableCell>
                     <TableCell>
                       {isExpiringSoon ? (
@@ -174,7 +317,9 @@ export default function PersonnelPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      )}
+
+      {activeTab === "insurance" && (
         <Card className="border-none shadow-sm">
           <CardHeader><CardTitle>التأمينات الاجتماعية</CardTitle></CardHeader>
           <CardContent className="p-0">
@@ -197,11 +342,14 @@ export default function PersonnelPage() {
           </CardContent>
         </Card>
 
+      )}
+
+      {activeTab === "contracts" && (
         <Card className="border-none shadow-sm">
           <CardHeader><CardTitle>العقود</CardTitle></CardHeader>
           <CardContent className="p-0">
             <Table>
-              <TableHeader><TableRow><TableHead>الموظف</TableHead><TableHead>النوع</TableHead><TableHead>البداية</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>الموظف</TableHead><TableHead>النوع</TableHead><TableHead>البداية</TableHead><TableHead>الحالة</TableHead><TableHead>الإجراءات</TableHead></TableRow></TableHeader>
               <TableBody>
                 {contracts.map((contract) => {
                   const employee = (contract.employee ?? null) as Record<string, unknown> | null;
@@ -211,6 +359,12 @@ export default function PersonnelPage() {
                       <TableCell>{String(contract.contract_type || "permanent")}</TableCell>
                       <TableCell>{String(contract.start_date || "-")}</TableCell>
                       <TableCell><Badge variant="outline">{String(contract.status || "active")}</Badge></TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" onClick={() => openStoredFile(contract.file_path)}>
+                          <Eye className="h-4 w-4 ml-1" />
+                          عرض
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -218,7 +372,7 @@ export default function PersonnelPage() {
             </Table>
           </CardContent>
         </Card>
-      </div>
+      )}
     </div>
   );
 }
@@ -323,6 +477,8 @@ function AddInsuranceDialog({ employees, onSuccess }: { employees: Record<string
 function AddContractDialog({ employees, onSuccess }: { employees: Record<string, unknown>[]; onSuccess: () => void }) {
   const { currentUser } = useRoleContext();
   const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState("");
   const [form, setForm] = useState({ employee_id: "", contract_type: "permanent", start_date: "", end_date: "", salary_at_signing: "" });
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   return (
@@ -336,12 +492,24 @@ function AddContractDialog({ employees, onSuccess }: { employees: Record<string,
           <Input type="date" value={form.start_date} onChange={(event) => set("start_date", event.target.value)} />
           <Input type="date" value={form.end_date} onChange={(event) => set("end_date", event.target.value)} />
           <Input type="number" placeholder="الراتب عند التوقيع" value={form.salary_at_signing} onChange={(event) => set("salary_at_signing", event.target.value)} />
+          <Input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
           <Button onClick={async () => {
-            if (!currentUser?.orgId || !form.employee_id || !form.start_date) return;
-            await createEmployeeContract({ org_id: currentUser.orgId, ...form, end_date: form.end_date || undefined, salary_at_signing: form.salary_at_signing ? Number(form.salary_at_signing) : undefined });
+            if (!currentUser?.orgId || !form.employee_id || !form.start_date || !file) {
+              setError("الموظف وتاريخ بداية العقد وملف العقد مطلوبة.");
+              return;
+            }
+            const { data: uploadData, error: uploadError } = await uploadPersonnelFile(currentUser.orgId, form.employee_id, file);
+            if (uploadError || !uploadData?.path) {
+              setError(uploadError?.message || "تعذر رفع ملف العقد.");
+              return;
+            }
+            await createEmployeeContract({ org_id: currentUser.orgId, ...form, end_date: form.end_date || undefined, salary_at_signing: form.salary_at_signing ? Number(form.salary_at_signing) : undefined, file_path: uploadData.path });
             setOpen(false);
+            setFile(null);
+            setError("");
             onSuccess();
           }}>حفظ</Button>
         </DialogFooter>

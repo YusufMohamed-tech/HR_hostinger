@@ -11,9 +11,15 @@ import {
 import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useDepartments, useLocations, useEmployees, useShifts } from "@/hooks/use-data";
-import { createEmployee, createEmployeeAccount } from "@/lib/services/employees";
+import { createEmployee, createEmployeeAccount, deleteEmployee } from "@/lib/services/employees";
 import { assignEmployeeShift } from "@/lib/services/schedule";
 import { updateDepartment } from "@/lib/services/departments";
+import {
+  createEmployeeContract,
+  createPersonnelFile,
+  uploadPersonnelFile,
+  upsertSocialInsurance,
+} from "@/lib/services/personnel";
 import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
 
 interface Props {
@@ -52,6 +58,17 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<"employee" | "training_manager">("employee");
   const [accountPassword, setAccountPassword] = useState("");
+  const [officialFile, setOfficialFile] = useState<File | null>(null);
+  const [contractFile, setContractFile] = useState<File | null>(null);
+  const [personnelForm, setPersonnelForm] = useState({
+    file_category: "official",
+    file_expiry_date: "",
+    gosi_number: "",
+    contribution_rate: "9.75",
+    contract_type: "permanent",
+    contract_start_date: "",
+    contract_end_date: "",
+  });
 
   const [form, setForm] = useState({
     full_name: "",
@@ -85,6 +102,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   const setShift = (key: string, value: string | null) => setShiftForm((prev) => ({ ...prev, [key]: value ?? "" }));
+  const setPersonnel = (key: string, value: string | null) => setPersonnelForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
   const handleDepartmentManagerChange = (checked: boolean) => {
     setIsDepartmentManager(checked);
@@ -114,6 +132,23 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       }
     }
 
+    if (!officialFile) {
+      setError("يجب رفع ملف رسمي للموظف قبل إنشاء الموظف.");
+      return;
+    }
+    if (!personnelForm.gosi_number.trim()) {
+      setError("رقم التأمينات مطلوب قبل إنشاء الموظف.");
+      return;
+    }
+    if (!personnelForm.contract_start_date) {
+      setError("تاريخ بداية العقد مطلوب قبل إنشاء الموظف.");
+      return;
+    }
+    if (!contractFile) {
+      setError("يجب رفع ملف العقد قبل إنشاء الموظف.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
@@ -128,6 +163,70 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       setError(err.message);
       setSubmitting(false);
       return;
+    }
+
+    if (createdEmployee?.id) {
+      const employeeId = String(createdEmployee.id);
+      const rollbackEmployee = async (message: string) => {
+        await deleteEmployee(employeeId);
+        setError(message);
+        setSubmitting(false);
+      };
+      const { data: officialUpload, error: officialUploadError } = await uploadPersonnelFile(currentUser.orgId, employeeId, officialFile);
+      if (officialUploadError || !officialUpload?.path) {
+        await rollbackEmployee(officialUploadError?.message || "تعذر رفع الملف الرسمي.");
+        return;
+      }
+
+      const { error: fileError } = await createPersonnelFile({
+        org_id: currentUser.orgId,
+        employee_id: employeeId,
+        category: personnelForm.file_category || "official",
+        file_name: officialFile.name,
+        file_path: officialUpload.path,
+        file_size: officialFile.size,
+        expiry_date: personnelForm.file_expiry_date || undefined,
+      });
+
+      if (fileError) {
+        await rollbackEmployee(fileError.message);
+        return;
+      }
+
+      const { error: insuranceError } = await upsertSocialInsurance({
+        org_id: currentUser.orgId,
+        employee_id: employeeId,
+        gosi_number: personnelForm.gosi_number.trim(),
+        contribution_rate: Number(personnelForm.contribution_rate || 0),
+        status: "active",
+      });
+
+      if (insuranceError) {
+        await rollbackEmployee(insuranceError.message);
+        return;
+      }
+
+      const { data: contractUpload, error: contractUploadError } = await uploadPersonnelFile(currentUser.orgId, employeeId, contractFile);
+      if (contractUploadError || !contractUpload?.path) {
+        await rollbackEmployee(contractUploadError?.message || "تعذر رفع ملف العقد.");
+        return;
+      }
+
+      const { error: contractError } = await createEmployeeContract({
+        org_id: currentUser.orgId,
+        employee_id: employeeId,
+        contract_type: personnelForm.contract_type || "permanent",
+        start_date: personnelForm.contract_start_date,
+        end_date: personnelForm.contract_end_date || undefined,
+        salary_at_signing: parsed.data.base_salary ?? undefined,
+        file_path: contractUpload.path,
+        status: "active",
+      });
+
+      if (contractError) {
+        await rollbackEmployee(contractError.message);
+        return;
+      }
     }
 
     if (isDepartmentManager && parsed.data.department_id && createdEmployee?.id) {
@@ -207,6 +306,17 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     setCreateLoginAccount(false);
     setAccountRole("employee");
     setAccountPassword("");
+    setOfficialFile(null);
+    setContractFile(null);
+    setPersonnelForm({
+      file_category: "official",
+      file_expiry_date: "",
+      gosi_number: "",
+      contribution_rate: "9.75",
+      contract_type: "permanent",
+      contract_start_date: "",
+      contract_end_date: "",
+    });
     onSuccess();
   };
 
@@ -448,6 +558,57 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">ملفات الموظف المطلوبة</p>
+              <p className="mt-1 text-xs text-gray-500">لا يمكن إنشاء الموظف قبل رفع الملف الرسمي والعقد وإضافة بيانات التأمينات.</p>
+            </div>
+            <div className={twoColumnGridClass}>
+              <div className="space-y-2">
+                <Label>الملف الرسمي *</Label>
+                <Input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(event) => setOfficialFile(event.target.files?.[0] ?? null)} />
+              </div>
+              <div className="space-y-2">
+                <Label>تصنيف الملف</Label>
+                <Input value={personnelForm.file_category} onChange={(event) => setPersonnel("file_category", event.target.value)} placeholder="official" />
+              </div>
+            </div>
+            <div className={twoColumnGridClass}>
+              <div className="space-y-2">
+                <Label>تاريخ انتهاء الملف</Label>
+                <Input type="date" value={personnelForm.file_expiry_date} onChange={(event) => setPersonnel("file_expiry_date", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>رقم التأمينات *</Label>
+                <Input value={personnelForm.gosi_number} onChange={(event) => setPersonnel("gosi_number", event.target.value)} placeholder="GOSI number" />
+              </div>
+            </div>
+            <div className={threeColumnGridClass}>
+              <div className="space-y-2">
+                <Label>نسبة التأمينات</Label>
+                <Input type="number" value={personnelForm.contribution_rate} onChange={(event) => setPersonnel("contribution_rate", event.target.value)} placeholder="9.75" />
+              </div>
+              <div className="space-y-2">
+                <Label>نوع العقد</Label>
+                <Input value={personnelForm.contract_type} onChange={(event) => setPersonnel("contract_type", event.target.value)} placeholder="permanent" />
+              </div>
+              <div className="space-y-2">
+                <Label>بداية العقد *</Label>
+                <Input type="date" value={personnelForm.contract_start_date} onChange={(event) => setPersonnel("contract_start_date", event.target.value)} />
+              </div>
+            </div>
+            <div className={twoColumnGridClass}>
+              <div className="space-y-2">
+                <Label>نهاية العقد</Label>
+                <Input type="date" value={personnelForm.contract_end_date} onChange={(event) => setPersonnel("contract_end_date", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>ملف العقد *</Label>
+                <Input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(event) => setContractFile(event.target.files?.[0] ?? null)} />
+              </div>
+            </div>
           </div>
 
           <div className="space-y-4">
