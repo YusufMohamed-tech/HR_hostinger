@@ -38,6 +38,15 @@ export async function uploadPersonnelFile(orgId: string, employeeId: string, fil
   return result as unknown as { data: { path: string } | null; error: { message: string } | null };
 }
 
+export async function getPersonnelFileUrl(path: string) {
+  const supabase = createClient();
+  const result = await supabase.storage
+    .from("personnel-files")
+    .createSignedUrl(path, 60 * 10);
+
+  return result as unknown as { data: { signedUrl: string } | null; error: { message: string } | null };
+}
+
 export async function getSocialInsurance(orgId: string, employeeId?: string) {
   const supabase = createClient();
   let query = supabase
