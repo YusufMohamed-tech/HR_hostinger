@@ -39,12 +39,19 @@ export function isPublicPath(pathname: string): boolean {
     pathname === "/suspended" ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/apply/") ||
-    pathname === "/candidate/applications"
+    pathname.startsWith("/candidate/login") ||
+    pathname.startsWith("/candidate/register") ||
+    pathname === "/candidate/applications" ||
+    // Public posting lookup (no auth needed)
+    pathname === "/api/candidate/posting"
   );
 }
 
 export function isCandidatePath(pathname: string): boolean {
-  return pathname.startsWith("/apply/") || pathname === "/candidate/applications";
+  return (
+    pathname.startsWith("/apply/") ||
+    pathname.startsWith("/candidate/")
+  );
 }
 
 export function canAccessPath(role: Role, pathname: string): boolean {
@@ -68,6 +75,16 @@ export function canAccessPath(role: Role, pathname: string): boolean {
 
   if (normalizedPath.startsWith("/api/manager")) {
     return role === "Training_Manager";
+  }
+
+  if (normalizedPath.startsWith("/api/recruitment")) {
+    return ["Admin", "HR_Admin", "HR_Recruitment"].includes(role);
+  }
+
+  // /api/candidate/* — authenticated candidates (no role) go through middleware
+  // but these routes use admin client and do their own auth check
+  if (normalizedPath.startsWith("/api/candidate")) {
+    return true;
   }
 
   if (normalizedPath.startsWith("/recruitment")) {
