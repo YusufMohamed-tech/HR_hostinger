@@ -6,7 +6,7 @@ export async function getLeaveRequests(orgId: string) {
   const supabase = createClient();
   const result = await supabase
     .from("leave_requests")
-    .select("*, employee:employee_id(full_name,user_id,manager_id)")
+    .select("*, employee:employee_id(full_name,user_id,manager_id,department:department_id(manager_employee_id),location:location_id(manager_employee_id))")
     .eq("org_id", orgId)
     .order("requested_at", { ascending: false });
 
@@ -61,6 +61,20 @@ export async function getLeaveRequests(orgId: string) {
     }),
     error: null,
   };
+}
+
+export function getLeaveApprovalManagerId(employee: Record<string, unknown> | null | undefined) {
+  if (!employee) return "";
+  const directManagerId = typeof employee.manager_id === "string" ? employee.manager_id : "";
+  if (directManagerId) return directManagerId;
+
+  const department = employee.department as Record<string, unknown> | null | undefined;
+  const departmentManagerId = typeof department?.manager_employee_id === "string" ? department.manager_employee_id : "";
+  if (departmentManagerId) return departmentManagerId;
+
+  const location = employee.location as Record<string, unknown> | null | undefined;
+  const locationManagerId = typeof location?.manager_employee_id === "string" ? location.manager_employee_id : "";
+  return locationManagerId;
 }
 
 async function getLeaveRequesterRole(orgId: string, employeeId: string) {
@@ -224,7 +238,7 @@ export async function advanceLeaveApproval(
   const actorEmployeeId = actor?.employeeId || "";
   const actorRole = actor?.role ?? null;
   const employee = request.employee as Record<string, unknown> | null | undefined;
-  const managerId = typeof employee?.manager_id === "string" ? employee.manager_id : "";
+  const managerId = getLeaveApprovalManagerId(employee);
   const totalSteps = Number(request.total_steps || 2);
 
   if (!requestId) {
