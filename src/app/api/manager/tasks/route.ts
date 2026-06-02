@@ -3,6 +3,17 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getValidationMessage, taskFormSchema } from "@/lib/validation";
 
+function isManagedEmployee(employee: Record<string, unknown> | null | undefined, managerEmployeeId: string) {
+  if (!employee || !managerEmployeeId) return false;
+  if (String(employee.manager_id || "") === managerEmployeeId) return true;
+
+  const department = employee.department as Record<string, unknown> | null | undefined;
+  if (String(department?.manager_employee_id || "") === managerEmployeeId) return true;
+
+  const location = employee.location as Record<string, unknown> | null | undefined;
+  return String(location?.manager_employee_id || "") === managerEmployeeId;
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -62,16 +73,15 @@ export async function POST(request: NextRequest) {
 
   const { data: assignee, error: assigneeError } = await admin
     .from("employees")
-    .select("id, user_id, full_name")
+    .select("id, user_id, full_name, manager_id, department:department_id(manager_employee_id), location:location_id(manager_employee_id)")
     .eq("org_id", orgId)
     .eq("id", assigneeEmployeeId)
-    .eq("manager_id", managerEmployeeId)
     .maybeSingle();
 
   if (assigneeError) {
     return NextResponse.json({ message: assigneeError.message }, { status: 500 });
   }
-  if (!assignee) {
+  if (!isManagedEmployee(assignee as Record<string, unknown> | null, managerEmployeeId)) {
     return NextResponse.json({ message: "You can assign tasks only to employees managed by you." }, { status: 403 });
   }
 
@@ -121,7 +131,7 @@ export async function POST(request: NextRequest) {
     note: initialMessage || "Task assigned by the direct manager.",
   } as never);
 
-  const assigneeRecord = assignee as Record<string, unknown>;
+  const assigneeRecord = assignee as unknown as Record<string, unknown>;
   const assigneeUserId = typeof assigneeRecord.user_id === "string" ? assigneeRecord.user_id : "";
   if (assigneeUserId) {
     await admin.from("notifications").insert({
@@ -198,7 +208,7 @@ export async function PATCH(request: NextRequest) {
 
   const { data: currentAssignment, error: accessError } = await admin
     .from("task_assignments")
-    .select("id, employee:employee_id(id, manager_id)")
+    .select("id, employee:employee_id(id, manager_id, department:department_id(manager_employee_id), location:location_id(manager_employee_id))")
     .eq("org_id", orgId)
     .eq("task_id", taskId)
     .limit(1)
@@ -209,22 +219,21 @@ export async function PATCH(request: NextRequest) {
   }
 
   const assignedEmployee = (currentAssignment as Record<string, unknown> | null)?.employee as Record<string, unknown> | undefined;
-  if (!assignedEmployee || String(assignedEmployee.manager_id || "") !== managerEmployeeId) {
+  if (!isManagedEmployee(assignedEmployee, managerEmployeeId)) {
     return NextResponse.json({ message: "You can update only tasks assigned to your team." }, { status: 403 });
   }
 
   const { data: newAssignee, error: assigneeError } = await admin
     .from("employees")
-    .select("id")
+    .select("id, manager_id, department:department_id(manager_employee_id), location:location_id(manager_employee_id)")
     .eq("org_id", orgId)
     .eq("id", parsed.data.employee_id)
-    .eq("manager_id", managerEmployeeId)
     .maybeSingle();
 
   if (assigneeError) {
     return NextResponse.json({ message: assigneeError.message }, { status: 500 });
   }
-  if (!newAssignee) {
+  if (!isManagedEmployee(newAssignee as Record<string, unknown> | null, managerEmployeeId)) {
     return NextResponse.json({ message: "You can assign tasks only to employees managed by you." }, { status: 403 });
   }
 

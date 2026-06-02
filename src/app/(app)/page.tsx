@@ -22,6 +22,17 @@ function getEmployeeFromRow(row: Record<string, unknown>) {
   return (row.employee ?? null) as Record<string, unknown> | null;
 }
 
+function isEmployeeManagedBy(employee: Record<string, unknown>, managerEmployeeId?: string) {
+  if (!managerEmployeeId) return false;
+  if (String(employee.manager_id || "") === managerEmployeeId) return true;
+
+  const department = (employee.department ?? null) as Record<string, unknown> | null;
+  if (String(department?.manager_employee_id || "") === managerEmployeeId) return true;
+
+  const location = (employee.location ?? null) as Record<string, unknown> | null;
+  return String(location?.manager_employee_id || "") === managerEmployeeId;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const { currentUser } = useRoleContext();
@@ -51,7 +62,7 @@ export default function DashboardPage() {
   const isManager = currentUser?.role === "Training_Manager";
   const canViewOrgStats = ["Admin", "HR_Admin"].includes(currentUser?.role || "");
   const teamEmployees = isManager
-    ? employees.filter((employee) => String((employee as Record<string, unknown>).manager_id || "") === currentUser?.employeeId)
+    ? employees.filter((employee) => isEmployeeManagedBy(employee as Record<string, unknown>, currentUser?.employeeId))
     : [];
   const dashboardEmployees = isManager ? teamEmployees : employees;
   const teamEmployeeIds = new Set(teamEmployees.map((employee) => String((employee as Record<string, unknown>).id || "")));
@@ -59,7 +70,7 @@ export default function DashboardPage() {
   const scopedAttendance = isManager
     ? allAttendance.filter((row) => {
         const employee = getEmployeeFromRow(row as Record<string, unknown>);
-        return String(employee?.manager_id || "") === currentUser?.employeeId;
+        return Boolean(employee && isEmployeeManagedBy(employee, currentUser?.employeeId));
       })
     : allAttendance;
   const todayRecords = scopedAttendance.filter(row => (row as Record<string, unknown>).work_date === today);
@@ -126,6 +137,33 @@ export default function DashboardPage() {
           مرحبًا بعودتك، {currentUser?.name}. تم تسجيل دخولك بصلاحية {currentUser?.role}.
         </p>
       </div>
+
+      {isManager && (
+        <div className="grid gap-3 md:grid-cols-2">
+          <Card className="border-none shadow-sm">
+            <CardContent className="flex items-center justify-between gap-4 py-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">طلب إجازة</p>
+                <p className="mt-1 text-xs text-slate-500">أرسل طلب إجازتك الشخصية وتابع حالة الاعتماد.</p>
+              </div>
+              <Button asChild className="bg-brand text-white hover:bg-brand-dark">
+                <Link href="/leave?view=mine">طلب إجازة</Link>
+              </Button>
+            </CardContent>
+          </Card>
+          <Card className="border-none shadow-sm">
+            <CardContent className="flex items-center justify-between gap-4 py-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">إسناد مهمة للفريق</p>
+                <p className="mt-1 text-xs text-slate-500">كلّف موظفاً من فريقك وتابع التنفيذ والملاحظات.</p>
+              </div>
+              <Button asChild variant="outline">
+                <Link href="/tasks">إسناد مهمة</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat, i) => {
