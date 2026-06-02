@@ -13,7 +13,7 @@ export async function GET() {
   const { data, error } = await admin
     .from("job_applications")
     .select(
-      `*, job:job_posting_id(id, title, employment_type, deadline, status, department:department_id(name), location:location_id(name))`
+      `*, job:job_posting_id(id, title, employment_type, deadline, status, department:department_id(name), location:location_id(name), org:org_id(name))`
     )
     .eq("candidate_id", user.id)
     .order("applied_at", { ascending: false });

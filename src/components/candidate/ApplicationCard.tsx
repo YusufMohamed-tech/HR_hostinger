@@ -70,7 +70,7 @@ export function ApplicationCard({ application }: Props) {
               </span>
             </div>
             <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
-              <span>تطوير تالنت</span>
+              {job?.org?.name && <span>{job.org.name}</span>}
               {job?.department?.name && (
                 <span className="flex items-center gap-0.5">
                   <Building2 className="w-3 h-3" />

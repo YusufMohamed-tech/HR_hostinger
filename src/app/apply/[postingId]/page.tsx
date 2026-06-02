@@ -151,10 +151,13 @@ export default function PublicApplyPage() {
       const ext = cvFile.name.split(".").pop();
       const filePath = `cv/${user.id}_${Date.now()}.${ext}`;
       const { error: uploadErr } = await supabase.storage.from("recruitment").upload(filePath, cvFile, { upsert: true });
-      if (!uploadErr) {
-        const { data: urlData } = supabase.storage.from("recruitment").getPublicUrl(filePath);
-        cvUrl = urlData.publicUrl;
+      if (uploadErr) {
+        setSubmitting(false);
+        setMessage("تعذّر رفع السيرة الذاتية. يرجى التحقق من الملف والمحاولة مرة أخرى، أو أرسل الطلب بدون سيرة ذاتية بعد حذف الملف المحدد.");
+        return;
       }
+      const { data: urlData } = supabase.storage.from("recruitment").getPublicUrl(filePath);
+      cvUrl = urlData.publicUrl;
     }
 
     const { error } = await submitApplication({
@@ -225,7 +228,7 @@ export default function PublicApplyPage() {
               </div>
               <div className="flex-1">
                 <h1 className="text-xl font-bold text-gray-900">{posting.title as string}</h1>
-                <p className="text-sm text-muted-foreground mt-0.5">تطوير تالنت</p>
+                <p className="text-sm text-muted-foreground mt-0.5">{((posting as Record<string, unknown>).org as Record<string, string> | null)?.name || ""}</p>
                 <div className="flex flex-wrap gap-3 mt-2 text-xs text-muted-foreground">
                   {((posting as Record<string, unknown>).department as Record<string, string> | null)?.name && (
                     <span className="flex items-center gap-1">

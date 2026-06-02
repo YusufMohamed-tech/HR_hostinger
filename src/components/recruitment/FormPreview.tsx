@@ -3,6 +3,7 @@
 import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { FormQuestion } from "@/lib/services/recruitment";
+import { BRAND } from "@/config/brand";
 
 type Props = {
   jobTitle: string;
@@ -91,7 +92,7 @@ export function FormPreview({ jobTitle, questions }: Props) {
       <CardContent className="pt-4 space-y-4 overflow-auto max-h-[calc(100vh-280px)]">
         <div className="bg-brand/5 border border-brand/20 rounded-lg p-3">
           <p className="text-sm font-semibold text-brand">{jobTitle || "عنوان الوظيفة"}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">تطوير تالنت</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{BRAND.name}</p>
         </div>
 
         {/* Fixed fields always shown */}

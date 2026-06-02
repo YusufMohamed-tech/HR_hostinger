@@ -70,13 +70,21 @@ export async function POST(request: NextRequest) {
     notifyUserId = String((existingEmployee as Record<string, unknown>).user_id || notifyUserId || "");
   } else {
     // Check if auth user exists for this email
+    // Use candidate_id from the application if available, otherwise search org_members by joining profiles
     let authUserId: string | null = candidateAuthId;
     if (!authUserId) {
-      const { data: authList } = await admin.auth.admin.listUsers({ perPage: 1000 });
-      const found = (authList?.users || []).find(
-        (u: { email?: string }) => u.email?.toLowerCase() === email.toLowerCase()
-      );
-      if (found) authUserId = found.id;
+      // Search all org_members joined with their auth user email via profiles or employees table
+      // The most reliable way: query existing employees in any org with this email to get user_id
+      const { data: empWithUserId } = await admin
+        .from("employees")
+        .select("user_id")
+        .eq("email", email)
+        .not("user_id", "is", null)
+        .limit(1)
+        .maybeSingle();
+      if (empWithUserId && (empWithUserId as Record<string, unknown>).user_id) {
+        authUserId = String((empWithUserId as Record<string, unknown>).user_id);
+      }
     }
 
     if (!authUserId) {
@@ -124,7 +132,15 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (empError) return NextResponse.json({ error: empError.message }, { status: 500 });
+    if (empError) {
+      // Rollback application status so it isn't stuck in "hired"
+      await admin.from("job_applications").update({
+        status: "offer",
+        stage_history: currentHistory,
+        updated_at: new Date().toISOString(),
+      } as never).eq("id", body.application_id);
+      return NextResponse.json({ error: empError.message }, { status: 500 });
+    }
     employeeId = String((newEmployee as Record<string, unknown>).id);
     notifyUserId = authUserId;
   }
