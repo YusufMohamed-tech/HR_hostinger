@@ -1,9 +1,10 @@
 "use client";
 
-import React from "react";
-import { Trash2, Layers as LayersIcon } from "lucide-react";
+import React, { useState } from "react";
+import { Trash2, Layers as LayersIcon, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { deleteDepartment } from "@/lib/services/departments";
+import { deleteDepartment, updateDepartment } from "@/lib/services/departments";
+import { updateEmployee } from "@/lib/services/employees";
 import { EditDepartmentDialog } from "@/components/forms/EditDepartmentDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -18,12 +19,21 @@ import { useDepartments, useEmployees } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { AddDepartmentDialog } from "@/components/forms/AddDepartmentDialog";
 import { PageSkeleton } from "@/components/Skeletons";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function DepartmentsPage() {
   const { currentUser } = useRoleContext();
   const { data: departments, loading, refetch } = useDepartments();
-  const { data: employees } = useEmployees();
+  const { data: employees, refetch: refetchEmployees } = useEmployees();
   const canManageDepartments = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
+  const hideOwnInternalProfile = ["Admin", "HR_Admin", "HR_Recruitment"].includes(currentUser?.role || "");
+  const assignableEmployees = hideOwnInternalProfile
+    ? employees.filter((emp) => String((emp as Record<string, unknown>).id || "") !== currentUser?.employeeId)
+    : employees;
 
   if (loading) {
     return <PageSkeleton />;
@@ -81,7 +91,18 @@ export default function DepartmentsPage() {
                         {canManageDepartments && (
                           <EditDepartmentDialog department={dept} onSuccess={refetch} />
                         )}
-                        <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">عرض</Button>
+                        {canManageDepartments ? (
+                          <ManageDepartmentMembersDialog
+                            department={deptRecord}
+                            employees={assignableEmployees}
+                            onSuccess={() => {
+                              refetch();
+                              refetchEmployees();
+                            }}
+                          />
+                        ) : (
+                          <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">عرض</Button>
+                        )}
                         {canManageDepartments && (
                           <Button
                             variant="ghost"
@@ -114,5 +135,178 @@ export default function DepartmentsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function ManageDepartmentMembersDialog({
+  department,
+  employees,
+  onSuccess,
+}: {
+  department: Record<string, unknown>;
+  employees: Record<string, unknown>[];
+  onSuccess: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const departmentId = String(department.id || "");
+  const departmentName = String(department.name || "القسم");
+  const currentManagerId = String(department.manager_employee_id || "");
+  const [managerId, setManagerId] = useState(currentManagerId || "__none");
+  const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<string[]>([]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    setManagerId(currentManagerId || "__none");
+    setSelectedEmployeeIds(
+      employees
+        .filter((employee) => String(employee.department_id || "") === departmentId)
+        .map((employee) => String(employee.id || ""))
+        .filter(Boolean)
+    );
+    setError("");
+  }, [currentManagerId, departmentId, employees, open]);
+
+  const selectedSet = new Set(selectedEmployeeIds);
+  const resolvedManagerId = managerId === "__none" ? "" : managerId;
+
+  const toggleEmployee = (employeeId: string) => {
+    setSelectedEmployeeIds((prev) =>
+      prev.includes(employeeId)
+        ? prev.filter((id) => id !== employeeId)
+        : [...prev, employeeId]
+    );
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError("");
+
+    const finalMembers = new Set(selectedEmployeeIds);
+    if (resolvedManagerId) finalMembers.add(resolvedManagerId);
+
+    const departmentResult = await updateDepartment(departmentId, {
+      manager_employee_id: resolvedManagerId || null,
+    });
+
+    if (departmentResult.error) {
+      setError(departmentResult.error.message);
+      setSubmitting(false);
+      return;
+    }
+
+    const updates = employees
+      .filter((employee) => {
+        const employeeId = String(employee.id || "");
+        return finalMembers.has(employeeId) || String(employee.department_id || "") === departmentId;
+      })
+      .map((employee) => {
+        const employeeId = String(employee.id || "");
+        const shouldBelongToDepartment = finalMembers.has(employeeId);
+        const isDepartmentManager = resolvedManagerId && employeeId === resolvedManagerId;
+        const currentManager = String(employee.manager_id || "");
+        const shouldClearManager = !shouldBelongToDepartment && currentManager === resolvedManagerId;
+
+        return updateEmployee(employeeId, {
+          department_id: shouldBelongToDepartment ? departmentId : null,
+          manager_id: shouldBelongToDepartment
+            ? isDepartmentManager
+              ? null
+              : resolvedManagerId || null
+            : shouldClearManager
+              ? null
+              : currentManager || null,
+        });
+      });
+
+    const results = await Promise.all(updates);
+    const failed = results.find((result) => result.error);
+    if (failed?.error) {
+      setError(failed.error.message);
+      setSubmitting(false);
+      return;
+    }
+
+    setSubmitting(false);
+    setOpen(false);
+    onSuccess();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark" />}>
+        <UserPlus className="w-3.5 h-3.5 mr-1" />
+        إدارة الأعضاء
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[620px]">
+        <DialogHeader>
+          <DialogTitle>إدارة أعضاء {departmentName}</DialogTitle>
+          <DialogDescription>حدد مدير القسم والموظفين المرتبطين بهذا القسم.</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-5 py-4">
+          <div className="space-y-2">
+            <Label>مدير القسم</Label>
+            <Select value={managerId} onValueChange={(value) => setManagerId(value || "__none")}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="اختر المدير" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none">بدون مدير</SelectItem>
+                {employees.map((employee) => (
+                  <SelectItem key={String(employee.id)} value={String(employee.id)}>
+                    {String(employee.full_name || employee.name || employee.email || "موظف")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>موظفو القسم</Label>
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-gray-200">
+              {employees.map((employee) => {
+                const employeeId = String(employee.id || "");
+                const employeeName = String(employee.full_name || employee.name || "موظف");
+                const employeeEmail = String(employee.email || "");
+                const isChecked = selectedSet.has(employeeId) || resolvedManagerId === employeeId;
+
+                return (
+                  <label
+                    key={employeeId}
+                    className="flex cursor-pointer items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 last:border-b-0 hover:bg-gray-50"
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium text-gray-900">{employeeName}</span>
+                      {employeeEmail && <span className="text-xs text-gray-500">{employeeEmail}</span>}
+                    </div>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-brand"
+                      checked={isChecked}
+                      disabled={resolvedManagerId === employeeId}
+                      onChange={() => toggleEmployee(employeeId)}
+                    />
+                  </label>
+                );
+              })}
+              {employees.length === 0 && (
+                <div className="px-4 py-8 text-center text-sm text-gray-500">لا توجد موظفين متاحين.</div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {error && <p className="text-sm text-red-600">{error}</p>}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? "جارٍ الحفظ..." : "حفظ التعيين"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
