@@ -113,9 +113,13 @@ export async function middleware(request: NextRequest) {
 
   if (!role) {
     if (isAuthPage) return response;
+    // Allow authenticated candidates (no org role) to access candidate API routes
+    if (isApi && pathname.startsWith("/api/candidate/")) return response;
     if (isApi) {
       return NextResponse.json({ message: "Organization membership is required." }, { status: 403 });
     }
+    // Redirect to candidate portal (not the HR login)
+    if (pathname.startsWith("/candidate/")) return response;
     return NextResponse.redirect(new URL("/candidate/applications", request.url));
   }
 
