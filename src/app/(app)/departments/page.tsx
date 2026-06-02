@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Trash2, Layers as LayersIcon, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmActionButton } from "@/components/ui/feedback-dialog";
 import { deleteDepartment, updateDepartment } from "@/lib/services/departments";
 import { updateEmployee } from "@/lib/services/employees";
 import { EditDepartmentDialog } from "@/components/forms/EditDepartmentDialog";
@@ -104,18 +105,21 @@ export default function DepartmentsPage() {
                           <Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark">عرض</Button>
                         )}
                         {canManageDepartments && (
-                          <Button
+                          <ConfirmActionButton
                             variant="ghost"
                             size="sm"
                             className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                            onClick={async () => {
-                              if (!confirm(`Delete ${deptName}?`)) return;
+                            title="حذف القسم"
+                            description={`سيتم حذف قسم ${deptName}. هل تريد المتابعة؟`}
+                            confirmLabel="حذف"
+                            destructive
+                            onConfirm={async () => {
                               await deleteDepartment(deptId);
                               refetch();
                             }}
                           >
                             <Trash2 className="w-4 h-4" />
-                          </Button>
+                          </ConfirmActionButton>
                         )}
                       </div>
                     </TableCell>

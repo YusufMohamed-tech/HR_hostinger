@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Bell, Download, Eye, FileText, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +83,7 @@ export default function PersonnelPage() {
   const [contracts, setContracts] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [reminderSent, setReminderSent] = useState(false);
+  const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<PersonnelTab>("files");
   const isAdmin = currentUser?.role !== "Employee";
 
@@ -137,7 +139,7 @@ export default function PersonnelPage() {
     }
     const { data, error } = await getPersonnelFileUrl(filePath);
     if (error || !data?.signedUrl) {
-      window.alert(error?.message || "تعذر فتح الملف.");
+      setMessage(error?.message || "تعذر فتح الملف.");
       return;
     }
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
@@ -203,6 +205,7 @@ export default function PersonnelPage() {
 
   return (
     <div className="space-y-6">
+      <MessageDialog open={Boolean(message)} onOpenChange={(open) => !open && setMessage("")} description={message} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">ملفات الموظفين</h1>

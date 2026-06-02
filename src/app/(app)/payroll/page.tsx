@@ -6,6 +6,7 @@ import { getPayslips, generatePayslip, updatePayslipStatus } from "@/lib/service
 import { useEmployees } from "@/hooks/use-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -45,8 +46,7 @@ function exportPayrollPdf(input: {
 }) {
   const popup = window.open("", "_blank", "noopener,noreferrer,width=1200,height=800");
   if (!popup) {
-    window.alert("تعذر فتح نافذة التصدير. تأكد من السماح بالنوافذ المنبثقة.");
-    return;
+    return false;
   }
 
   const tableRows = input.rows.length
@@ -128,6 +128,7 @@ function exportPayrollPdf(input: {
   popup.document.close();
   popup.focus();
   popup.print();
+  return true;
 }
 
 export default function PayrollPage() {
@@ -136,6 +137,7 @@ export default function PayrollPage() {
   const [payslips, setPayslips] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [message, setMessage] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
   const isAdmin = currentUser?.role !== "Employee";
 
@@ -179,17 +181,21 @@ export default function PayrollPage() {
   const monthLabel = new Date(monthParam).toLocaleDateString("ar-SA", { month: "long", year: "numeric" });
 
   const handleExportPayroll = () => {
-    exportPayrollPdf({
+    const exported = exportPayrollPdf({
       monthLabel,
       rows: payslips,
       totalNet,
       totalDeductions,
       approvedCount,
     });
+    if (!exported) {
+      setMessage("تعذر فتح نافذة التصدير. تأكد من السماح بالنوافذ المنبثقة ثم حاول مرة أخرى.");
+    }
   };
 
   return (
     <div className="space-y-6">
+      <MessageDialog open={Boolean(message)} onOpenChange={(open) => !open && setMessage("")} description={message} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">وحدة الرواتب</h1>
