@@ -68,8 +68,9 @@ export default function LeavePage() {
   const { data: balances } = useLeaveBalances(currentUser?.employeeId);
   const role = currentUser?.role || "";
   const isHRAdmin = role === "HR_Admin";
+  const isTrainingManager = role === "Training_Manager";
   const isApprover = ["Superadmin", "Admin", "HR_Admin", "Training_Manager"].includes(role);
-  const isSelfServiceView = !isApprover || (isHRAdmin && searchParams.get("view") === "mine");
+  const isSelfServiceView = !isApprover || ((isHRAdmin || isTrainingManager) && searchParams.get("view") === "mine");
   const canApprove = isApprover && !isSelfServiceView;
   const isOwnRequest = (req: Record<string, unknown>) => String(req.employee_id ?? "") === currentUser?.employeeId;
   const isManagedRequest = (req: Record<string, unknown>) => {

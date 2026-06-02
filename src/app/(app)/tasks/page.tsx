@@ -59,6 +59,17 @@ const priorityLabels: Record<string, string> = {
 
 type TaskRecord = Record<string, unknown>;
 
+function isEmployeeManagedBy(employee: TaskRecord, managerEmployeeId?: string) {
+  if (!managerEmployeeId) return false;
+  if (String(employee.manager_id || "") === managerEmployeeId) return true;
+
+  const department = (employee.department ?? null) as TaskRecord | null;
+  if (String(department?.manager_employee_id || "") === managerEmployeeId) return true;
+
+  const location = (employee.location ?? null) as TaskRecord | null;
+  return String(location?.manager_employee_id || "") === managerEmployeeId;
+}
+
 function TasksTable({
   tasks,
   currentUser,
@@ -222,7 +233,7 @@ export default function TasksPage() {
 
   const allTaskRecords = tasks as TaskRecord[];
   const teamEmployees = isManager
-    ? employees.filter((employee) => String((employee as TaskRecord).manager_id || "") === currentUser?.employeeId)
+    ? employees.filter((employee) => isEmployeeManagedBy(employee as TaskRecord, currentUser?.employeeId))
     : employees;
   const teamEmployeeIds = new Set(teamEmployees.map((employee) => String((employee as TaskRecord).id || "")));
 
