@@ -11,7 +11,7 @@ export async function GET(request: Request) {
 
   const { data: posting, error } = await admin
     .from("job_postings")
-    .select("*, department:departments(name), location:locations(name)")
+    .select("*, department:department_id(name), location:location_id(name), org:org_id(name)")
     .eq("public_slug", slug)
     .in("status", ["active", "published", "open"])
     .single();

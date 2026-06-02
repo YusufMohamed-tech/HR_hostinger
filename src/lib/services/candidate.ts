@@ -26,6 +26,7 @@ export type CandidateApplication = {
     status: string;
     department?: { name: string } | null;
     location?: { name: string } | null;
+    org?: { name: string } | null;
   } | null;
   interviews?: Array<{
     id: string;
