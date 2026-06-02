@@ -23,6 +23,113 @@ const statusColors: Record<string, string> = {
   paid: "bg-green-50 text-green-700 border-green-200",
 };
 
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatMoney(value: unknown) {
+  return `${Number(value || 0).toLocaleString("ar-SA")} ريال`;
+}
+
+function exportPayrollPdf(input: {
+  monthLabel: string;
+  rows: Record<string, unknown>[];
+  totalNet: number;
+  totalDeductions: number;
+  approvedCount: number;
+}) {
+  const popup = window.open("", "_blank", "noopener,noreferrer,width=1200,height=800");
+  if (!popup) {
+    window.alert("تعذر فتح نافذة التصدير. تأكد من السماح بالنوافذ المنبثقة.");
+    return;
+  }
+
+  const tableRows = input.rows.length
+    ? input.rows.map((slip, index) => {
+        const employee = (slip.employee ?? null) as Record<string, unknown> | null;
+        const status = typeof slip.status === "string" ? slip.status : "draft";
+        const statusLabel = statusLabels[status] || status;
+        return `<tr>
+          <td>${index + 1}</td>
+          <td><strong>${escapeHtml(employee?.full_name || "غير معروف")}</strong><div class="muted">${escapeHtml(employee?.employee_code || "-")}</div></td>
+          <td>${escapeHtml(formatMoney(slip.base_salary))}</td>
+          <td>${escapeHtml(formatMoney(slip.total_allowances))}</td>
+          <td>${escapeHtml(Number(slip.attendance_days || 0))}</td>
+          <td>${escapeHtml(formatMoney(slip.total_deductions))}</td>
+          <td>${escapeHtml(formatMoney(slip.net_salary))}</td>
+          <td>${escapeHtml(statusLabel)}</td>
+          <td>${escapeHtml(slip.payroll_notes || "-")}</td>
+        </tr>`;
+      }).join("")
+    : `<tr><td colspan="9">لا توجد مسيرات رواتب لهذا الشهر.</td></tr>`;
+
+  popup.document.write(`<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>مسير رواتب ${escapeHtml(input.monthLabel)}</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Tahoma, sans-serif; color: #111827; margin: 0; }
+    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 18px; }
+    h1 { font-size: 24px; margin: 0 0 6px; }
+    .muted { color: #6b7280; font-size: 12px; margin-top: 3px; }
+    .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+    .box { border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background: #f9fafb; }
+    .box span { display: block; color: #6b7280; font-size: 12px; margin-bottom: 4px; }
+    .box strong { font-size: 15px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #d1d5db; padding: 8px; text-align: right; vertical-align: top; font-size: 11px; word-break: break-word; }
+    th { background: #eef2f7; font-weight: 700; }
+    td:nth-child(1), th:nth-child(1) { width: 38px; text-align: center; }
+    td:nth-child(9), th:nth-child(9) { width: 210px; }
+    .footer { margin-top: 14px; color: #6b7280; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>مسير رواتب ${escapeHtml(input.monthLabel)}</h1>
+      <div class="muted">تقرير مجدول يشمل بيانات الرواتب والحضور والخصومات والحالة.</div>
+    </div>
+    <div class="muted">تاريخ التصدير: ${escapeHtml(new Date().toLocaleString("ar-SA"))}</div>
+  </div>
+  <div class="summary">
+    <div class="box"><span>إجمالي الموظفين</span><strong>${input.rows.length}</strong></div>
+    <div class="box"><span>المعتمدون / الإجمالي</span><strong>${input.approvedCount} / ${input.rows.length}</strong></div>
+    <div class="box"><span>إجمالي الخصومات</span><strong>${escapeHtml(formatMoney(input.totalDeductions))}</strong></div>
+    <div class="box"><span>إجمالي صافي الرواتب</span><strong>${escapeHtml(formatMoney(input.totalNet))}</strong></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>الموظف</th>
+        <th>الراتب الأساسي</th>
+        <th>البدلات</th>
+        <th>أيام الحضور</th>
+        <th>الخصومات</th>
+        <th>صافي الراتب</th>
+        <th>الحالة</th>
+        <th>ملاحظات الحساب</th>
+      </tr>
+    </thead>
+    <tbody>${tableRows}</tbody>
+  </table>
+  <div class="footer">هذا التقرير صادر من نظام تطوير تالنت للموارد البشرية.</div>
+</body>
+</html>`);
+  popup.document.close();
+  popup.focus();
+  popup.print();
+}
+
 export default function PayrollPage() {
   const { currentUser } = useRoleContext();
   const { data: employees } = useEmployees();
@@ -69,6 +176,17 @@ export default function PayrollPage() {
   const totalNet = payslips.reduce((sum, p) => sum + Number(p.net_salary || 0), 0);
   const totalDeductions = payslips.reduce((sum, p) => sum + Number(p.total_deductions || 0), 0);
   const approvedCount = payslips.filter((p) => p.status === "approved" || p.status === "paid").length;
+  const monthLabel = new Date(monthParam).toLocaleDateString("ar-SA", { month: "long", year: "numeric" });
+
+  const handleExportPayroll = () => {
+    exportPayrollPdf({
+      monthLabel,
+      rows: payslips,
+      totalNet,
+      totalDeductions,
+      approvedCount,
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -86,7 +204,9 @@ export default function PayrollPage() {
           />
           {isAdmin && (
             <>
-              <Button variant="outline"><Download className="w-4 h-4 ml-2" /> تصدير WPS</Button>
+              <Button variant="outline" onClick={handleExportPayroll}>
+                <Download className="w-4 h-4 ml-2" /> تصدير PDF
+              </Button>
               <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleRunPayroll} disabled={generating}>
                 <Calculator className="w-4 h-4 ml-2" /> {generating ? "جار الحساب..." : "تشغيل رواتب الشهر"}
               </Button>
