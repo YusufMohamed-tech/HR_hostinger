@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Trash2, MapPin } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { ConfirmActionButton } from "@/components/ui/feedback-dialog";
 import { Badge } from "@/components/ui/badge";
 import { deleteLocation } from "@/lib/services/locations";
 import { EditLocationDialog } from "@/components/forms/EditLocationDialog";
@@ -91,18 +91,21 @@ export default function LocationsPage() {
                           <EditLocationDialog location={location} onSuccess={refetch} />
                         )}
                         {canManageLocations && (
-                          <Button
+                          <ConfirmActionButton
                             variant="ghost"
                             size="sm"
                             className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                            onClick={async () => {
-                              if (!confirm(`Delete ${locationName}?`)) return;
+                            title="حذف الموقع"
+                            description={`سيتم حذف موقع ${locationName}. هل تريد المتابعة؟`}
+                            confirmLabel="حذف"
+                            destructive
+                            onConfirm={async () => {
                               await deleteLocation(locationId);
                               refetch();
                             }}
                           >
                             <Trash2 className="w-4 h-4" />
-                          </Button>
+                          </ConfirmActionButton>
                         )}
                       </div>
                     </TableCell>

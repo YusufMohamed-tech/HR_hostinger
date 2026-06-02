@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { CalendarDays, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmActionButton } from "@/components/ui/feedback-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -99,20 +100,22 @@ export default function SchedulePage() {
                               refetchAssignments();
                             }}
                           />
-                          <Button
+                          <ConfirmActionButton
                             variant="ghost"
                             size="sm"
                             className="text-red-500 hover:text-red-700 hover:bg-red-50"
                             title="حذف الوردية"
-                            onClick={async () => {
-                              if (!confirm("حذف الوردية سيحذف إسناداتها من الموظفين. هل تريد المتابعة؟")) return;
+                            description="حذف الوردية سيحذف إسناداتها من الموظفين. هل تريد المتابعة؟"
+                            confirmLabel="حذف"
+                            destructive
+                            onConfirm={async () => {
                               await deleteShift(shiftId);
                               refetchShifts();
                               refetchAssignments();
                             }}
                           >
                             <Trash2 className="w-4 h-4" />
-                          </Button>
+                          </ConfirmActionButton>
                         </div>
                       </TableCell>
                     )}
@@ -182,18 +185,21 @@ export default function SchedulePage() {
                     </TableCell>
                     {canManageSchedule && (
                       <TableCell className="text-right">
-                        <Button
+                        <ConfirmActionButton
                           variant="ghost"
                           size="sm"
                           className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                          onClick={async () => {
-                            if (!confirm("Remove this assignment?")) return;
+                          title="حذف إسناد الوردية"
+                          description="سيتم حذف إسناد هذه الوردية من الموظف. هل تريد المتابعة؟"
+                          confirmLabel="حذف"
+                          destructive
+                          onConfirm={async () => {
                             await removeEmployeeShift(assignmentId);
                             refetchAssignments();
                           }}
                         >
                           <Trash2 className="w-4 h-4" />
-                        </Button>
+                        </ConfirmActionButton>
                       </TableCell>
                     )}
                   </TableRow>

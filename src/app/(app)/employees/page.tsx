@@ -6,6 +6,7 @@ import { Search, Trash2, Users } from "lucide-react";
 import { deleteEmployee } from "@/lib/services/employees";
 import { EditEmployeeDialog } from "@/components/forms/EditEmployeeDialog";
 import { Button } from "@/components/ui/button";
+import { ConfirmActionButton } from "@/components/ui/feedback-dialog";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -196,18 +197,21 @@ export default function EmployeesPage() {
                           <Link href={`/employees/${empId}`}>عرض</Link>
                         </Button>
                         {canManageEmployees && (
-                          <Button
+                          <ConfirmActionButton
                             variant="ghost"
                             size="sm"
                             className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                            onClick={async () => {
-                              if (!confirm(`حذف ${empName}؟`)) return;
+                            title="حذف الموظف"
+                            description={`سيتم حذف الموظف ${empName}. هل تريد المتابعة؟`}
+                            confirmLabel="حذف"
+                            destructive
+                            onConfirm={async () => {
                               await deleteEmployee(empId);
                               refetch();
                             }}
                           >
                             <Trash2 className="w-4 h-4" />
-                          </Button>
+                          </ConfirmActionButton>
                         )}
                       </div>
                     </TableCell>

@@ -11,6 +11,38 @@ import { markAllNotificationsRead, markNotificationRead } from "@/lib/services/n
 import { useRoleContext } from "@/providers/RoleProvider";
 import { PageSkeleton } from "@/components/Skeletons";
 
+function isBrokenQuestionText(value: string) {
+  const compact = value.replace(/\s/g, "");
+  const questionCount = (value.match(/\?/g) || []).length;
+  if (questionCount === 0) return false;
+  const normalized = value.replace(/[؟?\s.,:؛،!_-]/g, "");
+  return normalized.length === 0 || questionCount >= 3 && questionCount / Math.max(compact.length, 1) > 0.35;
+}
+
+function readableNameFromBrokenText(value: string) {
+  const words = value
+    .replace(/\?/g, " ")
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => /^[A-Za-z\u0600-\u06FF][A-Za-z\u0600-\u06FF.'-]{1,}$/.test(word));
+  return words[0] || "";
+}
+
+function readableNotificationTitle(title: string, type: string) {
+  if (!isBrokenQuestionText(title)) return title;
+  if (type === "leave") return "تحديث على طلب إجازة";
+  if (type === "task") return "تحديث على مهمة";
+  return "إشعار جديد";
+}
+
+function readableNotificationBody(body: string, type: string) {
+  if (!isBrokenQuestionText(body)) return body;
+  const name = readableNameFromBrokenText(body);
+  if (type === "leave") return name ? `يوجد تحديث جديد على طلب إجازة ${name}. اضغط فتح لمراجعة التفاصيل.` : "يوجد تحديث جديد على طلب الإجازة. اضغط فتح لمراجعة التفاصيل.";
+  if (type === "task") return "يوجد تحديث جديد على المهمة. اضغط فتح لمراجعة التفاصيل.";
+  return "اضغط فتح لمراجعة التفاصيل.";
+}
+
 export default function NotificationsPage() {
   const router = useRouter();
   const { currentUser } = useRoleContext();
@@ -62,8 +94,10 @@ export default function NotificationsPage() {
             const noteRecord = note as Record<string, unknown>;
             const noteId = String(noteRecord.id ?? "");
             const noteType = typeof noteRecord.type === "string" ? noteRecord.type : "system";
-            const noteTitle = typeof noteRecord.title === "string" ? noteRecord.title : "إشعار";
-            const noteBody = typeof noteRecord.body === "string" ? noteRecord.body : "";
+            const rawTitle = typeof noteRecord.title === "string" ? noteRecord.title : "إشعار";
+            const rawBody = typeof noteRecord.body === "string" ? noteRecord.body : "";
+            const noteTitle = readableNotificationTitle(rawTitle, noteType);
+            const noteBody = readableNotificationBody(rawBody, noteType);
             const noteLink = typeof noteRecord.link === "string" ? noteRecord.link : "";
             const isRead = Boolean(noteRecord.is_read);
 
