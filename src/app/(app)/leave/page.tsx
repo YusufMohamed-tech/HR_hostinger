@@ -22,7 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useLeaveRequests, useLeaveBalances } from "@/hooks/use-data";
-import { advanceLeaveApproval, createLeaveRequest } from "@/lib/services/leaves";
+import { advanceLeaveApproval, createLeaveRequest, getLeaveApprovalManagerId } from "@/lib/services/leaves";
 import { notifyLeaveDecision } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
@@ -74,7 +74,7 @@ export default function LeavePage() {
   const isOwnRequest = (req: Record<string, unknown>) => String(req.employee_id ?? "") === currentUser?.employeeId;
   const isManagedRequest = (req: Record<string, unknown>) => {
     const employee = (req.employee ?? null) as Record<string, unknown> | null;
-    return Boolean(currentUser?.employeeId && employee?.manager_id === currentUser.employeeId);
+    return Boolean(currentUser?.employeeId && getLeaveApprovalManagerId(employee) === currentUser.employeeId);
   };
   const isHrReviewableRequest = (req: Record<string, unknown>) => {
     const currentStep = Number(req.current_step || 1);
