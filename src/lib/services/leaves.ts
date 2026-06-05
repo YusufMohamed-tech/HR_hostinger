@@ -256,6 +256,7 @@ export async function advanceLeaveApproval(
 
   const isHrAdminRequest = requesterRoleResult.data === "HR_Admin";
   const isHrRecruitmentRequest = requesterRoleResult.data === "HR_Recruitment";
+  const isSalesRequest = requesterRoleResult.data === "Sales";
 
   if ((isHrAdminRequest || isHrRecruitmentRequest) && actorRole !== "Superadmin") {
     return {
@@ -266,6 +267,7 @@ export async function advanceLeaveApproval(
 
   const canApproveManagerStep = actorRole === "Admin"
     || actorRole === "Superadmin"
+    || (isSalesRequest && actorRole === "Sales_Manager")
     || (!!actorEmployeeId && !!managerId && actorEmployeeId === managerId);
   const canApproveHrStep = actorRole === "Admin" || actorRole === "HR_Admin" || actorRole === "Superadmin";
 

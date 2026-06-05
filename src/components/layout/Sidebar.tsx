@@ -19,6 +19,9 @@ import {
   MapPin,
   Network,
   Package,
+  ShoppingCart,
+  BarChart3,
+  Boxes,
   Settings,
   Users,
   WalletCards,
@@ -86,6 +89,40 @@ export function SidebarContent() {
     if (role === "HR_Recruitment") {
       return [
         { title: "التوظيف", links: recruitmentOps },
+        { title: "النظام", links: system },
+      ];
+    }
+
+    if (role === "Sales") {
+      return [
+        {
+          title: "المبيعات",
+          links: [
+            { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
+            { name: "سجل المبيعات", href: "/sales/history", icon: ClipboardList },
+            { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
+            { name: "الإشعارات", href: "/notifications", icon: Bell },
+          ],
+        },
+        { title: "النظام", links: system },
+      ];
+    }
+
+    if (role === "Sales_Manager") {
+      return [
+        {
+          title: "إدارة المبيعات",
+          links: [
+            { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
+            { name: "التقارير", href: "/sales/reports", icon: ClipboardList },
+            { name: "المنتجات", href: "/sales/products", icon: Boxes },
+            { name: "فريق المبيعات", href: "/sales/team", icon: Users },
+            { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
+            { name: "سجل مبيعاتي", href: "/sales/history", icon: ClipboardList },
+            { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
+            { name: "الإشعارات", href: "/notifications", icon: Bell },
+          ],
+        },
         { title: "النظام", links: system },
       ];
     }

@@ -6,7 +6,9 @@ export type OrgRole =
   | "employee"
   | "hr_admin"
   | "hr_recruitment"
-  | "training_manager";
+  | "training_manager"
+  | "sales"
+  | "sales_manager";
 
 export const ALL_ROLES: Role[] = [
   "Superadmin",
@@ -14,6 +16,8 @@ export const ALL_ROLES: Role[] = [
   "HR_Admin",
   "HR_Recruitment",
   "Training_Manager",
+  "Sales",
+  "Sales_Manager",
   "Employee",
 ];
 
@@ -23,6 +27,8 @@ export function roleFromOrgRole(role: string | null | undefined): Role | null {
   if (role === "hr_admin") return "HR_Admin";
   if (role === "hr_recruitment") return "HR_Recruitment";
   if (role === "training_manager") return "Training_Manager";
+  if (role === "sales") return "Sales";
+  if (role === "sales_manager") return "Sales_Manager";
   if (role === "employee") return "Employee";
   return null;
 }
@@ -30,6 +36,8 @@ export function roleFromOrgRole(role: string | null | undefined): Role | null {
 export function getDefaultPathForRole(role: Role): string {
   if (role === "Superadmin") return "/superadmin";
   if (role === "HR_Recruitment") return "/recruitment";
+  if (role === "Sales") return "/sales/log";
+  if (role === "Sales_Manager") return "/sales/dashboard";
   return "/";
 }
 
@@ -66,7 +74,7 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath === "/") {
-    return role !== "HR_Recruitment";
+    return !["HR_Recruitment", "Sales", "Sales_Manager"].includes(role);
   }
 
   if (normalizedPath.startsWith("/api/hr")) {
@@ -81,6 +89,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return ["Admin", "HR_Admin", "HR_Recruitment"].includes(role);
   }
 
+  if (normalizedPath.startsWith("/api/sales")) {
+    return ["Admin", "HR_Admin", "Sales", "Sales_Manager"].includes(role);
+  }
+
   // /api/candidate/* — authenticated candidates (no role) go through middleware
   // but these routes use admin client and do their own auth check
   if (normalizedPath.startsWith("/api/candidate")) {
@@ -89,6 +101,14 @@ export function canAccessPath(role: Role, pathname: string): boolean {
 
   if (normalizedPath.startsWith("/recruitment")) {
     return ["Admin", "HR_Recruitment"].includes(role);
+  }
+
+  if (normalizedPath.startsWith("/sales/log") || normalizedPath.startsWith("/sales/history")) {
+    return ["Sales", "Sales_Manager", "Admin", "HR_Admin"].includes(role);
+  }
+
+  if (normalizedPath.startsWith("/sales")) {
+    return ["Sales_Manager", "Admin", "HR_Admin"].includes(role);
   }
 
   if (

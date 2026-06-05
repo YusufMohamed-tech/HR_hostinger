@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
 
-const allowedSelfServiceRoles = new Set(["employee", "training_manager", "hr_admin", "hr_recruitment"]);
+const allowedSelfServiceRoles = new Set(["employee", "training_manager", "hr_admin", "hr_recruitment", "sales", "sales_manager"]);
 
 function getEmployeeApprovalManagerId(employee: Record<string, unknown> | null | undefined) {
   if (!employee) return "";
@@ -113,7 +113,10 @@ export async function POST(request: NextRequest) {
   }
 
   const now = new Date().toISOString();
+  const directHrReview = rawRole === "sales_manager";
   const totalSteps = rawRole === "hr_admin" || rawRole === "hr_recruitment" ? 1 : 2;
+  const currentStep = directHrReview ? 2 : 1;
+  const managerApprovalStatus = directHrReview ? "approved" : "pending";
 
   const { data: leaveRequest, error: leaveRequestError } = await admin
     .from("leave_requests")
@@ -122,11 +125,11 @@ export async function POST(request: NextRequest) {
       employee_id: employeeId,
       ...parsed.data,
       status: "pending",
-      manager_approval_status: "pending",
+      manager_approval_status: managerApprovalStatus,
       hr_approval_status: "pending",
-      current_step: 1,
+      current_step: currentStep,
       total_steps: totalSteps,
-      approval_history: [{ step: 1, status: "submitted", at: now }],
+      approval_history: [{ step: currentStep, status: "submitted", at: now }],
     } as never)
     .select()
     .single();
@@ -135,8 +138,49 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: leaveRequestError.message }, { status: 500 });
   }
 
-  const managerEmployeeId = getEmployeeApprovalManagerId(employeeRecord);
-  if (managerEmployeeId) {
+  if (rawRole === "sales") {
+    const { data: salesManagers } = await admin
+      .from("org_members")
+      .select("user_id")
+      .eq("org_id", orgId)
+      .eq("role", "sales_manager");
+    const employeeName = String(employeeRecord?.full_name || user.email || "Employee");
+    const rows = ((salesManagers ?? []) as Record<string, unknown>[])
+      .map((member) => String(member.user_id || ""))
+      .filter(Boolean)
+      .map((userId) => ({
+        org_id: orgId,
+        user_id: userId,
+        title: "طلب إجازة جديد",
+        body: `${employeeName} أرسل طلب إجازة بانتظار موافقة مدير المبيعات.`,
+        type: "leave",
+        link: "/leave",
+        is_read: false,
+      }));
+    if (rows.length > 0) await admin.from("notifications").insert(rows as never);
+  } else if (rawRole === "sales_manager") {
+    const { data: hrMembers } = await admin
+      .from("org_members")
+      .select("user_id")
+      .eq("org_id", orgId)
+      .in("role", ["hr_admin", "admin"]);
+    const employeeName = String(employeeRecord?.full_name || user.email || "Employee");
+    const rows = ((hrMembers ?? []) as Record<string, unknown>[])
+      .map((member) => String(member.user_id || ""))
+      .filter(Boolean)
+      .map((userId) => ({
+        org_id: orgId,
+        user_id: userId,
+        title: "طلب إجازة بانتظار HR",
+        body: `${employeeName} أرسل طلب إجازة بانتظار مراجعة HR.`,
+        type: "leave",
+        link: "/leave",
+        is_read: false,
+      }));
+    if (rows.length > 0) await admin.from("notifications").insert(rows as never);
+  } else {
+    const managerEmployeeId = getEmployeeApprovalManagerId(employeeRecord);
+    if (managerEmployeeId) {
     const { data: manager } = await admin
       .from("employees")
       .select("user_id")
@@ -155,6 +199,7 @@ export async function POST(request: NextRequest) {
         is_read: false,
       } as never);
     }
+  }
   }
 
   return NextResponse.json({ request: leaveRequest });
