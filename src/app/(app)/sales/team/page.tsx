@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogT
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { createSalesAgent, getSalesTeam, updateSalesAgent, type SalesAgent } from "@/lib/services/sales";
 import { PageSkeleton } from "@/components/Skeletons";
@@ -78,20 +79,18 @@ export default function SalesTeamPage() {
                     <TableCell>
                       <div className="flex items-center justify-end gap-2">
                         <AgentDialog agent={agent} onDone={load} onMessage={setMessage} />
-                        {agent.role === "sales" && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className={active ? "text-red-600 hover:bg-red-50" : "text-brand hover:text-brand-dark"}
-                            onClick={async () => {
-                              const result = await updateSalesAgent({ user_id: agent.user_id, status: active ? "inactive" : "active" });
-                              if (result.error) setMessage(result.error);
-                              else load();
-                            }}
-                          >
-                            <UserX className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={active ? "text-red-600 hover:bg-red-50" : "text-brand hover:text-brand-dark"}
+                          onClick={async () => {
+                            const result = await updateSalesAgent({ user_id: agent.user_id, status: active ? "inactive" : "active" });
+                            if (result.error) setMessage(result.error);
+                            else load();
+                          }}
+                        >
+                          <UserX className="h-4 w-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -115,7 +114,14 @@ export default function SalesTeamPage() {
 function AgentDialog({ agent, onDone, onMessage }: { agent?: SalesAgent; onDone: () => void; onMessage: (message: string) => void }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ full_name: "", email: "", password: "", phone: "", national_id: "" });
+  const [form, setForm] = useState<{ full_name: string; email: string; password: string; phone: string; national_id: string; role: "sales" | "sales_manager" }>({
+    full_name: "",
+    email: "",
+    password: "",
+    phone: "",
+    national_id: "",
+    role: "sales",
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -125,7 +131,8 @@ function AgentDialog({ agent, onDone, onMessage }: { agent?: SalesAgent; onDone:
       password: "",
       phone: agent.phone || "",
       national_id: agent.national_id || "",
-    } : { full_name: "", email: "", password: "", phone: "", national_id: "" });
+      role: agent.role === "sales_manager" ? "sales_manager" : "sales",
+    } : { full_name: "", email: "", password: "", phone: "", national_id: "", role: "sales" });
   }, [agent, open]);
 
   const save = async () => {
@@ -144,6 +151,7 @@ function AgentDialog({ agent, onDone, onMessage }: { agent?: SalesAgent; onDone:
           full_name: form.full_name,
           phone: form.phone,
           national_id: form.national_id,
+          role: form.role,
         })
       : await createSalesAgent(form);
     setSaving(false);
@@ -158,13 +166,25 @@ function AgentDialog({ agent, onDone, onMessage }: { agent?: SalesAgent; onDone:
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant={agent ? "ghost" : "default"} size={agent ? "sm" : "default"} className={agent ? "text-brand hover:text-brand-dark" : "bg-brand text-white hover:bg-brand-dark"} />}>
-        {agent ? <Pencil className="h-4 w-4" /> : <><Plus className="ml-2 h-4 w-4" /> إضافة بائع</>}
+        {agent ? <Pencil className="h-4 w-4" /> : <><Plus className="ml-2 h-4 w-4" /> إضافة حساب مبيعات</>}
       </DialogTrigger>
       <DialogContent dir="rtl" className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>{agent ? "تعديل بائع" : "إضافة بائع"}</DialogTitle>
+          <DialogTitle>{agent ? "تعديل حساب مبيعات" : "إضافة حساب مبيعات"}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-4">
+          <div className="space-y-2">
+            <Label>نوع الحساب *</Label>
+            <Select value={form.role} onValueChange={(value) => setForm((prev) => ({ ...prev, role: value === "sales_manager" ? "sales_manager" : "sales" }))}>
+              <SelectTrigger>
+                <SelectValue placeholder="اختر نوع الحساب" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sales">بائع</SelectItem>
+                <SelectItem value="sales_manager">مدير مبيعات</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <Label>الاسم *</Label>
             <Input value={form.full_name} onChange={(event) => setForm((prev) => ({ ...prev, full_name: event.target.value }))} />
