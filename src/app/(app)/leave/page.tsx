@@ -69,8 +69,9 @@ export default function LeavePage() {
   const role = currentUser?.role || "";
   const isHRAdmin = role === "HR_Admin";
   const isTrainingManager = role === "Training_Manager";
-  const isApprover = ["Superadmin", "Admin", "HR_Admin", "Training_Manager"].includes(role);
-  const isSelfServiceView = !isApprover || ((isHRAdmin || isTrainingManager) && searchParams.get("view") === "mine");
+  const isSalesManager = role === "Sales_Manager";
+  const isApprover = ["Superadmin", "Admin", "HR_Admin", "Training_Manager", "Sales_Manager"].includes(role);
+  const isSelfServiceView = !isApprover || ((isHRAdmin || isTrainingManager || isSalesManager) && searchParams.get("view") === "mine");
   const canApprove = isApprover && !isSelfServiceView;
   const isOwnRequest = (req: Record<string, unknown>) => String(req.employee_id ?? "") === currentUser?.employeeId;
   const isManagedRequest = (req: Record<string, unknown>) => {
@@ -88,6 +89,11 @@ export default function LeavePage() {
       ? leaveRequests.filter((req) => !isOwnRequest(req as Record<string, unknown>) && isHrReviewableRequest(req as Record<string, unknown>))
       : role === "Training_Manager"
         ? leaveRequests.filter((req) => isManagedRequest(req as Record<string, unknown>))
+        : role === "Sales_Manager"
+          ? leaveRequests.filter((req) => {
+              const requesterRole = String((req as Record<string, unknown>).requester_role || "");
+              return requesterRole === "Sales";
+            })
         : leaveRequests;
   const balance = (balances[0] ?? null) as Record<string, unknown> | null;
   const sickRemaining = typeof balance?.sick_remaining === "number" ? balance.sick_remaining : 0;
@@ -160,6 +166,7 @@ export default function LeavePage() {
                 const currentStep = Number(reqRecord.current_step || 1);
                 const canReviewCurrentStep = role === "Admin"
                   || (role === "Training_Manager" && currentStep <= 1 && isManagedRequest(reqRecord))
+                  || (role === "Sales_Manager" && currentStep <= 1)
                   || (role === "HR_Admin" && currentStep >= 2);
                 const canReviewRequest = canApprove
                   && !isOwnRequest(reqRecord)
