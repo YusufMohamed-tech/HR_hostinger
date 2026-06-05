@@ -71,6 +71,9 @@ export async function POST(request: NextRequest) {
   const password = String(body.password || "");
   const phone = String(body.phone || "").trim();
   const nationalId = String(body.national_id || "").trim();
+  const requestedRole = String(body.role || "sales").trim().toLowerCase();
+  const salesRole = requestedRole === "sales_manager" ? "sales_manager" : "sales";
+  const salesTitle = salesRole === "sales_manager" ? "Sales Manager" : "Sales";
 
   if (fullName.length < 2) return NextResponse.json({ message: "اسم البائع مطلوب." }, { status: 400 });
   if (!email.includes("@")) return NextResponse.json({ message: "بريد إلكتروني صحيح مطلوب." }, { status: 400 });
@@ -115,7 +118,7 @@ export async function POST(request: NextRequest) {
     full_name: fullName,
     email,
     phone: phone || null,
-    title: "Sales",
+    title: salesTitle,
     account_status: "active",
   } as never, { onConflict: "user_id" })).error;
   if (profileError) return NextResponse.json({ message: profileError.message }, { status: 500 });
@@ -123,7 +126,7 @@ export async function POST(request: NextRequest) {
   const memberError = (await admin.from("org_members").upsert({
     org_id: auth.orgId,
     user_id: userId,
-    role: "sales",
+    role: salesRole,
   } as never, { onConflict: "org_id,user_id" })).error;
   if (memberError) return NextResponse.json({ message: memberError.message }, { status: 500 });
 
@@ -142,7 +145,7 @@ export async function POST(request: NextRequest) {
       email,
       phone: phone || null,
       national_id: nationalId || null,
-      job_title: "Sales",
+      job_title: salesTitle,
       status: "Active",
     } as never).eq("id", String((employeeResult.data as Record<string, unknown>).id))).error;
     if (updateError) return NextResponse.json({ message: updateError.message }, { status: 500 });
@@ -154,7 +157,7 @@ export async function POST(request: NextRequest) {
       email,
       phone: phone || null,
       national_id: nationalId || null,
-      job_title: "Sales",
+      job_title: salesTitle,
       status: "Active",
     } as never)).error;
     if (createError) return NextResponse.json({ message: createError.message }, { status: 500 });
@@ -190,6 +193,8 @@ export async function PATCH(request: NextRequest) {
   const phone = String(body.phone || "").trim();
   const nationalId = String(body.national_id || "").trim();
   const status = String(body.status || "").trim().toLowerCase();
+  const requestedRole = String(body.role || "").trim().toLowerCase();
+  const nextRole = requestedRole === "sales" || requestedRole === "sales_manager" ? requestedRole : "";
   const profileValues: Record<string, unknown> = {};
   const employeeValues: Record<string, unknown> = {};
 
@@ -206,6 +211,21 @@ export async function PATCH(request: NextRequest) {
     const active = status === "active" || status === "نشط";
     profileValues.account_status = active ? "active" : "inactive";
     employeeValues.status = active ? "Active" : "Inactive";
+  }
+  if (nextRole) {
+    const title = nextRole === "sales_manager" ? "Sales Manager" : "Sales";
+    profileValues.title = title;
+    employeeValues.job_title = title;
+  }
+
+  if (nextRole) {
+    const memberError = (await admin
+      .from("org_members")
+      .update({ role: nextRole } as never)
+      .eq("org_id", auth.orgId)
+      .eq("user_id", userId)
+      .in("role", ["sales", "sales_manager"])).error;
+    if (memberError) return NextResponse.json({ message: memberError.message }, { status: 500 });
   }
 
   if (Object.keys(profileValues).length > 0) {

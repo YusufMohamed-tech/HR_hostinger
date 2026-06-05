@@ -84,6 +84,13 @@ export function SidebarContent() {
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 
+    const salesManagementOps = [
+      { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
+      { name: "التقارير", href: "/sales/reports", icon: ClipboardList },
+      { name: "المنتجات", href: "/sales/products", icon: Boxes },
+      { name: "فريق المبيعات", href: "/sales/team", icon: Users },
+    ];
+
     const system = [{ name: "الإعدادات", href: "/settings", icon: Settings }];
 
     if (role === "HR_Recruitment") {
@@ -113,10 +120,7 @@ export function SidebarContent() {
         {
           title: "إدارة المبيعات",
           links: [
-            { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
-            { name: "التقارير", href: "/sales/reports", icon: ClipboardList },
-            { name: "المنتجات", href: "/sales/products", icon: Boxes },
-            { name: "فريق المبيعات", href: "/sales/team", icon: Users },
+            ...salesManagementOps,
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
             { name: "سجل مبيعاتي", href: "/sales/history", icon: ClipboardList },
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
@@ -130,6 +134,7 @@ export function SidebarContent() {
     return [
       { title: "الأساسي", links: core },
       { title: "الإدارة", links: isAdmin ? fullAdminOps : isHRAdmin ? hrAdminOps : [] },
+      { title: "المبيعات", links: (isAdmin || isHRAdmin) ? salesManagementOps : [] },
       { title: "النظام", links: system },
     ];
   };

@@ -114,14 +114,14 @@ export async function getSalesTeam() {
   return apiFetch<SalesAgent[]>("/api/sales/team");
 }
 
-export async function createSalesAgent(values: { full_name: string; email: string; password: string; phone?: string; national_id?: string }) {
+export async function createSalesAgent(values: { full_name: string; email: string; password: string; phone?: string; national_id?: string; role?: "sales" | "sales_manager" }) {
   return apiFetch<SalesAgent>("/api/sales/team", {
     method: "POST",
     body: JSON.stringify(values),
   });
 }
 
-export async function updateSalesAgent(values: { user_id: string; full_name?: string; phone?: string; national_id?: string; status?: string }) {
+export async function updateSalesAgent(values: { user_id: string; full_name?: string; phone?: string; national_id?: string; status?: string; role?: "sales" | "sales_manager" }) {
   return apiFetch<SalesAgent>("/api/sales/team", {
     method: "PATCH",
     body: JSON.stringify(values),
