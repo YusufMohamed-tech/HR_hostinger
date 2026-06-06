@@ -39,6 +39,8 @@ export const employeeFormSchema = z.object({
   base_salary: optionalMoney,
   bonus: optionalMoney,
   deductions: optionalMoney,
+  leave_balance_manual_adjustment: optionalMoney,
+  leave_accrual_start_date: optionalDate,
   payment_method: optionalTrimmedString,
   bank_account: optionalTrimmedString,
 });

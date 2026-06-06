@@ -73,6 +73,8 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
     base_salary: "",
     bonus: "",
     deductions: "",
+    leave_balance_manual_adjustment: "",
+    leave_accrual_start_date: "",
     payment_method: "",
     bank_account: "",
   });
@@ -100,6 +102,8 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
         base_salary: employee.base_salary ? String(employee.base_salary) : "",
         bonus: employee.bonus ? String(employee.bonus) : "",
         deductions: employee.deductions ? String(employee.deductions) : "",
+        leave_balance_manual_adjustment: employee.leave_balance_manual_adjustment ? String(employee.leave_balance_manual_adjustment) : "",
+        leave_accrual_start_date: employee.leave_accrual_start_date || employee.hiring_date || "",
         payment_method: employee.payment_method || "",
         bank_account: employee.bank_account || "",
       });
@@ -182,6 +186,8 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
       base_salary: form.base_salary ? parseFloat(form.base_salary) : undefined,
       bonus: form.bonus ? parseFloat(form.bonus) : undefined,
       deductions: form.deductions ? parseFloat(form.deductions) : undefined,
+      leave_balance_manual_adjustment: form.leave_balance_manual_adjustment ? parseFloat(form.leave_balance_manual_adjustment) : undefined,
+      leave_accrual_start_date: form.leave_accrual_start_date || form.hiring_date || undefined,
       payment_method: form.payment_method || undefined,
       bank_account: form.bank_account || undefined,
     };
@@ -409,6 +415,25 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
               <div className="space-y-2">
                 <Label>طريقة الدفع</Label>
                 <Input value={form.payment_method} onChange={(e) => set("payment_method", e.target.value)} />
+              </div>
+            </div>
+            <div className={twoColumnGridClass}>
+              <div className="space-y-2">
+                <Label>رصيد الإجازات الافتتاحي</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.leave_balance_manual_adjustment}
+                  onChange={(e) => set("leave_balance_manual_adjustment", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>بداية احتساب رصيد الإجازات</Label>
+                <Input
+                  type="date"
+                  value={form.leave_accrual_start_date}
+                  onChange={(e) => set("leave_accrual_start_date", e.target.value)}
+                />
               </div>
             </div>
           </div>
