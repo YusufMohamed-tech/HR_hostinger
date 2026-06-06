@@ -43,6 +43,21 @@ export type JobPosting = {
   new_this_week?: number;
 };
 
+export type JobTemplate = {
+  id: string;
+  created_by: string | null;
+  organization_id: string;
+  title: string;
+  description: string | null;
+  requirements: string | null;
+  form_schema: FormQuestion[];
+  employment_type: string | null;
+  department_id: string | null;
+  company_name: string | null;
+  created_at: string;
+  department?: { name: string } | null;
+};
+
 export type JobApplication = {
   id: string;
   org_id: string;
@@ -112,6 +127,23 @@ export async function createJobPosting(values: Partial<JobPosting> & { status?: 
 export async function updateJobPosting(id: string, values: Partial<JobPosting> & { status?: string }) {
   return apiFetch<JobPosting>(`/api/recruitment/postings/${id}`, {
     method: "PATCH",
+    body: JSON.stringify(values),
+  });
+}
+
+export async function duplicateJobPosting(id: string) {
+  return apiFetch<JobPosting>(`/api/recruitment/postings/${id}/duplicate`, {
+    method: "POST",
+  });
+}
+
+export async function getJobTemplates() {
+  return apiFetch<JobTemplate[]>("/api/recruitment/templates");
+}
+
+export async function saveJobTemplate(values: Partial<JobPosting>) {
+  return apiFetch<JobTemplate>("/api/recruitment/templates", {
+    method: "POST",
     body: JSON.stringify(values),
   });
 }
