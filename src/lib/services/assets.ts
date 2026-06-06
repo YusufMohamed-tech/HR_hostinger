@@ -39,14 +39,16 @@ export async function hasUnreturnedAssets(orgId: string, employeeId: string) {
 }
 
 export async function createAssetAssignment(values: Record<string, unknown>) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("employee_assets")
-    .insert(values as never)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+  const response = await fetch("/api/assets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(values),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    return { data: null, error: { message: String(payload?.message || "Unable to assign asset.") } };
+  }
+  return { data: payload?.data || null, error: null };
 }
 
 export async function updateAssetAssignment(id: string, values: Record<string, unknown>) {
@@ -77,8 +79,14 @@ export async function uploadAssetSignature(assetId: string, signatureData: strin
 }
 
 export async function acknowledgeAssetAssignment(id: string, signaturePath: string) {
-  return updateAssetAssignment(id, {
-    acknowledgment_signature_url: signaturePath,
-    acknowledged_at: new Date().toISOString(),
+  const response = await fetch("/api/assets", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, signature_path: signaturePath }),
   });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    return { data: null, error: { message: String(payload?.message || "Unable to acknowledge asset.") } };
+  }
+  return { data: payload?.data || null, error: null };
 }

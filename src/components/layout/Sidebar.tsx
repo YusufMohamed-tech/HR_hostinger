@@ -6,7 +6,9 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useNotifications } from "@/hooks/use-data";
 import {
+  BarChart3,
   Bell,
+  Boxes,
   Briefcase,
   Calculator,
   CalendarDays,
@@ -19,14 +21,25 @@ import {
   MapPin,
   Network,
   Package,
-  ShoppingCart,
-  BarChart3,
-  Boxes,
   Settings,
+  ShoppingCart,
   Users,
   WalletCards,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+type NavLink = {
+  name: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  indent?: boolean;
+  match?: string;
+};
+
+type NavSection = {
+  title: string;
+  links: NavLink[];
+};
 
 export function SidebarContent() {
   const pathname = usePathname();
@@ -36,27 +49,27 @@ export function SidebarContent() {
   const leaveView = searchParams.get("view");
   const unreadNotifications = notifications.filter((note) => !note.is_read).length;
 
-  const getSections = () => {
+  const getSections = (): NavSection[] => {
     const role = currentUser?.role ?? "Employee";
     const isSuperAdmin = role === "Superadmin";
     const isAdmin = role === "Admin" || isSuperAdmin;
     const isHRAdmin = role === "HR_Admin";
 
-    const taskLinks = (isAdmin || isHRAdmin)
+    const taskLinks: NavLink[] = (isAdmin || isHRAdmin)
       ? [
           { name: "إسناد المهام", href: "/tasks", icon: CheckSquare },
           { name: "مهامي", href: "/tasks/mine", icon: CheckSquare, indent: true },
         ]
       : [{ name: "مهامي", href: "/tasks/mine", icon: CheckSquare }];
 
-    const leaveLinks = isHRAdmin
+    const leaveLinks: NavLink[] = isHRAdmin
       ? [
           { name: "إدارة الإجازات", href: "/leave", icon: ClipboardList, match: "leave-manage" },
           { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, indent: true, match: "leave-mine" },
         ]
       : [{ name: "الإجازات", href: "/leave", icon: ClipboardList }];
 
-    const core = [
+    const core: NavLink[] = [
       { name: "لوحة التحكم", href: "/", icon: LayoutDashboard },
       { name: "الحضور", href: "/attendance", icon: Clock },
       ...taskLinks,
@@ -66,7 +79,7 @@ export function SidebarContent() {
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 
-    const fullAdminOps = [
+    const fullAdminOps: NavLink[] = [
       { name: "الموظفون", href: "/employees", icon: Users },
       { name: "الأقسام", href: "/departments", icon: Layers },
       { name: "ملفات الموظفين", href: "/personnel", icon: FileText },
@@ -77,21 +90,26 @@ export function SidebarContent() {
     ];
     const hrAdminOps = fullAdminOps.filter((link) => link.href !== "/recruitment");
 
-    const recruitmentOps = [
+    const employeeSelfOps: NavLink[] = [
+      { name: "الأرصدة والسلف", href: "/balances", icon: WalletCards },
+      { name: "العهد المستلمة", href: "/assets", icon: Package },
+    ];
+
+    const recruitmentOps: NavLink[] = [
       { name: "التوظيف", href: "/recruitment", icon: Briefcase },
       { name: "مهامي", href: "/tasks/mine", icon: CheckSquare },
       { name: "إجازاتي", href: "/leave", icon: ClipboardList },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 
-    const salesManagementOps = [
+    const salesManagementOps: NavLink[] = [
       { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
       { name: "التقارير", href: "/sales/reports", icon: ClipboardList },
       { name: "المنتجات", href: "/sales/products", icon: Boxes },
       { name: "فريق المبيعات", href: "/sales/team", icon: Users },
     ];
 
-    const system = [{ name: "الإعدادات", href: "/settings", icon: Settings }];
+    const system: NavLink[] = [{ name: "الإعدادات", href: "/settings", icon: Settings }];
 
     if (role === "HR_Recruitment") {
       return [
@@ -133,8 +151,8 @@ export function SidebarContent() {
 
     return [
       { title: "الأساسي", links: core },
-      { title: "الإدارة", links: isAdmin ? fullAdminOps : isHRAdmin ? hrAdminOps : [] },
-      { title: "المبيعات", links: (isAdmin || isHRAdmin) ? salesManagementOps : [] },
+      { title: "الإدارة", links: isAdmin ? fullAdminOps : isHRAdmin ? hrAdminOps : role === "Employee" ? employeeSelfOps : [] },
+      { title: "المبيعات", links: isAdmin || isHRAdmin ? salesManagementOps : [] },
       { title: "النظام", links: system },
     ];
   };
@@ -151,7 +169,7 @@ export function SidebarContent() {
       </div>
       <div className="flex-1 py-6">
         <nav className="grid items-start px-4 text-sm font-medium gap-4">
-          {sections.map((section) => (
+          {sections.map((section) =>
             section.links.length > 0 ? (
               <div key={section.title} className="grid gap-1">
                 <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 mb-1">
@@ -159,13 +177,11 @@ export function SidebarContent() {
                 </p>
                 {section.links.map((link) => {
                   const Icon = link.icon;
-                  const linkMatch = (link as Record<string, unknown>).match;
-                  const isActive = linkMatch === "leave-mine"
+                  const isActive = link.match === "leave-mine"
                     ? pathname === "/leave" && leaveView === "mine"
-                    : linkMatch === "leave-manage"
+                    : link.match === "leave-manage"
                       ? pathname === "/leave" && leaveView !== "mine"
                       : pathname === link.href;
-                  const indent = (link as Record<string, unknown>).indent === true;
                   const isNotificationsLink = link.href === "/notifications";
                   return (
                     <Link
@@ -173,13 +189,13 @@ export function SidebarContent() {
                       href={link.href}
                       className={cn(
                         "flex items-center gap-3 rounded-lg py-2 transition-all duration-150",
-                        indent ? "px-5 text-[13px]" : "px-3 py-2.5",
+                        link.indent ? "px-5 text-[13px]" : "px-3 py-2.5",
                         isActive
                           ? "bg-brand text-white shadow-sm font-medium"
                           : "text-slate-300 hover:bg-slate-800 hover:text-white"
                       )}
                     >
-                      <Icon className={cn("h-4 w-4", indent && "h-3.5 w-3.5")} />
+                      <Icon className={cn("h-4 w-4", link.indent && "h-3.5 w-3.5")} />
                       <span className="min-w-0 flex-1">{link.name}</span>
                       {isNotificationsLink && unreadNotifications > 0 && (
                         <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[11px] font-bold leading-5 text-white">
@@ -191,7 +207,7 @@ export function SidebarContent() {
                 })}
               </div>
             ) : null
-          ))}
+          )}
         </nav>
       </div>
     </div>
