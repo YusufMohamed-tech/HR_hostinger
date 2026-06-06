@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Save, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { FormBuilder } from "@/components/recruitment/FormBuilder";
 import { FormPreview } from "@/components/recruitment/FormPreview";
-import { createJobPosting } from "@/lib/services/recruitment";
+import { createJobPosting, getJobTemplates } from "@/lib/services/recruitment";
 import type { FormQuestion } from "@/lib/services/recruitment";
 import { useDepartments, useLocations } from "@/hooks/use-data";
 
@@ -28,6 +28,7 @@ const CITY_OPTIONS = ["الرياض", "جدة", "مكة المكرمة", "الم
 
 export default function NewJobPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { data: departments } = useDepartments();
   const { data: locations } = useLocations();
 
@@ -47,6 +48,29 @@ export default function NewJobPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [showPreview, setShowPreview] = useState(false);
+
+  React.useEffect(() => {
+    const templateId = searchParams.get("template");
+    if (!templateId) return;
+    getJobTemplates().then(({ data }) => {
+      const template = (data || []).find((item) => item.id === templateId);
+      if (!template) return;
+      setTitle(template.title || "");
+      setDepartmentId(template.department_id || "");
+      setEmploymentType(template.employment_type || "full_time");
+      setDescription(template.description || "");
+      setRequirements(template.requirements || "");
+      setQuestions(Array.isArray(template.form_schema) ? template.form_schema : []);
+      const companyName = template.company_name || "Tatwir Talent";
+      if (COMPANY_OPTIONS.includes(companyName)) {
+        setCompanySelection(companyName);
+        setCustomCompanyName("");
+      } else {
+        setCompanySelection("other");
+        setCustomCompanyName(companyName);
+      }
+    });
+  }, [searchParams]);
 
   const handleSave = async (status: "draft" | "active") => {
     if (!title.trim()) {

@@ -2,23 +2,28 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Plus, Briefcase, Users, TrendingUp, FileSearch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { JobCard } from "@/components/recruitment/JobCard";
-import { getJobPostings, updateJobPosting } from "@/lib/services/recruitment";
-import type { JobPosting } from "@/lib/services/recruitment";
+import { duplicateJobPosting, getJobPostings, getJobTemplates, saveJobTemplate, updateJobPosting } from "@/lib/services/recruitment";
+import type { JobPosting, JobTemplate } from "@/lib/services/recruitment";
 
 export default function RecruitmentPage() {
+  const router = useRouter();
   const [postings, setPostings] = useState<JobPosting[]>([]);
+  const [templates, setTemplates] = useState<JobTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data } = await getJobPostings();
+    const templatesResult = await getJobTemplates();
     setPostings(data || []);
+    setTemplates(templatesResult.data || []);
     setLoading(false);
   }, []);
 
@@ -36,6 +41,21 @@ export default function RecruitmentPage() {
     const url = `${window.location.origin}/apply/${slug}`;
     navigator.clipboard.writeText(url).catch(() => {});
     setMessage(`تم نسخ رابط التقديم:\n${url}`);
+  };
+
+  const handleDuplicate = async (id: string) => {
+    const { data, error } = await duplicateJobPosting(id);
+    if (error) setMessage(error);
+    else if (data) router.push(`/recruitment/${data.id}/edit`);
+  };
+
+  const handleSaveTemplate = async (posting: JobPosting) => {
+    const { error } = await saveJobTemplate(posting);
+    if (error) setMessage(error);
+    else {
+      setMessage("تم حفظ القالب");
+      load();
+    }
   };
 
   const active = postings.filter((p) => p.status === "active" || p.status === "published" || p.status === "open");
@@ -107,6 +127,32 @@ export default function RecruitmentPage() {
       </div>
 
       {/* Postings list */}
+      {templates.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold text-gray-900">القوالب المحفوظة</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {templates.map((template) => (
+              <Card key={template.id}>
+                <CardContent className="pt-4 space-y-3">
+                  <div>
+                    <p className="font-semibold text-gray-900">{template.title}</p>
+                    <p className="text-xs text-muted-foreground">{template.company_name || "—"}</p>
+                  </div>
+                  <Link
+                    href={{
+                      pathname: "/recruitment/new",
+                      query: { template: template.id },
+                    }}
+                  >
+                    <Button size="sm" variant="outline" className="w-full">استخدام القالب</Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
@@ -133,6 +179,8 @@ export default function RecruitmentPage() {
               posting={posting}
               onArchive={handleArchive}
               onCopyLink={handleCopyLink}
+              onDuplicate={handleDuplicate}
+              onSaveTemplate={handleSaveTemplate}
             />
           ))}
         </div>

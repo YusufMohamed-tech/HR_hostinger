@@ -29,9 +29,11 @@ type Props = {
   posting: JobPosting;
   onArchive: (id: string) => void;
   onCopyLink: (slug: string) => void;
+  onDuplicate?: (id: string) => void;
+  onSaveTemplate?: (posting: JobPosting) => void;
 };
 
-export function JobCard({ posting, onArchive, onCopyLink }: Props) {
+export function JobCard({ posting, onArchive, onCopyLink, onDuplicate, onSaveTemplate }: Props) {
   const status = STATUS_MAP[posting.status] ?? { label: posting.status, variant: "outline" as const };
   const isActive = ["active", "open", "published"].includes(posting.status);
   const deadline = posting.deadline
@@ -76,6 +78,13 @@ export function JobCard({ posting, onArchive, onCopyLink }: Props) {
               <Pencil className="w-3 h-3 ml-1" />
               تعديل
             </Link>
+          </Button>
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => onDuplicate?.(posting.id)}>
+            <Copy className="w-3 h-3 ml-1" />
+            نسخ
+          </Button>
+          <Button size="sm" variant="outline" className="text-xs" onClick={() => onSaveTemplate?.(posting)}>
+            حفظ كقالب
           </Button>
           {isActive && posting.public_slug && (
             <Button
