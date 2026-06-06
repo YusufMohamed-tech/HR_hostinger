@@ -23,6 +23,9 @@ const EMP_TYPES = [
   { value: "internship", label: "تدريب" },
 ];
 
+const COMPANY_OPTIONS = ["HG Communications", "Chessboard", "Tatwir Talent", "other"];
+const CITY_OPTIONS = ["الرياض", "جدة", "مكة المكرمة", "المدينة المنورة", "الدمام", "الخبر", "تبوك", "أبها", "نجران", "حائل", "القصيم", "الجوف", "الباحة", "عسير", "ينبع", "جازان"];
+
 export default function NewJobPage() {
   const router = useRouter();
   const { data: departments } = useDepartments();
@@ -31,6 +34,9 @@ export default function NewJobPage() {
   const [title, setTitle] = useState("");
   const [departmentId, setDepartmentId] = useState("");
   const [locationId, setLocationId] = useState("");
+  const [companySelection, setCompanySelection] = useState("Tatwir Talent");
+  const [customCompanyName, setCustomCompanyName] = useState("");
+  const [city, setCity] = useState("");
   const [employmentType, setEmploymentType] = useState("full_time");
   const [description, setDescription] = useState("");
   const [requirements, setRequirements] = useState("");
@@ -52,6 +58,8 @@ export default function NewJobPage() {
       title: title.trim(),
       department_id: departmentId || null,
       location_id: locationId || null,
+      company_name: companySelection === "other" ? customCompanyName.trim() || null : companySelection,
+      city: city || null,
       employment_type: employmentType || null,
       description: description || null,
       requirements: requirements || null,
@@ -129,6 +137,36 @@ export default function NewJobPage() {
                   className="mt-1"
                 />
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>اسم الشركة</Label>
+                  <Select value={companySelection} onValueChange={(value) => setCompanySelection(value || "Tatwir Talent")}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="اختر الشركة" /></SelectTrigger>
+                    <SelectContent>
+                      {COMPANY_OPTIONS.map((company) => (
+                        <SelectItem key={company} value={company}>{company === "other" ? "أخرى" : company}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>المدينة</Label>
+                  <Select value={city} onValueChange={(value) => setCity(value || "")}>
+                    <SelectTrigger className="mt-1"><SelectValue placeholder="اختر المدينة" /></SelectTrigger>
+                    <SelectContent>
+                      {CITY_OPTIONS.map((item) => (
+                        <SelectItem key={item} value={item}>{item}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {companySelection === "other" && (
+                <div>
+                  <Label>اسم الشركة الأخرى</Label>
+                  <Input value={customCompanyName} onChange={(event) => setCustomCompanyName(event.target.value)} className="mt-1" />
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>القسم</Label>

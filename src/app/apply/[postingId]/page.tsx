@@ -230,6 +230,18 @@ export default function PublicApplyPage() {
                 <h1 className="text-xl font-bold text-gray-900">{posting.title as string}</h1>
                 <p className="text-sm text-muted-foreground mt-0.5">{((posting as Record<string, unknown>).org as Record<string, string> | null)?.name || ""}</p>
                 <div className="flex flex-wrap gap-3 mt-2 text-xs text-muted-foreground">
+                  {Boolean(posting.company_name) && (
+                    <span className="flex items-center gap-1">
+                      <Building2 className="w-3.5 h-3.5" />
+                      {posting.company_name as string}
+                    </span>
+                  )}
+                  {Boolean(posting.city) && (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5" />
+                      {posting.city as string}
+                    </span>
+                  )}
                   {((posting as Record<string, unknown>).department as Record<string, string> | null)?.name && (
                     <span className="flex items-center gap-1">
                       <Building2 className="w-3.5 h-3.5" />
