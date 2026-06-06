@@ -12,6 +12,8 @@ import { Pencil } from "lucide-react";
 import { useDepartments, useLocations, useEmployees } from "@/hooks/use-data";
 import { createEmployeeAccount, updateEmployee } from "@/lib/services/employees";
 import { updateDepartment } from "@/lib/services/departments";
+import { hasUnreturnedAssets } from "@/lib/services/assets";
+import { MessageDialog } from "@/components/ui/feedback-dialog";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,6 +46,7 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<"employee" | "training_manager">("employee");
@@ -136,6 +139,28 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
     setSubmitting(true);
     setError("");
 
+    const currentStatus = String(employee?.status || "Active");
+    const isChangingToInactive = form.status === "Inactive" && currentStatus !== "Inactive";
+    if (isChangingToInactive) {
+      const orgId = String(employee?.org_id || "");
+      const employeeId = String(employee?.id || "");
+      const assetCheck = orgId && employeeId
+        ? await hasUnreturnedAssets(orgId, employeeId)
+        : { hasAssets: false, error: null };
+
+      if (assetCheck.error) {
+        setError(assetCheck.error.message);
+        setSubmitting(false);
+        return;
+      }
+
+      if (assetCheck.hasAssets) {
+        setMessage("لا يمكن تعطيل هذا الموظف. لديه عهدة لم تُسلّم بعد. يرجى الانتهاء من تسليم العهدة أولاً.");
+        setSubmitting(false);
+        return;
+      }
+    }
+
     const payload = {
       full_name: form.full_name,
       employee_code: form.employee_code || undefined,
@@ -220,7 +245,9 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <>
+      <MessageDialog open={Boolean(message)} onOpenChange={(nextOpen) => !nextOpen && setMessage("")} description={message} />
+      <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark" />}>
         <Pencil className="w-3.5 h-3.5 ml-1" />
         تعديل
@@ -462,6 +489,7 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
           </Button>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </>
   );
 }
