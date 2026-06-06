@@ -6,6 +6,7 @@ async function getAuthUserByEmail(email: string) {
   const admin = createAdminClient();
   let page = 1;
   const perPage = 100;
+
   while (true) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
     if (error) throw error;
@@ -16,12 +17,39 @@ async function getAuthUserByEmail(email: string) {
   }
 }
 
+async function recordSalesCareerEvent(
+  admin: ReturnType<typeof createAdminClient>,
+  values: {
+    employee_id: string;
+    event_type: "hired" | "promoted" | "role_change";
+    previous_value?: Record<string, unknown> | null;
+    new_value: Record<string, unknown>;
+    effective_date?: string;
+    notes?: string;
+    created_by?: string;
+  }
+) {
+  if (!values.employee_id) return { error: null };
+
+  const result = await admin.from("employee_career_events").insert({
+    employee_id: values.employee_id,
+    event_type: values.event_type,
+    previous_value: values.previous_value || null,
+    new_value: values.new_value,
+    effective_date: values.effective_date || new Date().toISOString().split("T")[0],
+    notes: values.notes || null,
+    created_by: values.created_by || null,
+  } as never);
+
+  return { error: result.error ? { message: result.error.message } : null };
+}
+
 async function loadTeam(orgId: string) {
   const admin = createAdminClient();
   const [membersResult, profilesResult, employeesResult] = await Promise.all([
     admin.from("org_members").select("user_id, role, org_id").eq("org_id", orgId).in("role", ["sales", "sales_manager"]),
     admin.from("profiles").select("user_id, full_name, email, phone, account_status").eq("org_id", orgId),
-    admin.from("employees").select("id, user_id, national_id, status").eq("org_id", orgId),
+    admin.from("employees").select("id, user_id, national_id, status, job_title").eq("org_id", orgId),
   ]);
 
   if (membersResult.error) return { data: null, error: membersResult.error };
@@ -132,7 +160,7 @@ export async function POST(request: NextRequest) {
 
   const employeeResult = await admin
     .from("employees")
-    .select("id")
+    .select("id, job_title")
     .eq("org_id", auth.orgId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -140,6 +168,8 @@ export async function POST(request: NextRequest) {
   if (employeeResult.error) return NextResponse.json({ message: employeeResult.error.message }, { status: 500 });
 
   if (employeeResult.data) {
+    const employeeRecord = employeeResult.data as Record<string, unknown>;
+    const previousTitle = String(employeeRecord.job_title || "");
     const updateError = (await admin.from("employees").update({
       full_name: fullName,
       email,
@@ -147,10 +177,22 @@ export async function POST(request: NextRequest) {
       national_id: nationalId || null,
       job_title: salesTitle,
       status: "Active",
-    } as never).eq("id", String((employeeResult.data as Record<string, unknown>).id))).error;
+    } as never).eq("id", String(employeeRecord.id))).error;
     if (updateError) return NextResponse.json({ message: updateError.message }, { status: 500 });
+
+    if (previousTitle && previousTitle !== salesTitle) {
+      const eventResult = await recordSalesCareerEvent(admin, {
+        employee_id: String(employeeRecord.id || ""),
+        event_type: salesRole === "sales_manager" ? "promoted" : "role_change",
+        previous_value: { job_title: previousTitle },
+        new_value: { job_title: salesTitle, sales_role: salesRole },
+        notes: salesRole === "sales_manager" ? "Promotion to Sales Manager" : "Sales role changed",
+        created_by: auth.user.id,
+      });
+      if (eventResult.error) return NextResponse.json({ message: eventResult.error.message }, { status: 500 });
+    }
   } else {
-    const createError = (await admin.from("employees").insert({
+    const createResult = await admin.from("employees").insert({
       org_id: auth.orgId,
       user_id: userId,
       full_name: fullName,
@@ -159,8 +201,18 @@ export async function POST(request: NextRequest) {
       national_id: nationalId || null,
       job_title: salesTitle,
       status: "Active",
-    } as never)).error;
-    if (createError) return NextResponse.json({ message: createError.message }, { status: 500 });
+    } as never).select("id").single();
+    if (createResult.error) return NextResponse.json({ message: createResult.error.message }, { status: 500 });
+
+    const eventResult = await recordSalesCareerEvent(admin, {
+      employee_id: String((createResult.data as Record<string, unknown> | null)?.id || ""),
+      event_type: "hired",
+      previous_value: null,
+      new_value: { job_title: salesTitle, sales_role: salesRole },
+      notes: "Sales team member created",
+      created_by: auth.user.id,
+    });
+    if (eventResult.error) return NextResponse.json({ message: eventResult.error.message }, { status: 500 });
   }
 
   const team = await loadTeam(auth.orgId);
@@ -188,6 +240,20 @@ export async function PATCH(request: NextRequest) {
 
   if (memberResult.error) return NextResponse.json({ message: memberResult.error.message }, { status: 500 });
   if (!memberResult.data) return NextResponse.json({ message: "البائع غير موجود داخل منظمتك." }, { status: 404 });
+
+  const previousRole = String((memberResult.data as Record<string, unknown>).role || "");
+  const employeeResult = await admin
+    .from("employees")
+    .select("id, job_title")
+    .eq("org_id", auth.orgId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (employeeResult.error) return NextResponse.json({ message: employeeResult.error.message }, { status: 500 });
+
+  const employeeRecord = (employeeResult.data || null) as Record<string, unknown> | null;
+  const employeeId = String(employeeRecord?.id || "");
+  const previousTitle = String(employeeRecord?.job_title || (previousRole === "sales_manager" ? "Sales Manager" : "Sales"));
 
   const fullName = String(body.full_name || "").trim();
   const phone = String(body.phone || "").trim();
@@ -236,6 +302,19 @@ export async function PATCH(request: NextRequest) {
   if (Object.keys(employeeValues).length > 0) {
     const employeeError = (await admin.from("employees").update(employeeValues as never).eq("user_id", userId).eq("org_id", auth.orgId)).error;
     if (employeeError) return NextResponse.json({ message: employeeError.message }, { status: 500 });
+  }
+
+  if (nextRole && nextRole !== previousRole && employeeId) {
+    const title = nextRole === "sales_manager" ? "Sales Manager" : "Sales";
+    const eventResult = await recordSalesCareerEvent(admin, {
+      employee_id: employeeId,
+      event_type: nextRole === "sales_manager" ? "promoted" : "role_change",
+      previous_value: { sales_role: previousRole, job_title: previousTitle },
+      new_value: { sales_role: nextRole, job_title: title },
+      notes: nextRole === "sales_manager" ? "Promotion to Sales Manager" : "Sales role changed",
+      created_by: auth.user.id,
+    });
+    if (eventResult.error) return NextResponse.json({ message: eventResult.error.message }, { status: 500 });
   }
 
   const team = await loadTeam(auth.orgId);
