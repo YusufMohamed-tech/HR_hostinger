@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { formatCurrency } from "@/lib/utils/currency";
 
 const reviewStatuses = new Set(["approved", "partial_approved", "rejected"]);
 
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
     org_id: auth.orgId,
     user_id: String(member.user_id),
     title: "طلب سلفة جديد",
-    body: `طلب سلفة جديد من ${employeeName} بقيمة ${requestedAmount.toLocaleString()} ريال`,
+    body: `طلب سلفة جديد من ${employeeName} بقيمة ${formatCurrency(requestedAmount)}`,
     type: "system",
     link: "/balances",
     is_read: false,
@@ -177,7 +178,7 @@ export async function PATCH(request: NextRequest) {
       org_id: auth.orgId,
       user_id: employeeUserId,
       title: decisionLabel,
-      body: status === "rejected" ? (hrNotes || "تمت مراجعة طلبك.") : `المبلغ المعتمد: ${Number(finalAmount).toLocaleString()} ريال`,
+      body: status === "rejected" ? (hrNotes || "تمت مراجعة طلبك.") : `المبلغ المعتمد: ${formatCurrency(finalAmount)}`,
       type: "system",
       link: "/balances",
       is_read: false,

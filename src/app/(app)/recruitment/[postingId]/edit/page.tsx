@@ -236,11 +236,11 @@ export default function EditJobPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>الراتب الأدنى (ريال)</Label>
+                  <Label>الراتب الأدنى (ريال سعودي)</Label>
                   <Input type="number" value={salaryMin} onChange={(e) => setSalaryMin(e.target.value)} placeholder="5000" className="mt-1" />
                 </div>
                 <div>
-                  <Label>الراتب الأعلى (ريال)</Label>
+                  <Label>الراتب الأعلى (ريال سعودي)</Label>
                   <Input type="number" value={salaryMax} onChange={(e) => setSalaryMax(e.target.value)} placeholder="10000" className="mt-1" />
                 </div>
               </div>

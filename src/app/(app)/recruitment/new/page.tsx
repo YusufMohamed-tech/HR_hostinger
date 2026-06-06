@@ -245,7 +245,7 @@ export default function NewJobPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label>الراتب الأدنى (ريال)</Label>
+                  <Label>الراتب الأدنى (ريال سعودي)</Label>
                   <Input
                     type="number"
                     value={salaryMin}
@@ -255,7 +255,7 @@ export default function NewJobPage() {
                   />
                 </div>
                 <div>
-                  <Label>الراتب الأعلى (ريال)</Label>
+                  <Label>الراتب الأعلى (ريال سعودي)</Label>
                   <Input
                     type="number"
                     value={salaryMax}

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { SalesProduct } from "@/lib/services/sales";
+import { formatCurrency } from "@/lib/utils/currency";
 import { cn } from "@/lib/utils";
 
 export function ProductCard({
@@ -38,7 +39,7 @@ export function ProductCard({
           <div>
             <h3 className="font-semibold text-gray-950">{product.name}</h3>
             <p className="mt-1 text-sm text-gray-500">
-              {Number(product.price || 0).toLocaleString("ar-EG")} جنيه{product.unit ? ` / ${product.unit}` : ""}
+              {formatCurrency(product.price)}{product.unit ? ` / ${product.unit}` : ""}
             </p>
           </div>
           {product.category && (

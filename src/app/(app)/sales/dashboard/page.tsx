@@ -9,10 +9,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { getSalesReports, type SalesAgent, type SalesLog } from "@/lib/services/sales";
+import { formatCurrency } from "@/lib/utils/currency";
 import { PageSkeleton } from "@/components/Skeletons";
 
 function formatMoney(value: number) {
-  return `${value.toLocaleString("ar-EG", { maximumFractionDigits: 0 })} جنيه`;
+  return formatCurrency(value, 0);
 }
 
 function startOfWeek(date: Date) {

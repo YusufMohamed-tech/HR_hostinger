@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ConfirmActionButton, MessageDialog } from "@/components/ui/feedback-dialog";
 import { createSalesProduct, deleteSalesProduct, getSalesProducts, updateSalesProduct, type SalesProduct } from "@/lib/services/sales";
+import { formatCurrency } from "@/lib/utils/currency";
 import { PageSkeleton } from "@/components/Skeletons";
 
 const emptyForm = { name: "", description: "", unit: "", category: "", price: "0" };
@@ -69,7 +70,7 @@ export default function SalesProductsPage() {
                   </TableCell>
                   <TableCell>{product.category || "-"}</TableCell>
                   <TableCell>{product.unit || "-"}</TableCell>
-                  <TableCell>{Number(product.price || 0).toLocaleString("ar-EG")} جنيه</TableCell>
+                  <TableCell>{formatCurrency(product.price)}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={product.is_active ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-100 text-gray-600 border-gray-200"}>
                       {product.is_active ? "نشط" : "متوقف"}

@@ -10,6 +10,7 @@ import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { formatCurrency } from "@/lib/utils/currency";
 import { printHtmlReport } from "@/lib/utils/print-report";
 import { Calendar, Download, Calculator, CheckCircle, Banknote } from "lucide-react";
 
@@ -35,7 +36,7 @@ function escapeHtml(value: unknown) {
 }
 
 function formatMoney(value: unknown) {
-  return `${Number(value || 0).toLocaleString("ar-SA")} ريال`;
+  return formatCurrency(value);
 }
 
 function exportPayrollPdf(input: {
@@ -220,13 +221,13 @@ export default function PayrollPage() {
         <Card className="border-none shadow-sm">
           <CardContent className="py-4">
             <p className="text-xs text-gray-500">إجمالي صافي الرواتب</p>
-            <p className="text-xl font-semibold text-green-600">{totalNet.toLocaleString()} ريال</p>
+            <p className="text-xl font-semibold text-green-600">{formatCurrency(totalNet)}</p>
           </CardContent>
         </Card>
         <Card className="border-none shadow-sm">
           <CardContent className="py-4">
             <p className="text-xs text-gray-500">إجمالي الخصومات</p>
-            <p className="text-xl font-semibold text-red-600">{totalDeductions.toLocaleString()} ريال</p>
+            <p className="text-xl font-semibold text-red-600">{formatCurrency(totalDeductions)}</p>
           </CardContent>
         </Card>
         <Card className="border-none shadow-sm">
@@ -279,13 +280,13 @@ export default function PayrollPage() {
                           <p className="text-xs text-gray-500">{String(employee?.employee_code || "")}</p>
                         </div>
                       </TableCell>
-                      <TableCell>{Number(slip.base_salary || 0).toLocaleString()} ريال</TableCell>
+                      <TableCell>{formatCurrency(slip.base_salary)}</TableCell>
                       <TableCell>{Number(slip.attendance_days || 0)} يوم</TableCell>
                       <TableCell className="text-red-600">
-                        -{Number(slip.total_deductions || 0).toLocaleString()} ريال
+                        -{formatCurrency(slip.total_deductions)}
                       </TableCell>
                       <TableCell className="font-bold text-green-600">
-                        {Number(slip.net_salary || 0).toLocaleString()} ريال
+                        {formatCurrency(slip.net_salary)}
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className={statusColors[status] || "bg-gray-50 text-gray-700"}>
