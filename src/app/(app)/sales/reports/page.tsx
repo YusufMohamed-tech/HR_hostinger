@@ -9,11 +9,12 @@ import { Label } from "@/components/ui/label";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { SalesReportTable } from "@/components/sales/SalesReportTable";
 import { getSalesReports, type SalesAgent, type SalesLog, type SalesProduct } from "@/lib/services/sales";
+import { formatCurrency } from "@/lib/utils/currency";
 import { printHtmlReport } from "@/lib/utils/print-report";
 import { PageSkeleton } from "@/components/Skeletons";
 
 function formatMoney(value: unknown) {
-  return `${Number(value || 0).toLocaleString("ar-EG", { maximumFractionDigits: 2 })} جنيه`;
+  return formatCurrency(value);
 }
 
 function escapeHtml(value: unknown) {

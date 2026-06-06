@@ -29,6 +29,7 @@ import { getEmployeeAssets } from "@/lib/services/assets";
 import { getFinancialBalances } from "@/lib/services/financial";
 import { calculateLeaveBalanceDays, recalculateEmployeeLeaveBalance } from "@/lib/services/leave-accrual";
 import { getEmployeeCareerEvents } from "@/lib/services/career-events";
+import { formatCurrency } from "@/lib/utils/currency";
 
 const careerEventLabels: Record<string, string> = {
   hired: "تم التعيين",
@@ -224,7 +225,7 @@ export default function EmployeeDetailPage() {
           <CardContent className="space-y-3 text-sm text-gray-600">
             <div>
               <p className="text-xs text-gray-500">Base Salary</p>
-              <p className="font-medium text-gray-900">{baseSalary}</p>
+              <p className="font-medium text-gray-900">{formatCurrency(baseSalary)}</p>
             </div>
             <div>
               <p className="text-xs text-gray-500">Bonus</p>
@@ -405,7 +406,7 @@ export default function EmployeeDetailPage() {
                     {details.financials.map((fin) => (
                       <TableRow key={String(fin.id)}>
                         <TableCell className="font-medium">{String(fin.transaction_type)}</TableCell>
-                        <TableCell>${Number(fin.amount).toFixed(2)}</TableCell>
+                        <TableCell>{formatCurrency(fin.amount)}</TableCell>
                         <TableCell>
                           <Badge variant="outline" className={fin.status === 'pending' ? 'bg-yellow-50 text-yellow-700' : 'bg-green-50 text-green-700'}>
                             {String(fin.status)}

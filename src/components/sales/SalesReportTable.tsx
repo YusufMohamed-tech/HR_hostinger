@@ -4,10 +4,7 @@ import React from "react";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { SalesLog, SalesLogItem } from "@/lib/services/sales";
-
-function formatMoney(value: unknown) {
-  return `${Number(value || 0).toLocaleString("ar-EG", { maximumFractionDigits: 2 })} جنيه`;
-}
+import { formatCurrency } from "@/lib/utils/currency";
 
 function itemsOf(log: SalesLog) {
   return Array.isArray(log.items) ? log.items : [];
@@ -35,8 +32,8 @@ export function SalesReportTable({ logs, expanded = false }: { logs: SalesLog[];
                 <TableCell>{log.log_date}</TableCell>
                 <TableCell>{log.agent?.full_name || log.agent?.email || "بائع"}</TableCell>
                 <TableCell>{items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)} عنصر</TableCell>
-                <TableCell className="text-red-600">{formatMoney(log.total_discount)}</TableCell>
-                <TableCell className="font-semibold text-brand-dark">{formatMoney(log.grand_total)}</TableCell>
+                <TableCell className="text-red-600">{formatCurrency(log.total_discount)}</TableCell>
+                <TableCell className="font-semibold text-brand-dark">{formatCurrency(log.grand_total)}</TableCell>
                 <TableCell>
                   <Badge variant="outline" className={log.status === "reviewed" ? "bg-green-50 text-green-700 border-green-200" : "bg-blue-50 text-blue-700 border-blue-200"}>
                     {log.status === "reviewed" ? "تمت المراجعة" : "مرسل"}
@@ -51,9 +48,9 @@ export function SalesReportTable({ logs, expanded = false }: { logs: SalesLog[];
                         <div key={`${log.id}-${item.product_id}-${index}`} className="grid grid-cols-2 gap-2 rounded-lg bg-white p-3 text-sm md:grid-cols-6">
                           <span className="font-medium md:col-span-2">{item.product_name}</span>
                           <span>الكمية: {item.quantity}</span>
-                          <span>السعر: {formatMoney(item.unit_price)}</span>
+                          <span>السعر: {formatCurrency(item.unit_price)}</span>
                           <span>الخصم: {item.discount_percent}%</span>
-                          <span className="font-semibold">{formatMoney(item.line_total)}</span>
+                          <span className="font-semibold">{formatCurrency(item.line_total)}</span>
                         </div>
                       ))}
                     </div>

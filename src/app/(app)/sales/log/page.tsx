@@ -8,6 +8,7 @@ import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { ProductCard } from "@/components/sales/ProductCard";
 import { DailyLogSummary } from "@/components/sales/DailyLogSummary";
 import { getTodaySalesLog, submitSalesLog, type SalesLog, type SalesLogItem, type SalesProduct } from "@/lib/services/sales";
+import { formatCurrency } from "@/lib/utils/currency";
 import { PageSkeleton } from "@/components/Skeletons";
 
 type ProductState = Record<string, { quantity: number; discount: number }>;
@@ -156,10 +157,10 @@ export default function SalesLogPage() {
                 <div key={`${item.product_id}-${index}`} className="rounded-lg border border-gray-100 bg-white p-4">
                   <p className="font-semibold text-gray-950">{item.product_name}</p>
                   <p className="mt-1 text-sm text-gray-500">
-                    الكمية {item.quantity} × {Number(item.unit_price).toLocaleString("ar-EG")} جنيه
+                    الكمية {item.quantity} × {formatCurrency(item.unit_price)}
                   </p>
                   <p className="mt-2 font-semibold text-brand-dark">
-                    {Number(item.line_total).toLocaleString("ar-EG")} جنيه
+                    {formatCurrency(item.line_total)}
                   </p>
                 </div>
               ))}

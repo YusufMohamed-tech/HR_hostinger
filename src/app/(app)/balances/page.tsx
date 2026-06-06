@@ -26,6 +26,7 @@ import {
   uploadBalanceAttachment,
   uploadBalanceSignature,
 } from "@/lib/services/financial";
+import { formatCurrency } from "@/lib/utils/currency";
 
 export default function BalancesPage() {
   const { currentUser } = useRoleContext();
@@ -74,7 +75,7 @@ export default function BalancesPage() {
           </div>
           <div>
             <p className="text-xs text-gray-500">إجمالي المبلغ</p>
-            <p className="text-2xl font-semibold">{total.toLocaleString()} ريال</p>
+            <p className="text-2xl font-semibold">{formatCurrency(total)}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500">بانتظار الإقرار</p>
@@ -111,7 +112,7 @@ export default function BalancesPage() {
                   <TableRow key={String(balance.id)}>
                     <TableCell className="font-medium">{String(employee?.full_name || "أنا")}</TableCell>
                     <TableCell>{String(balance.balance_type || "balance")}</TableCell>
-                    <TableCell>{Number(balance.amount || 0).toLocaleString()} ريال</TableCell>
+                    <TableCell>{formatCurrency(balance.amount)}</TableCell>
                     <TableCell>{String(balance.description || "-")}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={status === "acknowledged" ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}>
@@ -448,8 +449,8 @@ function AdvanceRequestsTable({ requests, isAdmin, onSuccess }: { requests: Reco
               return (
                 <TableRow key={String(request.id)}>
                   <TableCell className="font-medium">{String(employee?.full_name || "أنا")}</TableCell>
-                  <TableCell>{Number(request.requested_amount || 0).toLocaleString()} ريال</TableCell>
-                  <TableCell>{request.approved_amount ? `${Number(request.approved_amount).toLocaleString()} ريال` : "-"}</TableCell>
+                  <TableCell>{formatCurrency(request.requested_amount)}</TableCell>
+                  <TableCell>{request.approved_amount ? formatCurrency(request.approved_amount) : "-"}</TableCell>
                   <TableCell>{String(request.reason || "-")}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={status === "pending" ? "bg-amber-50 text-amber-700" : status === "rejected" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}>

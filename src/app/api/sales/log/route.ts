@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireSalesAccess } from "@/lib/server/sales-auth";
+import { formatCurrency } from "@/lib/utils/currency";
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -12,7 +13,7 @@ function toNumber(value: unknown) {
 }
 
 function money(value: number) {
-  return `${value.toLocaleString("ar-EG", { maximumFractionDigits: 2 })} جنيه`;
+  return formatCurrency(value);
 }
 
 export async function GET() {
