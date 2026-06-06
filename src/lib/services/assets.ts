@@ -23,6 +23,21 @@ export async function getAssets(orgId: string) {
   return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
 }
 
+export async function hasUnreturnedAssets(orgId: string, employeeId: string) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("employee_assets")
+    .select("id")
+    .eq("org_id", orgId)
+    .eq("employee_id", employeeId)
+    .is("returned_date", null)
+    .neq("status", "returned")
+    .limit(1);
+
+  if (result.error) return { hasAssets: false, error: result.error as { message: string } };
+  return { hasAssets: Boolean(result.data?.length), error: null };
+}
+
 export async function createAssetAssignment(values: Record<string, unknown>) {
   const supabase = createClient();
   const result = await supabase
