@@ -37,9 +37,25 @@ export async function createCheckIn(values: Record<string, unknown>) {
   const employeeId = values.employee_id as string;
   const currentDevice = values.device_fingerprint as string || values.check_in_device as string;
 
-  const empRes = await supabase.from("employees").select("registered_device_id").eq("id", employeeId).single();
-  const employee = empRes.data as { registered_device_id?: string | null } | null;
+  const workDate = String(values.work_date || new Date().toISOString().split("T")[0]);
+  const empRes = await supabase.from("employees").select("registered_device_id, can_multi_checkin").eq("id", employeeId).single();
+  const employee = empRes.data as { registered_device_id?: string | null; can_multi_checkin?: boolean | null } | null;
   const registeredDevice = employee?.registered_device_id;
+  const canMultiCheckin = Boolean(employee?.can_multi_checkin);
+
+  if (!canMultiCheckin) {
+    const existing = await supabase
+      .from("attendance_records")
+      .select("id")
+      .eq("employee_id", employeeId)
+      .eq("work_date", workDate)
+      .limit(1);
+
+    if (existing.error) return { data: null, error: { message: existing.error.message } };
+    if ((existing.data || []).length > 0) {
+      return { data: null, error: { message: "You have already checked in for today." } };
+    }
+  }
 
   if (registeredDevice && registeredDevice !== currentDevice) {
     return { data: null, error: { message: "Attendance locked to your registered device. Please use your primary device." } };
