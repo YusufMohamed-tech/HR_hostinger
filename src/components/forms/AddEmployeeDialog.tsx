@@ -20,6 +20,7 @@ import {
   uploadPersonnelFile,
   upsertSocialInsurance,
 } from "@/lib/services/personnel";
+import { createCareerEvent } from "@/lib/services/career-events";
 import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
 
 interface Props {
@@ -289,6 +290,23 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
         onSuccess();
         return;
       }
+
+      const initialEventType = parsed.data.employment_type === "intern" ? "hired_as_trainee" : "hired";
+      await createCareerEvent({
+        employee_id: employeeId,
+        event_type: initialEventType,
+        previous_value: null,
+        new_value: {
+          employment_type: parsed.data.employment_type,
+          job_title: parsed.data.job_title,
+          department_id: parsed.data.department_id,
+          location_id: parsed.data.location_id,
+          status: parsed.data.status,
+        },
+        effective_date: parsed.data.hiring_date || todayString(),
+        notes: parsed.data.employment_type === "intern" ? "بدأ كمتدرب" : "تم تعيين الموظف",
+        created_by: currentUser.id,
+      });
     }
 
     if (isDepartmentManager && parsed.data.department_id && createdEmployee?.id) {
