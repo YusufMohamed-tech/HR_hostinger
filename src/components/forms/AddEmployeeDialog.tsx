@@ -27,10 +27,10 @@ interface Props {
 }
 
 const employmentTypeLabels: Record<string, string> = {
-  full_time: "دوام كامل",
+  intern: "متدرب",
+  full_time: "موظف عادي",
+  contract: "موظف دائم",
   part_time: "دوام جزئي",
-  intern: "تدريب",
-  contract: "عقد",
 };
 
 const statusLabels: Record<string, string> = {
@@ -103,6 +103,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   const setShift = (key: string, value: string | null) => setShiftForm((prev) => ({ ...prev, [key]: value ?? "" }));
   const setPersonnel = (key: string, value: string | null) => setPersonnelForm((prev) => ({ ...prev, [key]: value ?? "" }));
+  const isTrainee = form.employment_type === "intern";
 
   const handleDepartmentManagerChange = (checked: boolean) => {
     setIsDepartmentManager(checked);
@@ -136,8 +137,12 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       setError("يجب رفع ملف رسمي للموظف قبل إنشاء الموظف.");
       return;
     }
-    if (!personnelForm.gosi_number.trim()) {
+    if (!isTrainee && !personnelForm.gosi_number.trim()) {
       setError("رقم التأمينات مطلوب قبل إنشاء الموظف.");
+      return;
+    }
+    if (!isTrainee && (!personnelForm.contribution_rate || Number(personnelForm.contribution_rate) <= 0)) {
+      setError("نسبة التأمينات مطلوبة ويجب أن تكون رقمًا صحيحًا.");
       return;
     }
     if (!personnelForm.contract_start_date) {
@@ -193,17 +198,19 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
         return;
       }
 
-      const { error: insuranceError } = await upsertSocialInsurance({
-        org_id: currentUser.orgId,
-        employee_id: employeeId,
-        gosi_number: personnelForm.gosi_number.trim(),
-        contribution_rate: Number(personnelForm.contribution_rate || 0),
-        status: "active",
-      });
+      if (!isTrainee) {
+        const { error: insuranceError } = await upsertSocialInsurance({
+          org_id: currentUser.orgId,
+          employee_id: employeeId,
+          gosi_number: personnelForm.gosi_number.trim(),
+          contribution_rate: Number(personnelForm.contribution_rate || 0),
+          status: "active",
+        });
 
-      if (insuranceError) {
-        await rollbackEmployee(insuranceError.message);
-        return;
+        if (insuranceError) {
+          await rollbackEmployee(insuranceError.message);
+          return;
+        }
       }
 
       const { data: contractUpload, error: contractUploadError } = await uploadPersonnelFile(currentUser.orgId, employeeId, contractFile);
@@ -563,7 +570,11 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
           <div className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
             <div>
               <p className="text-sm font-semibold text-slate-700">ملفات الموظف المطلوبة</p>
-              <p className="mt-1 text-xs text-gray-500">لا يمكن إنشاء الموظف قبل رفع الملف الرسمي والعقد وإضافة بيانات التأمينات.</p>
+              <p className="mt-1 text-xs text-gray-500">
+                {isTrainee
+                  ? "لا يمكن إنشاء المتدرب قبل رفع الملف الرسمي والعقد. بيانات التأمينات غير مطلوبة للمتدربين."
+                  : "لا يمكن إنشاء الموظف قبل رفع الملف الرسمي والعقد وإضافة بيانات التأمينات."}
+              </p>
             </div>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
@@ -580,16 +591,20 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Label>تاريخ انتهاء الملف</Label>
                 <Input type="date" value={personnelForm.file_expiry_date} onChange={(event) => setPersonnel("file_expiry_date", event.target.value)} />
               </div>
-              <div className="space-y-2">
-                <Label>رقم التأمينات *</Label>
-                <Input value={personnelForm.gosi_number} onChange={(event) => setPersonnel("gosi_number", event.target.value)} placeholder="GOSI number" />
-              </div>
+              {!isTrainee && (
+                <div className="space-y-2">
+                  <Label>رقم التأمينات *</Label>
+                  <Input value={personnelForm.gosi_number} onChange={(event) => setPersonnel("gosi_number", event.target.value)} placeholder="GOSI number" />
+                </div>
+              )}
             </div>
             <div className={threeColumnGridClass}>
-              <div className="space-y-2">
-                <Label>نسبة التأمينات</Label>
-                <Input type="number" value={personnelForm.contribution_rate} onChange={(event) => setPersonnel("contribution_rate", event.target.value)} placeholder="9.75" />
-              </div>
+              {!isTrainee && (
+                <div className="space-y-2">
+                  <Label>نسبة التأمينات *</Label>
+                  <Input type="number" step="0.01" inputMode="decimal" value={personnelForm.contribution_rate} onChange={(event) => setPersonnel("contribution_rate", event.target.value)} placeholder="9.75" />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>نوع العقد</Label>
                 <Input value={personnelForm.contract_type} onChange={(event) => setPersonnel("contract_type", event.target.value)} placeholder="permanent" />
@@ -613,7 +628,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
           <div className="space-y-4">
             <p className="text-sm font-semibold text-slate-700">بيانات الراتب</p>
-            <div className={threeColumnGridClass}>
+            <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>الراتب الأساسي</Label>
                 <Input type="number" value={form.base_salary} onChange={(e) => set("base_salary", e.target.value)} placeholder="0" />
@@ -621,10 +636,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
               <div className="space-y-2">
                 <Label>البدلات / المكافآت</Label>
                 <Input type="number" value={form.bonus} onChange={(e) => set("bonus", e.target.value)} placeholder="0" />
-              </div>
-              <div className="space-y-2">
-                <Label>الخصومات الثابتة</Label>
-                <Input type="number" value={form.deductions} onChange={(e) => set("deductions", e.target.value)} placeholder="0" />
               </div>
             </div>
             <div className={twoColumnGridClass}>
