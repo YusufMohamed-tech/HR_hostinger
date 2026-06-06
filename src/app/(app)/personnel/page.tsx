@@ -25,6 +25,7 @@ import {
   upsertSocialInsurance,
 } from "@/lib/services/personnel";
 import { createNotification } from "@/lib/services/notifications";
+import { printHtmlReport } from "@/lib/utils/print-report";
 
 type PersonnelTab = "files" | "insurance" | "contracts";
 
@@ -44,15 +45,12 @@ function escapeHtml(value: unknown) {
 }
 
 function exportTableAsPdf(title: string, headers: string[], rows: unknown[][]) {
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
-  if (!popup) return;
-
   const headerHtml = headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("");
   const rowsHtml = rows.length
     ? rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")
     : `<tr><td colspan="${headers.length}">لا توجد بيانات للتصدير.</td></tr>`;
 
-  popup.document.write(`<!doctype html>
+  const html = `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8" />
@@ -69,10 +67,9 @@ function exportTableAsPdf(title: string, headers: string[], rows: unknown[][]) {
   <h1>${escapeHtml(title)}</h1>
   <table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>
 </body>
-</html>`);
-  popup.document.close();
-  popup.focus();
-  popup.print();
+</html>`;
+
+  printHtmlReport(html, String(title || "personnel-report"));
 }
 
 export default function PersonnelPage() {

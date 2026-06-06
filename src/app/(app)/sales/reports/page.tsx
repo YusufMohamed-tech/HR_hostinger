@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { SalesReportTable } from "@/components/sales/SalesReportTable";
 import { getSalesReports, type SalesAgent, type SalesLog, type SalesProduct } from "@/lib/services/sales";
+import { printHtmlReport } from "@/lib/utils/print-report";
 import { PageSkeleton } from "@/components/Skeletons";
 
 function formatMoney(value: unknown) {
@@ -80,12 +81,6 @@ export default function SalesReportsPage() {
   }, [logs]);
 
   const exportPdf = () => {
-    const popup = window.open("", "_blank", "noopener,noreferrer,width=1200,height=800");
-    if (!popup) {
-      setMessage("تم حظر النافذة المنبثقة. يرجى السماح للموقع بفتح نوافذ جديدة من إعدادات المتصفح.");
-      return;
-    }
-
     const rows = logs.flatMap((log) => {
       const agentName = log.agent?.full_name || log.agent?.email || "بائع";
       return (Array.isArray(log.items) ? log.items : []).map((item) => `
@@ -101,7 +96,7 @@ export default function SalesReportsPage() {
       `);
     }).join("");
 
-    popup.document.write(`<!doctype html>
+    const html = `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8" />
@@ -138,9 +133,12 @@ export default function SalesReportsPage() {
     <tfoot><tr><th colspan="5">الإجماليات</th><th>${escapeHtml(formatMoney(summary.totalDiscount))}</th><th>${escapeHtml(formatMoney(summary.totalRevenue))}</th></tr></tfoot>
   </table>
 </body>
-</html>`);
-    popup.document.close();
-    popup.focus();
+</html>`;
+
+    const opened = printHtmlReport(html, "sales-report");
+    if (!opened) {
+      setMessage("تم تنزيل نسخة التقرير كملف HTML لأن المتصفح منع فتح نافذة الطباعة. افتح الملف من التنزيلات ثم اختر طباعة / حفظ PDF.");
+    }
   };
 
   if (loading) return <PageSkeleton />;

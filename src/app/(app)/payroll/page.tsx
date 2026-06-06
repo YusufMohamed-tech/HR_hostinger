@@ -10,6 +10,7 @@ import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { printHtmlReport } from "@/lib/utils/print-report";
 import { Calendar, Download, Calculator, CheckCircle, Banknote } from "lucide-react";
 
 const statusLabels: Record<string, string> = {
@@ -44,11 +45,6 @@ function exportPayrollPdf(input: {
   totalDeductions: number;
   approvedCount: number;
 }) {
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=1200,height=800");
-  if (!popup) {
-    return false;
-  }
-
   const tableRows = input.rows.length
     ? input.rows.map((slip, index) => {
         const employee = (slip.employee ?? null) as Record<string, unknown> | null;
@@ -68,7 +64,7 @@ function exportPayrollPdf(input: {
       }).join("")
     : `<tr><td colspan="9">لا توجد مسيرات رواتب لهذا الشهر.</td></tr>`;
 
-  popup.document.write(`<!doctype html>
+  const html = `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8" />
@@ -124,11 +120,9 @@ function exportPayrollPdf(input: {
   </table>
   <div class="footer">هذا التقرير صادر من نظام تطوير تالنت للموارد البشرية.</div>
 </body>
-</html>`);
-  popup.document.close();
-  popup.focus();
-  popup.print();
-  return true;
+</html>`;
+
+  return printHtmlReport(html, `payroll-${input.monthLabel}`);
 }
 
 export default function PayrollPage() {
@@ -189,7 +183,7 @@ export default function PayrollPage() {
       approvedCount,
     });
     if (!exported) {
-      setMessage("تعذر فتح نافذة التصدير. تأكد من السماح بالنوافذ المنبثقة ثم حاول مرة أخرى.");
+      setMessage("تعذر فتح نافذة الطباعة، لذلك تم تنزيل نسخة التقرير كملف HTML. افتح الملف من التنزيلات ثم اختر طباعة / حفظ PDF.");
     }
   };
 
