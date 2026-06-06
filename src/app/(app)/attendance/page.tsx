@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -69,6 +69,8 @@ export default function AttendancePage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const checkInClickIntentRef = useRef(false);
+  const checkOutClickIntentRef = useRef(false);
   const isViewingToday = selectedDate === today;
 
   const canViewTeam = ["Superadmin", "Admin", "HR_Admin", "Training_Manager"].includes(currentUser?.role || "");
@@ -94,6 +96,11 @@ export default function AttendancePage() {
   const shiftId = typeof assignedShift?.id === "string" ? assignedShift.id : undefined;
 
   const handleCheckIn = async () => {
+    if (!checkInClickIntentRef.current) {
+      setError("لا يتم تسجيل الحضور تلقائيًا. اضغط زر تسجيل الحضور للمتابعة.");
+      return;
+    }
+    checkInClickIntentRef.current = false;
     if (!currentUser?.orgId || !currentUser?.employeeId) return;
     if (!isViewingToday) {
       setError("يمكن تسجيل الحضور لليوم الحالي فقط. غيّر التاريخ إلى اليوم للتسجيل.");
@@ -166,6 +173,11 @@ export default function AttendancePage() {
   };
 
   const handleCheckOut = async () => {
+    if (!checkOutClickIntentRef.current) {
+      setError("لا يتم تسجيل الانصراف تلقائيًا. اضغط زر تسجيل الانصراف للمتابعة.");
+      return;
+    }
+    checkOutClickIntentRef.current = false;
     if (!currentUser?.employeeId || !myAttendance) return;
     if (!isViewingToday) {
       setError("يمكن تسجيل الانصراف لليوم الحالي فقط. غيّر التاريخ إلى اليوم للتسجيل.");
@@ -264,7 +276,10 @@ export default function AttendancePage() {
             </div>
             <Button
               className="w-full bg-brand hover:bg-brand-dark text-white"
-              onClick={handleCheckIn}
+              onClick={() => {
+                checkInClickIntentRef.current = true;
+                void handleCheckIn();
+              }}
               disabled={submitting || !isViewingToday}
             >
               تسجيل الحضور
@@ -272,7 +287,10 @@ export default function AttendancePage() {
             <Button
               variant="outline"
               className="w-full"
-              onClick={handleCheckOut}
+              onClick={() => {
+                checkOutClickIntentRef.current = true;
+                void handleCheckOut();
+              }}
               disabled={submitting || !isViewingToday || !myAttendance?.check_in_at || Boolean(myAttendance?.check_out_at)}
             >
               {myAttendance?.check_out_at ? "مسجّل الانصراف" : "تسجيل الانصراف"}
