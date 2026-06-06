@@ -14,6 +14,8 @@ import { createEmployeeAccount, replaceEmployeeLocations, updateEmployee } from 
 import { updateDepartment } from "@/lib/services/departments";
 import { hasUnreturnedAssets } from "@/lib/services/assets";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
+import { useRoleContext } from "@/providers/RoleProvider";
+import { createCareerEvents } from "@/lib/services/career-events";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -59,6 +61,7 @@ const twoColumnGridClass = "grid grid-cols-1 gap-4 md:grid-cols-2";
 const threeColumnGridClass = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3";
 
 export function EditEmployeeDialog({ employee, onSuccess }: Props) {
+  const { currentUser } = useRoleContext();
   const { data: departments } = useDepartments();
   const { data: locations } = useLocations();
   const { data: employees } = useEmployees();
@@ -247,10 +250,36 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
       bank_account: form.bank_account || undefined,
     };
 
+    const effectiveDate = form.hiring_date || new Date().toISOString().split("T")[0];
+    const careerEvents = [
+      { key: "job_title", type: "role_change", label: "تغيير المسمى الوظيفي" },
+      { key: "department_id", type: "department_change", label: "تغيير القسم" },
+      { key: "location_id", type: "location_change", label: "تغيير الموقع الأساسي" },
+      { key: "status", type: "status_change", label: "تغيير الحالة" },
+      { key: "employment_type", type: "role_change", label: "تغيير نوع التوظيف" },
+    ]
+      .filter((item) => String(employee?.[item.key] || "") !== String(form[item.key as keyof typeof form] || ""))
+      .map((item) => ({
+        employee_id: String(employee.id),
+        event_type: item.type,
+        previous_value: { [item.key]: employee?.[item.key] || null },
+        new_value: { [item.key]: form[item.key as keyof typeof form] || null },
+        effective_date: effectiveDate,
+        notes: item.label,
+        created_by: currentUser?.id,
+      }));
+
     const { error: err } = await updateEmployee(employee.id, payload);
 
     if (err) {
       setError(err.message);
+      setSubmitting(false);
+      return;
+    }
+
+    const { error: careerError } = await createCareerEvents(careerEvents);
+    if (careerError) {
+      setError(careerError.message);
       setSubmitting(false);
       return;
     }

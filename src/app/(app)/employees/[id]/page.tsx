@@ -28,6 +28,17 @@ import { useEffect, useState } from "react";
 import { getEmployeeAssets } from "@/lib/services/assets";
 import { getFinancialBalances } from "@/lib/services/financial";
 import { calculateLeaveBalanceDays, recalculateEmployeeLeaveBalance } from "@/lib/services/leave-accrual";
+import { getEmployeeCareerEvents } from "@/lib/services/career-events";
+
+const careerEventLabels: Record<string, string> = {
+  hired: "تم التعيين",
+  hired_as_trainee: "بدأ كمتدرب",
+  promoted: "ترقية",
+  role_change: "تغيير وظيفي",
+  status_change: "تغيير الحالة",
+  department_change: "تغيير القسم",
+  location_change: "تغيير الموقع",
+};
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -47,21 +58,23 @@ export default function EmployeeDetailPage() {
     reviews: [] as Record<string, unknown>[],
     actions: [] as Record<string, unknown>[],
     assets: [] as Record<string, unknown>[],
-    financials: [] as Record<string, unknown>[]
+    financials: [] as Record<string, unknown>[],
+    careerEvents: [] as Record<string, unknown>[]
   });
   const [currentLeaveBalance, setCurrentLeaveBalance] = useState<number | null>(null);
 
   useEffect(() => {
     if (!currentUser?.orgId || !employeeId) return;
     async function fetchDetails() {
-      const [docs, salary, kpis, reviews, actions, assets, financials] = await Promise.all([
+      const [docs, salary, kpis, reviews, actions, assets, financials, careerEvents] = await Promise.all([
         getEmployeeDocuments(currentUser?.orgId as string, employeeId),
         getEmployeeSalaryHistory(currentUser?.orgId as string, employeeId),
         getEmployeeKpis(currentUser?.orgId as string, employeeId),
         getEmployeeReviews(currentUser?.orgId as string, employeeId),
         getEmployeeActions(currentUser?.orgId as string, employeeId),
         getEmployeeAssets(currentUser?.orgId as string, employeeId),
-        getFinancialBalances(currentUser?.orgId as string, employeeId)
+        getFinancialBalances(currentUser?.orgId as string, employeeId),
+        getEmployeeCareerEvents(employeeId)
       ]);
       setDetails({
         documents: docs.data || [],
@@ -70,7 +83,8 @@ export default function EmployeeDetailPage() {
         reviews: reviews.data || [],
         actions: actions.data || [],
         assets: assets.data || [],
-        financials: financials.data || []
+        financials: financials.data || [],
+        careerEvents: careerEvents.data || []
       });
       if (employeeRecord) {
         const fallbackBalance = calculateLeaveBalanceDays({
@@ -227,6 +241,48 @@ export default function EmployeeDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border-none shadow-sm">
+        <CardHeader>
+          <CardTitle>المسيرة الوظيفية</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {details.careerEvents.length === 0 ? (
+            <p className="text-sm text-gray-500">لا توجد أحداث وظيفية مسجلة بعد.</p>
+          ) : (
+            <div className="space-y-3">
+              {details.careerEvents.map((event) => {
+                const type = String(event.event_type || "");
+                const creator = (event.creator ?? null) as Record<string, unknown> | null;
+                const previousValue = event.previous_value ? JSON.stringify(event.previous_value) : "—";
+                const newValue = event.new_value ? JSON.stringify(event.new_value) : "—";
+                return (
+                  <div key={String(event.id)} className="rounded-lg border border-gray-200 bg-white p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-semibold text-gray-900">{careerEventLabels[type] || type}</p>
+                        <p className="mt-1 text-xs text-gray-500">{String(event.notes || "")}</p>
+                      </div>
+                      <Badge variant="outline">{String(event.effective_date || "—")}</Badge>
+                    </div>
+                    <div className="mt-3 grid gap-2 text-xs text-gray-600 md:grid-cols-2">
+                      <div className="rounded-md bg-gray-50 p-2">
+                        <span className="font-semibold">قبل: </span>{previousValue}
+                      </div>
+                      <div className="rounded-md bg-green-50 p-2 text-green-800">
+                        <span className="font-semibold">بعد: </span>{newValue}
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-gray-400">
+                      بواسطة {String(creator?.full_name || creator?.email || "النظام")}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="border-none shadow-sm">
         <CardHeader>
