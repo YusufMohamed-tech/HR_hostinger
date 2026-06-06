@@ -13,6 +13,7 @@ import {
   Network,
   Settings,
   Shield,
+  Users,
 } from "lucide-react";
 
 const PLATFORM_SECTIONS = [
@@ -21,6 +22,7 @@ const PLATFORM_SECTIONS = [
     links: [
       { name: "لوحة المنصة", href: "/superadmin", icon: LayoutDashboard },
       { name: "المنظمات", href: "/superadmin/organizations", icon: Building2 },
+      { name: "اليوزرات", href: "/superadmin/users", icon: Users },
       { name: "اعتمادات HR والمهام", href: "/superadmin/approvals", icon: ClipboardCheck },
       { name: "سجل التدقيق", href: "/superadmin/audit", icon: History },
     ],
