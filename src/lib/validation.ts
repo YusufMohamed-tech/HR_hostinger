@@ -34,6 +34,8 @@ export const employeeFormSchema = z.object({
   job_title: optionalTrimmedString,
   manager_id: optionalUuid,
   location_id: optionalUuid,
+  city: optionalTrimmedString,
+  province: optionalTrimmedString,
   employment_type: z.enum(["full_time", "part_time", "intern", "contract"]),
   status: z.enum(["Active", "Inactive", "On Leave"]),
   base_salary: optionalMoney,

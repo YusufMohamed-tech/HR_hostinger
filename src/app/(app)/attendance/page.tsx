@@ -91,12 +91,34 @@ export default function AttendancePage() {
     : attendance.filter((row) => row.employee_id === currentUser?.employeeId);
   const myAttendance = attendance.find((row) => row.employee_id === currentUser?.employeeId);
 
-  const assignedLocation = useMemo(() => {
+  const assignedLocations = useMemo(() => {
     if (!currentUser?.employeeId) return null;
     const employee = employees.find((emp) => emp.id === currentUser.employeeId);
-    if (!employee?.location_id) return null;
-    return locations.find((loc) => loc.id === employee.location_id) || null;
+    const employeeLocationRows = Array.isArray(employee?.employee_locations) ? employee.employee_locations : [];
+    const mappedLocations = employeeLocationRows
+      .map((row) => (row as Record<string, unknown>).location as Record<string, unknown> | undefined)
+      .filter((location): location is Record<string, unknown> => Boolean(location?.id));
+
+    if (mappedLocations.length > 0) return mappedLocations;
+    if (!employee?.location_id) return [];
+    const legacyLocation = locations.find((loc) => loc.id === employee.location_id);
+    return legacyLocation ? [legacyLocation] : [];
   }, [currentUser?.employeeId, employees, locations]);
+  const findClosestAllowedLocation = (latitude: number, longitude: number) => {
+    const candidates = (assignedLocations || [])
+      .map((location) => {
+        const radius = getLocationRadiusMeters(location);
+        const locLat = Number(location.latitude);
+        const locLng = Number(location.longitude);
+        const distance = Number.isFinite(locLat) && Number.isFinite(locLng)
+          ? haversineDistance(latitude, longitude, locLat, locLng)
+          : Number.POSITIVE_INFINITY;
+        return { location, radius, distance, withinGeofence: radius > 0 && distance <= radius };
+      })
+      .sort((a, b) => a.distance - b.distance);
+
+    return candidates.find((candidate) => candidate.withinGeofence) || candidates[0] || null;
+  };
 
   const assignedShift = (employeeShifts[0]?.shift ?? null) as Record<string, unknown> | null;
   const shiftStartTime = typeof assignedShift?.start_time === "string" ? assignedShift.start_time : undefined;
@@ -127,11 +149,10 @@ export default function AttendancePage() {
     }
 
     const { latitude, longitude } = position.coords;
-    const radius = getLocationRadiusMeters(assignedLocation);
-    const distance = assignedLocation?.latitude && assignedLocation?.longitude
-      ? haversineDistance(latitude, longitude, Number(assignedLocation.latitude), Number(assignedLocation.longitude))
-      : 0;
-    const withinGeofence = Boolean(assignedLocation) && radius > 0 && distance <= radius;
+    const closestLocation = findClosestAllowedLocation(latitude, longitude);
+    const radius = closestLocation?.radius || 0;
+    const distance = Number.isFinite(closestLocation?.distance) ? Number(closestLocation?.distance) : 0;
+    const withinGeofence = Boolean(closestLocation?.withinGeofence);
 
     if (!withinGeofence) {
       setError(outsideGeofenceMessage(distance, radius));
@@ -163,6 +184,7 @@ export default function AttendancePage() {
       check_in_at: now.toISOString(),
       check_in_lat: latitude,
       check_in_lng: longitude,
+      location_id: closestLocation?.location?.id,
       check_in_device: deviceInfo,
       device_fingerprint: deviceFingerprint,
       status,
@@ -214,11 +236,10 @@ export default function AttendancePage() {
     const deviceInfo = navigator.userAgent;
     const deviceFingerprint = getOrCreateDeviceFingerprint();
     const { latitude, longitude } = position.coords;
-    const radius = getLocationRadiusMeters(assignedLocation);
-    const distance = assignedLocation?.latitude && assignedLocation?.longitude
-      ? haversineDistance(latitude, longitude, Number(assignedLocation.latitude), Number(assignedLocation.longitude))
-      : 0;
-    const withinGeofence = Boolean(assignedLocation) && radius > 0 && distance <= radius;
+    const closestLocation = findClosestAllowedLocation(latitude, longitude);
+    const radius = closestLocation?.radius || 0;
+    const distance = Number.isFinite(closestLocation?.distance) ? Number(closestLocation?.distance) : 0;
+    const withinGeofence = Boolean(closestLocation?.withinGeofence);
 
     if (!withinGeofence) {
       setError(outsideGeofenceMessage(distance, radius));
@@ -317,6 +338,7 @@ export default function AttendancePage() {
                   <TableHead className="font-semibold text-gray-600">الموظف</TableHead>
                   <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
                   <TableHead className="font-semibold text-gray-600">تسجيل الحضور</TableHead>
+                  <TableHead className="font-semibold text-gray-600">الفرع</TableHead>
                   <TableHead className="font-semibold text-gray-600">تسجيل الانصراف</TableHead>
                   <TableHead className="font-semibold text-gray-600">حالة الحضور</TableHead>
                   <TableHead className="font-semibold text-gray-600">حالة الانصراف</TableHead>
@@ -335,7 +357,11 @@ export default function AttendancePage() {
                   const arrivalStatus = typeof row.arrival_status === "string" ? row.arrival_status : "on_time";
                   const departureStatus = typeof row.departure_status === "string" ? row.departure_status : "";
                   const employee = (row.employee ?? null) as Record<string, unknown> | null;
+                  const rowLocation = (row.location ?? null) as Record<string, unknown> | null;
+                  const rowShift = (row.shift ?? null) as Record<string, unknown> | null;
+                  const shiftLocation = (rowShift?.location ?? null) as Record<string, unknown> | null;
                   const employeeName = typeof employee?.full_name === "string" ? employee.full_name : "—";
+                  const locationName = String(rowLocation?.name || shiftLocation?.name || "—");
                   const differences = [
                     lateMinutes > 0 ? `تأخير ${lateMinutes}د` : "",
                     earlyArrivalMinutes > 0 ? `مبكر ${earlyArrivalMinutes}د` : "",
@@ -351,6 +377,7 @@ export default function AttendancePage() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-gray-600">{checkInAt ? new Date(checkInAt).toLocaleTimeString() : "—"}</TableCell>
+                      <TableCell className="text-gray-600">{locationName}</TableCell>
                       <TableCell className="text-gray-600">{checkOutAt ? new Date(checkOutAt).toLocaleTimeString() : "—"}</TableCell>
                       <TableCell className="text-gray-600">{arrivalStatusLabels[arrivalStatus] || arrivalStatus}</TableCell>
                       <TableCell className="text-gray-600">{departureStatus ? departureStatusLabels[departureStatus] || departureStatus : "—"}</TableCell>
