@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Search, Trash2, Users } from "lucide-react";
 import { deleteEmployee } from "@/lib/services/employees";
 import { EditEmployeeDialog } from "@/components/forms/EditEmployeeDialog";
+import { PromoteEmployeeDialog } from "@/components/forms/PromoteEmployeeDialog";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionButton } from "@/components/ui/feedback-dialog";
 import { Input } from "@/components/ui/input";
@@ -190,6 +191,9 @@ export default function EmployeesPage() {
                     <TableCell className="text-gray-600">{locationName}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {canManageEmployees && (
+                          <PromoteEmployeeDialog employee={emp} onSuccess={refetch} />
+                        )}
                         {canManageEmployees && (
                           <EditEmployeeDialog employee={emp} onSuccess={refetch} />
                         )}
