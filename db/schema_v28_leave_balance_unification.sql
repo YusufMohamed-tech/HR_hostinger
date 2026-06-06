@@ -64,7 +64,7 @@ BEGIN
     CREATE POLICY leave_balance_transactions_org_members_select
       ON public.leave_balance_transactions
       FOR SELECT
-      USING (public.is_org_member(org_id));
+      USING (org_id = public.current_org_id() OR public.is_admin() OR auth.role() = 'service_role');
   END IF;
 END $$;
 
