@@ -5,6 +5,44 @@ import { recordPlatformAudit, requireSuperadmin } from "@/lib/superadmin/server"
 const allowedRoles = new Set(["admin", "hr_admin", "hr_recruitment"]);
 const allowedActions = new Set(["suspend", "activate", "reset_password"]);
 
+export async function GET() {
+  const auth = await requireSuperadmin();
+  if ("error" in auth) return auth.error;
+
+  const admin = createAdminClient();
+  const [{ data: profiles, error: profilesError }, { data: memberships, error: membershipsError }, { data: organizations, error: organizationsError }] = await Promise.all([
+    admin.from("profiles").select("user_id, org_id, full_name, email, account_status, created_at, last_login_at"),
+    admin.from("org_members").select("org_id, user_id, role"),
+    admin.from("organizations").select("id, name, slug, status"),
+  ]);
+
+  if (profilesError) return NextResponse.json({ message: profilesError.message }, { status: 500 });
+  if (membershipsError) return NextResponse.json({ message: membershipsError.message }, { status: 500 });
+  if (organizationsError) return NextResponse.json({ message: organizationsError.message }, { status: 500 });
+
+  const orgMap = new Map((organizations || []).map((org: Record<string, unknown>) => [String(org.id), org]));
+  const membershipMap = new Map((memberships || []).map((member: Record<string, unknown>) => [`${member.user_id}:${member.org_id}`, member]));
+
+  const users = (profiles || []).map((profile: Record<string, unknown>) => {
+    const orgId = String(profile.org_id || "");
+    const membership = membershipMap.get(`${profile.user_id}:${orgId}`) as Record<string, unknown> | undefined;
+    const organization = orgMap.get(orgId) as Record<string, unknown> | undefined;
+    return {
+      id: String(profile.user_id || ""),
+      name: String(profile.full_name || ""),
+      email: String(profile.email || ""),
+      role: String(membership?.role || ""),
+      organization_id: orgId,
+      organization_name: String(organization?.name || ""),
+      status: String(profile.account_status || "active"),
+      created_at: String(profile.created_at || ""),
+      last_login_at: profile.last_login_at ? String(profile.last_login_at) : "",
+    };
+  });
+
+  return NextResponse.json({ users });
+}
+
 async function getAuthUserByEmail(email: string) {
   const admin = createAdminClient();
   let page = 1;
