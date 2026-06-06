@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Pencil } from "lucide-react";
 import { useDepartments, useLocations, useEmployees } from "@/hooks/use-data";
-import { createEmployeeAccount, updateEmployee } from "@/lib/services/employees";
+import { createEmployeeAccount, replaceEmployeeLocations, updateEmployee } from "@/lib/services/employees";
 import { updateDepartment } from "@/lib/services/departments";
 import { hasUnreturnedAssets } from "@/lib/services/assets";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
@@ -34,6 +34,25 @@ const statusLabels: Record<string, string> = {
   "On Leave": "في إجازة",
 };
 
+const cityOptions = [
+  "الرياض",
+  "جدة",
+  "مكة المكرمة",
+  "المدينة المنورة",
+  "الدمام",
+  "الخبر",
+  "تبوك",
+  "أبها",
+  "نجران",
+  "حائل",
+  "القصيم",
+  "الجوف",
+  "الباحة",
+  "عسير",
+  "ينبع",
+  "جازان",
+];
+
 const employeeDialogContentClass =
   "max-h-[calc(100dvh-1.5rem)] overflow-y-auto p-3 sm:max-w-[760px] sm:p-4";
 const twoColumnGridClass = "grid grid-cols-1 gap-4 md:grid-cols-2";
@@ -52,6 +71,8 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
   const [accountRole, setAccountRole] = useState<"employee" | "training_manager">("employee");
   const [accountPassword, setAccountPassword] = useState("");
   const [canMultiCheckin, setCanMultiCheckin] = useState(false);
+  const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
+  const [primaryLocationId, setPrimaryLocationId] = useState("");
 
   const [form, setForm] = useState({
     full_name: "",
@@ -69,6 +90,8 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
     job_title: "",
     manager_id: "",
     location_id: "",
+    city: "",
+    province: "",
     employment_type: "full_time",
     status: "Active",
     base_salary: "",
@@ -98,6 +121,8 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
         job_title: employee.job_title || "",
         manager_id: employee.manager_id || "",
         location_id: employee.location_id || "",
+        city: employee.city || "",
+        province: employee.province || employee.city || "",
         employment_type: employee.employment_type || "full_time",
         status: employee.status || "Active",
         base_salary: employee.base_salary ? String(employee.base_salary) : "",
@@ -117,10 +142,35 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
       setAccountRole(Boolean(managedDepartment) ? "training_manager" : "employee");
       setAccountPassword("");
       setCanMultiCheckin(Boolean(employee.can_multi_checkin));
+      const employeeLocationRows = Array.isArray(employee.employee_locations) ? employee.employee_locations : [];
+      const locationIds = employeeLocationRows
+        .map((row: Record<string, unknown>) => String(row.location_id || ""))
+        .filter(Boolean);
+      const primaryRow = employeeLocationRows.find((row: Record<string, unknown>) => Boolean(row.is_primary));
+      const fallbackPrimary = String(employee.location_id || locationIds[0] || "");
+      setSelectedLocationIds(locationIds.length > 0 ? locationIds : fallbackPrimary ? [fallbackPrimary] : []);
+      setPrimaryLocationId(String((primaryRow as Record<string, unknown> | undefined)?.location_id || fallbackPrimary));
     }
   }, [departments, employee, open]);
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
+
+  const toggleLocation = (locationId: string, checked: boolean) => {
+    setSelectedLocationIds((prev) => {
+      const next = checked ? Array.from(new Set([...prev, locationId])) : prev.filter((id) => id !== locationId);
+      const nextPrimary = next.includes(primaryLocationId) ? primaryLocationId : next[0] || "";
+      setPrimaryLocationId(nextPrimary);
+      set("location_id", nextPrimary);
+      return next;
+    });
+  };
+
+  const choosePrimaryLocation = (locationId: string) => {
+    const next = selectedLocationIds.includes(locationId) ? selectedLocationIds : [...selectedLocationIds, locationId];
+    setSelectedLocationIds(next);
+    setPrimaryLocationId(locationId);
+    set("location_id", locationId);
+  };
 
   const handleDepartmentManagerChange = (checked: boolean) => {
     setIsDepartmentManager(checked);
@@ -183,6 +233,8 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
       job_title: form.job_title || undefined,
       manager_id: form.manager_id || undefined,
       location_id: form.location_id || undefined,
+      city: form.city || undefined,
+      province: form.province || form.city || undefined,
       employment_type: form.employment_type || undefined,
       status: form.status || undefined,
       base_salary: form.base_salary ? parseFloat(form.base_salary) : undefined,
@@ -199,6 +251,17 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
 
     if (err) {
       setError(err.message);
+      setSubmitting(false);
+      return;
+    }
+
+    const { error: locationsError } = await replaceEmployeeLocations(
+      String(employee.id),
+      selectedLocationIds,
+      form.location_id
+    );
+    if (locationsError) {
+      setError(locationsError.message);
       setSubmitting(false);
       return;
     }
@@ -382,15 +445,55 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>الموقع</Label>
-                <Select value={form.location_id} onValueChange={(v) => set("location_id", v || "")}>
+                <Label>المحافظة / المدينة</Label>
+                <Select
+                  value={form.city}
+                  onValueChange={(value) => {
+                    set("city", value || "");
+                    set("province", value || "");
+                  }}
+                >
                   <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
                   <SelectContent>
-                    {locations.map((l) => (
-                      <SelectItem key={String(l.id)} value={String(l.id)}>{String(l.name)}</SelectItem>
+                    {cityOptions.map((city) => (
+                      <SelectItem key={city} value={city}>{city}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+            <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div>
+                <Label>المواقع المسموحة</Label>
+                <p className="mt-1 text-xs text-gray-500">اختر الفروع المسموحة، وحدد موقعًا أساسيًا للحضور الافتراضي.</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {locations.map((location) => {
+                  const locationId = String(location.id);
+                  const checked = selectedLocationIds.includes(locationId);
+                  return (
+                    <label key={locationId} className="flex items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+                      <span className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300"
+                          checked={checked}
+                          onChange={(event) => toggleLocation(locationId, event.target.checked)}
+                        />
+                        {String(location.name)}
+                      </span>
+                      <span className="flex items-center gap-1 text-xs text-gray-500">
+                        <input
+                          type="radio"
+                          name="edit-primary-location"
+                          checked={primaryLocationId === locationId}
+                          onChange={() => choosePrimaryLocation(locationId)}
+                        />
+                        أساسي
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
             <div className={threeColumnGridClass}>

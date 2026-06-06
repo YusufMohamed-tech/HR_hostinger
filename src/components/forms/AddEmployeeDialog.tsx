@@ -11,7 +11,7 @@ import {
 import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useDepartments, useLocations, useEmployees, useShifts } from "@/hooks/use-data";
-import { createEmployee, createEmployeeAccount, deleteEmployee } from "@/lib/services/employees";
+import { createEmployee, createEmployeeAccount, deleteEmployee, replaceEmployeeLocations } from "@/lib/services/employees";
 import { assignEmployeeShift } from "@/lib/services/schedule";
 import { updateDepartment } from "@/lib/services/departments";
 import {
@@ -38,6 +38,25 @@ const statusLabels: Record<string, string> = {
   Inactive: "غير نشط",
   "On Leave": "في إجازة",
 };
+
+const cityOptions = [
+  "الرياض",
+  "جدة",
+  "مكة المكرمة",
+  "المدينة المنورة",
+  "الدمام",
+  "الخبر",
+  "تبوك",
+  "أبها",
+  "نجران",
+  "حائل",
+  "القصيم",
+  "الجوف",
+  "الباحة",
+  "عسير",
+  "ينبع",
+  "جازان",
+];
 
 const employeeDialogContentClass =
   "max-h-[calc(100dvh-1.5rem)] overflow-y-auto p-3 sm:max-w-[760px] sm:p-4";
@@ -86,6 +105,8 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     job_title: "",
     manager_id: "",
     location_id: "",
+    city: "",
+    province: "",
     employment_type: "full_time",
     status: "Active",
     base_salary: "",
@@ -101,11 +122,30 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     start_date: "",
     end_date: "",
   });
+  const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
+  const [primaryLocationId, setPrimaryLocationId] = useState("");
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   const setShift = (key: string, value: string | null) => setShiftForm((prev) => ({ ...prev, [key]: value ?? "" }));
   const setPersonnel = (key: string, value: string | null) => setPersonnelForm((prev) => ({ ...prev, [key]: value ?? "" }));
   const isTrainee = form.employment_type === "intern";
+
+  const toggleLocation = (locationId: string, checked: boolean) => {
+    setSelectedLocationIds((prev) => {
+      const next = checked ? Array.from(new Set([...prev, locationId])) : prev.filter((id) => id !== locationId);
+      const nextPrimary = next.includes(primaryLocationId) ? primaryLocationId : next[0] || "";
+      setPrimaryLocationId(nextPrimary);
+      set("location_id", nextPrimary);
+      return next;
+    });
+  };
+
+  const choosePrimaryLocation = (locationId: string) => {
+    const next = selectedLocationIds.includes(locationId) ? selectedLocationIds : [...selectedLocationIds, locationId];
+    setSelectedLocationIds(next);
+    setPrimaryLocationId(locationId);
+    set("location_id", locationId);
+  };
 
   const handleDepartmentManagerChange = (checked: boolean) => {
     setIsDepartmentManager(checked);
@@ -237,6 +277,18 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
         await rollbackEmployee(contractError.message);
         return;
       }
+
+      const { error: locationsError } = await replaceEmployeeLocations(
+        employeeId,
+        selectedLocationIds,
+        parsed.data.location_id
+      );
+      if (locationsError) {
+        setError(`تم حفظ الموظف، لكن فشل حفظ المواقع: ${locationsError.message}`);
+        setSubmitting(false);
+        onSuccess();
+        return;
+      }
     }
 
     if (isDepartmentManager && parsed.data.department_id && createdEmployee?.id) {
@@ -303,6 +355,8 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       job_title: "",
       manager_id: "",
       location_id: "",
+      city: "",
+      province: "",
       employment_type: "full_time",
       status: "Active",
       base_salary: "",
@@ -314,6 +368,8 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       bank_account: "",
     });
     setIsDepartmentManager(false);
+    setSelectedLocationIds([]);
+    setPrimaryLocationId("");
     setShiftForm({ shift_id: "", start_date: "", end_date: "" });
     setCreateLoginAccount(false);
     setAccountRole("employee");
@@ -483,15 +539,55 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>الموقع</Label>
-                <Select value={form.location_id} onValueChange={(v) => set("location_id", v || "")}>
+                <Label>المحافظة / المدينة</Label>
+                <Select
+                  value={form.city}
+                  onValueChange={(value) => {
+                    set("city", value || "");
+                    set("province", value || "");
+                  }}
+                >
                   <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
                   <SelectContent>
-                    {locations.map((l) => (
-                      <SelectItem key={String(l.id)} value={String(l.id)}>{String(l.name)}</SelectItem>
+                    {cityOptions.map((city) => (
+                      <SelectItem key={city} value={city}>{city}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+            <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div>
+                <Label>المواقع المسموحة</Label>
+                <p className="mt-1 text-xs text-gray-500">اختر الفروع المسموحة، وحدد موقعًا أساسيًا للحضور الافتراضي.</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {locations.map((location) => {
+                  const locationId = String(location.id);
+                  const checked = selectedLocationIds.includes(locationId);
+                  return (
+                    <label key={locationId} className="flex items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
+                      <span className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300"
+                          checked={checked}
+                          onChange={(event) => toggleLocation(locationId, event.target.checked)}
+                        />
+                        {String(location.name)}
+                      </span>
+                      <span className="flex items-center gap-1 text-xs text-gray-500">
+                        <input
+                          type="radio"
+                          name="add-primary-location"
+                          checked={primaryLocationId === locationId}
+                          onChange={() => choosePrimaryLocation(locationId)}
+                        />
+                        أساسي
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
             <div className={threeColumnGridClass}>
