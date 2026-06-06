@@ -82,3 +82,35 @@ export async function acknowledgeFinancialBalance(id: string, signaturePath: str
 
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
+
+async function apiFetch<T>(path: string, options?: RequestInit) {
+  try {
+    const response = await fetch(path, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) return { data: null, error: { message: String(payload?.message || "حدث خطأ غير متوقع.") } };
+    return { data: (payload?.data ?? null) as T | null, error: null };
+  } catch (error) {
+    return { data: null, error: { message: error instanceof Error ? error.message : "تعذر الاتصال بالخادم." } };
+  }
+}
+
+export async function getAdvanceRequests() {
+  return apiFetch<Record<string, unknown>[]>("/api/advance-requests");
+}
+
+export async function createAdvanceRequest(values: { requested_amount: number; reason?: string; employee_signature_data: string }) {
+  return apiFetch<Record<string, unknown>>("/api/advance-requests", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export async function reviewAdvanceRequest(values: { id: string; status: "approved" | "partial_approved" | "rejected"; approved_amount?: number; hr_notes?: string }) {
+  return apiFetch<Record<string, unknown>>("/api/advance-requests", {
+    method: "PATCH",
+    body: JSON.stringify(values),
+  });
+}
