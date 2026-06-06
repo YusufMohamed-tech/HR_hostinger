@@ -4,7 +4,7 @@ export async function getTasks(orgId: string) {
   const supabase = createClient();
   const result = await supabase
     .from("tasks")
-    .select("*, location:location_id(name), assignments:task_assignments(id, status, employee:employee_id(id, full_name)), updates:task_updates(status, note, created_at, employee:employee_id(full_name))")
+    .select("*, location:location_id(name), assignments:task_assignments(id, status, employee:employee_id(id, full_name)), updates:task_updates(status, note, attachments, created_at, employee:employee_id(full_name))")
     .eq("org_id", orgId)
     .order("created_at", { ascending: false });
 
@@ -15,7 +15,7 @@ export async function getTaskById(id: string) {
   const supabase = createClient();
   const result = await supabase
     .from("tasks")
-    .select("*, assignments:task_assignments(*, employee:employee_id(full_name)), updates:task_updates(status, note, created_at, employee:employee_id(full_name))")
+    .select("*, assignments:task_assignments(*, employee:employee_id(full_name)), updates:task_updates(status, note, attachments, created_at, employee:employee_id(full_name))")
     .eq("id", id)
     .single();
 
@@ -186,11 +186,22 @@ export async function sendTaskMessage(values: {
   task_id: string;
   employee_id: string;
   message: string;
+  attachments?: File[];
 }) {
+  const hasAttachments = Boolean(values.attachments?.length);
+  const body = hasAttachments ? new FormData() : JSON.stringify(values);
+
+  if (body instanceof FormData) {
+    body.append("task_id", values.task_id);
+    body.append("employee_id", values.employee_id);
+    body.append("message", values.message);
+    values.attachments?.forEach((file) => body.append("attachments", file));
+  }
+
   const response = await fetch("/api/tasks/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
+    headers: hasAttachments ? undefined : { "Content-Type": "application/json" },
+    body,
   });
   const payload = await response.json().catch(() => null);
 

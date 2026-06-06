@@ -3,6 +3,19 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const allowedRoles = new Set(["admin", "hr_admin", "training_manager"]);
+const allowedAttachmentTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
+const maxAttachmentBytes = 10 * 1024 * 1024;
+
+function safeFilename(name: string) {
+  return name.replace(/[^\w.\-()[\]ء-ي ]+/g, "_").slice(0, 160) || "attachment";
+}
 
 export async function POST(request: NextRequest) {
   const supabase = await createServerSupabaseClient();
@@ -27,14 +40,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "You are not allowed to send task messages." }, { status: 403 });
   }
 
-  const body = await request.json().catch(() => ({}));
-  const taskId = String((body as Record<string, unknown>).task_id || "").trim();
-  const employeeId = String((body as Record<string, unknown>).employee_id || "").trim();
-  const message = String((body as Record<string, unknown>).message || "").trim();
+  const contentType = request.headers.get("content-type") || "";
+  let taskId = "";
+  let employeeId = "";
+  let message = "";
+  let files: File[] = [];
+
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    taskId = String(formData.get("task_id") || "").trim();
+    employeeId = String(formData.get("employee_id") || "").trim();
+    message = String(formData.get("message") || "").trim();
+    files = formData.getAll("attachments").filter((item): item is File => item instanceof File && item.size > 0);
+  } else {
+    const body = await request.json().catch(() => ({}));
+    taskId = String((body as Record<string, unknown>).task_id || "").trim();
+    employeeId = String((body as Record<string, unknown>).employee_id || "").trim();
+    message = String((body as Record<string, unknown>).message || "").trim();
+  }
 
   if (!taskId) return NextResponse.json({ message: "Task id is required." }, { status: 400 });
   if (!employeeId) return NextResponse.json({ message: "Employee is required." }, { status: 400 });
   if (message.length < 2) return NextResponse.json({ message: "Message is required." }, { status: 400 });
+  for (const file of files) {
+    if (file.size > maxAttachmentBytes || !allowedAttachmentTypes.has(file.type)) {
+      return NextResponse.json({ message: "نوع الملف غير مدعوم أو حجمه أكبر من 10MB." }, { status: 400 });
+    }
+  }
 
   const admin = createAdminClient();
   const { data: task, error: taskError } = await admin
@@ -117,6 +149,34 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (updateError) return NextResponse.json({ message: updateError.message }, { status: 500 });
+  const updateId = String((update as Record<string, unknown>).id || "");
+  const attachments: Record<string, unknown>[] = [];
+
+  for (const file of files) {
+    const filename = safeFilename(file.name);
+    const path = `${taskId}/${updateId}/${Date.now()}-${filename}`;
+    const upload = await admin.storage
+      .from("task-attachments")
+      .upload(path, file, { contentType: file.type, upsert: false });
+
+    if (upload.error) {
+      return NextResponse.json({ message: "فشل رفع الملف. يرجى المحاولة مرة أخرى." }, { status: 500 });
+    }
+
+    const publicUrl = admin.storage.from("task-attachments").getPublicUrl(path).data.publicUrl;
+    attachments.push({ filename, url: publicUrl, type: file.type, size_bytes: file.size });
+  }
+
+  if (attachments.length > 0) {
+    const { data: updatedWithAttachments, error: attachmentError } = await admin
+      .from("task_updates")
+      .update({ attachments } as never)
+      .eq("id", updateId)
+      .select()
+      .single();
+    if (attachmentError) return NextResponse.json({ message: attachmentError.message }, { status: 500 });
+    if (updatedWithAttachments) (update as Record<string, unknown>).attachments = attachments;
+  }
 
   const assigneeUserId = String(assigneeRecord.user_id || "");
   if (assigneeUserId) {

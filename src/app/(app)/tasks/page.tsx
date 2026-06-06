@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckSquare, ListChecks, MessageSquare, Pencil, Plus, Send, Timer } from "lucide-react";
+import { CheckSquare, ListChecks, MessageSquare, Paperclip, Pencil, Plus, Send, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -733,6 +733,7 @@ function TaskHistoryDialog({
             const status = typeof update.status === "string" ? update.status : "update";
             const note = typeof update.note === "string" ? update.note : "لا توجد ملاحظة";
             const createdAt = typeof update.created_at === "string" ? update.created_at : "";
+            const attachments = Array.isArray(update.attachments) ? update.attachments as TaskRecord[] : [];
 
             return (
               <div
@@ -754,6 +755,20 @@ function TaskHistoryDialog({
                   <p className="text-sm text-gray-700">{note}</p>
                   {employeeName && (
                     <p className="text-xs text-gray-500">بواسطة {employeeName}</p>
+                  )}
+                  {attachments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {attachments.map((attachment, attachmentIndex) => {
+                        const url = String(attachment.url || "");
+                        const filename = String(attachment.filename || "ملف");
+                        const type = String(attachment.type || "");
+                        return (
+                          <a key={`${url}-${attachmentIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-brand hover:bg-brand-light">
+                            {type.startsWith("image/") ? "صورة" : "ملف"}: {filename}
+                          </a>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
@@ -788,6 +803,7 @@ function TaskMessageDialog({
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [error, setError] = useState("");
 
   const handleSubmit = async () => {
@@ -799,6 +815,7 @@ function TaskMessageDialog({
       task_id: taskId,
       employee_id: assigneeId,
       message: message.trim(),
+      attachments,
     });
 
     if (messageError) {
@@ -810,6 +827,7 @@ function TaskMessageDialog({
     setSubmitting(false);
     setOpen(false);
     setMessage("");
+    setAttachments([]);
     onSuccess();
   };
 
@@ -833,6 +851,29 @@ function TaskMessageDialog({
               onChange={(event) => setMessage(event.target.value)}
               placeholder="اكتب رسالتك للموظف..."
             />
+          </div>
+          <div className="space-y-2">
+            <Label>المرفقات</Label>
+            <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-3 text-sm text-gray-600 hover:bg-brand-light">
+              <Paperclip className="h-4 w-4" />
+              <span>اختر ملفات أو صور</span>
+              <input
+                className="sr-only"
+                type="file"
+                multiple
+                accept=".jpg,.jpeg,.png,.gif,.pdf,.docx,.xlsx"
+                onChange={(event) => setAttachments(Array.from(event.target.files || []))}
+              />
+            </label>
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {attachments.map((file) => (
+                  <span key={`${file.name}-${file.size}`} className="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600">
+                    {file.name}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
