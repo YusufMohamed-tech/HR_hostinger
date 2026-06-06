@@ -22,10 +22,10 @@ interface Props {
 }
 
 const employmentTypeLabels: Record<string, string> = {
-  full_time: "دوام كامل",
+  intern: "متدرب",
+  full_time: "موظف عادي",
+  contract: "موظف دائم",
   part_time: "دوام جزئي",
-  intern: "تدريب",
-  contract: "عقد",
 };
 
 const statusLabels: Record<string, string> = {
