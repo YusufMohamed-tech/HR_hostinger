@@ -17,7 +17,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEmployees } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { acknowledgeAssetAssignment, createAssetAssignment, getAssets, updateAssetAssignment, uploadAssetSignature } from "@/lib/services/assets";
+import { acknowledgeAssetAssignment, createAssetAssignment, getAssets, getEmployeeAssets, updateAssetAssignment, uploadAssetSignature } from "@/lib/services/assets";
 
 const assetStatusLabels: Record<string, string> = {
   assigned: "مُسلَّم",
@@ -45,10 +45,14 @@ export default function AssetsPage() {
   const loadAssets = useCallback(async () => {
     if (!currentUser?.orgId) return;
     setLoading(true);
-    const { data } = await getAssets(currentUser.orgId);
+    const { data } = isAdmin && currentUser.role !== "Employee"
+      ? await getAssets(currentUser.orgId)
+      : currentUser.employeeId
+        ? await getEmployeeAssets(currentUser.orgId, currentUser.employeeId)
+        : { data: [] };
     setAssets(data || []);
     setLoading(false);
-  }, [currentUser?.orgId]);
+  }, [currentUser?.employeeId, currentUser?.orgId, currentUser?.role, isAdmin]);
 
   useEffect(() => {
     loadAssets();
@@ -212,6 +216,7 @@ export default function AssetsPage() {
 function AcknowledgeAssetDialog({ assetId, onSuccess }: { assetId: string; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [signature, setSignature] = useState("");
+  const [error, setError] = useState("");
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -233,9 +238,17 @@ function AcknowledgeAssetDialog({ assetId, onSuccess }: { assetId: string; onSuc
             className="bg-brand hover:bg-brand-dark text-white"
             disabled={!signature.trim()}
             onClick={async () => {
+              setError("");
               const { data: uploadData, error: uploadError } = await uploadAssetSignature(assetId, signature.trim());
-              if (uploadError || !uploadData?.path) return;
-              await acknowledgeAssetAssignment(assetId, uploadData.path);
+              if (uploadError || !uploadData?.path) {
+                setError(uploadError?.message || "تعذر رفع التوقيع.");
+                return;
+              }
+              const result = await acknowledgeAssetAssignment(assetId, uploadData.path);
+              if (result.error) {
+                setError(result.error.message);
+                return;
+              }
               setOpen(false);
               setSignature("");
               onSuccess();
@@ -244,6 +257,7 @@ function AcknowledgeAssetDialog({ assetId, onSuccess }: { assetId: string; onSuc
             تأكيد الاستلام
           </Button>
         </DialogFooter>
+        {error && <p className="text-sm text-red-600">{error}</p>}
       </DialogContent>
     </Dialog>
   );
