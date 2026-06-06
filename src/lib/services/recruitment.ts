@@ -24,6 +24,8 @@ export type JobPosting = {
   title: string;
   department_id: string | null;
   location_id: string | null;
+  company_name: string | null;
+  city: string | null;
   employment_type: string | null;
   description: string | null;
   requirements: string | null;

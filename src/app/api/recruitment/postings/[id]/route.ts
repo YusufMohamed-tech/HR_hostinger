@@ -89,7 +89,7 @@ export async function PATCH(
   };
 
   const allowed = [
-    "title", "department_id", "location_id", "employment_type", "description",
+    "title", "department_id", "location_id", "company_name", "city", "employment_type", "description",
     "requirements", "salary_min", "salary_max", "deadline", "status", "form_schema",
   ];
   for (const key of allowed) {

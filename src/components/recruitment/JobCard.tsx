@@ -48,6 +48,8 @@ export function JobCard({ posting, onArchive, onCopyLink }: Props) {
               <Badge variant={status.variant} className="shrink-0 text-xs">{status.label}</Badge>
             </div>
             <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
+              {posting.company_name && <span>{posting.company_name}</span>}
+              {posting.city && <span>{posting.city}</span>}
               {posting.department?.name && <span>{posting.department.name}</span>}
               {posting.employment_type && (
                 <span className="text-xs bg-muted px-2 py-0.5 rounded-full">

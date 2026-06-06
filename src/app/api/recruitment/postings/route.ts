@@ -114,6 +114,8 @@ export async function POST(request: NextRequest) {
       title: String(body.title || ""),
       department_id: body.department_id || null,
       location_id: body.location_id || null,
+      company_name: body.company_name || null,
+      city: body.city || null,
       employment_type: body.employment_type || null,
       description: body.description || null,
       requirements: body.requirements || null,
