@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordPlatformAudit, requireSuperadmin } from "@/lib/superadmin/server";
+import { deductApprovedLeaveBalanceServer } from "@/lib/server/leave-balances";
 
 const reviewableRoles = new Set(["hr_admin", "hr_recruitment"]);
 
@@ -181,36 +182,18 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (decision === "approved") {
-    const leaveType = String(leaveRequest.leave_type || "");
-    const balanceColumn = `${leaveType}_remaining`;
-    if (["sick_remaining", "vacation_remaining", "emergency_remaining"].includes(balanceColumn)) {
-      const days = leaveDays(leaveRequest.start_date, leaveRequest.end_date);
-      const balanceResult = await admin
-        .from("leave_balances")
-        .select("*")
-        .eq("org_id", orgId)
-        .eq("employee_id", employeeId)
-        .maybeSingle();
+    const balanceUpdate = await deductApprovedLeaveBalanceServer(admin, {
+      orgId,
+      employeeId,
+      leaveType: String(leaveRequest.leave_type || ""),
+      days: leaveDays(leaveRequest.start_date, leaveRequest.end_date),
+      leaveRequestId: requestId,
+      actorUserId: auth.user.id,
+      reason: "Superadmin approved leave request",
+    });
 
-      if (balanceResult.error) {
-        return NextResponse.json({ message: balanceResult.error.message }, { status: 500 });
-      }
-
-      const balance = balanceResult.data as Record<string, unknown> | null;
-      const currentBalance = typeof balance?.[balanceColumn] === "number" ? Number(balance[balanceColumn]) : 0;
-      const nextBalance = Math.max(0, currentBalance - days);
-      const balanceWrite = balance
-        ? await admin
-            .from("leave_balances")
-            .update({ [balanceColumn]: nextBalance, updated_at: now } as never)
-            .eq("id", String(balance.id))
-        : await admin
-            .from("leave_balances")
-            .insert({ org_id: orgId, employee_id: employeeId, [balanceColumn]: nextBalance } as never);
-
-      if (balanceWrite.error) {
-        return NextResponse.json({ message: balanceWrite.error.message }, { status: 500 });
-      }
+    if (balanceUpdate.error) {
+      return NextResponse.json({ message: balanceUpdate.error.message }, { status: 500 });
     }
   }
 

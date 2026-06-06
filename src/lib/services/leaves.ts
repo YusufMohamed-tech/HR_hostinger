@@ -1,6 +1,16 @@
 import { createClient } from "@/lib/supabase/client";
 import { roleFromOrgRole } from "@/lib/rbac";
 import type { Role } from "@/types";
+import { calculateAnnualAccruedDays, getLeaveBalanceColumn, type LeaveTypeKey } from "@/lib/leave-balance-core";
+
+function asNumber(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function todayString() {
+  return new Date().toISOString().split("T")[0];
+}
 
 export async function getLeaveRequests(orgId: string) {
   const supabase = createClient();
@@ -179,46 +189,19 @@ export async function approveLeaveRequest(
     return updateResult as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
   }
 
-  const days = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1);
-  const balanceColumn = `${leaveType}_remaining`;
-
-  if (!["sick_remaining", "vacation_remaining", "emergency_remaining"].includes(balanceColumn)) {
-    return updateResult as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
-  }
-
-  const balanceResult = await supabase
-    .from("leave_balances")
-    .select("*")
-    .eq("org_id", orgId)
-    .eq("employee_id", employeeId)
-    .maybeSingle();
-
-  if (balanceResult.error) {
-    return { data: updateResult.data as Record<string, unknown> | null, error: balanceResult.error };
-  }
-
-  const balance = balanceResult.data as Record<string, unknown> | null;
-  const currentBalance = typeof balance?.[balanceColumn] === "number"
-    ? balance[balanceColumn]
-    : 0;
-  const nextBalance = Math.max(0, currentBalance - days);
-
-  const { error: balanceUpdateError } = balance
-    ? await supabase
-      .from("leave_balances")
-      .update({ [balanceColumn]: nextBalance, updated_at: new Date().toISOString() } as never)
-      .eq("id", String(balance.id))
-    : await supabase
-      .from("leave_balances")
-      .insert({
-        org_id: orgId,
-        employee_id: employeeId,
-        [balanceColumn]: nextBalance,
-      } as never);
+  const balanceUpdate = await deductApprovedLeaveBalance({
+    orgId,
+    employeeId,
+    leaveType,
+    days: Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1),
+    leaveRequestId: requestId,
+    actorUserId: typeof values.decided_by === "string" ? values.decided_by : undefined,
+    reason: "Approved leave request",
+  });
 
   return {
     data: updateResult.data as Record<string, unknown> | null,
-    error: balanceUpdateError as { message: string } | null,
+    error: balanceUpdate.error,
   };
 }
 
@@ -350,7 +333,7 @@ export async function getLeaveBalances(orgId: string, employeeId?: string) {
   const supabase = createClient();
   let query = supabase
     .from("leave_balances")
-    .select("*")
+    .select("*, employee:employee_id(full_name, employee_code, hiring_date)")
     .eq("org_id", orgId);
 
   if (employeeId) {
@@ -359,4 +342,266 @@ export async function getLeaveBalances(orgId: string, employeeId?: string) {
 
   const result = await query;
   return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+}
+
+export async function getLeaveBalanceTransactions(orgId: string, employeeId?: string) {
+  const supabase = createClient();
+  let query = supabase
+    .from("leave_balance_transactions")
+    .select("*, employee:employee_id(full_name, employee_code)")
+    .eq("org_id", orgId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (employeeId) query = query.eq("employee_id", employeeId);
+
+  const result = await query;
+  return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+}
+
+async function insertLeaveBalanceTransaction(values: Record<string, unknown>) {
+  const supabase = createClient();
+  const result = await supabase.from("leave_balance_transactions").insert(values as never);
+  return { error: result.error ? { message: result.error.message } : null };
+}
+
+export async function ensureEmployeeLeaveBalance(values: {
+  orgId: string;
+  employeeId: string;
+  hiringDate?: string | null;
+  accrualStartDate?: string | null;
+  manualAdjustment?: number | string | null;
+  actorUserId?: string;
+}) {
+  const supabase = createClient();
+  const accrualStartDate = values.accrualStartDate || values.hiringDate || todayString();
+  const manualAdjustment = asNumber(values.manualAdjustment);
+  const accrued = calculateAnnualAccruedDays(accrualStartDate);
+
+  const existingResult = await supabase
+    .from("leave_balances")
+    .select("*")
+    .eq("org_id", values.orgId)
+    .eq("employee_id", values.employeeId)
+    .maybeSingle();
+
+  if (existingResult.error) {
+    return { data: null, error: { message: existingResult.error.message } };
+  }
+
+  const existing = existingResult.data as Record<string, unknown> | null;
+  if (existing) {
+    return recalculateEmployeeVacationAccrual(existing, {
+      orgId: values.orgId,
+      employeeId: values.employeeId,
+      accrualStartDate,
+      actorUserId: values.actorUserId,
+    });
+  }
+
+  const initialVacationBalance = Number((accrued + manualAdjustment).toFixed(2));
+  const insertResult = await supabase
+    .from("leave_balances")
+    .insert({
+      org_id: values.orgId,
+      employee_id: values.employeeId,
+      sick_remaining: 0,
+      vacation_remaining: initialVacationBalance,
+      emergency_remaining: 0,
+      accrual_start_date: accrualStartDate,
+      vacation_accrued_days: accrued,
+      manual_adjustment: manualAdjustment,
+      last_accrual_calculated_at: new Date().toISOString(),
+    } as never)
+    .select()
+    .single();
+
+  if (insertResult.error) {
+    return { data: null, error: { message: insertResult.error.message } };
+  }
+
+  await insertLeaveBalanceTransaction({
+    org_id: values.orgId,
+    employee_id: values.employeeId,
+    leave_balance_id: String((insertResult.data as Record<string, unknown>).id || ""),
+    leave_type: "vacation",
+    transaction_type: "initial",
+    amount: initialVacationBalance,
+    balance_before: 0,
+    balance_after: initialVacationBalance,
+    reason: "Initial annual leave balance",
+    created_by: values.actorUserId || null,
+  });
+
+  return { data: insertResult.data as Record<string, unknown>, error: null };
+}
+
+export async function recalculateEmployeeVacationAccrual(
+  balance: Record<string, unknown>,
+  values?: { orgId?: string; employeeId?: string; accrualStartDate?: string | null; actorUserId?: string }
+) {
+  const supabase = createClient();
+  const orgId = values?.orgId || String(balance.org_id || "");
+  const employeeId = values?.employeeId || String(balance.employee_id || "");
+  const balanceId = String(balance.id || "");
+  const accrualStartDate = values?.accrualStartDate || String(balance.accrual_start_date || "") || todayString();
+  const previousAccrued = asNumber(balance.vacation_accrued_days);
+  const nextAccrued = calculateAnnualAccruedDays(accrualStartDate);
+  const delta = Number((nextAccrued - previousAccrued).toFixed(2));
+  const currentVacation = asNumber(balance.vacation_remaining);
+  const nextVacation = Number((currentVacation + Math.max(0, delta)).toFixed(2));
+
+  const updateValues: Record<string, unknown> = {
+    accrual_start_date: accrualStartDate,
+    vacation_accrued_days: nextAccrued,
+    last_accrual_calculated_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (delta > 0) updateValues.vacation_remaining = nextVacation;
+
+  const updateResult = await supabase
+    .from("leave_balances")
+    .update(updateValues as never)
+    .eq("id", balanceId)
+    .select()
+    .single();
+
+  if (updateResult.error) {
+    return { data: null, error: { message: updateResult.error.message } };
+  }
+
+  if (delta > 0) {
+    await insertLeaveBalanceTransaction({
+      org_id: orgId,
+      employee_id: employeeId,
+      leave_balance_id: balanceId,
+      leave_type: "vacation",
+      transaction_type: "accrual",
+      amount: delta,
+      balance_before: currentVacation,
+      balance_after: nextVacation,
+      reason: "Automatic monthly annual leave accrual",
+      created_by: values?.actorUserId || null,
+    });
+  }
+
+  return { data: updateResult.data as Record<string, unknown>, error: null };
+}
+
+export async function adjustLeaveBalance(values: {
+  orgId: string;
+  employeeId: string;
+  leaveType: LeaveTypeKey;
+  amount: number;
+  reason: string;
+  actorUserId?: string;
+}) {
+  const supabase = createClient();
+  const column = getLeaveBalanceColumn(values.leaveType);
+  if (!column) return { data: null, error: { message: "Unsupported leave type." } };
+
+  const balanceResult = await supabase
+    .from("leave_balances")
+    .select("*")
+    .eq("org_id", values.orgId)
+    .eq("employee_id", values.employeeId)
+    .maybeSingle();
+
+  if (balanceResult.error) return { data: null, error: { message: balanceResult.error.message } };
+
+  let balance = balanceResult.data as Record<string, unknown> | null;
+  if (!balance) {
+    const created = await ensureEmployeeLeaveBalance({ orgId: values.orgId, employeeId: values.employeeId, actorUserId: values.actorUserId });
+    if (created.error || !created.data) return created;
+    balance = created.data;
+  }
+
+  const before = asNumber(balance[column]);
+  const after = Math.max(0, Number((before + values.amount).toFixed(2)));
+  const updateValues: Record<string, unknown> = { [column]: after, updated_at: new Date().toISOString() };
+  if (values.leaveType === "vacation") {
+    updateValues.manual_adjustment = Number((asNumber(balance.manual_adjustment) + values.amount).toFixed(2));
+  }
+
+  const updateResult = await supabase
+    .from("leave_balances")
+    .update(updateValues as never)
+    .eq("id", String(balance.id))
+    .select()
+    .single();
+
+  if (updateResult.error) return { data: null, error: { message: updateResult.error.message } };
+
+  const transaction = await insertLeaveBalanceTransaction({
+    org_id: values.orgId,
+    employee_id: values.employeeId,
+    leave_balance_id: String(balance.id),
+    leave_type: values.leaveType,
+    transaction_type: "manual_adjustment",
+    amount: values.amount,
+    balance_before: before,
+    balance_after: after,
+    reason: values.reason,
+    created_by: values.actorUserId || null,
+  });
+
+  return { data: updateResult.data as Record<string, unknown>, error: transaction.error };
+}
+
+export async function deductApprovedLeaveBalance(values: {
+  orgId: string;
+  employeeId: string;
+  leaveType: string;
+  days: number;
+  leaveRequestId?: string;
+  actorUserId?: string;
+  reason?: string;
+}) {
+  const supabase = createClient();
+  const column = getLeaveBalanceColumn(values.leaveType);
+  if (!column) return { data: null, error: null };
+
+  const balanceResult = await supabase
+    .from("leave_balances")
+    .select("*")
+    .eq("org_id", values.orgId)
+    .eq("employee_id", values.employeeId)
+    .maybeSingle();
+
+  if (balanceResult.error) return { data: null, error: { message: balanceResult.error.message } };
+
+  let balance = balanceResult.data as Record<string, unknown> | null;
+  if (!balance) {
+    const created = await ensureEmployeeLeaveBalance({ orgId: values.orgId, employeeId: values.employeeId, actorUserId: values.actorUserId });
+    if (created.error || !created.data) return created;
+    balance = created.data;
+  }
+
+  const before = asNumber(balance[column]);
+  const after = Math.max(0, Number((before - values.days).toFixed(2)));
+  const updateResult = await supabase
+    .from("leave_balances")
+    .update({ [column]: after, updated_at: new Date().toISOString() } as never)
+    .eq("id", String(balance.id))
+    .select()
+    .single();
+
+  if (updateResult.error) return { data: null, error: { message: updateResult.error.message } };
+
+  const transaction = await insertLeaveBalanceTransaction({
+    org_id: values.orgId,
+    employee_id: values.employeeId,
+    leave_balance_id: String(balance.id),
+    leave_request_id: values.leaveRequestId || null,
+    leave_type: values.leaveType,
+    transaction_type: "leave_deduction",
+    amount: -Math.abs(values.days),
+    balance_before: before,
+    balance_after: after,
+    reason: values.reason || "Approved leave request",
+    created_by: values.actorUserId || null,
+  });
+
+  return { data: updateResult.data as Record<string, unknown>, error: transaction.error };
 }

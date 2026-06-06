@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
+import { ensureEmployeeLeaveBalanceServer } from "@/lib/server/leave-balances";
 
 const allowedSelfServiceRoles = new Set(["employee", "training_manager", "hr_admin", "hr_recruitment", "sales", "sales_manager"]);
 
@@ -67,7 +68,7 @@ export async function POST(request: NextRequest) {
 
   const { data: existingEmployee, error: employeeLookupError } = await admin
     .from("employees")
-    .select("id, full_name, manager_id, department:department_id(manager_employee_id), location:location_id(manager_employee_id)")
+    .select("id, full_name, hiring_date, leave_accrual_start_date, leave_balance_manual_adjustment, manager_id, department:department_id(manager_employee_id), location:location_id(manager_employee_id)")
     .eq("org_id", orgId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -96,8 +97,10 @@ export async function POST(request: NextRequest) {
         full_name: fullName,
         email: email || null,
         job_title: jobTitle,
+        hiring_date: new Date().toISOString().split("T")[0],
+        leave_accrual_start_date: new Date().toISOString().split("T")[0],
       } as never)
-      .select("id")
+      .select("id, full_name, hiring_date, leave_accrual_start_date, leave_balance_manual_adjustment")
       .single();
 
     if (employeeCreateError) {
@@ -110,6 +113,21 @@ export async function POST(request: NextRequest) {
 
   if (!employeeId) {
     return NextResponse.json({ message: "Unable to determine the requester employee profile." }, { status: 500 });
+  }
+
+  const balanceEnsure = await ensureEmployeeLeaveBalanceServer(admin, {
+    orgId,
+    employeeId,
+    hiringDate: typeof employeeRecord?.hiring_date === "string" ? employeeRecord.hiring_date : null,
+    accrualStartDate: typeof employeeRecord?.leave_accrual_start_date === "string" ? employeeRecord.leave_accrual_start_date : null,
+    manualAdjustment: typeof employeeRecord?.leave_balance_manual_adjustment === "number" || typeof employeeRecord?.leave_balance_manual_adjustment === "string"
+      ? employeeRecord.leave_balance_manual_adjustment
+      : 0,
+    actorUserId: user.id,
+  });
+
+  if (balanceEnsure.error) {
+    return NextResponse.json({ message: balanceEnsure.error.message }, { status: 500 });
   }
 
   const now = new Date().toISOString();
