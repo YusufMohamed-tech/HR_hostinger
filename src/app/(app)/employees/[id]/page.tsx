@@ -27,6 +27,7 @@ import { useEffect, useState } from "react";
 
 import { getEmployeeAssets } from "@/lib/services/assets";
 import { getFinancialBalances } from "@/lib/services/financial";
+import { calculateLeaveBalanceDays, recalculateEmployeeLeaveBalance } from "@/lib/services/leave-accrual";
 
 export default function EmployeeDetailPage() {
   const params = useParams();
@@ -48,6 +49,7 @@ export default function EmployeeDetailPage() {
     assets: [] as Record<string, unknown>[],
     financials: [] as Record<string, unknown>[]
   });
+  const [currentLeaveBalance, setCurrentLeaveBalance] = useState<number | null>(null);
 
   useEffect(() => {
     if (!currentUser?.orgId || !employeeId) return;
@@ -70,9 +72,21 @@ export default function EmployeeDetailPage() {
         assets: assets.data || [],
         financials: financials.data || []
       });
+      if (employeeRecord) {
+        const fallbackBalance = calculateLeaveBalanceDays({
+          leave_accrual_start_date: typeof employeeRecord.leave_accrual_start_date === "string" ? employeeRecord.leave_accrual_start_date : null,
+          hiring_date: typeof employeeRecord.hiring_date === "string" ? employeeRecord.hiring_date : null,
+          leave_balance_manual_adjustment: typeof employeeRecord.leave_balance_manual_adjustment === "number" || typeof employeeRecord.leave_balance_manual_adjustment === "string"
+            ? employeeRecord.leave_balance_manual_adjustment
+            : 0,
+        });
+        setCurrentLeaveBalance(fallbackBalance);
+        const recalculated = await recalculateEmployeeLeaveBalance(employeeRecord);
+        if (typeof recalculated.data === "number") setCurrentLeaveBalance(recalculated.data);
+      }
     }
     fetchDetails();
-  }, [currentUser?.orgId, employeeId, id]);
+  }, [currentUser?.orgId, employeeId, employeeRecord, id]);
 
   const employeeName = typeof employeeRecord?.full_name === "string"
     ? employeeRecord.full_name
@@ -104,6 +118,8 @@ export default function EmployeeDetailPage() {
   const bonus = typeof employeeRecord?.bonus === "number" ? employeeRecord.bonus : 0;
   const deductions = typeof employeeRecord?.deductions === "number" ? employeeRecord.deductions : 0;
   const paymentMethod = typeof employeeRecord?.payment_method === "string" ? employeeRecord.payment_method : "—";
+
+  const leaveBalance = currentLeaveBalance ?? (typeof employeeRecord?.leave_balance_days === "number" ? employeeRecord.leave_balance_days : 0);
 
   if (!employee) {
     return (
@@ -179,6 +195,10 @@ export default function EmployeeDetailPage() {
             <div>
               <p className="text-xs text-gray-500">Employment Type</p>
               <p className="font-medium text-gray-900">{employmentType}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">رصيد الإجازات الحالي</p>
+              <p className="font-medium text-gray-900">{Number(leaveBalance).toFixed(2)} يوم</p>
             </div>
           </CardContent>
         </Card>

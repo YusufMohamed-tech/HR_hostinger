@@ -91,6 +91,8 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     base_salary: "",
     bonus: "",
     deductions: "",
+    leave_balance_manual_adjustment: "",
+    leave_accrual_start_date: "",
     payment_method: "",
     bank_account: "",
   });
@@ -160,6 +162,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     const payload = {
       org_id: currentUser.orgId,
       ...parsed.data,
+      leave_accrual_start_date: parsed.data.hiring_date || todayString(),
     };
 
     const { data: createdEmployee, error: err } = await createEmployee(payload);
@@ -305,6 +308,8 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       base_salary: "",
       bonus: "",
       deductions: "",
+      leave_balance_manual_adjustment: "",
+      leave_accrual_start_date: "",
       payment_method: "",
       bank_account: "",
     });
@@ -523,6 +528,18 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
               <div className="space-y-2">
                 <Label>طريقة الدفع</Label>
                 <Input value={form.payment_method} onChange={(e) => set("payment_method", e.target.value)} placeholder="تحويل بنكي" />
+              </div>
+            </div>
+            <div className={twoColumnGridClass}>
+              <div className="space-y-2">
+                <Label>رصيد الإجازات الافتتاحي</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.leave_balance_manual_adjustment}
+                  onChange={(e) => set("leave_balance_manual_adjustment", e.target.value)}
+                  placeholder="0"
+                />
               </div>
             </div>
           </div>
