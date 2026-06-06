@@ -27,7 +27,7 @@ import { useEffect, useState } from "react";
 
 import { getEmployeeAssets } from "@/lib/services/assets";
 import { getFinancialBalances } from "@/lib/services/financial";
-import { calculateLeaveBalanceDays, recalculateEmployeeLeaveBalance } from "@/lib/services/leave-accrual";
+import { ensureEmployeeLeaveBalance, getLeaveBalances } from "@/lib/services/leaves";
 import { getEmployeeCareerEvents } from "@/lib/services/career-events";
 import { formatCurrency } from "@/lib/utils/currency";
 
@@ -88,16 +88,20 @@ export default function EmployeeDetailPage() {
         careerEvents: careerEvents.data || []
       });
       if (employeeRecord) {
-        const fallbackBalance = calculateLeaveBalanceDays({
-          leave_accrual_start_date: typeof employeeRecord.leave_accrual_start_date === "string" ? employeeRecord.leave_accrual_start_date : null,
-          hiring_date: typeof employeeRecord.hiring_date === "string" ? employeeRecord.hiring_date : null,
-          leave_balance_manual_adjustment: typeof employeeRecord.leave_balance_manual_adjustment === "number" || typeof employeeRecord.leave_balance_manual_adjustment === "string"
+        const ensured = await ensureEmployeeLeaveBalance({
+          orgId: currentUser?.orgId as string,
+          employeeId,
+          hiringDate: typeof employeeRecord.hiring_date === "string" ? employeeRecord.hiring_date : null,
+          accrualStartDate: typeof employeeRecord.leave_accrual_start_date === "string" ? employeeRecord.leave_accrual_start_date : null,
+          manualAdjustment: typeof employeeRecord.leave_balance_manual_adjustment === "number" || typeof employeeRecord.leave_balance_manual_adjustment === "string"
             ? employeeRecord.leave_balance_manual_adjustment
             : 0,
         });
-        setCurrentLeaveBalance(fallbackBalance);
-        const recalculated = await recalculateEmployeeLeaveBalance(employeeRecord);
-        if (typeof recalculated.data === "number") setCurrentLeaveBalance(recalculated.data);
+        const balances = ensured.data
+          ? { data: [ensured.data] }
+          : await getLeaveBalances(currentUser?.orgId as string, employeeId);
+        const balance = (balances.data?.[0] ?? null) as Record<string, unknown> | null;
+        setCurrentLeaveBalance(Number(balance?.vacation_remaining || 0));
       }
     }
     fetchDetails();
@@ -134,7 +138,7 @@ export default function EmployeeDetailPage() {
   const deductions = typeof employeeRecord?.deductions === "number" ? employeeRecord.deductions : 0;
   const paymentMethod = typeof employeeRecord?.payment_method === "string" ? employeeRecord.payment_method : "—";
 
-  const leaveBalance = currentLeaveBalance ?? (typeof employeeRecord?.leave_balance_days === "number" ? employeeRecord.leave_balance_days : 0);
+  const leaveBalance = currentLeaveBalance ?? 0;
 
   if (!employee) {
     return (

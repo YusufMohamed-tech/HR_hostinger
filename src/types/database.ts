@@ -728,6 +728,11 @@ export interface Database {
           sick_remaining: number | null;
           vacation_remaining: number | null;
           emergency_remaining: number | null;
+          accrual_start_date: string | null;
+          vacation_accrued_days: number | null;
+          manual_adjustment: number | null;
+          last_accrual_calculated_at: string | null;
+          created_at: string | null;
           updated_at: string;
         };
         Insert: {
@@ -737,6 +742,11 @@ export interface Database {
           sick_remaining?: number | null;
           vacation_remaining?: number | null;
           emergency_remaining?: number | null;
+          accrual_start_date?: string | null;
+          vacation_accrued_days?: number | null;
+          manual_adjustment?: number | null;
+          last_accrual_calculated_at?: string | null;
+          created_at?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -746,7 +756,59 @@ export interface Database {
           sick_remaining?: number | null;
           vacation_remaining?: number | null;
           emergency_remaining?: number | null;
+          accrual_start_date?: string | null;
+          vacation_accrued_days?: number | null;
+          manual_adjustment?: number | null;
+          last_accrual_calculated_at?: string | null;
+          created_at?: string | null;
           updated_at?: string;
+        };
+      };
+      leave_balance_transactions: {
+        Row: {
+          id: string;
+          org_id: string;
+          employee_id: string;
+          leave_balance_id: string | null;
+          leave_request_id: string | null;
+          leave_type: LeaveType;
+          transaction_type: string;
+          amount: number;
+          balance_before: number;
+          balance_after: number;
+          reason: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          employee_id: string;
+          leave_balance_id?: string | null;
+          leave_request_id?: string | null;
+          leave_type: LeaveType;
+          transaction_type: string;
+          amount: number;
+          balance_before?: number;
+          balance_after?: number;
+          reason?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          org_id?: string;
+          employee_id?: string;
+          leave_balance_id?: string | null;
+          leave_request_id?: string | null;
+          leave_type?: LeaveType;
+          transaction_type?: string;
+          amount?: number;
+          balance_before?: number;
+          balance_after?: number;
+          reason?: string | null;
+          created_by?: string | null;
+          created_at?: string;
         };
       };
       leave_requests: {

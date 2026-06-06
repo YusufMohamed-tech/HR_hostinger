@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { ensureEmployeeLeaveBalance } from "@/lib/services/leaves";
 
 export async function getEmployees(orgId: string) {
   const supabase = createClient();
@@ -28,9 +29,25 @@ export async function createEmployee(values: Record<string, unknown>) {
     .from("employees")
     .insert(values as never)
     .select()
-    .single();
+    .single() as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+  if (!result.error && result.data) {
+    const employee = result.data;
+    const balanceResult = await ensureEmployeeLeaveBalance({
+      orgId: String(employee.org_id || values.org_id || ""),
+      employeeId: String(employee.id || ""),
+      hiringDate: typeof employee.hiring_date === "string" ? employee.hiring_date : typeof values.hiring_date === "string" ? values.hiring_date : null,
+      accrualStartDate: typeof employee.leave_accrual_start_date === "string" ? employee.leave_accrual_start_date : typeof values.leave_accrual_start_date === "string" ? values.leave_accrual_start_date : null,
+      manualAdjustment: typeof employee.leave_balance_manual_adjustment === "number" || typeof employee.leave_balance_manual_adjustment === "string"
+        ? employee.leave_balance_manual_adjustment
+        : values.leave_balance_manual_adjustment as number | string | null,
+    });
+    if (balanceResult.error) {
+      return { data: result.data as Record<string, unknown>, error: balanceResult.error };
+    }
+  }
+
+  return result;
 }
 
 export async function replaceEmployeeLocations(
@@ -105,9 +122,25 @@ export async function updateEmployee(id: string, values: Record<string, unknown>
     .update(values as never)
     .eq("id", id)
     .select()
-    .single();
+    .single() as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+  if (!result.error && result.data) {
+    const employee = result.data;
+    const balanceResult = await ensureEmployeeLeaveBalance({
+      orgId: String(employee.org_id || ""),
+      employeeId: String(employee.id || id),
+      hiringDate: typeof employee.hiring_date === "string" ? employee.hiring_date : null,
+      accrualStartDate: typeof employee.leave_accrual_start_date === "string" ? employee.leave_accrual_start_date : null,
+      manualAdjustment: typeof employee.leave_balance_manual_adjustment === "number" || typeof employee.leave_balance_manual_adjustment === "string"
+        ? employee.leave_balance_manual_adjustment
+        : null,
+    });
+    if (balanceResult.error) {
+      return { data: result.data as Record<string, unknown>, error: balanceResult.error };
+    }
+  }
+
+  return result;
 }
 
 export async function deleteEmployee(id: string) {
