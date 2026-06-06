@@ -19,6 +19,10 @@ async function authorizeRecruiter() {
   return { userId: user.id, orgId: m.org_id, role: m.role };
 }
 
+function isRecruiterOnly(role: string) {
+  return role === "hr_recruitment";
+}
+
 function generateSlug(): string {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let result = "";
@@ -33,11 +37,13 @@ export async function GET() {
   if (!auth) return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
 
   const admin = createAdminClient();
-  const { data: postings, error } = await admin
+  let postingsQuery = admin
     .from("job_postings")
     .select("*, department:department_id(name), location:location_id(name)")
     .eq("org_id", auth.orgId)
     .order("created_at", { ascending: false });
+  if (isRecruiterOnly(auth.role)) postingsQuery = postingsQuery.eq("created_by", auth.userId);
+  const { data: postings, error } = await postingsQuery;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

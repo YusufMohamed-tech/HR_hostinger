@@ -15,7 +15,11 @@ async function authorizeRecruiter() {
     .maybeSingle();
   const m = membership as { org_id: string; role: string } | null;
   if (!m || !["hr_recruitment", "hr_admin", "admin", "super_admin"].includes(m.role)) return null;
-  return { userId: user.id, orgId: m.org_id };
+  return { userId: user.id, orgId: m.org_id, role: m.role };
+}
+
+function isRecruiterOnly(role: string) {
+  return role === "hr_recruitment";
 }
 
 function generateSlug(): string {
@@ -33,15 +37,16 @@ export async function GET(
   if (!auth) return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
 
   const admin = createAdminClient();
-  const { data, error } = await admin
+  let query = admin
     .from("job_postings")
     .select("*, department:department_id(name), location:location_id(name)")
     .eq("id", params.id)
-    .eq("org_id", auth.orgId)
-    .maybeSingle();
+    .eq("org_id", auth.orgId);
+  if (isRecruiterOnly(auth.role)) query = query.eq("created_by", auth.userId);
+  const { data, error } = await query.maybeSingle();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (!data) return NextResponse.json({ error: "الوظيفة غير موجودة" }, { status: 404 });
+  if (!data) return NextResponse.json({ error: isRecruiterOnly(auth.role) ? "غير مصرح لك بعرض هذا الإعلان" : "الوظيفة غير موجودة" }, { status: isRecruiterOnly(auth.role) ? 403 : 404 });
   return NextResponse.json({ data });
 }
 
@@ -57,11 +62,12 @@ export async function PATCH(
 
   let slugUpdate: Record<string, string> = {};
   if (body.status === "active") {
-    const { data: current } = await admin
+    let currentQuery = admin
       .from("job_postings")
       .select("public_slug")
-      .eq("id", params.id)
-      .maybeSingle();
+      .eq("id", params.id);
+    if (isRecruiterOnly(auth.role)) currentQuery = currentQuery.eq("created_by", auth.userId);
+    const { data: current } = await currentQuery.maybeSingle();
     if (!(current as Record<string, unknown> | null)?.public_slug) {
       let slug: string | null = null;
       let attempts = 0;
@@ -96,13 +102,13 @@ export async function PATCH(
     if (key in body) update[key] = body[key] ?? null;
   }
 
-  const { data, error } = await admin
+  let updateQuery = admin
     .from("job_postings")
     .update(update as never)
     .eq("id", params.id)
-    .eq("org_id", auth.orgId)
-    .select()
-    .single();
+    .eq("org_id", auth.orgId);
+  if (isRecruiterOnly(auth.role)) updateQuery = updateQuery.eq("created_by", auth.userId);
+  const { data, error } = await updateQuery.select().single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ data });

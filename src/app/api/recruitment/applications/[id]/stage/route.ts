@@ -26,7 +26,11 @@ async function authorizeRecruiter() {
     .maybeSingle();
   const m = membership as { org_id: string; role: string } | null;
   if (!m || !["hr_recruitment", "hr_admin", "admin", "super_admin"].includes(m.role)) return null;
-  return { userId: user.id, orgId: m.org_id };
+  return { userId: user.id, orgId: m.org_id, role: m.role };
+}
+
+function isRecruiterOnly(role: string) {
+  return role === "hr_recruitment";
 }
 
 export async function POST(
@@ -43,7 +47,7 @@ export async function POST(
 
   const { data: app, error: fetchError } = await admin
     .from("job_applications")
-    .select("*, job:job_posting_id(title)")
+    .select("*, job:job_posting_id(title, created_by)")
     .eq("id", params.id)
     .eq("org_id", auth.orgId)
     .maybeSingle();
@@ -51,6 +55,10 @@ export async function POST(
   if (fetchError || !app) return NextResponse.json({ error: "الطلب غير موجود" }, { status: 404 });
 
   const application = app as Record<string, unknown>;
+  const postingForAccess = application.job as Record<string, unknown> | null;
+  if (isRecruiterOnly(auth.role) && String(postingForAccess?.created_by || "") !== auth.userId) {
+    return NextResponse.json({ error: "غير مصرح لك بتعديل هذا الطلب" }, { status: 403 });
+  }
   const currentHistory = Array.isArray(application.stage_history)
     ? (application.stage_history as unknown[])
     : [];
