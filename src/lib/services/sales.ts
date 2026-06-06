@@ -102,7 +102,11 @@ export async function submitSalesLog(values: { items: SalesLogItem[]; notes?: st
 }
 
 export async function getSalesHistory() {
-  return apiFetch<SalesLog[]>("/api/sales/reports?scope=mine");
+  const result = await apiFetch<{ logs: SalesLog[] }>("/api/sales/reports?scope=mine");
+  return {
+    data: Array.isArray(result.data?.logs) ? result.data.logs : [],
+    error: result.error,
+  };
 }
 
 export async function getSalesReports(params?: URLSearchParams) {
