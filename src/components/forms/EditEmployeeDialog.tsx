@@ -51,6 +51,7 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<"employee" | "training_manager">("employee");
   const [accountPassword, setAccountPassword] = useState("");
+  const [canMultiCheckin, setCanMultiCheckin] = useState(false);
 
   const [form, setForm] = useState({
     full_name: "",
@@ -115,6 +116,7 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
       setCreateLoginAccount(false);
       setAccountRole(Boolean(managedDepartment) ? "training_manager" : "employee");
       setAccountPassword("");
+      setCanMultiCheckin(Boolean(employee.can_multi_checkin));
     }
   }, [departments, employee, open]);
 
@@ -188,6 +190,7 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
       deductions: form.deductions ? parseFloat(form.deductions) : undefined,
       leave_balance_manual_adjustment: form.leave_balance_manual_adjustment ? parseFloat(form.leave_balance_manual_adjustment) : undefined,
       leave_accrual_start_date: form.leave_accrual_start_date || form.hiring_date || undefined,
+      can_multi_checkin: canMultiCheckin,
       payment_method: form.payment_method || undefined,
       bank_account: form.bank_account || undefined,
     };
@@ -356,6 +359,15 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
                 onChange={(event) => handleDepartmentManagerChange(event.target.checked)}
               />
               <span>تعيين هذا الشخص كمدير للقسم المختار</span>
+            </label>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
+                checked={canMultiCheckin}
+                onChange={(event) => setCanMultiCheckin(event.target.checked)}
+              />
+              <span>السماح بتسجيل حضور متعدد في نفس اليوم</span>
             </label>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
