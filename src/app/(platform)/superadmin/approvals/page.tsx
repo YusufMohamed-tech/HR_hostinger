@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarCheck, Check, Plus, UserCog, X } from "lucide-react";
+import { CalendarCheck, Check, Paperclip, Plus, UserCog, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -57,6 +57,40 @@ const roleLabels: Record<string, string> = {
   hr_admin: "HR Admin",
   hr_recruitment: "HR Recruitment",
 };
+
+function TaskAttachmentPicker({
+  attachments,
+  onChange,
+}: {
+  attachments: File[];
+  onChange: (files: File[]) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>المرفقات</Label>
+      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-3 text-sm text-gray-600 hover:bg-brand-light">
+        <Paperclip className="h-4 w-4" />
+        <span>اختر ملفات أو صور</span>
+        <input
+          className="sr-only"
+          type="file"
+          multiple
+          accept=".jpg,.jpeg,.png,.gif,.pdf,.docx,.xlsx"
+          onChange={(event) => onChange(Array.from(event.target.files || []))}
+        />
+      </label>
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((file) => (
+            <span key={`${file.name}-${file.size}`} className="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600">
+              {file.name}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SuperadminApprovalsPage() {
   const [requests, setRequests] = useState<SuperadminLeaveRequest[]>([]);
@@ -300,6 +334,7 @@ function CreateTaskDialog({
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [form, setForm] = useState({
     assignee_key: "",
     title: "",
@@ -333,6 +368,7 @@ function CreateTaskDialog({
       description: form.description,
       priority: form.priority,
       due_date: form.due_date,
+      attachments,
     });
     setSubmitting(false);
 
@@ -343,6 +379,7 @@ function CreateTaskDialog({
 
     setOpen(false);
     setForm({ assignee_key: "", title: "", description: "", priority: "medium", due_date: "" });
+    setAttachments([]);
     await onSuccess();
   };
 
@@ -401,6 +438,7 @@ function CreateTaskDialog({
               <Input type="date" value={form.due_date} onChange={(event) => set("due_date", event.target.value)} />
             </div>
           </div>
+          <TaskAttachmentPicker attachments={attachments} onChange={setAttachments} />
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>

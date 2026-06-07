@@ -81,12 +81,12 @@ export async function notifyTaskStakeholders(admin: AdminClient, input: TaskNoti
   const isCompletion = input.status === "completed";
   const statusText = input.status ? statusLabels[input.status] || input.status : "";
   const title = action === "note"
-    ? `ملاحظة جديدة على مهمة: ${taskTitle}`
+    ? `رسالة جديدة على مهمة: ${taskTitle}`
     : isCompletion
       ? `تم إكمال مهمة: ${taskTitle}`
       : `تحديث حالة مهمة: ${taskTitle}`;
   const body = action === "note"
-    ? `${actorName}: ${input.note || "أضاف ملاحظة جديدة."}`
+    ? `${actorName}: ${input.note || "أرسل رسالة جديدة."}`
     : `${actorName} غيّر حالة المهمة إلى ${statusText}.${input.note ? ` ${input.note}` : ""}`;
 
   const rows = Array.from(recipients).map((userId) => ({

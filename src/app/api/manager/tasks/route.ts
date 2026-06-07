@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getFormFiles, uploadTaskUpdateAttachments, validateTaskAttachments } from "@/lib/server/task-attachments";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getValidationMessage, taskFormSchema } from "@/lib/validation";
@@ -41,12 +42,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Only managers can assign team tasks from this endpoint." }, { status: 403 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const contentType = request.headers.get("content-type") || "";
+  let body: Record<string, unknown> = {};
+  let files: File[] = [];
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    files = getFormFiles(formData);
+    body = {
+      title: formData.get("title"),
+      description: formData.get("description"),
+      priority: formData.get("priority"),
+      due_date: formData.get("due_date"),
+      employee_id: formData.get("employee_id"),
+      location_id: formData.get("location_id"),
+      initial_message: formData.get("initial_message"),
+    };
+  } else {
+    body = await request.json().catch(() => ({}));
+  }
   const initialMessage = String((body as Record<string, unknown>).initial_message || "").trim();
   const parsed = taskFormSchema.safeParse(body);
 
   if (!parsed.success) {
     return NextResponse.json({ message: getValidationMessage(parsed.error) }, { status: 400 });
+  }
+
+  const attachmentError = validateTaskAttachments(files);
+  if (attachmentError) {
+    return NextResponse.json({ message: attachmentError }, { status: 400 });
   }
 
   const assigneeEmployeeId = parsed.data.employee_id;
@@ -122,14 +145,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: assignmentError.message }, { status: 500 });
   }
 
-  await admin.from("task_updates").insert({
-    org_id: orgId,
-    task_id: taskId,
-    employee_id: managerEmployeeId,
-    status: "pending",
-    progress: 0,
-    note: initialMessage || "Task assigned by the direct manager.",
-  } as never);
+  const initialUpdateResult = await admin
+    .from("task_updates")
+    .insert({
+      org_id: orgId,
+      task_id: taskId,
+      employee_id: managerEmployeeId,
+      status: "pending",
+      progress: 0,
+      note: initialMessage || "تم إسناد المهمة من المدير المباشر.",
+    } as never)
+    .select()
+    .single();
+
+  if (initialUpdateResult.error) {
+    return NextResponse.json({ message: initialUpdateResult.error.message }, { status: 500 });
+  }
+
+  if (files.length > 0) {
+    const uploadResult = await uploadTaskUpdateAttachments(admin, {
+      taskId,
+      updateId: String((initialUpdateResult.data as Record<string, unknown>).id || ""),
+      files,
+    });
+    if (uploadResult.error) return NextResponse.json({ message: uploadResult.error.message }, { status: 500 });
+  }
 
   const assigneeRecord = assignee as unknown as Record<string, unknown>;
   const assigneeUserId = typeof assigneeRecord.user_id === "string" ? assigneeRecord.user_id : "";
@@ -175,7 +215,24 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ message: "Only managers can update team tasks from this endpoint." }, { status: 403 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const contentType = request.headers.get("content-type") || "";
+  let body: Record<string, unknown> = {};
+  let files: File[] = [];
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    files = getFormFiles(formData);
+    body = {
+      id: formData.get("id"),
+      title: formData.get("title"),
+      description: formData.get("description"),
+      priority: formData.get("priority"),
+      due_date: formData.get("due_date"),
+      employee_id: formData.get("employee_id"),
+      location_id: formData.get("location_id"),
+    };
+  } else {
+    body = await request.json().catch(() => ({}));
+  }
   const taskId = String((body as Record<string, unknown>).id || "").trim();
   const parsed = taskFormSchema.safeParse(body);
 
@@ -184,6 +241,10 @@ export async function PATCH(request: NextRequest) {
   }
   if (!parsed.success) {
     return NextResponse.json({ message: getValidationMessage(parsed.error) }, { status: 400 });
+  }
+  const attachmentError = validateTaskAttachments(files);
+  if (attachmentError) {
+    return NextResponse.json({ message: attachmentError }, { status: 400 });
   }
   if (!parsed.data.employee_id) {
     return NextResponse.json({ message: "Select an employee from your team." }, { status: 400 });
@@ -261,14 +322,31 @@ export async function PATCH(request: NextRequest) {
     .eq("org_id", orgId)
     .eq("task_id", taskId);
 
-  await admin.from("task_updates").insert({
-    org_id: orgId,
-    task_id: taskId,
-    employee_id: managerEmployeeId,
-    status: "pending",
-    progress: 0,
-    note: "Task details were edited.",
-  } as never);
+  const editUpdateResult = await admin
+    .from("task_updates")
+    .insert({
+      org_id: orgId,
+      task_id: taskId,
+      employee_id: managerEmployeeId,
+      status: "pending",
+      progress: 0,
+      note: "تم تعديل تفاصيل المهمة.",
+    } as never)
+    .select()
+    .single();
+
+  if (editUpdateResult.error) {
+    return NextResponse.json({ message: editUpdateResult.error.message }, { status: 500 });
+  }
+
+  if (files.length > 0) {
+    const uploadResult = await uploadTaskUpdateAttachments(admin, {
+      taskId,
+      updateId: String((editUpdateResult.data as Record<string, unknown>).id || ""),
+      files,
+    });
+    if (uploadResult.error) return NextResponse.json({ message: uploadResult.error.message }, { status: 500 });
+  }
 
   return NextResponse.json({ data: { task } });
 }

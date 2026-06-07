@@ -54,6 +54,19 @@ export interface SuperadminTaskAssignee {
 
 type Result<T> = { data: T | null; error: { message: string } | null };
 
+function buildFormData(values: Record<string, unknown>) {
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(values)) {
+    if (key === "attachments") continue;
+    if (value !== undefined && value !== null) formData.append(key, String(value));
+  }
+  const attachments = Array.isArray(values.attachments) ? values.attachments : [];
+  attachments.forEach((file) => {
+    if (file instanceof File) formData.append("attachments", file);
+  });
+  return formData;
+}
+
 async function parseResponse<T>(response: Response, fallbackMessage: string): Promise<Result<T>> {
   const payload = await response.json().catch(() => null);
 
@@ -111,11 +124,13 @@ export async function createSuperadminTask(values: {
   description?: string;
   priority?: string;
   due_date?: string;
+  attachments?: File[];
 }) {
+  const hasAttachments = Boolean(values.attachments?.length);
   const response = await fetch("/api/superadmin/tasks", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
+    headers: hasAttachments ? undefined : { "Content-Type": "application/json" },
+    body: hasAttachments ? buildFormData(values as unknown as Record<string, unknown>) : JSON.stringify(values),
   });
 
   return parseResponse<Record<string, unknown>>(response, "Unable to create task.");

@@ -1,20 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getFormFiles, uploadTaskUpdateAttachments, validateTaskAttachments } from "@/lib/server/task-attachments";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const allowedRoles = new Set(["admin", "hr_admin", "training_manager"]);
-const allowedAttachmentTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-]);
-const maxAttachmentBytes = 10 * 1024 * 1024;
 
-function safeFilename(name: string) {
-  return name.replace(/[^\w.\-()[\]ء-ي ]+/g, "_").slice(0, 160) || "attachment";
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
 }
 
 export async function POST(request: NextRequest) {
@@ -32,9 +24,9 @@ export async function POST(request: NextRequest) {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const membershipRecord = membership as Record<string, unknown> | null;
-  const orgId = String(membershipRecord?.org_id || "");
-  const role = String(membershipRecord?.role || "");
+  const membershipRecord = asRecord(membership);
+  const orgId = String(membershipRecord.org_id || "");
+  const role = String(membershipRecord.role || "");
 
   if (membershipError || !orgId || !allowedRoles.has(role)) {
     return NextResponse.json({ message: "You are not allowed to send task messages." }, { status: 403 });
@@ -51,21 +43,21 @@ export async function POST(request: NextRequest) {
     taskId = String(formData.get("task_id") || "").trim();
     employeeId = String(formData.get("employee_id") || "").trim();
     message = String(formData.get("message") || "").trim();
-    files = formData.getAll("attachments").filter((item): item is File => item instanceof File && item.size > 0);
+    files = getFormFiles(formData);
   } else {
-    const body = await request.json().catch(() => ({}));
-    taskId = String((body as Record<string, unknown>).task_id || "").trim();
-    employeeId = String((body as Record<string, unknown>).employee_id || "").trim();
-    message = String((body as Record<string, unknown>).message || "").trim();
+    const body = asRecord(await request.json().catch(() => ({})));
+    taskId = String(body.task_id || "").trim();
+    employeeId = String(body.employee_id || "").trim();
+    message = String(body.message || "").trim();
   }
 
   if (!taskId) return NextResponse.json({ message: "Task id is required." }, { status: 400 });
   if (!employeeId) return NextResponse.json({ message: "Employee is required." }, { status: 400 });
   if (message.length < 2) return NextResponse.json({ message: "Message is required." }, { status: 400 });
-  for (const file of files) {
-    if (file.size > maxAttachmentBytes || !allowedAttachmentTypes.has(file.type)) {
-      return NextResponse.json({ message: "نوع الملف غير مدعوم أو حجمه أكبر من 10MB." }, { status: 400 });
-    }
+
+  const attachmentError = validateTaskAttachments(files);
+  if (attachmentError) {
+    return NextResponse.json({ message: attachmentError }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -79,7 +71,7 @@ export async function POST(request: NextRequest) {
   if (taskError) return NextResponse.json({ message: taskError.message }, { status: 500 });
   if (!task) return NextResponse.json({ message: "Task was not found." }, { status: 404 });
 
-  const taskRecord = task as Record<string, unknown>;
+  const taskRecord = asRecord(task);
   if (role === "hr_admin" && String(taskRecord.created_by || "") !== user.id) {
     return NextResponse.json({ message: "You can message only employees on tasks you created." }, { status: 403 });
   }
@@ -94,7 +86,7 @@ export async function POST(request: NextRequest) {
   if (assigneeError) return NextResponse.json({ message: assigneeError.message }, { status: 500 });
   if (!assignee) return NextResponse.json({ message: "Employee was not found." }, { status: 404 });
 
-  const assigneeRecord = assignee as Record<string, unknown>;
+  const assigneeRecord = asRecord(assignee);
   if (role === "training_manager") {
     const { data: managerEmployee, error: managerError } = await admin
       .from("employees")
@@ -104,7 +96,7 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (managerError) return NextResponse.json({ message: managerError.message }, { status: 500 });
-    const managerEmployeeId = String((managerEmployee as Record<string, unknown> | null)?.id || "");
+    const managerEmployeeId = String(asRecord(managerEmployee).id || "");
     if (!managerEmployeeId || String(assigneeRecord.manager_id || "") !== managerEmployeeId) {
       return NextResponse.json({ message: "You can message only employees managed by you." }, { status: 403 });
     }
@@ -128,12 +120,12 @@ export async function POST(request: NextRequest) {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const senderRecord = senderEmployee as Record<string, unknown> | null;
-  const senderEmployeeId = String(senderRecord?.id || "");
-  const senderName = String(senderRecord?.full_name || user.email || "المسؤول");
+  const senderRecord = asRecord(senderEmployee);
+  const senderEmployeeId = String(senderRecord.id || "");
+  const senderName = String(senderRecord.full_name || user.email || "المسؤول");
   const assigneeName = String(assigneeRecord.full_name || "الموظف");
   const taskTitle = String(taskRecord.title || "مهمة");
-  const assignmentStatus = String((assignment as Record<string, unknown>).status || taskRecord.status || "pending");
+  const assignmentStatus = String(asRecord(assignment).status || taskRecord.status || "pending");
 
   const { data: update, error: updateError } = await admin
     .from("task_updates")
@@ -149,33 +141,13 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (updateError) return NextResponse.json({ message: updateError.message }, { status: 500 });
-  const updateId = String((update as Record<string, unknown>).id || "");
-  const attachments: Record<string, unknown>[] = [];
 
-  for (const file of files) {
-    const filename = safeFilename(file.name);
-    const path = `${taskId}/${updateId}/${Date.now()}-${filename}`;
-    const upload = await admin.storage
-      .from("task-attachments")
-      .upload(path, file, { contentType: file.type, upsert: false });
-
-    if (upload.error) {
-      return NextResponse.json({ message: "فشل رفع الملف. يرجى المحاولة مرة أخرى." }, { status: 500 });
-    }
-
-    const publicUrl = admin.storage.from("task-attachments").getPublicUrl(path).data.publicUrl;
-    attachments.push({ filename, url: publicUrl, type: file.type, size_bytes: file.size });
-  }
-
-  if (attachments.length > 0) {
-    const { data: updatedWithAttachments, error: attachmentError } = await admin
-      .from("task_updates")
-      .update({ attachments } as never)
-      .eq("id", updateId)
-      .select()
-      .single();
-    if (attachmentError) return NextResponse.json({ message: attachmentError.message }, { status: 500 });
-    if (updatedWithAttachments) (update as Record<string, unknown>).attachments = attachments;
+  const updateRecord = update as Record<string, unknown>;
+  const updateId = String(updateRecord.id || "");
+  if (files.length > 0) {
+    const uploadResult = await uploadTaskUpdateAttachments(admin, { taskId, updateId, files });
+    if (uploadResult.error) return NextResponse.json({ message: uploadResult.error.message }, { status: 500 });
+    updateRecord.attachments = uploadResult.data;
   }
 
   const assigneeUserId = String(assigneeRecord.user_id || "");
@@ -191,5 +163,5 @@ export async function POST(request: NextRequest) {
     } as never);
   }
 
-  return NextResponse.json({ data: { update } });
+  return NextResponse.json({ data: { update: updateRecord } });
 }
