@@ -115,9 +115,10 @@ export async function PATCH(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   const id = String((body as Record<string, unknown>).id || "").trim();
-  const signaturePath = String((body as Record<string, unknown>).signature_path || "").trim();
+  let signaturePath = String((body as Record<string, unknown>).signature_path || "").trim();
+  const signatureData = String((body as Record<string, unknown>).signature_data || "").trim();
 
-  if (!id || !signaturePath) {
+  if (!id || (!signaturePath && !signatureData)) {
     return NextResponse.json({ message: "معرف العهدة والتوقيع مطلوبان." }, { status: 400 });
   }
 
@@ -138,6 +139,22 @@ export async function PATCH(request: NextRequest) {
     if (String(employee?.user_id || "") !== auth.user.id) {
       return NextResponse.json({ message: "لا يمكنك توقيع عهدة غير مسندة لك." }, { status: 403 });
     }
+  }
+
+  if (!signaturePath) {
+    const bytes = new TextEncoder().encode(signatureData);
+    const filePath = `${id}/asset-signature-${Date.now()}.txt`;
+    const uploadResult = await admin.storage
+      .from("balance-attachments")
+      .upload(filePath, bytes, {
+        contentType: "text/plain",
+        upsert: false,
+      });
+
+    if (uploadResult.error) {
+      return NextResponse.json({ message: uploadResult.error.message }, { status: 500 });
+    }
+    signaturePath = uploadResult.data.path;
   }
 
   const { data, error } = await admin
