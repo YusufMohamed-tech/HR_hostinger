@@ -78,11 +78,11 @@ export async function uploadAssetSignature(assetId: string, signatureData: strin
   return result as unknown as { data: { path: string } | null; error: { message: string } | null };
 }
 
-export async function acknowledgeAssetAssignment(id: string, signaturePath: string) {
+export async function acknowledgeAssetAssignment(id: string, signatureData: string) {
   const response = await fetch("/api/assets", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, signature_path: signaturePath }),
+    body: JSON.stringify({ id, signature_data: signatureData }),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {

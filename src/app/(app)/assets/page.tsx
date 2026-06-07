@@ -17,7 +17,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEmployees } from "@/hooks/use-data";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { acknowledgeAssetAssignment, createAssetAssignment, getAssets, getEmployeeAssets, updateAssetAssignment, uploadAssetSignature } from "@/lib/services/assets";
+import { acknowledgeAssetAssignment, createAssetAssignment, getAssets, getEmployeeAssets, updateAssetAssignment } from "@/lib/services/assets";
 
 const assetStatusLabels: Record<string, string> = {
   assigned: "مُسلَّم",
@@ -239,12 +239,7 @@ function AcknowledgeAssetDialog({ assetId, onSuccess }: { assetId: string; onSuc
             disabled={!signature.trim()}
             onClick={async () => {
               setError("");
-              const { data: uploadData, error: uploadError } = await uploadAssetSignature(assetId, signature.trim());
-              if (uploadError || !uploadData?.path) {
-                setError(uploadError?.message || "تعذر رفع التوقيع.");
-                return;
-              }
-              const result = await acknowledgeAssetAssignment(assetId, uploadData.path);
+              const result = await acknowledgeAssetAssignment(assetId, signature.trim());
               if (result.error) {
                 setError(result.error.message);
                 return;
