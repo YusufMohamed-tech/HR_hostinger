@@ -511,17 +511,29 @@ function AdvanceRequestsTable({ requests, isAdmin, onSuccess }: { requests: Reco
 function ReviewAdvanceDialog({ request, onSuccess }: { request: Record<string, unknown>; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [approvedAmount, setApprovedAmount] = useState(String(request.requested_amount || ""));
+  const requestedAmount = Number(request.requested_amount || 0);
+  const [approvedAmount, setApprovedAmount] = useState("");
   const [hrNotes, setHrNotes] = useState("");
   const [error, setError] = useState("");
 
   const decide = async (status: "approved" | "partial_approved" | "rejected") => {
+    const finalAmount = status === "approved" ? requestedAmount : Number(approvedAmount);
+    if (status === "partial_approved") {
+      if (finalAmount <= 0) {
+        setError("اكتب مبلغ الموافقة الجزئية.");
+        return;
+      }
+      if (finalAmount >= requestedAmount) {
+        setError("الموافقة الجزئية يجب أن تكون أقل من المبلغ المطلوب.");
+        return;
+      }
+    }
     setSubmitting(true);
     setError("");
     const result = await reviewAdvanceRequest({
       id: String(request.id),
       status,
-      approved_amount: status === "rejected" ? undefined : Number(approvedAmount),
+      approved_amount: status === "rejected" ? undefined : finalAmount,
       hr_notes: hrNotes.trim() || undefined,
     });
     setSubmitting(false);
@@ -541,7 +553,15 @@ function ReviewAdvanceDialog({ request, onSuccess }: { request: Record<string, u
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
             <Label>المبلغ المعتمد</Label>
-            <Input type="number" value={approvedAmount} onChange={(event) => setApprovedAmount(event.target.value)} />
+            <Input
+              type="number"
+              min="1"
+              max={Math.max(requestedAmount - 1, 1)}
+              value={approvedAmount}
+              onChange={(event) => setApprovedAmount(event.target.value)}
+              placeholder={`المبلغ المطلوب: ${formatCurrency(requestedAmount)}`}
+            />
+            <p className="text-xs text-gray-500">اكتب هنا مبلغ الموافقة الجزئية فقط. الموافقة الكاملة تعتمد كامل المبلغ تلقائيًا.</p>
           </div>
           <div className="space-y-2">
             <Label>ملاحظات HR</Label>
