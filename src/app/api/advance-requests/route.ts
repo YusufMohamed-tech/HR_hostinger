@@ -143,6 +143,10 @@ export async function PATCH(request: NextRequest) {
 
   const row = requestRow as Record<string, unknown>;
   const employee = (row.employee ?? null) as Record<string, unknown> | null;
+  const requestedAmount = Number(row.requested_amount || 0);
+  if (status === "partial_approved" && approvedAmount >= requestedAmount) {
+    return NextResponse.json({ message: "مبلغ الموافقة الجزئية يجب أن يكون أقل من المبلغ المطلوب." }, { status: 400 });
+  }
   const finalAmount = status === "rejected" ? null : approvedAmount;
 
   const { data, error } = await admin
