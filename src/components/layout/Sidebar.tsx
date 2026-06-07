@@ -19,6 +19,7 @@ import {
   Layers,
   LayoutDashboard,
   MapPin,
+  MessageCircle,
   Network,
   Package,
   Settings,
@@ -76,6 +77,7 @@ export function SidebarContent() {
       ...leaveLinks,
       { name: "الجداول", href: "/schedule", icon: CalendarDays },
       { name: "المواقع", href: "/locations", icon: MapPin },
+      { name: "الشات", href: "/chat", icon: MessageCircle },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 
@@ -97,6 +99,7 @@ export function SidebarContent() {
 
     const recruitmentOps: NavLink[] = [
       { name: "التوظيف", href: "/recruitment", icon: Briefcase },
+      { name: "الشات", href: "/chat", icon: MessageCircle },
       { name: "مهامي", href: "/tasks/mine", icon: CheckSquare },
       { name: "إجازاتي", href: "/leave", icon: ClipboardList },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
@@ -126,6 +129,7 @@ export function SidebarContent() {
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
             { name: "سجل المبيعات", href: "/sales/history", icon: ClipboardList },
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
+            { name: "الشات", href: "/chat", icon: MessageCircle },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],
         },
@@ -142,6 +146,7 @@ export function SidebarContent() {
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
             { name: "سجل مبيعاتي", href: "/sales/history", icon: ClipboardList },
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
+            { name: "الشات", href: "/chat", icon: MessageCircle },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],
         },
