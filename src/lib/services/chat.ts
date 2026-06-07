@@ -1,4 +1,5 @@
 export type ChatUser = {
+  org_id?: string;
   user_id: string;
   employee_id?: string;
   role: string;

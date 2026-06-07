@@ -34,11 +34,26 @@ async function getAuthContext() {
   const member = membership as Record<string, unknown> | null;
   const orgId = String(member?.org_id || "");
   const role = String(member?.role || "");
+  if (!membershipError && orgId && role) {
+    return { user, orgId, role, isSuperadmin: false };
+  }
+
+  const admin = createAdminClient();
+  const { data: platformAdmin, error: platformError } = await admin
+    .from("platform_admins")
+    .select("role, status")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const platformRecord = platformAdmin as Record<string, unknown> | null;
+  if (!platformError && platformRecord?.role === "superadmin" && platformRecord.status === "active") {
+    return { user, orgId: "", role: "super_admin", isSuperadmin: true };
+  }
+
   if (membershipError || !orgId || !role) {
     return { error: NextResponse.json({ message: "لا توجد صلاحية منظمة." }, { status: 403 }) };
   }
-
-  return { user, orgId, role };
+  return { user, orgId, role, isSuperadmin: false };
 }
 
 function parseJsonArray(value: FormDataEntryValue | null) {
@@ -51,11 +66,17 @@ function parseJsonArray(value: FormDataEntryValue | null) {
   }
 }
 
-async function getOrgUsers(admin: ReturnType<typeof createAdminClient>, orgId: string) {
+async function getOrgUsers(admin: ReturnType<typeof createAdminClient>, orgId?: string) {
   const [membersResult, profilesResult, employeesResult] = await Promise.all([
-    admin.from("org_members").select("user_id, role").eq("org_id", orgId),
-    admin.from("profiles").select("user_id, full_name, email, phone, title, account_status").eq("org_id", orgId),
-    admin.from("employees").select("id, user_id, full_name, employee_code, job_title, status").eq("org_id", orgId),
+    orgId
+      ? admin.from("org_members").select("org_id, user_id, role").eq("org_id", orgId)
+      : admin.from("org_members").select("org_id, user_id, role"),
+    orgId
+      ? admin.from("profiles").select("org_id, user_id, full_name, email, phone, title, account_status").eq("org_id", orgId)
+      : admin.from("profiles").select("org_id, user_id, full_name, email, phone, title, account_status"),
+    orgId
+      ? admin.from("employees").select("org_id, id, user_id, full_name, employee_code, job_title, status").eq("org_id", orgId)
+      : admin.from("employees").select("org_id, id, user_id, full_name, employee_code, job_title, status"),
   ]);
 
   if (membersResult.error) throw membersResult.error;
@@ -70,6 +91,7 @@ async function getOrgUsers(admin: ReturnType<typeof createAdminClient>, orgId: s
     const profile = profiles.get(userId) || {};
     const employee = employees.get(userId) || {};
     return {
+      org_id: String(member.org_id || profile.org_id || employee.org_id || ""),
       user_id: userId,
       employee_id: String(employee.id || ""),
       role: String(member.role || ""),
@@ -88,14 +110,17 @@ export async function GET() {
 
   const admin = createAdminClient();
   try {
-    const availableUsers = await getOrgUsers(admin, auth.orgId);
+    const availableUsers = await getOrgUsers(admin, auth.isSuperadmin ? undefined : auth.orgId);
     const userMap = new Map(availableUsers.map((user) => [user.user_id, user]));
 
-    const { data: myParticipants, error: participantError } = await admin
+    let myParticipantsQuery = admin
       .from("chat_participants")
       .select("conversation_id")
-      .eq("org_id", auth.orgId)
       .eq("user_id", auth.user.id);
+    if (!auth.isSuperadmin) {
+      myParticipantsQuery = myParticipantsQuery.eq("org_id", auth.orgId);
+    }
+    const { data: myParticipants, error: participantError } = await myParticipantsQuery;
 
     if (participantError) return NextResponse.json({ message: participantError.message }, { status: 500 });
 
@@ -105,24 +130,33 @@ export async function GET() {
     }
 
     const [conversationsResult, participantsResult, messagesResult] = await Promise.all([
-      admin
-        .from("chat_conversations")
-        .select("*")
-        .eq("org_id", auth.orgId)
-        .in("id", conversationIds)
-        .order("updated_at", { ascending: false }),
-      admin
-        .from("chat_participants")
-        .select("*")
-        .eq("org_id", auth.orgId)
-        .in("conversation_id", conversationIds),
-      admin
-        .from("chat_messages")
-        .select("*")
-        .eq("org_id", auth.orgId)
-        .in("conversation_id", conversationIds)
-        .order("created_at", { ascending: true })
-        .limit(800),
+      (() => {
+        let query = admin
+          .from("chat_conversations")
+          .select("*")
+          .in("id", conversationIds)
+          .order("updated_at", { ascending: false });
+        if (!auth.isSuperadmin) query = query.eq("org_id", auth.orgId);
+        return query;
+      })(),
+      (() => {
+        let query = admin
+          .from("chat_participants")
+          .select("*")
+          .in("conversation_id", conversationIds);
+        if (!auth.isSuperadmin) query = query.eq("org_id", auth.orgId);
+        return query;
+      })(),
+      (() => {
+        let query = admin
+          .from("chat_messages")
+          .select("*")
+          .in("conversation_id", conversationIds)
+          .order("created_at", { ascending: true })
+          .limit(800);
+        if (!auth.isSuperadmin) query = query.eq("org_id", auth.orgId);
+        return query;
+      })(),
     ]);
 
     if (conversationsResult.error) return NextResponse.json({ message: conversationsResult.error.message }, { status: 500 });
@@ -184,7 +218,7 @@ export async function POST(request: NextRequest) {
   if (!body && files.length === 0) {
     return NextResponse.json({ message: "اكتب رسالة أو أرفق ملفًا." }, { status: 400 });
   }
-  if (type === "group" && !["admin", "hr_admin"].includes(auth.role)) {
+  if (type === "group" && !["admin", "hr_admin", "super_admin"].includes(auth.role)) {
     return NextResponse.json({ message: "إنشاء الجروبات متاح للموارد البشرية فقط." }, { status: 403 });
   }
 
@@ -195,12 +229,21 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const orgUsers = await getOrgUsers(admin, auth.orgId);
+  const orgUsers = await getOrgUsers(admin, auth.isSuperadmin ? undefined : auth.orgId);
   const orgUserIds = new Set(orgUsers.map((user) => user.user_id));
   const employeeByUserId = new Map(orgUsers.map((user) => [user.user_id, user.employee_id]));
+  const orgByUserId = new Map(orgUsers.map((user) => [user.user_id, user.org_id]));
 
   let targetConversationId = conversationId;
   let participantUserIds = Array.from(new Set([auth.user.id, ...requestedParticipants.filter((id) => orgUserIds.has(id))]));
+  let conversationOrgId = auth.orgId;
+  if (auth.isSuperadmin && !targetConversationId) {
+    const selectedOrgIds = Array.from(new Set(requestedParticipants.map((id) => orgByUserId.get(id)).filter(Boolean)));
+    if (selectedOrgIds.length !== 1) {
+      return NextResponse.json({ message: "اختار مستخدمين من نفس المنظمة لإنشاء محادثة مع السوبر أدمن." }, { status: 400 });
+    }
+    conversationOrgId = String(selectedOrgIds[0]);
+  }
 
   if (!targetConversationId) {
     if (participantUserIds.length < 2) {
@@ -210,7 +253,7 @@ export async function POST(request: NextRequest) {
     const conversationResult = await admin
       .from("chat_conversations")
       .insert({
-        org_id: auth.orgId,
+        org_id: conversationOrgId,
         type,
         title: type === "group" ? title || "جروب جديد" : null,
         created_by: auth.user.id,
@@ -223,7 +266,7 @@ export async function POST(request: NextRequest) {
 
     const participantRows = participantUserIds.map((userId) => ({
       conversation_id: targetConversationId,
-      org_id: auth.orgId,
+      org_id: conversationOrgId,
       user_id: userId,
       employee_id: employeeByUserId.get(userId) || null,
       added_by: auth.user.id,
@@ -232,29 +275,35 @@ export async function POST(request: NextRequest) {
     const participantResult = await admin.from("chat_participants").insert(participantRows as never);
     if (participantResult.error) return NextResponse.json({ message: participantResult.error.message }, { status: 500 });
   } else {
-    const { data: existingParticipant, error: accessError } = await admin
+    let accessQuery = admin
       .from("chat_participants")
-      .select("id")
-      .eq("org_id", auth.orgId)
+      .select("id, org_id")
       .eq("conversation_id", targetConversationId)
-      .eq("user_id", auth.user.id)
-      .maybeSingle();
+      .eq("user_id", auth.user.id);
+    if (!auth.isSuperadmin) {
+      accessQuery = accessQuery.eq("org_id", auth.orgId);
+    }
+    const { data: existingParticipant, error: accessError } = await accessQuery.maybeSingle();
 
     if (accessError) return NextResponse.json({ message: accessError.message }, { status: 500 });
     if (!existingParticipant) return NextResponse.json({ message: "ليست لديك صلاحية لهذه المحادثة." }, { status: 403 });
+    conversationOrgId = String((existingParticipant as Record<string, unknown>).org_id || auth.orgId);
 
-    const { data: allParticipants } = await admin
+    let participantsQuery = admin
       .from("chat_participants")
       .select("user_id")
-      .eq("org_id", auth.orgId)
       .eq("conversation_id", targetConversationId);
+    if (!auth.isSuperadmin) {
+      participantsQuery = participantsQuery.eq("org_id", auth.orgId);
+    }
+    const { data: allParticipants } = await participantsQuery;
     participantUserIds = ((allParticipants ?? []) as Record<string, unknown>[]).map((row) => String(row.user_id || ""));
   }
 
   const attachments: Record<string, unknown>[] = [];
   for (const file of files) {
     const filename = safeFilename(file.name);
-    const path = `${auth.orgId}/${targetConversationId}/${Date.now()}-${filename}`;
+    const path = `${conversationOrgId}/${targetConversationId}/${Date.now()}-${filename}`;
     const upload = await admin.storage.from("chat-attachments").upload(path, file, {
       contentType: file.type,
       upsert: false,
@@ -268,7 +317,7 @@ export async function POST(request: NextRequest) {
     .from("chat_messages")
     .insert({
       conversation_id: targetConversationId,
-      org_id: auth.orgId,
+      org_id: conversationOrgId,
       sender_user_id: auth.user.id,
       sender_employee_id: employeeByUserId.get(auth.user.id) || null,
       body: body || null,
@@ -288,7 +337,7 @@ export async function POST(request: NextRequest) {
   const notificationRows = participantUserIds
     .filter((userId) => userId !== auth.user.id)
     .map((userId) => ({
-      org_id: auth.orgId,
+      org_id: conversationOrgId,
       user_id: userId,
       title: "رسالة شات جديدة",
       body: `${sender?.full_name || "مستخدم"}: ${body || "أرسل مرفقًا"}`,

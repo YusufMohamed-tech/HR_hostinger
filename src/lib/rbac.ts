@@ -66,7 +66,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   const normalizedPath = normalizePath(pathname);
 
   if (role === "Superadmin") {
-    return normalizedPath.startsWith("/superadmin") || normalizedPath.startsWith("/api/superadmin");
+    return normalizedPath.startsWith("/superadmin")
+      || normalizedPath.startsWith("/api/superadmin")
+      || normalizedPath.startsWith("/chat")
+      || normalizedPath.startsWith("/api/chat");
   }
 
   if (normalizedPath.startsWith("/superadmin") || normalizedPath.startsWith("/api/superadmin")) {
