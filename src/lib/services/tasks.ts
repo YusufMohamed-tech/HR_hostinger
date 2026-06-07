@@ -1,5 +1,22 @@
 import { createClient } from "@/lib/supabase/client";
 
+function buildTaskFormData(values: Record<string, unknown>) {
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(values)) {
+    if (key === "attachments") continue;
+    if (value !== undefined && value !== null) formData.append(key, String(value));
+  }
+  const attachments = Array.isArray(values.attachments) ? values.attachments : [];
+  attachments.forEach((file) => {
+    if (file instanceof File) formData.append("attachments", file);
+  });
+  return formData;
+}
+
+function hasAttachments(values: Record<string, unknown>) {
+  return Array.isArray(values.attachments) && values.attachments.some((file) => file instanceof File);
+}
+
 export async function getTasks(orgId: string) {
   const supabase = createClient();
   const result = await supabase
@@ -34,10 +51,11 @@ export async function createTask(values: Record<string, unknown>) {
 }
 
 export async function createManagerTask(values: Record<string, unknown>) {
+  const multipart = hasAttachments(values);
   const response = await fetch("/api/manager/tasks", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
+    headers: multipart ? undefined : { "Content-Type": "application/json" },
+    body: multipart ? buildTaskFormData(values) : JSON.stringify(values),
   });
   const payload = await response.json().catch(() => null);
 
@@ -55,10 +73,12 @@ export async function createManagerTask(values: Record<string, unknown>) {
 }
 
 export async function updateManagerTask(id: string, values: Record<string, unknown>) {
+  const requestPayload = { id, ...values };
+  const multipart = hasAttachments(requestPayload);
   const response = await fetch("/api/manager/tasks", {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, ...values }),
+    headers: multipart ? undefined : { "Content-Type": "application/json" },
+    body: multipart ? buildTaskFormData(requestPayload) : JSON.stringify(requestPayload),
   });
   const payload = await response.json().catch(() => null);
 
@@ -124,11 +144,13 @@ export async function updateMyTaskAssignment(values: {
   assignment_id: string;
   status: string;
   note?: string;
+  attachments?: File[];
 }) {
+  const multipart = Boolean(values.attachments?.length);
   const response = await fetch("/api/tasks/mine", {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
+    headers: multipart ? undefined : { "Content-Type": "application/json" },
+    body: multipart ? buildTaskFormData(values as unknown as Record<string, unknown>) : JSON.stringify(values),
   });
   const payload = await response.json().catch(() => null);
 
@@ -146,14 +168,25 @@ export async function updateMyTaskAssignment(values: {
 }
 
 export async function createTaskUpdate(values: Record<string, unknown>) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("task_updates")
-    .insert(values as never)
-    .select()
-    .single();
+  const multipart = hasAttachments(values);
+  const response = await fetch("/api/tasks/updates", {
+    method: "POST",
+    headers: multipart ? undefined : { "Content-Type": "application/json" },
+    body: multipart ? buildTaskFormData(values) : JSON.stringify(values),
+  });
+  const payload = await response.json().catch(() => null);
 
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+  if (!response.ok) {
+    return {
+      data: null,
+      error: { message: String(payload?.message || "Unable to add task update.") },
+    };
+  }
+
+  return {
+    data: (payload?.data?.update ?? payload?.data ?? null) as Record<string, unknown> | null,
+    error: null,
+  };
 }
 
 export async function createMyTaskUpdate(values: {
@@ -161,11 +194,13 @@ export async function createMyTaskUpdate(values: {
   status: string;
   progress?: number;
   note: string;
+  attachments?: File[];
 }) {
+  const multipart = Boolean(values.attachments?.length);
   const response = await fetch("/api/tasks/updates", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
+    headers: multipart ? undefined : { "Content-Type": "application/json" },
+    body: multipart ? buildTaskFormData(values as unknown as Record<string, unknown>) : JSON.stringify(values),
   });
   const payload = await response.json().catch(() => null);
 

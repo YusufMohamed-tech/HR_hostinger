@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckSquare, ListChecks, MessageSquare, Timer } from "lucide-react";
+import { CheckSquare, ListChecks, Paperclip, Send, Timer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -56,6 +56,40 @@ const priorityLabels: Record<string, string> = {
 
 type TaskRecord = Record<string, unknown>;
 
+function TaskAttachmentPicker({
+  attachments,
+  onChange,
+}: {
+  attachments: File[];
+  onChange: (files: File[]) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label>المرفقات</Label>
+      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-3 text-sm text-gray-600 hover:bg-brand-light">
+        <Paperclip className="h-4 w-4" />
+        <span>اختر ملفات أو صور</span>
+        <input
+          className="sr-only"
+          type="file"
+          multiple
+          accept=".jpg,.jpeg,.png,.gif,.pdf,.docx,.xlsx"
+          onChange={(event) => onChange(Array.from(event.target.files || []))}
+        />
+      </label>
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {attachments.map((file) => (
+            <span key={`${file.name}-${file.size}`} className="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-600">
+              {file.name}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MyTasksPage() {
   const { currentUser } = useRoleContext();
   const { data: tasks, loading, refetch } = useTasks();
@@ -80,7 +114,7 @@ export default function MyTasksPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">مهامي</h1>
-        <p className="text-gray-500 text-sm mt-1">المهام المكلَّف بها، تابع تقدمها وأضف ملاحظاتك.</p>
+        <p className="text-gray-500 text-sm mt-1">المهام المكلَّف بها، تابع تقدمها وأرسل رسائلك.</p>
       </div>
 
       <Card className="border-none shadow-sm">
@@ -154,7 +188,7 @@ export default function MyTasksPage() {
                         <div className="flex items-center justify-end gap-1">
                           <TaskHistoryDialog title={title} updates={updates} />
                           {myAssignment && (
-                            <TaskNoteDialog
+                            <TaskMessageUpdateDialog
                               taskId={taskId}
                               status={status}
                               onSuccess={refetch}
@@ -189,28 +223,67 @@ function TaskUpdateButtons({
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+  const [targetStatus, setTargetStatus] = useState("in_progress");
+  const [note, setNote] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
 
-  const updateStatus = async (status: string) => {
+  const openStatusDialog = (status: string) => {
+    setTargetStatus(status);
+    setError("");
+    setOpen(true);
+  };
+
+  const updateStatus = async () => {
     setSubmitting(true);
     setError("");
     const { error: assignmentError } = await updateMyTaskAssignment({
       assignment_id: assignmentId,
-      status,
+      status: targetStatus,
+      note: note.trim(),
+      attachments,
     });
     if (assignmentError) { setError(assignmentError.message); setSubmitting(false); return; }
     setSubmitting(false);
+    setOpen(false);
+    setNote("");
+    setAttachments([]);
     onSuccess();
   };
 
   return (
     <div className="flex items-center gap-1">
-      <Button variant="ghost" size="sm" className="text-blue-600 hover:bg-blue-50" disabled={submitting} onClick={() => updateStatus("in_progress")} title="قيد التنفيذ">
+      <Button variant="ghost" size="sm" className="text-blue-600 hover:bg-blue-50" disabled={submitting} onClick={() => openStatusDialog("in_progress")} title="قيد التنفيذ">
         <Timer className="w-4 h-4" />
       </Button>
-      <Button variant="ghost" size="sm" className="text-green-600 hover:bg-green-50" disabled={submitting} onClick={() => updateStatus("completed")} title="مكتمل">
+      <Button variant="ghost" size="sm" className="text-green-600 hover:bg-green-50" disabled={submitting} onClick={() => openStatusDialog("completed")} title="مكتمل">
         <CheckSquare className="w-4 h-4" />
       </Button>
       {error && <span className="text-xs text-red-600">{error}</span>}
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>تحديث حالة المهمة</DialogTitle>
+            <DialogDescription>
+              {targetStatus === "completed" ? "أكّد إنجاز المهمة ويمكنك إرفاق إثبات." : "ابدأ تنفيذ المهمة ويمكنك إرسال رسالة أو مرفق."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 py-4">
+            <div className="space-y-2">
+              <Label>رسالة اختيارية</Label>
+              <Input value={note} onChange={(event) => setNote(event.target.value)} placeholder="اكتب أي تفاصيل مرتبطة بالتحديث..." />
+            </div>
+            <TaskAttachmentPicker attachments={attachments} onChange={setAttachments} />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>إلغاء</Button>
+            <Button className="bg-brand hover:bg-brand-dark text-white" onClick={updateStatus} disabled={submitting}>
+              {submitting ? "جارٍ الحفظ..." : "حفظ التحديث"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -237,8 +310,9 @@ function TaskHistoryDialog({ title, updates }: { title: string; updates: TaskRec
             const emp = (u.employee ?? null) as TaskRecord | null;
             const empName = typeof emp?.full_name === "string" ? emp.full_name : "";
             const status = typeof u.status === "string" ? u.status : "";
-            const note = typeof u.note === "string" ? u.note : "لا توجد ملاحظة";
+            const note = typeof u.note === "string" ? u.note : "لا توجد رسالة";
             const createdAt = typeof u.created_at === "string" ? u.created_at : "";
+            const attachments = Array.isArray(u.attachments) ? u.attachments as TaskRecord[] : [];
             return (
               <div key={`${createdAt}-${i}`} className="rounded-lg border border-gray-200 px-4 py-3">
                 <div className="flex items-center justify-between">
@@ -249,6 +323,20 @@ function TaskHistoryDialog({ title, updates }: { title: string; updates: TaskRec
                 </div>
                 <p className="text-sm text-gray-700 mt-2">{note}</p>
                 {empName && <p className="text-xs text-gray-500 mt-1">بواسطة {empName}</p>}
+                {attachments.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {attachments.map((attachment, attachmentIndex) => {
+                      const url = String(attachment.url || "");
+                      const filename = String(attachment.filename || "ملف");
+                      const type = String(attachment.type || "");
+                      return (
+                        <a key={`${url}-${attachmentIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-brand hover:bg-brand-light">
+                          {type.startsWith("image/") ? "صورة" : "ملف"}: {filename}
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -264,46 +352,49 @@ function TaskHistoryDialog({ title, updates }: { title: string; updates: TaskRec
   );
 }
 
-function TaskNoteDialog({ taskId, status, onSuccess }: {
+function TaskMessageUpdateDialog({ taskId, status, onSuccess }: {
   taskId: string; status: string; onSuccess: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [note, setNote] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [error, setError] = useState("");
 
   const handleSubmit = async () => {
-    if (!note.trim()) return;
+    if (!note.trim() && attachments.length === 0) return;
     setSubmitting(true);
     const { error: updateError } = await createMyTaskUpdate({
       task_id: taskId,
       status,
       progress: status === "completed" ? 100 : 50,
-      note: note.trim(),
+      note: note.trim() || "تم إرفاق ملف على المهمة.",
+      attachments,
     });
     if (updateError) { setError(updateError.message); setSubmitting(false); return; }
-    setSubmitting(false); setOpen(false); setNote(""); onSuccess();
+    setSubmitting(false); setOpen(false); setNote(""); setAttachments([]); onSuccess();
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" size="sm" title="إضافة ملاحظة" />}>
-        <MessageSquare className="w-4 h-4" />
+      <DialogTrigger render={<Button variant="ghost" size="sm" title="إرسال رسالة" />}>
+        <Send className="w-4 h-4" />
       </DialogTrigger>
       <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle>إضافة ملاحظة</DialogTitle>
-          <DialogDescription>شارك تقدمك أو أي سياق متعلق بهذه المهمة.</DialogDescription>
+          <DialogTitle>إرسال رسالة</DialogTitle>
+          <DialogDescription>أرسل تحديثًا أو ملفًا متعلقًا بهذه المهمة.</DialogDescription>
         </DialogHeader>
         <div className="space-y-2 py-4">
-          <Label>الملاحظة</Label>
-          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="مثال: بدأت العمل، واجهت عائقاً..." />
+          <Label>الرسالة</Label>
+          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="اكتب رسالتك بخصوص المهمة..." />
+          <TaskAttachmentPicker attachments={attachments} onChange={setAttachments} />
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
-          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !note.trim()}>
-            {submitting ? "جارٍ الحفظ..." : "حفظ الملاحظة"}
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || (!note.trim() && attachments.length === 0)}>
+            {submitting ? "جارٍ الإرسال..." : "إرسال الرسالة"}
           </Button>
         </DialogFooter>
       </DialogContent>
