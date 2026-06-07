@@ -302,6 +302,19 @@ function AcknowledgeDialog({ balanceId, onSuccess }: { balanceId: string; onSucc
 function SignaturePad({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
+  const [typedSignature, setTypedSignature] = useState("");
+
+  const buildTypedSignature = (text: string) => {
+    const cleanText = text.trim();
+    if (!cleanText) return "";
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="520" height="180" viewBox="0 0 520 180">
+        <rect width="520" height="180" fill="white"/>
+        <text x="260" y="100" direction="rtl" text-anchor="middle" font-family="Arial, Tahoma, sans-serif" font-size="34" font-weight="600" fill="#111827">${cleanText.replace(/[<>&]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[char] || char))}</text>
+      </svg>
+    `;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  };
 
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -315,6 +328,7 @@ function SignaturePad({ value, onChange }: { value: string; onChange: (value: st
     const context = canvas?.getContext("2d");
     const p = point(event);
     if (!canvas || !context || !p) return;
+    setTypedSignature("");
     drawingRef.current = true;
     canvas.setPointerCapture(event.pointerId);
     context.beginPath();
@@ -340,11 +354,26 @@ function SignaturePad({ value, onChange }: { value: string; onChange: (value: st
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
+    setTypedSignature("");
     onChange("");
+  };
+
+  const handleTypedSignature = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const nextValue = event.target.value;
+    setTypedSignature(nextValue);
+    onChange(buildTypedSignature(nextValue));
   };
 
   return (
     <div className="space-y-2">
+      <div className="space-y-1">
+        <Input
+          value={typedSignature}
+          onChange={handleTypedSignature}
+          placeholder="اكتب اسمك هنا كتوقيع إلكتروني..."
+        />
+        <p className="text-xs text-gray-500">يمكنك كتابة اسمك هنا بدل الرسم داخل المربع.</p>
+      </div>
       <canvas
         ref={canvasRef}
         width={520}
