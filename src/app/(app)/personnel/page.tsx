@@ -30,9 +30,9 @@ import { printHtmlReport } from "@/lib/utils/print-report";
 type PersonnelTab = "files" | "insurance" | "contracts";
 
 const personnelTabs: { value: PersonnelTab; label: string }[] = [
-  { value: "files", label: "???????" },
-  { value: "insurance", label: "?????????" },
-  { value: "contracts", label: "??????" },
+  { value: "files", label: "الملفات" },
+  { value: "insurance", label: "التأمينات" },
+  { value: "contracts", label: "العقود" },
 ];
 
 function escapeHtml(value: unknown) {

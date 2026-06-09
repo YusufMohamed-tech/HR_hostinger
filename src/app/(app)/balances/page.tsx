@@ -87,11 +87,11 @@ export default function BalancesPage() {
       <Tabs defaultValue="balances">
         <TabsList className="h-auto rounded-lg bg-white p-1 shadow-sm">
           <TabsTrigger value="balances" className="h-10 px-4 data-active:bg-brand data-active:text-white">
-            ???????
+            الأرصدة
             <Badge variant="outline" className="mr-2 bg-white/80 text-slate-700">{balances.length}</Badge>
           </TabsTrigger>
           <TabsTrigger value="advance-requests" className="h-10 px-4 data-active:bg-brand data-active:text-white">
-            ????? ?????
+            طلبات السلف
             <Badge variant="outline" className="mr-2 bg-white/80 text-slate-700">{advanceRequests.length}</Badge>
           </TabsTrigger>
         </TabsList>
