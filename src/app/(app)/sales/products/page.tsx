@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, PackageOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import { PackageOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmActionButton, MessageDialog } from "@/components/ui/feedback-dialog";
 import {
   createSalesProduct,
@@ -217,21 +216,18 @@ function ProductDialog({
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
             <Label>الشركة *</Label>
-            <Select value={form.company_id} onValueChange={(value) => setForm((prev) => ({ ...prev, company_id: String(value || "") }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="اختر شركة المبيعات" />
-              </SelectTrigger>
-              <SelectContent>
-                {companies.map((company) => (
-                  <SelectItem key={company.id} value={company.id}>
-                    <span className="inline-flex items-center gap-2">
-                      <Building2 className="h-4 w-4" />
-                      {company.name}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <select
+              value={form.company_id}
+              onChange={(event) => setForm((prev) => ({ ...prev, company_id: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+            >
+              {companies.length === 0 && <option value="">اختر شركة المبيعات</option>}
+              {companies.map((company) => (
+                <option key={company.id} value={company.id}>
+                  {company.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="space-y-2">
             <Label>اسم المنتج *</Label>
