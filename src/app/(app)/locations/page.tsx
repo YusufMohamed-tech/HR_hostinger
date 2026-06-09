@@ -23,7 +23,7 @@ import { PageSkeleton } from "@/components/Skeletons";
 export default function LocationsPage() {
   const { currentUser } = useRoleContext();
   const { data: locations, loading, refetch } = useLocations();
-  const canManageLocations = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
+  const canManageLocations = ["Superadmin", "Admin", "HR_Admin", "Training_Manager", "Sales_Manager"].includes(currentUser?.role || "");
 
   if (loading) {
     return <PageSkeleton />;

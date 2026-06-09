@@ -3,12 +3,11 @@ export function printHtmlReport(html: string, fallbackFilename: string) {
     return false;
   }
 
-  const popup = window.open("about:blank", "_blank", "width=1200,height=800");
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const popup = window.open(url, "_blank", "width=1200,height=800");
 
   if (popup) {
-    popup.document.open();
-    popup.document.write(html);
-    popup.document.close();
     popup.focus();
 
     const printReport = () => {
@@ -20,18 +19,13 @@ export function printHtmlReport(html: string, fallbackFilename: string) {
       }
     };
 
-    if (popup.document.readyState === "complete") {
-      window.setTimeout(printReport, 250);
-    } else {
-      popup.addEventListener("load", () => window.setTimeout(printReport, 250), { once: true });
-      window.setTimeout(printReport, 600);
-    }
+    popup.addEventListener("load", () => window.setTimeout(printReport, 250), { once: true });
+    window.setTimeout(printReport, 900);
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
 
     return true;
   }
 
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = fallbackFilename.endsWith(".html") ? fallbackFilename : `${fallbackFilename}.html`;

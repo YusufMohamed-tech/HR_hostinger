@@ -14,7 +14,7 @@ import { FormBuilder } from "@/components/recruitment/FormBuilder";
 import { FormPreview } from "@/components/recruitment/FormPreview";
 import { getJobPosting, updateJobPosting } from "@/lib/services/recruitment";
 import type { FormQuestion } from "@/lib/services/recruitment";
-import { useDepartments, useLocations } from "@/hooks/use-data";
+import { useDepartments } from "@/hooks/use-data";
 
 const EMP_TYPES = [
   { value: "full_time", label: "دوام كامل" },
@@ -32,11 +32,9 @@ export default function EditJobPage() {
   const router = useRouter();
 
   const { data: departments } = useDepartments();
-  const { data: locations } = useLocations();
 
   const [title, setTitle] = useState("");
   const [departmentId, setDepartmentId] = useState("");
-  const [locationId, setLocationId] = useState("");
   const [companySelection, setCompanySelection] = useState("Tatwir Talent");
   const [customCompanyName, setCustomCompanyName] = useState("");
   const [city, setCity] = useState("");
@@ -58,7 +56,6 @@ export default function EditJobPage() {
       if (data) {
         setTitle(data.title || "");
         setDepartmentId(data.department_id || "");
-        setLocationId(data.location_id || "");
         const companyName = data.company_name || "Tatwir Talent";
         if (COMPANY_OPTIONS.includes(companyName)) {
           setCompanySelection(companyName);
@@ -90,7 +87,7 @@ export default function EditJobPage() {
     const { error } = await updateJobPosting(postingId, {
       title: title.trim(),
       department_id: departmentId || null,
-      location_id: locationId || null,
+      location_id: null,
       company_name: companySelection === "other" ? customCompanyName.trim() || null : companySelection,
       city: city || null,
       employment_type: employmentType || null,
@@ -201,17 +198,6 @@ export default function EditJobPage() {
                     <SelectContent>
                       {(departments || []).map((d) => (
                         <SelectItem key={d.id as string} value={d.id as string}>{d.name as string}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>الموقع</Label>
-                  <Select value={locationId} onValueChange={(v) => setLocationId(v ?? "")}>
-                    <SelectTrigger className="mt-1"><SelectValue placeholder="اختر الموقع" /></SelectTrigger>
-                    <SelectContent>
-                      {(locations || []).map((l) => (
-                        <SelectItem key={l.id as string} value={l.id as string}>{l.name as string}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

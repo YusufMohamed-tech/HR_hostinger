@@ -51,7 +51,8 @@ export function isPublicPath(pathname: string): boolean {
     pathname.startsWith("/candidate/register") ||
     pathname === "/candidate/applications" ||
     // Public posting lookup (no auth needed)
-    pathname === "/api/candidate/posting"
+    pathname === "/api/candidate/posting" ||
+    pathname === "/api/candidate/apply"
   );
 }
 

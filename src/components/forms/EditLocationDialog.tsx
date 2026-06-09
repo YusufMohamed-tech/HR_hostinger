@@ -49,6 +49,7 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
   }, [location, open]);
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
+  const selectedManagerName = String(employees.find((emp) => String(emp.id) === form.manager_employee_id)?.full_name || employees.find((emp) => String(emp.id) === form.manager_employee_id)?.name || "");
   const setMapCoordinates = (latitude: string, longitude: string) => {
     setForm((prev) => ({ ...prev, latitude, longitude }));
   };
@@ -117,7 +118,7 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
             <div className="space-y-2">
               <Label>المدير</Label>
               <Select value={form.manager_employee_id} onValueChange={(v) => set("manager_employee_id", v || "")}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="اختر المدير">{selectedManagerName || undefined}</SelectValue></SelectTrigger>
                 <SelectContent>
                   {employees.map((emp) => (
                     <SelectItem key={String(emp.id)} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>

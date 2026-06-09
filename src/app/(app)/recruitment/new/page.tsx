@@ -14,7 +14,7 @@ import { FormBuilder } from "@/components/recruitment/FormBuilder";
 import { FormPreview } from "@/components/recruitment/FormPreview";
 import { createJobPosting, getJobTemplates } from "@/lib/services/recruitment";
 import type { FormQuestion } from "@/lib/services/recruitment";
-import { useDepartments, useLocations } from "@/hooks/use-data";
+import { useDepartments } from "@/hooks/use-data";
 
 const EMP_TYPES = [
   { value: "full_time", label: "دوام كامل" },
@@ -30,11 +30,9 @@ export default function NewJobPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: departments } = useDepartments();
-  const { data: locations } = useLocations();
 
   const [title, setTitle] = useState("");
   const [departmentId, setDepartmentId] = useState("");
-  const [locationId, setLocationId] = useState("");
   const [companySelection, setCompanySelection] = useState("Tatwir Talent");
   const [customCompanyName, setCustomCompanyName] = useState("");
   const [city, setCity] = useState("");
@@ -81,7 +79,7 @@ export default function NewJobPage() {
     const { data, error } = await createJobPosting({
       title: title.trim(),
       department_id: departmentId || null,
-      location_id: locationId || null,
+      location_id: null,
       company_name: companySelection === "other" ? customCompanyName.trim() || null : companySelection,
       city: city || null,
       employment_type: employmentType || null,
@@ -201,19 +199,6 @@ export default function NewJobPage() {
                     <SelectContent>
                       {(departments || []).map((d) => (
                         <SelectItem key={d.id as string} value={d.id as string}>{d.name as string}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>الموقع</Label>
-                    <Select value={locationId} onValueChange={(v) => setLocationId(v ?? "")}>
-                    <SelectTrigger className="mt-1">
-                      <SelectValue placeholder="اختر الموقع" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(locations || []).map((l) => (
-                        <SelectItem key={l.id as string} value={l.id as string}>{l.name as string}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

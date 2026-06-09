@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { SalesReportTable } from "@/components/sales/SalesReportTable";
-import { getSalesReports, type SalesAgent, type SalesLog, type SalesProduct } from "@/lib/services/sales";
+import { getSalesReports, type SalesAgent, type SalesCompany, type SalesLog, type SalesProduct } from "@/lib/services/sales";
 import { formatCurrency } from "@/lib/utils/currency";
 import { printHtmlReport } from "@/lib/utils/print-report";
 import { PageSkeleton } from "@/components/Skeletons";
@@ -30,9 +30,10 @@ export default function SalesReportsPage() {
   const [logs, setLogs] = useState<SalesLog[]>([]);
   const [agents, setAgents] = useState<SalesAgent[]>([]);
   const [products, setProducts] = useState<SalesProduct[]>([]);
+  const [companies, setCompanies] = useState<SalesCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
-  const [filters, setFilters] = useState({ agent: "", product: "", status: "", date_from: "", date_to: "" });
+  const [filters, setFilters] = useState({ company: "", agent: "", product: "", status: "", date_from: "", date_to: "" });
 
   const load = async (nextFilters = filters) => {
     setLoading(true);
@@ -46,6 +47,7 @@ export default function SalesReportsPage() {
       setLogs(result.data.logs);
       setAgents(result.data.agents);
       setProducts(result.data.products);
+      setCompanies(result.data.companies);
     }
     setLoading(false);
   };
@@ -53,6 +55,7 @@ export default function SalesReportsPage() {
   useEffect(() => {
     const url = new URL(window.location.href);
     const initial = {
+      company: url.searchParams.get("company") || url.searchParams.get("company_id") || "",
       agent: url.searchParams.get("agent") || "",
       product: url.searchParams.get("product") || "",
       status: url.searchParams.get("status") || "",
@@ -84,9 +87,11 @@ export default function SalesReportsPage() {
   const exportPdf = () => {
     const rows = logs.flatMap((log) => {
       const agentName = log.agent?.full_name || log.agent?.email || "بائع";
+      const companyName = log.company?.name || "-";
       return (Array.isArray(log.items) ? log.items : []).map((item) => `
         <tr>
           <td>${escapeHtml(log.log_date)}</td>
+          <td>${escapeHtml(companyName)}</td>
           <td>${escapeHtml(agentName)}</td>
           <td>${escapeHtml(item.product_name)}</td>
           <td>${escapeHtml(item.quantity)}</td>
@@ -119,9 +124,9 @@ export default function SalesReportsPage() {
   </style>
 </head>
 <body>
-  <div class="actions"><button onclick="window.print()">طباعة / تنزيل PDF</button></div>
+  <div class="actions"><button onclick="window.print()">طباعة / حفظ PDF</button></div>
   <h1>تقرير المبيعات</h1>
-  <div class="muted">الشركة: تطوير تالنت | الفترة: ${escapeHtml(filters.date_from || "البداية")} إلى ${escapeHtml(filters.date_to || "اليوم")} | تاريخ التصدير: ${escapeHtml(new Date().toLocaleString("ar-EG"))}</div>
+  <div class="muted">تطوير تالنت | الفترة: ${escapeHtml(filters.date_from || "البداية")} إلى ${escapeHtml(filters.date_to || "اليوم")} | تاريخ التصدير: ${escapeHtml(new Date().toLocaleString("ar-SA"))}</div>
   <div class="summary">
     <div class="box"><span>إجمالي الإيراد</span><strong>${escapeHtml(formatMoney(summary.totalRevenue))}</strong></div>
     <div class="box"><span>إجمالي الخصومات</span><strong>${escapeHtml(formatMoney(summary.totalDiscount))}</strong></div>
@@ -129,16 +134,16 @@ export default function SalesReportsPage() {
     <div class="box"><span>أفضل منتج</span><strong>${escapeHtml(summary.topProduct?.name || "-")}</strong></div>
   </div>
   <table>
-    <thead><tr><th>التاريخ</th><th>البائع</th><th>المنتج</th><th>الكمية</th><th>سعر الوحدة</th><th>الخصم</th><th>الإجمالي</th></tr></thead>
-    <tbody>${rows || '<tr><td colspan="7">لا توجد بيانات.</td></tr>'}</tbody>
-    <tfoot><tr><th colspan="5">الإجماليات</th><th>${escapeHtml(formatMoney(summary.totalDiscount))}</th><th>${escapeHtml(formatMoney(summary.totalRevenue))}</th></tr></tfoot>
+    <thead><tr><th>التاريخ</th><th>الشركة</th><th>البائع</th><th>المنتج</th><th>الكمية</th><th>سعر الوحدة</th><th>الخصم</th><th>الإجمالي</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="8">لا توجد بيانات.</td></tr>'}</tbody>
+    <tfoot><tr><th colspan="6">الإجماليات</th><th>${escapeHtml(formatMoney(summary.totalDiscount))}</th><th>${escapeHtml(formatMoney(summary.totalRevenue))}</th></tr></tfoot>
   </table>
 </body>
 </html>`;
 
     const opened = printHtmlReport(html, "sales-report");
     if (!opened) {
-      setMessage("تم تنزيل نسخة التقرير كملف HTML لأن المتصفح منع فتح نافذة الطباعة. افتح الملف من التنزيلات ثم اختر طباعة / حفظ PDF.");
+      setMessage("تم تنزيل نسخة التقرير كملف HTML لأن المتصفح منع نافذة الطباعة. افتح الملف من التنزيلات ثم اختر طباعة / حفظ PDF.");
     }
   };
 
@@ -150,7 +155,7 @@ export default function SalesReportsPage() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-950">تقارير المبيعات</h1>
-          <p className="mt-2 text-gray-500">عرض وتحليل كل تقارير فريق المبيعات.</p>
+          <p className="mt-2 text-gray-500">عرض وتحليل تقارير فريق المبيعات حسب الشركة والبائع والمنتج.</p>
         </div>
         <Button variant="outline" onClick={exportPdf}>
           <Download className="ml-2 h-4 w-4" />
@@ -159,13 +164,20 @@ export default function SalesReportsPage() {
       </div>
 
       <Card className="border-none shadow-sm">
-        <CardContent className="grid gap-4 p-5 md:grid-cols-5">
+        <CardContent className="grid gap-4 p-5 md:grid-cols-6">
           <Filter className="hidden h-5 w-5 self-end text-gray-400 md:block" />
+          <div className="space-y-2">
+            <Label>الشركة</Label>
+            <select className="h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm" value={filters.company} onChange={(e) => setFilters((p) => ({ ...p, company: e.target.value }))}>
+              <option value="">الكل</option>
+              {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+            </select>
+          </div>
           <div className="space-y-2">
             <Label>البائع</Label>
             <select className="h-9 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm" value={filters.agent} onChange={(e) => setFilters((p) => ({ ...p, agent: e.target.value }))}>
               <option value="">الكل</option>
-              {agents.filter((agent) => agent.role === "sales").map((agent) => <option key={agent.user_id} value={agent.user_id}>{agent.full_name}</option>)}
+              {agents.filter((agent) => agent.role === "sales" || agent.role === "sales_manager").map((agent) => <option key={agent.user_id} value={agent.user_id}>{agent.full_name}</option>)}
             </select>
           </div>
           <div className="space-y-2">

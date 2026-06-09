@@ -22,7 +22,7 @@ export function DailyLogSummary({
           <ShoppingCart className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-xs text-gray-500">العناصر</p>
+          <p className="text-xs text-gray-500">عدد القطع</p>
           <p className="font-bold text-gray-950">{totalItems}</p>
         </div>
       </div>
