@@ -72,7 +72,30 @@ export async function submitApplication(values: {
   phone?: string;
   answers: Record<string, string>;
   cv_url?: string;
+  cv?: File | null;
 }) {
+  if (values.cv) {
+    const formData = new FormData();
+    formData.append("slug", values.slug);
+    formData.append("candidate_name", values.candidate_name);
+    formData.append("email", values.email || "");
+    formData.append("phone", values.phone || "");
+    formData.append("answers", JSON.stringify(values.answers || {}));
+    formData.append("cv", values.cv);
+
+    try {
+      const res = await fetch("/api/candidate/apply", {
+        method: "POST",
+        body: formData,
+      });
+      const json = (await res.json()) as { data?: { id: string }; error?: string };
+      if (!res.ok) return { data: null, error: json.error ?? "خطأ غير متوقع" };
+      return { data: json.data ?? null, error: null };
+    } catch (e) {
+      return { data: null, error: e instanceof Error ? e.message : "خطأ في الاتصال" };
+    }
+  }
+
   return apiFetch<{ id: string }>("/api/candidate/apply", {
     method: "POST",
     body: JSON.stringify(values),

@@ -30,9 +30,9 @@ import { printHtmlReport } from "@/lib/utils/print-report";
 type PersonnelTab = "files" | "insurance" | "contracts";
 
 const personnelTabs: { value: PersonnelTab; label: string }[] = [
-  { value: "files", label: "ملف" },
-  { value: "insurance", label: "التأمينات" },
-  { value: "contracts", label: "عقد" },
+  { value: "files", label: "???????" },
+  { value: "insurance", label: "?????????" },
+  { value: "contracts", label: "??????" },
 ];
 
 function escapeHtml(value: unknown) {
@@ -405,7 +405,7 @@ function AddFileDialog({ employees, onSuccess }: { employees: Record<string, unk
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" />}>ملف</DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" />}>إضافة ملف</DialogTrigger>
       <DialogContent>
         <DialogHeader><DialogTitle>إضافة ملف</DialogTitle><DialogDescription>تسجيل مستند رسمي للموظف.</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-4">
@@ -453,7 +453,7 @@ function AddInsuranceDialog({ employees, onSuccess }: { employees: Record<string
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" />}>التأمينات</DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" />}>إضافة تأمينات</DialogTrigger>
       <DialogContent>
         <DialogHeader><DialogTitle>التأمينات الاجتماعية</DialogTitle><DialogDescription>تحديث بيانات التأمينات الاجتماعية.</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-4">
@@ -483,7 +483,7 @@ function AddContractDialog({ employees, onSuccess }: { employees: Record<string,
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="outline" />}>عقد</DialogTrigger>
+      <DialogTrigger render={<Button variant="outline" />}>إضافة عقد</DialogTrigger>
       <DialogContent>
         <DialogHeader><DialogTitle>إضافة عقد</DialogTitle><DialogDescription>تسجيل عقد موظف.</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-4">

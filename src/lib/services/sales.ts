@@ -1,6 +1,7 @@
 export type SalesProduct = {
   id: string;
   organization_id: string;
+  company_id: string | null;
   name: string;
   description: string | null;
   unit: string | null;
@@ -10,6 +11,28 @@ export type SalesProduct = {
   created_by: string | null;
   created_at: string;
   updated_at?: string;
+};
+
+export type SalesCompany = {
+  id: string;
+  organization_id: string;
+  name: string;
+  slug: string;
+  code: string | null;
+  brand_color: string | null;
+  is_active: boolean;
+  assignment_role?: "sales" | "manager" | "admin" | null;
+};
+
+export type SalesCompanyAssignment = {
+  id: string;
+  company_id: string;
+  user_id: string;
+  assignment_role: "sales" | "manager";
+  start_date: string;
+  end_date: string | null;
+  is_active: boolean;
+  company?: SalesCompany | null;
 };
 
 export type SalesLogItem = {
@@ -25,6 +48,7 @@ export type SalesLogItem = {
 export type SalesLog = {
   id: string;
   organization_id: string;
+  company_id: string | null;
   sales_agent_id: string;
   log_date: string;
   items: SalesLogItem[];
@@ -37,6 +61,7 @@ export type SalesLog = {
   reviewed_at: string | null;
   created_at: string;
   agent?: { full_name: string | null; email: string | null } | null;
+  company?: { name: string | null; code: string | null; brand_color: string | null } | null;
 };
 
 export type SalesAgent = {
@@ -49,6 +74,7 @@ export type SalesAgent = {
   national_id?: string | null;
   status: string;
   employee_id?: string | null;
+  company_assignments?: SalesCompanyAssignment[];
 };
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<{ data: T | null; error: string | null }> {
@@ -67,6 +93,10 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<{ data:
 
 export async function getSalesProducts(includeInactive = false) {
   return apiFetch<SalesProduct[]>(`/api/sales/products${includeInactive ? "?include_inactive=1" : ""}`);
+}
+
+export async function getSalesCompanies() {
+  return apiFetch<SalesCompany[]>("/api/sales/companies");
 }
 
 export async function createSalesProduct(values: Partial<SalesProduct>) {
@@ -90,11 +120,20 @@ export async function deleteSalesProduct(id: string) {
   });
 }
 
-export async function getTodaySalesLog() {
-  return apiFetch<{ products: SalesProduct[]; todayLog: SalesLog | null; yesterdayItems: SalesLogItem[]; soldFrequency: Record<string, number> }>("/api/sales/log");
+export async function getTodaySalesLog(companyId?: string) {
+  const suffix = companyId ? `?company_id=${encodeURIComponent(companyId)}` : "";
+  return apiFetch<{
+    companies: SalesCompany[];
+    selectedCompanyId: string;
+    products: SalesProduct[];
+    todayLogs: SalesLog[];
+    todayLog: SalesLog | null;
+    yesterdayItems: SalesLogItem[];
+    soldFrequency: Record<string, number>;
+  }>(`/api/sales/log${suffix}`);
 }
 
-export async function submitSalesLog(values: { items: SalesLogItem[]; notes?: string }) {
+export async function submitSalesLog(values: { company_id: string; items: SalesLogItem[]; notes?: string }) {
   return apiFetch<SalesLog>("/api/sales/log", {
     method: "POST",
     body: JSON.stringify(values),
@@ -111,21 +150,37 @@ export async function getSalesHistory() {
 
 export async function getSalesReports(params?: URLSearchParams) {
   const suffix = params?.toString() ? `?${params.toString()}` : "";
-  return apiFetch<{ logs: SalesLog[]; agents: SalesAgent[]; products: SalesProduct[]; summary: Record<string, unknown> }>(`/api/sales/reports${suffix}`);
+  return apiFetch<{ logs: SalesLog[]; agents: SalesAgent[]; products: SalesProduct[]; companies: SalesCompany[]; summary: Record<string, unknown> }>(`/api/sales/reports${suffix}`);
 }
 
 export async function getSalesTeam() {
   return apiFetch<SalesAgent[]>("/api/sales/team");
 }
 
-export async function createSalesAgent(values: { full_name: string; email: string; password: string; phone?: string; national_id?: string; role?: "sales" | "sales_manager" }) {
+export async function createSalesAgent(values: {
+  full_name: string;
+  email: string;
+  password: string;
+  phone?: string;
+  national_id?: string;
+  role?: "sales" | "sales_manager";
+  company_assignments?: Array<{ company_id: string; assignment_role: "sales" | "manager"; start_date?: string; end_date?: string | null }>;
+}) {
   return apiFetch<SalesAgent>("/api/sales/team", {
     method: "POST",
     body: JSON.stringify(values),
   });
 }
 
-export async function updateSalesAgent(values: { user_id: string; full_name?: string; phone?: string; national_id?: string; status?: string; role?: "sales" | "sales_manager" }) {
+export async function updateSalesAgent(values: {
+  user_id: string;
+  full_name?: string;
+  phone?: string;
+  national_id?: string;
+  status?: string;
+  role?: "sales" | "sales_manager";
+  company_assignments?: Array<{ company_id: string; assignment_role: "sales" | "manager"; start_date?: string; end_date?: string | null }>;
+}) {
   return apiFetch<SalesAgent>("/api/sales/team", {
     method: "PATCH",
     body: JSON.stringify(values),

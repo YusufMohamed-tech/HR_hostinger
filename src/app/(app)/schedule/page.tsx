@@ -411,7 +411,7 @@ function AssignShiftDialog({
           <div className="space-y-2">
             <Label>الموظف *</Label>
             <Select value={form.employee_id} onValueChange={(v) => set("employee_id", v)}>
-              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="اختر الموظف" /></SelectTrigger>
               <SelectContent>
                 {employees.map((emp) => (
                   <SelectItem key={emp.id} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
@@ -422,7 +422,7 @@ function AssignShiftDialog({
           <div className="space-y-2">
             <Label>الوردية *</Label>
             <Select value={form.shift_id} onValueChange={(v) => set("shift_id", v)}>
-              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="اختر الوردية" /></SelectTrigger>
               <SelectContent>
                 {shifts.map((shift) => (
                   <SelectItem key={shift.id} value={String(shift.id)}>{String(shift.name)}</SelectItem>
