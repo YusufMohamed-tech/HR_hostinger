@@ -242,7 +242,7 @@ async function getHrEmployee(orgId) {
 }
 
 async function getOtherCreator(orgId, hrEmployeeId) {
-  const preferred = ["manager.test@tatwir.sa", "abdalla.test@tatwir.sa", "employee.test@tatwir.sa"];
+  const preferred = ["manager.test@tatwir.sa", "employee.test@tatwir.sa"];
   const rows = await runSql(`
     select id, user_id, full_name, email
     from public.employees
@@ -252,7 +252,6 @@ async function getOtherCreator(orgId, hrEmployeeId) {
       and lower(email) in (${preferred.map(sqlLiteral).join(", ")})
     order by case lower(email)
       when 'manager.test@tatwir.sa' then 0
-      when 'abdalla.test@tatwir.sa' then 1
       else 2
     end, created_at
     limit 1;
