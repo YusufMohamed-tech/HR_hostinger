@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
-import { getSalesReports, type SalesAgent, type SalesLog } from "@/lib/services/sales";
+import { getSalesDashboard, type SalesChartPoint, type SalesDashboardAgent, type SalesDashboardData } from "@/lib/services/sales";
 import { formatCurrency } from "@/lib/utils/currency";
 import { PageSkeleton } from "@/components/Skeletons";
 
@@ -16,85 +16,27 @@ function formatMoney(value: number) {
   return formatCurrency(value, 0);
 }
 
-function startOfWeek(date: Date) {
-  const copy = new Date(date);
-  const day = copy.getDay();
-  copy.setDate(copy.getDate() - day);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-function dateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
+function formatAxisMoney(value: number) {
+  if (value >= 1000000) return `${Number((value / 1000000).toFixed(1))}م`;
+  if (value >= 1000) return `${Math.round(value / 1000)}ك`;
+  return String(Math.round(value));
 }
 
 export default function SalesDashboardPage() {
-  const [logs, setLogs] = useState<SalesLog[]>([]);
-  const [agents, setAgents] = useState<SalesAgent[]>([]);
+  const [dashboard, setDashboard] = useState<SalesDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const params = new URLSearchParams();
-    const from = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
-    params.set("date_from", from);
-    getSalesReports(params).then((result) => {
+    getSalesDashboard().then((result) => {
       if (result.error || !result.data) setMessage(result.error || "تعذر تحميل لوحة المبيعات.");
-      else {
-        setLogs(result.data.logs);
-        setAgents(result.data.agents);
-      }
+      else setDashboard(result.data);
       setLoading(false);
     });
   }, []);
 
-  const stats = useMemo(() => {
-    const now = new Date();
-    const today = dateKey(now);
-    const weekStart = startOfWeek(now);
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const activeAgents = agents.filter((agent) => agent.role === "sales" && String(agent.status || "").toLowerCase() === "active").length;
-    return {
-      today: logs.filter((log) => log.log_date === today).reduce((sum, log) => sum + Number(log.grand_total || 0), 0),
-      week: logs.filter((log) => new Date(log.log_date) >= weekStart).reduce((sum, log) => sum + Number(log.grand_total || 0), 0),
-      month: logs.filter((log) => new Date(log.log_date) >= monthStart).reduce((sum, log) => sum + Number(log.grand_total || 0), 0),
-      activeAgents,
-    };
-  }, [agents, logs]);
-
-  const leaderboard = useMemo(() => {
-    const now = new Date();
-    const today = dateKey(now);
-    const weekStart = startOfWeek(now);
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    return agents
-      .filter((agent) => agent.role === "sales")
-      .map((agent) => {
-        const agentLogs = logs.filter((log) => log.sales_agent_id === agent.user_id);
-        return {
-          ...agent,
-          today: agentLogs.filter((log) => log.log_date === today).reduce((sum, log) => sum + Number(log.grand_total || 0), 0),
-          week: agentLogs.filter((log) => new Date(log.log_date) >= weekStart).reduce((sum, log) => sum + Number(log.grand_total || 0), 0),
-          month: agentLogs.filter((log) => new Date(log.log_date) >= monthStart).reduce((sum, log) => sum + Number(log.grand_total || 0), 0),
-        };
-      })
-      .sort((a, b) => b.month - a.month);
-  }, [agents, logs]);
-
-  const chartData = useMemo(() => {
-    const days = Array.from({ length: 30 }, (_, index) => {
-      const date = new Date(Date.now() - (29 - index) * 86400000);
-      const key = dateKey(date);
-      return { date: key.slice(5), total: 0 };
-    });
-    const byDate = new Map(days.map((day) => [day.date, day]));
-    logs.forEach((log) => {
-      const key = log.log_date.slice(5);
-      const day = byDate.get(key);
-      if (day) day.total += Number(log.grand_total || 0);
-    });
-    return days;
-  }, [logs]);
+  const stats = dashboard?.stats ?? { today: 0, week: 0, month: 0, activeAgents: 0 };
+  const leaderboard = useMemo(() => dashboard?.leaderboard ?? [], [dashboard]);
 
   if (loading) return <PageSkeleton />;
 
@@ -113,22 +55,19 @@ export default function SalesDashboardPage() {
         <StatCard title="البائعون النشطون" value={String(stats.activeAgents)} icon={Users} />
       </div>
 
-      <Card className="border-none shadow-sm">
-        <CardContent className="p-5">
-          <h2 className="mb-4 text-lg font-semibold text-gray-950">مبيعات آخر 30 يوم</h2>
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="date" />
-                <YAxis />
-                <Tooltip formatter={(value) => formatMoney(Number(value || 0))} />
-                <Bar dataKey="total" fill="#58B145" radius={[6, 6, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
+      <SalesChartCard
+        title="مبيعات الشهور"
+        description="إجمالي المبيعات مجمعة شهرياً من بداية السنة الحالية."
+        data={dashboard?.monthlySales ?? []}
+        xInterval={0}
+      />
+
+      <SalesChartCard
+        title="مبيعات آخر 30 يوم"
+        description="إجمالي المبيعات اليومية خلال آخر 30 يوم."
+        data={dashboard?.dailySales ?? []}
+        xInterval={2}
+      />
 
       <Card className="border-none shadow-sm">
         <CardContent className="p-0">
@@ -143,7 +82,7 @@ export default function SalesDashboardPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {leaderboard.map((agent) => (
+              {leaderboard.map((agent: SalesDashboardAgent) => (
                 <TableRow key={agent.user_id}>
                   <TableCell>
                     <p className="font-semibold">{agent.full_name}</p>
@@ -164,6 +103,56 @@ export default function SalesDashboardPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function SalesChartCard({
+  title,
+  description,
+  data,
+  xInterval,
+}: {
+  title: string;
+  description: string;
+  data: SalesChartPoint[];
+  xInterval: number;
+}) {
+  return (
+    <Card className="border-none shadow-sm">
+      <CardContent className="p-4 sm:p-5">
+        <div className="mb-4 flex flex-col gap-1">
+          <h2 className="text-lg font-semibold text-gray-950">{title}</h2>
+          <p className="text-sm text-gray-500">{description}</p>
+        </div>
+        <div className="h-72 sm:h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 8, right: 4, left: 0, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#d1d5db" />
+              <XAxis
+                dataKey="label"
+                interval={xInterval}
+                tick={{ fontSize: 12, fill: "#6b7280" }}
+                tickLine={false}
+                axisLine={{ stroke: "#9ca3af" }}
+              />
+              <YAxis
+                width={64}
+                tickFormatter={(value) => formatAxisMoney(Number(value || 0))}
+                tick={{ fontSize: 12, fill: "#6b7280" }}
+                tickLine={false}
+                axisLine={{ stroke: "#9ca3af" }}
+              />
+              <Tooltip
+                formatter={(value) => formatMoney(Number(value || 0))}
+                labelStyle={{ color: "#111827" }}
+                contentStyle={{ direction: "rtl", borderRadius: 8, borderColor: "#e5e7eb" }}
+              />
+              <Bar dataKey="total" fill="#58B145" radius={[7, 7, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
