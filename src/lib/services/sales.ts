@@ -45,6 +45,21 @@ export type SalesLogItem = {
   line_total: number;
 };
 
+export type SalesLogEditRequest = {
+  id: string;
+  organization_id: string;
+  sales_log_id: string;
+  company_id: string | null;
+  sales_agent_id: string;
+  requested_changes: string;
+  status: "pending" | "applied" | "rejected";
+  resolved_by: string | null;
+  resolved_at: string | null;
+  resolution_note: string | null;
+  created_at: string;
+  updated_at?: string;
+};
+
 export type SalesLog = {
   id: string;
   organization_id: string;
@@ -62,6 +77,7 @@ export type SalesLog = {
   created_at: string;
   agent?: { full_name: string | null; email: string | null } | null;
   company?: { name: string | null; code: string | null; brand_color: string | null } | null;
+  edit_requests?: SalesLogEditRequest[];
 };
 
 export type SalesAgent = {
@@ -136,6 +152,26 @@ export async function getTodaySalesLog(companyId?: string) {
 export async function submitSalesLog(values: { company_id: string; items: SalesLogItem[]; notes?: string }) {
   return apiFetch<SalesLog>("/api/sales/log", {
     method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export async function requestSalesLogEdit(values: { sales_log_id: string; requested_changes: string }) {
+  return apiFetch<SalesLogEditRequest>("/api/sales/log/edit-requests", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export async function resolveSalesLogEditRequest(values: {
+  id: string;
+  status: "applied" | "rejected";
+  items?: SalesLogItem[];
+  notes?: string;
+  resolution_note?: string;
+}) {
+  return apiFetch<SalesLogEditRequest>("/api/sales/log/edit-requests", {
+    method: "PATCH",
     body: JSON.stringify(values),
   });
 }
