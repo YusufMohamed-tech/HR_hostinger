@@ -16,7 +16,8 @@
     "seed:sales-mock": "node scripts/seed-sales-mock.mjs",
     "seed:sales-operations": "node scripts/seed-sales-operations.mjs",
     "seed:attendance-dashboard": "node scripts/seed-attendance-dashboard.mjs",
-    "seed:demo-tasks": "node scripts/seed-demo-tasks.mjs"
+    "seed:demo-tasks": "node scripts/seed-demo-tasks.mjs",
+    "seed:demo-schedules-leaves": "node scripts/seed-demo-schedules-leaves.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
