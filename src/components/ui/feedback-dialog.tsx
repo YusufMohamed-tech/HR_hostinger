@@ -12,6 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 type ConfirmActionButtonProps = Omit<ButtonProps, "onClick"> & {
   title: string;
@@ -80,12 +81,14 @@ function MessageDialog({
   title = "تنبيه",
   description,
   actionLabel = "حسنًا",
+  descriptionClassName,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  title?: string;
+  title?: string | null;
   description: string;
   actionLabel?: string;
+  descriptionClassName?: string;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -94,8 +97,8 @@ function MessageDialog({
           <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-lg bg-brand-light text-brand-dark">
             <Info className="h-5 w-5" />
           </div>
-          <DialogTitle className="text-lg text-gray-950">{title}</DialogTitle>
-          <DialogDescription className="leading-6 text-gray-600">{description}</DialogDescription>
+          {title ? <DialogTitle className="text-lg text-gray-950">{title}</DialogTitle> : null}
+          <DialogDescription className={cn("leading-6 text-gray-600", descriptionClassName)}>{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter className="sm:justify-start">
           <Button className="bg-brand text-white hover:bg-brand-dark" onClick={() => onOpenChange(false)}>

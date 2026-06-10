@@ -6,9 +6,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { SalesReportTable } from "@/components/sales/SalesReportTable";
-import { getSalesReports, type SalesAgent, type SalesCompany, type SalesLog, type SalesProduct } from "@/lib/services/sales";
+import {
+  getSalesReports,
+  resolveSalesLogEditRequest,
+  type SalesAgent,
+  type SalesCompany,
+  type SalesLog,
+  type SalesLogEditRequest,
+  type SalesLogItem,
+  type SalesProduct,
+} from "@/lib/services/sales";
 import { formatCurrency } from "@/lib/utils/currency";
 import { printHtmlReport } from "@/lib/utils/print-report";
 import { PageSkeleton } from "@/components/Skeletons";
@@ -34,6 +44,10 @@ export default function SalesReportsPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [filters, setFilters] = useState({ company: "", agent: "", product: "", status: "", date_from: "", date_to: "" });
+  const [reviewTarget, setReviewTarget] = useState<{ log: SalesLog; request: SalesLogEditRequest } | null>(null);
+  const [reviewItems, setReviewItems] = useState<Array<{ product_id: string; product_name: string; quantity: string; discount_percent: string }>>([]);
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewing, setReviewing] = useState(false);
 
   const load = async (nextFilters = filters) => {
     setLoading(true);
@@ -147,6 +161,55 @@ export default function SalesReportsPage() {
     }
   };
 
+  const openReviewDialog = (log: SalesLog, request: SalesLogEditRequest) => {
+    setReviewTarget({ log, request });
+    setReviewItems((Array.isArray(log.items) ? log.items : []).map((item) => ({
+      product_id: item.product_id,
+      product_name: item.product_name,
+      quantity: String(item.quantity || 0),
+      discount_percent: String(item.discount_percent || 0),
+    })));
+    setReviewNote("");
+  };
+
+  const updateReviewItem = (index: number, patch: Partial<{ quantity: string; discount_percent: string }>) => {
+    setReviewItems((prev) => prev.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
+  };
+
+  const submitReview = async (status: "applied" | "rejected") => {
+    if (!reviewTarget) return;
+    setReviewing(true);
+    const items = reviewItems
+      .map((item) => ({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        quantity: Math.max(0, Math.floor(Number(item.quantity || 0))),
+        unit_price: 0,
+        discount_percent: Math.max(0, Math.min(100, Number(item.discount_percent || 0))),
+        discount_amount: 0,
+        line_total: 0,
+      }))
+      .filter((item) => item.quantity > 0) as SalesLogItem[];
+
+    const result = await resolveSalesLogEditRequest({
+      id: reviewTarget.request.id,
+      status,
+      items,
+      resolution_note: reviewNote.trim() || undefined,
+      notes: reviewNote.trim() || reviewTarget.log.notes || undefined,
+    });
+    setReviewing(false);
+    if (result.error) {
+      setMessage(result.error);
+      return;
+    }
+    setReviewTarget(null);
+    setReviewItems([]);
+    setReviewNote("");
+    setMessage(status === "applied" ? "تم تطبيق تعديل تقرير المبيعات بنجاح." : "تم رفض طلب التعديل.");
+    load(filters);
+  };
+
   if (loading) return <PageSkeleton />;
 
   return (
@@ -210,10 +273,66 @@ export default function SalesReportsPage() {
 
       <Card className="border-none shadow-sm">
         <CardContent className="p-0">
-          <SalesReportTable logs={logs} expanded />
+          <SalesReportTable logs={logs} expanded onResolveEditRequest={openReviewDialog} />
           {logs.length === 0 && <div className="py-10 text-center text-sm text-gray-500">لا توجد تقارير مطابقة للفلاتر الحالية.</div>}
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(reviewTarget)} onOpenChange={(open) => {
+        if (!open) {
+          setReviewTarget(null);
+          setReviewItems([]);
+          setReviewNote("");
+        }
+      }}>
+        <DialogContent dir="rtl" className="sm:max-w-[720px]">
+          <DialogHeader>
+            <DialogTitle>مراجعة طلب تعديل تقرير المبيعات</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
+            {reviewTarget && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-semibold">طلب البائع:</p>
+                <p className="mt-1 leading-6">{reviewTarget.request.requested_changes}</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              {reviewItems.map((item, index) => (
+                <div key={`${item.product_id}-${index}`} className="grid gap-3 rounded-lg border border-gray-100 bg-white p-3 sm:grid-cols-[1fr_120px_120px]">
+                  <div>
+                    <p className="font-medium text-gray-950">{item.product_name}</p>
+                    <p className="text-xs text-gray-500">{item.product_id}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>الكمية</Label>
+                    <Input type="number" min={0} value={item.quantity} onChange={(event) => updateReviewItem(index, { quantity: event.target.value })} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>خصم %</Label>
+                    <Input type="number" min={0} max={100} value={item.discount_percent} onChange={(event) => updateReviewItem(index, { discount_percent: event.target.value })} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <Label>ملاحظة القرار</Label>
+              <textarea
+                value={reviewNote}
+                onChange={(event) => setReviewNote(event.target.value)}
+                className="min-h-24 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                placeholder="اكتب سبب التعديل أو الرفض..."
+              />
+            </div>
+          </div>
+          <DialogFooter className="sm:justify-start">
+            <Button variant="outline" onClick={() => setReviewTarget(null)}>إلغاء</Button>
+            <Button variant="outline" className="border-red-200 text-red-700 hover:bg-red-50" disabled={reviewing} onClick={() => submitReview("rejected")}>رفض الطلب</Button>
+            <Button className="bg-brand text-white hover:bg-brand-dark" disabled={reviewing || reviewItems.length === 0} onClick={() => submitReview("applied")}>
+              {reviewing ? "جاري الحفظ..." : "تطبيق التعديل"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

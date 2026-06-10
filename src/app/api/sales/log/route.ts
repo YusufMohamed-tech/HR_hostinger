@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
       .order("name", { ascending: true }),
     admin
       .from("sales_logs")
-      .select("*, company:company_id(name, code, brand_color)")
+      .select("*, company:company_id(name, code, brand_color), edit_requests:sales_log_edit_requests(id, requested_changes, status, created_at, resolved_at, resolution_note)")
       .eq("organization_id", auth.orgId)
       .eq("sales_agent_id", auth.user.id)
       .eq("company_id", selectedCompanyId)

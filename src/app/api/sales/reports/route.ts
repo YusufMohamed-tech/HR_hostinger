@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
   let query = admin
     .from("sales_logs")
-    .select("*, agent:sales_agent_id(full_name, email), company:company_id(name, code, brand_color)")
+    .select("*, agent:sales_agent_id(full_name, email), company:company_id(name, code, brand_color), edit_requests:sales_log_edit_requests(id, requested_changes, status, created_at, resolved_at, resolution_note)")
     .eq("organization_id", auth.orgId)
     .order("log_date", { ascending: false })
     .order("created_at", { ascending: false });
