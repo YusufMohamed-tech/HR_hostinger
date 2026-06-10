@@ -18,7 +18,8 @@
     "seed:location-coordinates": "node scripts/seed-location-coordinates.mjs",
     "seed:attendance-dashboard": "node scripts/seed-attendance-dashboard.mjs",
     "seed:demo-tasks": "node scripts/seed-demo-tasks.mjs",
-    "seed:demo-schedules-leaves": "node scripts/seed-demo-schedules-leaves.mjs"
+    "seed:demo-schedules-leaves": "node scripts/seed-demo-schedules-leaves.mjs",
+    "cleanup:test-accounts": "node scripts/cleanup-test-accounts.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
