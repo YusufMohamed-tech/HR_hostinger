@@ -244,8 +244,21 @@ export default function DashboardPage() {
           <CardContent className="border-t border-dashed pt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs text-gray-500">حاضر / متأخر / غائب</p>
-                <p className="text-lg font-semibold text-gray-900">{presentCount} present · {lateCount} late · {absentCount} absent</p>
+                <p className="text-xs text-gray-500">حالة حضور اليوم</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-base font-semibold" dir="rtl">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                    <span>{presentCount}</span>
+                    <span>حاضر</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-amber-700">
+                    <span>{lateCount}</span>
+                    <span>متأخر</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-md bg-rose-50 px-2.5 py-1 text-rose-700">
+                    <span>{absentCount}</span>
+                    <span>غائب</span>
+                  </span>
+                </div>
               </div>
               <Badge variant="outline" className="bg-brand-light text-brand-dark border-brand/20">{todayRecords.length} تم تسجيله اليوم</Badge>
             </div>
