@@ -93,6 +93,31 @@ export type SalesAgent = {
   company_assignments?: SalesCompanyAssignment[];
 };
 
+export type SalesChartPoint = {
+  date?: string;
+  month?: string;
+  label: string;
+  total: number;
+};
+
+export type SalesDashboardAgent = SalesAgent & {
+  today: number;
+  week: number;
+  month: number;
+};
+
+export type SalesDashboardData = {
+  stats: {
+    today: number;
+    week: number;
+    month: number;
+    activeAgents: number;
+  };
+  dailySales: SalesChartPoint[];
+  monthlySales: SalesChartPoint[];
+  leaderboard: SalesDashboardAgent[];
+};
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<{ data: T | null; error: string | null }> {
   try {
     const res = await fetch(path, {
@@ -187,6 +212,10 @@ export async function getSalesHistory() {
 export async function getSalesReports(params?: URLSearchParams) {
   const suffix = params?.toString() ? `?${params.toString()}` : "";
   return apiFetch<{ logs: SalesLog[]; agents: SalesAgent[]; products: SalesProduct[]; companies: SalesCompany[]; summary: Record<string, unknown> }>(`/api/sales/reports${suffix}`);
+}
+
+export async function getSalesDashboard() {
+  return apiFetch<SalesDashboardData>("/api/sales/dashboard");
 }
 
 export async function getSalesTeam() {
