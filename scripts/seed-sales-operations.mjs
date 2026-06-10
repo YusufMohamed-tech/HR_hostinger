@@ -3,6 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import dotenv from "dotenv";
 import { createClient } from "@supabase/supabase-js";
+import { coordinatesForLocation, hasCoordinates } from "./location-coordinate-utils.mjs";
 
 dotenv.config({ path: ".env.local" });
 
@@ -175,26 +176,32 @@ async function loadCompanies(orgId) {
 async function ensureLocations(orgId) {
   const { data: existingRows, error: loadError } = await supabase
     .from("locations")
-    .select("id, name")
+    .select("id, name, latitude, longitude")
     .eq("org_id", orgId);
   if (loadError) throw loadError;
-  const existingByName = new Map((existingRows || []).map((location) => [location.name, location.id]));
+  const existingByName = new Map((existingRows || []).map((location) => [location.name, location]));
   const seeded = [];
 
   for (const item of locationPayload.locations) {
+    const existingLocation = existingByName.get(item.name);
+    const coordinates = hasCoordinates(existingLocation) ? null : coordinatesForLocation(item);
     const values = {
       org_id: orgId,
       name: item.name,
       type: "branch",
       radius_meters: Number(item.radius_meters || 100),
     };
-    const existingId = existingByName.get(item.name);
+    if (coordinates) {
+      values.latitude = coordinates.latitude;
+      values.longitude = coordinates.longitude;
+    }
+    const existingId = existingLocation?.id;
     const result = existingId
       ? await supabase.from("locations").update(values).eq("id", existingId).select("id, name").single()
       : await supabase.from("locations").insert(values).select("id, name").single();
     if (result.error) throw result.error;
     seeded.push({ ...item, id: result.data.id });
-    existingByName.set(item.name, result.data.id);
+    existingByName.set(item.name, { id: result.data.id, ...values });
   }
 
   return seeded;
