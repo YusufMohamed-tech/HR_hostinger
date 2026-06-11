@@ -11,8 +11,11 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const orgSlug = process.env.INITIAL_ORG_SLUG || "tatwir-talent";
 const historyStart = process.env.SEED_SALES_HISTORY_FROM || "2026-01-01";
-const historyEnd = process.env.SEED_SALES_HISTORY_TO || "2026-06-10";
+const historyEnd = process.env.SEED_SALES_HISTORY_TO || new Date().toISOString().slice(0, 10);
 const dailyAgentCount = Number(process.env.SEED_SALES_DAILY_AGENT_COUNT || 50);
+const dailySalesBaseline = Number(process.env.SEED_SALES_DAILY_BASELINE || 318000);
+const dailySalesMin = Number(process.env.SEED_SALES_DAILY_MIN || 292000);
+const dailySalesMax = Number(process.env.SEED_SALES_DAILY_MAX || 336000);
 const historySeedPrefix = "Historical mock sales seed 2026";
 
 if (!supabaseUrl || !serviceRoleKey) {
@@ -26,15 +29,6 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 
 const sourcePath = path.resolve(process.cwd(), "scripts", "sales-locations-2026.json");
 const locationPayload = JSON.parse(fs.readFileSync(sourcePath, "utf8"));
-
-const monthTargets = new Map([
-  ["2026-01", 3392784],
-  ["2026-02", 3214650],
-  ["2026-03", 3681245],
-  ["2026-04", 3487930],
-  ["2026-05", 3756120],
-  ["2026-06", 3118440],
-]);
 
 const companyManagerAccounts = [
   { slug: "stc", email: "sales.manager.stc@tatwir.sa", password: "stc@12345678", name: "STC Sales Manager", phone: "+966580001001", code: "STC" },
@@ -77,6 +71,19 @@ function createRng(seed = 20260610) {
 
 function money(value) {
   return Number(Number(value || 0).toFixed(2));
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function dailySalesTarget(date, dayIndex, rng) {
+  const dayOfWeek = new Date(`${date}T00:00:00.000Z`).getUTCDay();
+  const weeklySignal = Math.sin(dayIndex / 3.7) * 0.55 + Math.cos(dayIndex / 6.4) * 0.35;
+  const weekdaySignal = dayOfWeek === 5 || dayOfWeek === 6 ? -0.28 : dayOfWeek === 4 ? 0.12 : 0.04;
+  const jitterSignal = (rng() - 0.5) * 0.5;
+  const value = dailySalesBaseline + 18000 * (weeklySignal + weekdaySignal + jitterSignal);
+  return money(clamp(value, dailySalesMin, dailySalesMax));
 }
 
 function phoneForManager(index) {
@@ -483,27 +490,19 @@ async function seedHistoricalSales(orgId, salesAgents, productsByCompany, manage
   const rng = createRng();
   const rows = [];
   const dates = dateRange(historyStart, historyEnd);
-  const datesByMonth = new Map();
-  dates.forEach((date) => {
-    const key = monthKey(date);
-    const list = datesByMonth.get(key) || [];
-    list.push(date);
-    datesByMonth.set(key, list);
-  });
 
-  for (const [key, monthDates] of datesByMonth.entries()) {
-    const target = monthTargets.get(key) || 3250000;
+  for (const [dayIndex, date] of dates.entries()) {
+    const target = dailySalesTarget(date, dayIndex, rng);
     const entries = [];
-    monthDates.forEach((date, dayIndex) => {
-      const count = Math.min(dailyAgentCount, salesAgents.length);
-      const startIndex = (dayIndex * 13) % salesAgents.length;
-      for (let offset = 0; offset < count; offset += 1) {
-        const agent = salesAgents[(startIndex + offset) % salesAgents.length];
-        if ((productsByCompany.get(agent.companyId) || []).length) {
-          entries.push({ date, agent, weight: 0.65 + rng() * 0.9 });
-        }
+    const count = Math.min(dailyAgentCount, salesAgents.length);
+    const startIndex = (dayIndex * 13) % salesAgents.length;
+    for (let offset = 0; offset < count; offset += 1) {
+      const agent = salesAgents[(startIndex + offset) % salesAgents.length];
+      if ((productsByCompany.get(agent.companyId) || []).length) {
+        entries.push({ date, agent, weight: 0.65 + rng() * 0.9 });
       }
-    });
+    }
+
     const totalWeight = entries.reduce((sum, entry) => sum + entry.weight, 0);
     let remaining = money(target);
     entries.forEach((entry, index) => {
