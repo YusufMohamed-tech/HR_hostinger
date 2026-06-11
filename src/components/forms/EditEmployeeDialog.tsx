@@ -21,6 +21,7 @@ interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   employee: any;
   onSuccess: () => void;
+  compact?: boolean;
 }
 
 const employmentTypeLabels: Record<string, string> = {
@@ -60,7 +61,7 @@ const employeeDialogContentClass =
 const twoColumnGridClass = "grid grid-cols-1 gap-4 md:grid-cols-2";
 const threeColumnGridClass = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3";
 
-export function EditEmployeeDialog({ employee, onSuccess }: Props) {
+export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Props) {
   const { currentUser } = useRoleContext();
   const { data: departments } = useDepartments();
   const { data: locations } = useLocations();
@@ -349,9 +350,18 @@ export function EditEmployeeDialog({ employee, onSuccess }: Props) {
     <>
       <MessageDialog open={Boolean(message)} onOpenChange={(nextOpen) => !nextOpen && setMessage("")} description={message} />
       <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" size="sm" className="text-brand hover:text-brand-dark" />}>
-        <Pencil className="w-3.5 h-3.5 ml-1" />
-        تعديل
+      <DialogTrigger
+        render={
+          <Button
+            variant="ghost"
+            size={compact ? "icon-xs" : "sm"}
+            className="text-brand hover:text-brand-dark"
+            aria-label={compact ? "تعديل" : undefined}
+          />
+        }
+      >
+        <Pencil className={compact ? "h-3.5 w-3.5" : "w-3.5 h-3.5 ml-1"} />
+        {!compact && "تعديل"}
       </DialogTrigger>
       <DialogContent className={employeeDialogContentClass}>
         <DialogHeader>

@@ -25,6 +25,7 @@ import { createCareerEvent } from "@/lib/services/career-events";
 interface Props {
   employee: Record<string, unknown>;
   onSuccess: () => void;
+  compact?: boolean;
 }
 
 function getRecordName(value: unknown, fallback: string | null = "-") {
@@ -37,7 +38,7 @@ function getRecordName(value: unknown, fallback: string | null = "-") {
   return fallback;
 }
 
-export function PromoteEmployeeDialog({ employee, onSuccess }: Props) {
+export function PromoteEmployeeDialog({ employee, onSuccess, compact = false }: Props) {
   const { currentUser } = useRoleContext();
   const { data: departments } = useDepartments();
   const { data: employees } = useEmployees();
@@ -158,9 +159,18 @@ export function PromoteEmployeeDialog({ employee, onSuccess }: Props) {
     <>
       <MessageDialog open={Boolean(message)} onOpenChange={(nextOpen) => !nextOpen && setMessage("")} description={message} />
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger render={<Button variant="ghost" size="sm" className="text-blue-600 hover:bg-blue-50 hover:text-blue-700" />}>
-          <TrendingUp className="h-4 w-4 ml-1" />
-          ترقية
+        <DialogTrigger
+          render={
+            <Button
+              variant="ghost"
+              size={compact ? "icon-xs" : "sm"}
+              className="text-blue-600 hover:bg-blue-50 hover:text-blue-700"
+              aria-label={compact ? "ترقية" : undefined}
+            />
+          }
+        >
+          <TrendingUp className={compact ? "h-3.5 w-3.5" : "h-4 w-4 ml-1"} />
+          {!compact && "ترقية"}
         </DialogTrigger>
         <DialogContent dir="rtl" className="sm:max-w-[560px]">
           <DialogHeader>
