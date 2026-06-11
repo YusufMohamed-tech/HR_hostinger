@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { Search, Trash2, Users } from "lucide-react";
+import { Eye, Search, Trash2, Users } from "lucide-react";
 import { deleteEmployee } from "@/lib/services/employees";
 import { EditEmployeeDialog } from "@/components/forms/EditEmployeeDialog";
 import { PromoteEmployeeDialog } from "@/components/forms/PromoteEmployeeDialog";
@@ -85,7 +85,7 @@ export default function EmployeesPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">الموظفون</h1>
@@ -101,9 +101,9 @@ export default function EmployeesPage() {
         )}
       </div>
 
-      <Card className="border-none shadow-sm">
+      <Card className="overflow-hidden border border-gray-200 shadow-sm">
         <CardContent className="p-0">
-          <div className="flex flex-col sm:flex-row p-4 border-b gap-4 items-center justify-between">
+          <div className="flex flex-col sm:flex-row p-3 border-b gap-3 items-center justify-between">
             <div className="relative w-full sm:w-80">
               <Search className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-500" />
               <Input
@@ -128,7 +128,15 @@ export default function EmployeesPage() {
             </div>
           </div>
 
-          <Table>
+          <Table className="table-fixed text-[13px] [&_td]:border-l [&_td]:border-gray-100 [&_td]:px-2 [&_td]:py-1.5 [&_td]:text-[13px] [&_td]:leading-tight [&_td]:whitespace-normal [&_td:last-child]:border-l-0 [&_th]:h-8 [&_th]:border-l [&_th]:border-gray-100 [&_th]:px-2 [&_th]:text-xs [&_th:last-child]:border-l-0">
+            <colgroup>
+              <col className="w-[27%]" />
+              <col className="w-[8%]" />
+              <col className="w-[18%]" />
+              <col className="w-[15%]" />
+              <col className="w-[19%]" />
+              <col className="w-[13%]" />
+            </colgroup>
             <TableHeader>
               <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
                 <TableHead className="font-semibold text-gray-600">بيانات الموظف</TableHead>
@@ -166,12 +174,12 @@ export default function EmployeesPage() {
                     : "-";
 
                 return (
-                  <TableRow key={empId}>
+                  <TableRow key={empId} className="h-[58px] hover:bg-brand-light/20">
                     <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-medium text-gray-900">{empName}</span>
-                        <span className="text-xs text-gray-500">{empEmail}</span>
-                        <span className="text-xs text-gray-400 mt-0.5">{empCode}</span>
+                      <div className="min-w-0">
+                        <span className="block truncate font-semibold text-gray-900" title={empName}>{empName}</span>
+                        <span className="block truncate text-[12px] text-gray-500" title={empEmail}>{empEmail}</span>
+                        <span className="block truncate text-[11px] text-gray-400" title={empCode}>{empCode}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -179,31 +187,39 @@ export default function EmployeesPage() {
                         variant="outline"
                         className={
                           empStatus === "Active"
-                            ? "bg-green-50 text-green-700 border-green-200"
-                            : "bg-amber-50 text-amber-700 border-amber-200"
+                            ? "h-6 rounded px-2 text-[11px] bg-green-50 text-green-700 border-green-200"
+                            : "h-6 rounded px-2 text-[11px] bg-amber-50 text-amber-700 border-amber-200"
                         }
                       >
                         {statusLabels[empStatus] || empStatus}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-gray-600">{jobTitle}</TableCell>
-                    <TableCell className="text-gray-600">{departmentName}</TableCell>
-                    <TableCell className="text-gray-600">{locationName}</TableCell>
+                    <TableCell className="text-gray-600">
+                      <span className="block truncate" title={jobTitle}>{jobTitle}</span>
+                    </TableCell>
+                    <TableCell className="text-gray-600">
+                      <span className="block truncate" title={departmentName}>{departmentName}</span>
+                    </TableCell>
+                    <TableCell className="text-gray-600">
+                      <span className="block truncate" title={locationName}>{locationName}</span>
+                    </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex items-center justify-end gap-0.5">
                         {canManageEmployees && (
-                          <PromoteEmployeeDialog employee={emp} onSuccess={refetch} />
+                          <PromoteEmployeeDialog employee={emp} onSuccess={refetch} compact />
                         )}
                         {canManageEmployees && (
-                          <EditEmployeeDialog employee={emp} onSuccess={refetch} />
+                          <EditEmployeeDialog employee={emp} onSuccess={refetch} compact />
                         )}
-                        <Button asChild variant="ghost" size="sm" className="text-brand hover:text-brand-dark">
-                          <Link href={`/employees/${empId}`}>عرض</Link>
+                        <Button asChild variant="ghost" size="icon-xs" className="overflow-hidden text-brand hover:text-brand-dark" aria-label="View employee">
+                          <Link href={`/employees/${empId}`}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </Link>
                         </Button>
                         {canManageEmployees && (
                           <ConfirmActionButton
                             variant="ghost"
-                            size="sm"
+                            size="icon-xs"
                             className="text-red-500 hover:text-red-700 hover:bg-red-50"
                             title="حذف الموظف"
                             description={`سيتم حذف الموظف ${empName}. هل تريد المتابعة؟`}
@@ -214,7 +230,7 @@ export default function EmployeesPage() {
                               refetch();
                             }}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </ConfirmActionButton>
                         )}
                       </div>
