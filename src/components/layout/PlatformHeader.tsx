@@ -92,7 +92,7 @@ export function PlatformHeader() {
       <div className="flex items-center gap-4">
         <div className="hidden items-center sm:flex">
           <span className="rounded-full bg-brand-light px-2.5 py-1 text-xs font-semibold tracking-wider text-brand-dark">
-            وضع المنصة
+            {currentUser.name || "Dr. Amr Naiem"}
           </span>
         </div>
         <DropdownMenu>
