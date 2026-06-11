@@ -76,6 +76,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     const isSystemSuperadmin = isPlatformSuperadmin || (platformTableMissing && rawRole === "super_admin");
     const systemRole = isSystemSuperadmin ? "Superadmin" : null;
     const workspaceRole: WorkspaceRole | null = systemRole ? null : role as WorkspaceRole;
+    const membershipOrgId = String(membershipRecord?.org_id || "");
 
     if (!role) {
       setCurrentUser(null);
@@ -109,7 +110,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       systemRole,
       workspaceRole,
       orgMembershipRole: rawRole,
-      orgId: isSystemSuperadmin ? "" : String(membershipRecord?.org_id || ""),
+      orgId: membershipOrgId,
       employeeId: isSystemSuperadmin
         ? undefined
         : (employee as unknown as Record<string, unknown>)?.id ? String((employee as unknown as Record<string, unknown>)?.id) : undefined,
