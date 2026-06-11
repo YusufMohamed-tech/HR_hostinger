@@ -52,6 +52,11 @@ For production, create the first admin through the Supabase Admin API:
 npm run seed:admin
 ```
 
+To create Dr. Amr Naiem as a platform superadmin with full system access:
+```bash
+npm run seed:dr-amr
+```
+
 Demo users are optional for local/staging only:
 ```bash
 npm run seed:demo

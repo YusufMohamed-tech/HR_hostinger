@@ -29,6 +29,24 @@ npm run seed:admin
 
 The production schema intentionally avoids direct writes to Supabase Auth tables. This seed step creates/updates the first admin through the Supabase Admin API, then links the user to `profiles` and `org_members`.
 
+## Seed Dr. Amr Naiem as platform superadmin
+Optional overrides:
+```env
+DR_AMR_ADMIN_EMAIL=dr.amr.naiem@tatwir.sa
+DR_AMR_ADMIN_PASSWORD=
+DR_AMR_ADMIN_NAME=Dr. Amr Naiem
+DR_AMR_ORG_NAME=Tatwir Talent
+DR_AMR_ORG_SLUG=tatwir-talent
+DR_AMR_ORG_ID=
+```
+
+Then run:
+```bash
+npm run seed:dr-amr
+```
+
+This creates/updates the Supabase Auth user, activates the profile, gives the user organization admin access, and marks the user as an active platform superadmin.
+
 ## Seed local/staging demo users
 ```bash
 npm run seed:demo
