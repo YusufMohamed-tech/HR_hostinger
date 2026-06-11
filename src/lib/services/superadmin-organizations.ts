@@ -62,6 +62,54 @@ export interface SuperadminAuditLog {
   } | null;
 }
 
+export interface SuperadminDashboardData {
+  generated_at: string;
+  stats: Record<string, unknown>;
+  moduleCards: Array<{
+    key: string;
+    label: string;
+    value: string | number;
+    helper: string;
+    href: string;
+    tone: string;
+  }>;
+  decisionQueue: Array<{
+    key: string;
+    label: string;
+    value: number;
+    href: string;
+  }>;
+  recentActivity: Array<{
+    id: string;
+    source: string;
+    title: string;
+    description: string;
+    actor: string;
+    organization: string;
+    occurred_at: string;
+    href: string;
+  }>;
+  recentUsers: Array<{
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    status: string;
+    organization: string;
+    created_at: string;
+  }>;
+  organizations: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    status: string;
+    raw_status: string;
+    members: number;
+    employees: number;
+    created_at: string;
+  }>;
+}
+
 type Result<T> = { data: T | null; error: { message: string } | null };
 
 async function parseResponse<T>(response: Response, fallbackMessage: string): Promise<Result<T>> {
@@ -88,6 +136,16 @@ export async function getSuperadminOrganizations() {
   });
 
   return parseResponse<SuperadminOrganization[]>(response, "Unable to load organizations.");
+}
+
+export async function getSuperadminDashboard() {
+  const response = await fetch("/api/superadmin/dashboard", {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+  });
+
+  return parseResponse<SuperadminDashboardData>(response, "Unable to load superadmin dashboard.");
 }
 
 export async function getSuperadminOrganization(id: string) {
