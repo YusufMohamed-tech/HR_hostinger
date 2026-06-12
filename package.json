@@ -20,6 +20,7 @@
     "seed:attendance-dashboard": "node scripts/seed-attendance-dashboard.mjs",
     "seed:demo-tasks": "node scripts/seed-demo-tasks.mjs",
     "seed:demo-schedules-leaves": "node scripts/seed-demo-schedules-leaves.mjs",
+    "seed:recruitment-mock": "node scripts/seed-recruitment-mock.mjs",
     "cleanup:test-accounts": "node scripts/cleanup-test-accounts.mjs"
   },
   "dependencies": {
