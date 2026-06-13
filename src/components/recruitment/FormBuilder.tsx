@@ -34,6 +34,15 @@ function newQuestion(order: number): FormQuestion {
   };
 }
 
+function getQuestionOptions(question: FormQuestion) {
+  const rawOptions = (question as Record<string, unknown>).options;
+  if (Array.isArray(rawOptions)) return rawOptions.map((option) => String(option));
+  if (typeof rawOptions === "string") {
+    return rawOptions.split(/[,،]/).map((option) => option.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 export function FormBuilder({ questions, onChange }: Props) {
   const addQuestion = () => {
     onChange([...questions, newQuestion(questions.length + 1)]);
@@ -45,6 +54,31 @@ export function FormBuilder({ questions, onChange }: Props) {
 
   const updateQuestion = (id: string, patch: Partial<FormQuestion>) => {
     onChange(questions.map((q) => (q.id === id ? { ...q, ...patch } : q)));
+  };
+
+  const updateQuestionType = (question: FormQuestion, type: FormQuestion["type"]) => {
+    const options = getQuestionOptions(question);
+    updateQuestion(question.id, {
+      type,
+      options: type === "select" ? (options.length ? options : ["نعم", "لا"]) : question.options,
+    });
+  };
+
+  const addOption = (question: FormQuestion) => {
+    const options = getQuestionOptions(question);
+    const nextOptions = [...options, `خيار ${options.length + 1}`];
+    updateQuestion(question.id, { options: nextOptions });
+  };
+
+  const updateOption = (question: FormQuestion, optionIndex: number, value: string) => {
+    const nextOptions = [...getQuestionOptions(question)];
+    nextOptions[optionIndex] = value;
+    updateQuestion(question.id, { options: nextOptions });
+  };
+
+  const removeOption = (question: FormQuestion, optionIndex: number) => {
+    const nextOptions = getQuestionOptions(question).filter((_, index) => index !== optionIndex);
+    updateQuestion(question.id, { options: nextOptions });
   };
 
   const moveUp = (index: number) => {
@@ -118,9 +152,7 @@ export function FormBuilder({ questions, onChange }: Props) {
                   <Label className="text-xs mb-1 block">نوع الحقل</Label>
                   <Select
                     value={q.type}
-                    onValueChange={(v) =>
-                      updateQuestion(q.id, { type: v as FormQuestion["type"] })
-                    }
+                    onValueChange={(v) => updateQuestionType(q, v as FormQuestion["type"])}
                   >
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue />
@@ -147,18 +179,53 @@ export function FormBuilder({ questions, onChange }: Props) {
             </div>
 
             {q.type === "select" && (
-              <div className="pr-9">
-                <Label className="text-xs mb-1 block">خيارات القائمة (مفصولة بفاصلة)</Label>
-                <Input
-                  value={q.options?.join("،") ?? ""}
-                  placeholder="خيار 1،خيار 2،خيار 3"
-                  className="h-8 text-sm"
-                  onChange={(e) =>
-                    updateQuestion(q.id, {
-                      options: e.target.value.split(/[,،]/).map((s) => s.trim()).filter(Boolean),
-                    })
-                  }
-                />
+              <div className="pr-9 space-y-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <Label className="text-xs mb-1 block">خيارات القائمة</Label>
+                    <p className="text-[11px] text-muted-foreground">أضف كل اختيار في صندوق مستقل، بدون فواصل.</p>
+                  </div>
+                  <Button type="button" size="sm" variant="outline" onClick={() => addOption(q)} className="h-8 gap-1 text-xs">
+                    <Plus className="h-3.5 w-3.5" />
+                    إضافة خيار
+                  </Button>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {getQuestionOptions(q).map((option, optionIndex) => (
+                    <div key={`${q.id}-option-${optionIndex}`} className="flex items-center gap-2 rounded-lg border border-border bg-white p-2">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-brand-light text-xs font-semibold text-brand-dark">
+                        {optionIndex + 1}
+                      </span>
+                      <Input
+                        value={option}
+                        placeholder={`خيار ${optionIndex + 1}`}
+                        className="h-8 text-sm"
+                        onChange={(e) => updateOption(q, optionIndex, e.target.value)}
+                      />
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 shrink-0 text-red-500 hover:text-red-700"
+                        onClick={() => removeOption(q, optionIndex)}
+                        disabled={getQuestionOptions(q).length <= 1}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+
+                {getQuestionOptions(q).length === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => addOption(q)}
+                    className="w-full rounded-lg border border-dashed border-brand/40 bg-brand/5 px-3 py-3 text-xs font-medium text-brand-dark transition-colors hover:bg-brand/10"
+                  >
+                    إضافة أول خيار
+                  </button>
+                )}
               </div>
             )}
 

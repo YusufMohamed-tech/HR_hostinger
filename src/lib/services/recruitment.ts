@@ -10,6 +10,22 @@ export type FormQuestion = {
   accept?: string;
 };
 
+export function sanitizeFormQuestions(questions: FormQuestion[]) {
+  return questions.map((question) => {
+    const rawOptions = (question as Record<string, unknown>).options;
+    const options = Array.isArray(rawOptions)
+      ? rawOptions.map((option) => String(option).trim()).filter(Boolean)
+      : typeof rawOptions === "string"
+        ? rawOptions.split(/[,،]/).map((option) => option.trim()).filter(Boolean)
+        : [];
+
+    return {
+      ...question,
+      options: question.type === "select" ? options : undefined,
+    };
+  });
+}
+
 export type StageHistoryEntry = {
   stage: string;
   changed_by: string;
