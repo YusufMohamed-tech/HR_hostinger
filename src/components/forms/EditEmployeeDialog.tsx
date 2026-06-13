@@ -18,6 +18,7 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import { createCareerEvents } from "@/lib/services/career-events";
 import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
 import { bankOptions, educationLevelOptions, saudiCityOptions } from "@/lib/hr-options";
+import { inferLocationCity, locationMatchesCompany } from "@/lib/location-classification";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -196,15 +197,18 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
   const setIban = (value: string) => {
     setForm((prev) => ({ ...prev, iban: value, bank_account: value }));
   };
+  const selectedProject = useMemo(
+    () => companies.find((company) => company.id === form.project_id) || null,
+    [companies, form.project_id]
+  );
   const filteredLocations = useMemo(() => {
     return locations.filter((location) => {
-      const locationCity = typeof location.city === "string" ? location.city : "";
-      const locationProjectId = typeof location.project_id === "string" ? location.project_id : "";
+      const locationCity = inferLocationCity(location);
       const matchesCity = !form.work_city || locationCity === form.work_city;
-      const matchesProject = !form.project_id || locationProjectId === form.project_id;
+      const matchesProject = !form.project_id || locationMatchesCompany(location, selectedProject);
       return matchesCity && matchesProject;
     });
-  }, [form.project_id, form.work_city, locations]);
+  }, [form.project_id, form.work_city, locations, selectedProject]);
 
   const toggleLocation = (locationId: string, checked: boolean) => {
     setSelectedLocationIds((prev) => {

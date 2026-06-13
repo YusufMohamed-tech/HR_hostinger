@@ -12,6 +12,9 @@ export const saudiCityOptions = [
   "حائل",
   "بريدة",
   "عنيزة",
+  "القصيم",
+  "الخرج",
+  "المجمعة",
   "الجوف",
   "الباحة",
   "ينبع",
@@ -19,6 +22,10 @@ export const saudiCityOptions = [
   "الطائف",
   "الأحساء",
   "الجبيل",
+  "أملج",
+  "رأس تنورة",
+  "سيهات",
+  "القطيف",
 ];
 
 export const educationLevelOptions = [
