@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,8 @@ import { hasUnreturnedAssets } from "@/lib/services/assets";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { createCareerEvents } from "@/lib/services/career-events";
+import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
+import { bankOptions, educationLevelOptions, saudiCityOptions } from "@/lib/hr-options";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -37,25 +39,6 @@ const statusLabels: Record<string, string> = {
   "On Leave": "في إجازة",
 };
 
-const cityOptions = [
-  "الرياض",
-  "جدة",
-  "مكة المكرمة",
-  "المدينة المنورة",
-  "الدمام",
-  "الخبر",
-  "تبوك",
-  "أبها",
-  "نجران",
-  "حائل",
-  "القصيم",
-  "الجوف",
-  "الباحة",
-  "عسير",
-  "ينبع",
-  "جازان",
-];
-
 const employeeDialogContentClass =
   "max-h-[calc(100dvh-1.5rem)] overflow-y-auto p-3 sm:max-w-[760px] sm:p-4";
 const twoColumnGridClass = "grid grid-cols-1 gap-4 md:grid-cols-2";
@@ -70,6 +53,7 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [companies, setCompanies] = useState<SalesCompany[]>([]);
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<"employee" | "training_manager">("employee");
@@ -80,20 +64,27 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
 
   const [form, setForm] = useState({
     full_name: "",
+    full_name_ar: "",
+    full_name_en: "",
     employee_code: "",
     email: "",
     phone: "",
     address: "",
+    work_city: "",
+    national_address_code: "",
     emergency_contact_name: "",
     emergency_contact_phone: "",
     national_id: "",
     date_of_birth: "",
+    date_of_birth_hijri: "",
     gender: "",
     hiring_date: "",
     department_id: "",
     job_title: "",
     manager_id: "",
     location_id: "",
+    company_id: "",
+    project_id: "",
     city: "",
     province: "",
     employment_type: "full_time",
@@ -105,26 +96,37 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
     leave_accrual_start_date: "",
     payment_method: "",
     bank_account: "",
+    bank_account_name: "",
+    bank_name: "",
+    iban: "",
+    education_level: "",
   });
 
   useEffect(() => {
     if (employee && open) {
       setForm({
         full_name: employee.full_name || employee.name || "",
+        full_name_ar: employee.full_name_ar || employee.full_name || employee.name || "",
+        full_name_en: employee.full_name_en || "",
         employee_code: employee.employee_code || "",
         email: employee.email || "",
         phone: employee.phone || "",
         address: employee.address || "",
+        work_city: employee.work_city || employee.city || employee.province || "",
+        national_address_code: employee.national_address_code || "",
         emergency_contact_name: employee.emergency_contact_name || "",
         emergency_contact_phone: employee.emergency_contact_phone || "",
         national_id: employee.national_id || "",
         date_of_birth: employee.date_of_birth || "",
+        date_of_birth_hijri: employee.date_of_birth_hijri || "",
         gender: employee.gender || "",
         hiring_date: employee.hiring_date || "",
         department_id: employee.department_id || "",
         job_title: employee.job_title || "",
         manager_id: employee.manager_id || "",
         location_id: employee.location_id || "",
+        company_id: employee.company_id || "",
+        project_id: employee.project_id || "",
         city: employee.city || "",
         province: employee.province || employee.city || "",
         employment_type: employee.employment_type || "full_time",
@@ -136,6 +138,10 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
         leave_accrual_start_date: employee.leave_accrual_start_date || employee.hiring_date || "",
         payment_method: employee.payment_method || "",
         bank_account: employee.bank_account || "",
+        bank_account_name: employee.bank_account_name || "",
+        bank_name: employee.bank_name || "",
+        iban: employee.iban || employee.bank_account || "",
+        education_level: employee.education_level || "",
       });
       const managedDepartment = departments.find((department) => {
         const departmentRecord = department as Record<string, unknown>;
@@ -157,7 +163,48 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
     }
   }, [departments, employee, open]);
 
+  useEffect(() => {
+    if (!open) return;
+    getSalesCompanies().then((result) => setCompanies(result.data || []));
+  }, [open]);
+
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
+  const setArabicName = (value: string) => {
+    setForm((prev) => ({ ...prev, full_name_ar: value, full_name: value }));
+  };
+  const setWorkCity = (value: string | null) => {
+    setSelectedLocationIds([]);
+    setPrimaryLocationId("");
+    setForm((prev) => ({
+      ...prev,
+      work_city: value ?? "",
+      city: value ?? "",
+      province: value ?? "",
+      location_id: "",
+    }));
+  };
+  const setProject = (value: string | null) => {
+    setSelectedLocationIds([]);
+    setPrimaryLocationId("");
+    setForm((prev) => ({
+      ...prev,
+      project_id: value ?? "",
+      company_id: value ?? "",
+      location_id: "",
+    }));
+  };
+  const setIban = (value: string) => {
+    setForm((prev) => ({ ...prev, iban: value, bank_account: value }));
+  };
+  const filteredLocations = useMemo(() => {
+    return locations.filter((location) => {
+      const locationCity = typeof location.city === "string" ? location.city : "";
+      const locationProjectId = typeof location.project_id === "string" ? location.project_id : "";
+      const matchesCity = !form.work_city || locationCity === form.work_city;
+      const matchesProject = !form.project_id || locationProjectId === form.project_id;
+      return matchesCity && matchesProject;
+    });
+  }, [form.project_id, form.work_city, locations]);
 
   const toggleLocation = (locationId: string, checked: boolean) => {
     setSelectedLocationIds((prev) => {
@@ -223,20 +270,27 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
 
     const payload = {
       full_name: form.full_name,
+      full_name_ar: form.full_name_ar || undefined,
+      full_name_en: form.full_name_en || undefined,
       employee_code: form.employee_code || undefined,
       email: form.email || undefined,
       phone: form.phone || undefined,
       address: form.address || undefined,
+      work_city: form.work_city || undefined,
+      national_address_code: form.national_address_code || undefined,
       emergency_contact_name: form.emergency_contact_name || undefined,
       emergency_contact_phone: form.emergency_contact_phone || undefined,
       national_id: form.national_id || undefined,
       date_of_birth: form.date_of_birth || undefined,
+      date_of_birth_hijri: form.date_of_birth_hijri || undefined,
       gender: form.gender || undefined,
       hiring_date: form.hiring_date || undefined,
       department_id: form.department_id || undefined,
       job_title: form.job_title || undefined,
       manager_id: form.manager_id || undefined,
       location_id: form.location_id || undefined,
+      company_id: form.company_id || undefined,
+      project_id: form.project_id || undefined,
       city: form.city || undefined,
       province: form.province || form.city || undefined,
       employment_type: form.employment_type || undefined,
@@ -249,6 +303,10 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
       can_multi_checkin: canMultiCheckin,
       payment_method: form.payment_method || undefined,
       bank_account: form.bank_account || undefined,
+      bank_account_name: form.bank_account_name || undefined,
+      bank_name: form.bank_name || undefined,
+      iban: form.iban || undefined,
+      education_level: form.education_level || undefined,
     };
 
     const effectiveDate = form.hiring_date || new Date().toISOString().split("T")[0];
@@ -374,12 +432,29 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
             <p className="text-sm font-semibold text-slate-700">البيانات الأساسية</p>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
-                <Label>الاسم الكامل *</Label>
-                <Input value={form.full_name} onChange={(e) => set("full_name", e.target.value)} />
+                <Label>الاسم بالعربي *</Label>
+                <Input value={form.full_name_ar} onChange={(e) => setArabicName(e.target.value)} />
               </div>
               <div className="space-y-2">
                 <Label>رقم الموظف</Label>
-                <Input value={form.employee_code} onChange={(e) => set("employee_code", e.target.value)} />
+                <Input value={form.employee_code} readOnly className="bg-gray-50 text-gray-500" />
+              </div>
+            </div>
+            <div className={twoColumnGridClass}>
+              <div className="space-y-2">
+                <Label>الاسم بالإنجليزي</Label>
+                <Input value={form.full_name_en} onChange={(e) => set("full_name_en", e.target.value)} dir="ltr" />
+              </div>
+              <div className="space-y-2">
+                <Label>المؤهل العلمي</Label>
+                <Select value={form.education_level} onValueChange={(value) => set("education_level", value || "")}>
+                  <SelectTrigger><SelectValue placeholder="اختر المؤهل" /></SelectTrigger>
+                  <SelectContent>
+                    {educationLevelOptions.map((level) => (
+                      <SelectItem key={level} value={level}>{level}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className={twoColumnGridClass}>
@@ -402,10 +477,31 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                 <Input value={form.national_id} onChange={(e) => set("national_id", e.target.value)} />
               </div>
             </div>
+            <div className={twoColumnGridClass}>
+              <div className="space-y-2">
+                <Label>مدينة العمل *</Label>
+                <Select value={form.work_city} onValueChange={(value) => setWorkCity(value)}>
+                  <SelectTrigger><SelectValue placeholder="اختر المدينة" /></SelectTrigger>
+                  <SelectContent>
+                    {saudiCityOptions.map((city) => (
+                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>العنوان الوطني</Label>
+                <Input value={form.national_address_code} onChange={(e) => set("national_address_code", e.target.value.toUpperCase())} placeholder="EAPX0123" dir="ltr" maxLength={8} />
+              </div>
+            </div>
             <div className={threeColumnGridClass}>
               <div className="space-y-2">
-                <Label>تاريخ الميلاد</Label>
+                <Label>تاريخ الميلاد ميلادي</Label>
                 <Input type="date" value={form.date_of_birth} onChange={(e) => set("date_of_birth", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>تاريخ الميلاد هجري</Label>
+                <Input value={form.date_of_birth_hijri} onChange={(e) => set("date_of_birth_hijri", e.target.value)} placeholder="1445/01/01" dir="ltr" />
               </div>
               <div className="space-y-2">
                 <Label>الجنس</Label>
@@ -484,18 +580,12 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>المحافظة / المدينة</Label>
-                <Select
-                  value={form.city}
-                  onValueChange={(value) => {
-                    set("city", value || "");
-                    set("province", value || "");
-                  }}
-                >
-                  <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
+                <Label>المشروع / القناة *</Label>
+                <Select value={form.project_id} onValueChange={(value) => setProject(value)}>
+                  <SelectTrigger><SelectValue placeholder="اختر المشروع" /></SelectTrigger>
                   <SelectContent>
-                    {cityOptions.map((city) => (
-                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                    {companies.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -507,7 +597,7 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                 <p className="mt-1 text-xs text-gray-500">اختر الفروع المسموحة، وحدد موقعًا أساسيًا للحضور الافتراضي.</p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {locations.map((location) => {
+                {filteredLocations.map((location) => {
                   const locationId = String(location.id);
                   const checked = selectedLocationIds.includes(locationId);
                   return (
@@ -533,6 +623,11 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                     </label>
                   );
                 })}
+                {filteredLocations.length === 0 && (
+                  <p className="rounded-md border border-dashed border-gray-200 bg-white px-3 py-3 text-sm text-gray-500 sm:col-span-2">
+                    اختر مدينة العمل والمشروع لإظهار المواقع المسموحة.
+                  </p>
+                )}
               </div>
             </div>
             <div className={threeColumnGridClass}>
@@ -652,8 +747,23 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
             </div>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
-                <Label>الحساب البنكي</Label>
-                <Input value={form.bank_account} onChange={(e) => set("bank_account", e.target.value)} />
+                <Label>اسم صاحب الحساب</Label>
+                <Input value={form.bank_account_name} onChange={(e) => set("bank_account_name", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>اسم البنك</Label>
+                <Select value={form.bank_name} onValueChange={(value) => set("bank_name", value || "")}>
+                  <SelectTrigger><SelectValue placeholder="اختر البنك" /></SelectTrigger>
+                  <SelectContent>
+                    {bankOptions.map((bank) => (
+                      <SelectItem key={bank} value={bank}>{bank}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>رقم الآيبان</Label>
+                <Input value={form.iban} onChange={(e) => setIban(e.target.value.toUpperCase())} dir="ltr" />
               </div>
             </div>
           </div>

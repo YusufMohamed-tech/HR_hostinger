@@ -16,7 +16,18 @@ export async function getAssets(orgId: string) {
   const supabase = createClient();
   const result = await supabase
     .from("employee_assets")
-    .select("*, employee:employee_id(full_name, employee_code)")
+    .select("*, employee:employee_id(full_name, employee_code), inventory:inventory_id(asset_name, asset_type, serial_number, status)")
+    .eq("org_id", orgId)
+    .order("created_at", { ascending: false });
+
+  return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
+}
+
+export async function getAssetInventory(orgId: string) {
+  const supabase = createClient();
+  const result = await supabase
+    .from("asset_inventory")
+    .select("*, office_location:office_location_id(name, city)")
     .eq("org_id", orgId)
     .order("created_at", { ascending: false });
 
@@ -52,15 +63,29 @@ export async function createAssetAssignment(values: Record<string, unknown>) {
 }
 
 export async function updateAssetAssignment(id: string, values: Record<string, unknown>) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("employee_assets")
-    .update(values as never)
-    .eq("id", id)
-    .select()
-    .single();
+  const response = await fetch("/api/assets", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, ...values }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    return { data: null, error: { message: String(payload?.message || "Unable to update asset.") } };
+  }
+  return { data: payload?.data || null, error: null };
+}
 
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+export async function createAssetInventory(values: Record<string, unknown>) {
+  const response = await fetch("/api/assets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "inventory", ...values }),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    return { data: null, error: { message: String(payload?.message || "Unable to add asset inventory.") } };
+  }
+  return { data: payload?.data || null, error: null };
 }
 
 export async function uploadAssetSignature(assetId: string, signatureData: string) {

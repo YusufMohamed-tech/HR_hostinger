@@ -34,6 +34,7 @@ import {
 import { notifyLeaveDecision } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
+import { inclusiveDays, leaveTypeLabels, leaveTypeOptions, leaveTypeRequiresAttachment } from "@/lib/hr-options";
 
 const statusStyle: Record<string, string> = {
   pending: "bg-amber-50 text-amber-700 border-amber-200",
@@ -45,12 +46,6 @@ const statusLabels: Record<string, string> = {
   pending: "بانتظار الاعتماد",
   approved: "معتمدة",
   rejected: "مرفوضة",
-};
-
-const leaveTypeLabels: Record<string, string> = {
-  sick: "مرضية",
-  vacation: "سنوية",
-  emergency: "طارئة",
 };
 
 function getWorkflowStageLabel(request: Record<string, unknown>) {
@@ -116,6 +111,34 @@ export default function LeavePage() {
     : "تقديم طلبات الإجازة واعتمادها ومتابعتها.";
   const emptyTitle = isSelfServiceView ? "لا توجد طلبات إجازة خاصة بك بعد" : "لا توجد طلبات إجازة بعد";
   const emptyDescription = isSelfServiceView ? "أرسل طلبًا جديدًا ليظهر هنا." : "أرسل طلبًا للبدء.";
+  const todayIso = new Date().toISOString().split("T")[0];
+  const employeesOnLeaveIds = new Set(
+    leaveRequests
+      .filter((request) => {
+        const record = request as Record<string, unknown>;
+        return String(record.status || "") === "approved"
+          && String(record.start_date || "") <= todayIso
+          && String(record.end_date || "") >= todayIso;
+      })
+      .map((request) => String((request as Record<string, unknown>).employee_id || ""))
+      .filter(Boolean)
+  );
+  const traineesCount = employees.filter((employee) => String(employee.employment_type || "") === "intern").length;
+  const probationCount = employees.filter((employee) => {
+    const hiringDate = typeof employee.hiring_date === "string" ? new Date(employee.hiring_date) : null;
+    if (!hiringDate || Number.isNaN(hiringDate.getTime())) return false;
+    const elapsedDays = Math.floor((Date.now() - hiringDate.getTime()) / 86400000);
+    return elapsedDays >= 0 && elapsedDays <= 180;
+  }).length;
+  const jobTitleSummary = Object.entries(
+    employees.reduce<Record<string, number>>((acc, employee) => {
+      const title = String(employee.job_title || "بدون مسمى");
+      acc[title] = (acc[title] || 0) + 1;
+      return acc;
+    }, {})
+  )
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4);
 
   if (loading) return <PageSkeleton />;
 
@@ -154,6 +177,39 @@ export default function LeavePage() {
       )}
 
       {!isSelfServiceView && (role === "Admin" || role === "HR_Admin" || role === "Superadmin") && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Card className="border-none shadow-sm">
+            <CardContent className="py-4">
+              <p className="text-xs text-gray-500">المتدربون الحاليون</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-950">{traineesCount}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-none shadow-sm">
+            <CardContent className="py-4">
+              <p className="text-xs text-gray-500">موظفون في إجازة اليوم</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-950">{employeesOnLeaveIds.size}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-none shadow-sm">
+            <CardContent className="py-4">
+              <p className="text-xs text-gray-500">داخل فترة التجربة</p>
+              <p className="mt-1 text-2xl font-semibold text-gray-950">{probationCount}</p>
+            </CardContent>
+          </Card>
+          <Card className="border-none shadow-sm">
+            <CardContent className="py-4">
+              <p className="text-xs text-gray-500">أكثر المسميات</p>
+              <div className="mt-2 space-y-1 text-xs text-gray-600">
+                {jobTitleSummary.length > 0
+                  ? jobTitleSummary.map(([title, count]) => <p key={title}>{title}: {count}</p>)
+                  : <p>لا توجد بيانات</p>}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {!isSelfServiceView && (role === "Admin" || role === "HR_Admin" || role === "Superadmin") && (
         <LeaveBalanceManager
           employees={employees}
           balances={balances}
@@ -172,6 +228,7 @@ export default function LeavePage() {
                 <TableHead className="font-semibold text-gray-600">النوع</TableHead>
                 <TableHead className="font-semibold text-gray-600">التواريخ</TableHead>
                 <TableHead className="font-semibold text-gray-600">الأيام</TableHead>
+                <TableHead className="font-semibold text-gray-600">المرفق</TableHead>
                 <TableHead className="font-semibold text-gray-600">مرحلة الاعتماد</TableHead>
                 <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
                 <TableHead className="font-semibold text-gray-600">السبب</TableHead>
@@ -197,17 +254,23 @@ export default function LeavePage() {
                 const endDateStr = typeof reqRecord.end_date === "string" ? reqRecord.end_date : "";
                 const status = typeof reqRecord.status === "string" ? reqRecord.status : "pending";
                 const reason = typeof reqRecord.reason === "string" ? reqRecord.reason : "—";
-                const startDate = startDateStr ? new Date(startDateStr) : null;
-                const endDate = endDateStr ? new Date(endDateStr) : null;
-                const dayCount = startDate && endDate
-                  ? Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1)
-                  : null;
+                const storedDayCount = Number(reqRecord.days_count || 0);
+                const dayCount = storedDayCount > 0 ? storedDayCount : inclusiveDays(startDateStr, endDateStr);
+                const attachmentUrl = typeof reqRecord.attachment_url === "string" ? reqRecord.attachment_url : "";
+                const attachmentName = typeof reqRecord.attachment_name === "string" ? reqRecord.attachment_name : "عرض المرفق";
                 return (
                   <TableRow key={reqId}>
                     <TableCell className="font-medium text-gray-900">{employeeName}</TableCell>
                     <TableCell className="text-gray-600">{leaveTypeLabels[leaveType] || leaveType}</TableCell>
                     <TableCell className="text-gray-600">{startDateStr || "—"} ← {endDateStr || "—"}</TableCell>
-                    <TableCell className="text-gray-600">{dayCount ?? "—"}</TableCell>
+                    <TableCell className="text-gray-600">{dayCount || "—"}</TableCell>
+                    <TableCell className="text-gray-600">
+                      {attachmentUrl ? (
+                        <a className="text-brand hover:text-brand-dark" href={attachmentUrl} target="_blank" rel="noreferrer">
+                          {attachmentName}
+                        </a>
+                      ) : "—"}
+                    </TableCell>
                     <TableCell className="text-gray-600">{getWorkflowStageLabel(reqRecord)}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={statusStyle[status] || "bg-gray-100 text-gray-600 border-gray-200"}>
@@ -622,6 +685,9 @@ function CreateLeaveDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState({ leave_type: "vacation", start_date: "", end_date: "", reason: "" });
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const calculatedDays = inclusiveDays(form.start_date, form.end_date);
+  const attachmentRequired = leaveTypeRequiresAttachment(form.leave_type);
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
 
@@ -637,10 +703,15 @@ function CreateLeaveDialog({
       return;
     }
 
+    if (attachmentRequired && !attachment) {
+      setError("هذا النوع من الإجازات يتطلب إرفاق مستند قبل الإرسال.");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
 
-    const { error: err } = await createLeaveRequest(parsed.data);
+    const { error: err } = await createLeaveRequest(parsed.data, attachment);
 
     if (err) {
       setError(err.message);
@@ -652,6 +723,7 @@ function CreateLeaveDialog({
     setSubmitting(false);
     setOpen(false);
     setForm({ leave_type: "vacation", start_date: "", end_date: "", reason: "" });
+    setAttachment(null);
     onSuccess();
   };
 
@@ -672,9 +744,9 @@ function CreateLeaveDialog({
             <Select value={form.leave_type} onValueChange={(v) => set("leave_type", v)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="sick">مرضية</SelectItem>
-                <SelectItem value="vacation">سنوية</SelectItem>
-                <SelectItem value="emergency">طارئة</SelectItem>
+                {leaveTypeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -692,13 +764,23 @@ function CreateLeaveDialog({
             <Label>السبب (اختياري)</Label>
             <Input value={form.reason} onChange={(e) => set("reason", e.target.value)} placeholder="اذكر سبب الإجازة..." />
           </div>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
+            عدد الأيام: <span className="font-semibold text-gray-950">{calculatedDays || 0}</span>
+          </div>
+          <div className="space-y-2">
+            <Label>المرفق {attachmentRequired ? "*" : "(اختياري)"}</Label>
+            <Input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(event) => setAttachment(event.target.files?.[0] ?? null)} />
+            {attachmentRequired && (
+              <p className="text-xs text-gray-500">مطلوب لهذا النوع: مرضية، زواج، أو وفاة.</p>
+            )}
+          </div>
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
-          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.start_date || !form.end_date}>
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.start_date || !form.end_date || (attachmentRequired && !attachment)}>
             {submitting ? "جار الإرسال..." : "إرسال الطلب"}
           </Button>
         </DialogFooter>

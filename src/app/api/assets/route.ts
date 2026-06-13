@@ -54,17 +54,74 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}));
+  const admin = createAdminClient();
+  const mode = String((body as Record<string, unknown>).mode || "").trim();
+
+  if (mode === "inventory") {
+    const assetName = String((body as Record<string, unknown>).asset_name || "").trim();
+    const assetType = String((body as Record<string, unknown>).asset_type || "Company Asset").trim();
+    const serialNumber = String((body as Record<string, unknown>).serial_number || "").trim();
+    const officeLocationId = String((body as Record<string, unknown>).office_location_id || "").trim();
+    const purchaseDate = String((body as Record<string, unknown>).purchase_date || "").trim();
+    const notes = String((body as Record<string, unknown>).notes || "").trim();
+
+    if (!assetName || !serialNumber) {
+      return NextResponse.json({ message: "اسم الأصل والرقم التسلسلي مطلوبان." }, { status: 400 });
+    }
+
+    const { data, error } = await admin
+      .from("asset_inventory")
+      .insert({
+        org_id: auth.orgId,
+        asset_name: assetName,
+        asset_type: assetType || "Company Asset",
+        serial_number: serialNumber,
+        office_location_id: officeLocationId || null,
+        purchase_date: purchaseDate || null,
+        notes: notes || null,
+        status: "available",
+        created_by: auth.user.id,
+      } as never)
+      .select("*, office_location:office_location_id(name, city)")
+      .single();
+
+    if (error) return NextResponse.json({ message: error.message }, { status: 500 });
+    return NextResponse.json({ data });
+  }
+
   const employeeId = String((body as Record<string, unknown>).employee_id || "").trim();
-  const assetName = String((body as Record<string, unknown>).asset_name || "").trim();
-  const assetType = String((body as Record<string, unknown>).asset_type || "Company Asset").trim();
-  const serialNumber = String((body as Record<string, unknown>).serial_number || "").trim();
+  const inventoryId = String((body as Record<string, unknown>).inventory_id || "").trim();
+  let assetName = String((body as Record<string, unknown>).asset_name || "").trim();
+  let assetType = String((body as Record<string, unknown>).asset_type || "Company Asset").trim();
+  let serialNumber = String((body as Record<string, unknown>).serial_number || "").trim();
   const notes = String((body as Record<string, unknown>).notes || "").trim();
 
-  if (!employeeId || !assetName) {
+  if (!employeeId || (!assetName && !inventoryId)) {
     return NextResponse.json({ message: "الموظف واسم العهدة مطلوبان." }, { status: 400 });
   }
 
-  const admin = createAdminClient();
+  if (inventoryId) {
+    const { data: inventory, error: inventoryError } = await admin
+      .from("asset_inventory")
+      .select("*")
+      .eq("org_id", auth.orgId)
+      .eq("id", inventoryId)
+      .maybeSingle();
+
+    if (inventoryError) return NextResponse.json({ message: inventoryError.message }, { status: 500 });
+    const inventoryRecord = inventory as Record<string, unknown> | null;
+    if (!inventoryRecord) return NextResponse.json({ message: "الأصل غير موجود في المخزون." }, { status: 404 });
+
+    const inventoryStatus = String(inventoryRecord.status || "");
+    if (!["available", "returned"].includes(inventoryStatus)) {
+      return NextResponse.json({ message: "هذا الأصل غير متاح للتسليم حاليًا." }, { status: 400 });
+    }
+
+    assetName = String(inventoryRecord.asset_name || assetName);
+    assetType = String(inventoryRecord.asset_type || assetType || "Company Asset");
+    serialNumber = String(inventoryRecord.serial_number || serialNumber);
+  }
+
   const { data: employee, error: employeeError } = await admin
     .from("employees")
     .select("id, full_name, user_id")
@@ -84,6 +141,7 @@ export async function POST(request: NextRequest) {
       asset_name: assetName,
       asset_type: assetType || "Company Asset",
       serial_number: serialNumber || null,
+      inventory_id: inventoryId || null,
       notes: notes || null,
       status: "assigned",
       assigned_by: auth.user.id,
@@ -92,6 +150,18 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ message: error.message }, { status: 500 });
+
+  if (inventoryId) {
+    await admin
+      .from("asset_inventory")
+      .update({
+        status: "assigned",
+        current_employee_id: employeeId,
+        current_assignment_id: String((data as Record<string, unknown>).id || ""),
+        updated_by: auth.user.id,
+      } as never)
+      .eq("id", inventoryId);
+  }
 
   const employeeUserId = String(employeeRecord.user_id || "");
   if (employeeUserId) {
@@ -117,12 +187,60 @@ export async function PATCH(request: NextRequest) {
   const id = String((body as Record<string, unknown>).id || "").trim();
   let signaturePath = String((body as Record<string, unknown>).signature_path || "").trim();
   const signatureData = String((body as Record<string, unknown>).signature_data || "").trim();
+  const status = String((body as Record<string, unknown>).status || "").trim();
+  const admin = createAdminClient();
 
-  if (!id || (!signaturePath && !signatureData)) {
+  if (!id) {
+    return NextResponse.json({ message: "معرف العهدة مطلوب." }, { status: 400 });
+  }
+
+  if (status) {
+    if (!["admin", "hr_admin"].includes(auth.role)) {
+      return NextResponse.json({ message: "تغيير حالة العهدة متاح للموارد البشرية فقط." }, { status: 403 });
+    }
+
+    const updateData: Record<string, unknown> = {
+      status,
+      updated_by: auth.user.id,
+    };
+    if (status === "returned") {
+      updateData.returned_date = new Date().toISOString().slice(0, 10);
+      updateData.returned_by = auth.user.id;
+    }
+
+    const { data, error } = await admin
+      .from("employee_assets")
+      .update(updateData as never)
+      .eq("org_id", auth.orgId)
+      .eq("id", id)
+      .select("*, employee:employee_id(full_name, employee_code)")
+      .single();
+
+    if (error) return NextResponse.json({ message: error.message }, { status: 500 });
+
+    const assetRecord = data as Record<string, unknown> | null;
+    const inventoryId = String(assetRecord?.inventory_id || "");
+    if (inventoryId) {
+      const clearCurrent = ["returned", "damaged", "lost"].includes(status);
+      await admin
+        .from("asset_inventory")
+        .update({
+          status,
+          current_employee_id: clearCurrent ? null : assetRecord?.employee_id || null,
+          current_assignment_id: clearCurrent ? null : id,
+          updated_by: auth.user.id,
+        } as never)
+        .eq("id", inventoryId)
+        .eq("org_id", auth.orgId);
+    }
+
+    return NextResponse.json({ data });
+  }
+
+  if (!signaturePath && !signatureData) {
     return NextResponse.json({ message: "معرف العهدة والتوقيع مطلوبان." }, { status: 400 });
   }
 
-  const admin = createAdminClient();
   const { data: asset, error: assetError } = await admin
     .from("employee_assets")
     .select("*, employee:employee_id(full_name, user_id)")

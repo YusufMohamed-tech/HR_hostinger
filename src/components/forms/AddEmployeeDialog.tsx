@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,8 @@ import {
 } from "@/lib/services/personnel";
 import { createCareerEvent } from "@/lib/services/career-events";
 import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
+import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
+import { bankOptions, educationLevelOptions, saudiCityOptions } from "@/lib/hr-options";
 
 interface Props {
   onSuccess: () => void;
@@ -40,25 +42,6 @@ const statusLabels: Record<string, string> = {
   "On Leave": "في إجازة",
 };
 
-const cityOptions = [
-  "الرياض",
-  "جدة",
-  "مكة المكرمة",
-  "المدينة المنورة",
-  "الدمام",
-  "الخبر",
-  "تبوك",
-  "أبها",
-  "نجران",
-  "حائل",
-  "القصيم",
-  "الجوف",
-  "الباحة",
-  "عسير",
-  "ينبع",
-  "جازان",
-];
-
 const employeeDialogContentClass =
   "max-h-[calc(100dvh-1.5rem)] overflow-y-auto p-3 sm:max-w-[760px] sm:p-4";
 const twoColumnGridClass = "grid grid-cols-1 gap-4 md:grid-cols-2";
@@ -74,6 +57,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [companies, setCompanies] = useState<SalesCompany[]>([]);
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<"employee" | "training_manager">("employee");
@@ -92,20 +76,27 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
   const [form, setForm] = useState({
     full_name: "",
+    full_name_ar: "",
+    full_name_en: "",
     employee_code: "",
     email: "",
     phone: "",
     address: "",
+    work_city: "",
+    national_address_code: "",
     emergency_contact_name: "",
     emergency_contact_phone: "",
     national_id: "",
     date_of_birth: "",
+    date_of_birth_hijri: "",
     gender: "",
     hiring_date: "",
     department_id: "",
     job_title: "",
     manager_id: "",
     location_id: "",
+    company_id: "",
+    project_id: "",
     city: "",
     province: "",
     employment_type: "full_time",
@@ -117,6 +108,10 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     leave_accrual_start_date: "",
     payment_method: "",
     bank_account: "",
+    bank_account_name: "",
+    bank_name: "",
+    iban: "",
+    education_level: "",
   });
   const [shiftForm, setShiftForm] = useState({
     shift_id: "",
@@ -130,6 +125,47 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const setShift = (key: string, value: string | null) => setShiftForm((prev) => ({ ...prev, [key]: value ?? "" }));
   const setPersonnel = (key: string, value: string | null) => setPersonnelForm((prev) => ({ ...prev, [key]: value ?? "" }));
   const isTrainee = form.employment_type === "intern";
+  const setArabicName = (value: string) => {
+    setForm((prev) => ({ ...prev, full_name_ar: value, full_name: value }));
+  };
+  const setWorkCity = (value: string | null) => {
+    setSelectedLocationIds([]);
+    setPrimaryLocationId("");
+    setForm((prev) => ({
+      ...prev,
+      work_city: value ?? "",
+      city: value ?? "",
+      province: value ?? "",
+      location_id: "",
+    }));
+  };
+  const setProject = (value: string | null) => {
+    setSelectedLocationIds([]);
+    setPrimaryLocationId("");
+    setForm((prev) => ({
+      ...prev,
+      project_id: value ?? "",
+      company_id: value ?? "",
+      location_id: "",
+    }));
+  };
+  const setIban = (value: string) => {
+    setForm((prev) => ({ ...prev, iban: value, bank_account: value }));
+  };
+  const filteredLocations = useMemo(() => {
+    return locations.filter((location) => {
+      const locationCity = typeof location.city === "string" ? location.city : "";
+      const locationProjectId = typeof location.project_id === "string" ? location.project_id : "";
+      const matchesCity = !form.work_city || locationCity === form.work_city;
+      const matchesProject = !form.project_id || locationProjectId === form.project_id;
+      return matchesCity && matchesProject;
+    });
+  }, [form.project_id, form.work_city, locations]);
+
+  useEffect(() => {
+    if (!open) return;
+    getSalesCompanies().then((result) => setCompanies(result.data || []));
+  }, [open]);
 
   const toggleLocation = (locationId: string, checked: boolean) => {
     setSelectedLocationIds((prev) => {
@@ -359,20 +395,27 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     setOpen(false);
     setForm({
       full_name: "",
+      full_name_ar: "",
+      full_name_en: "",
       employee_code: "",
       email: "",
       phone: "",
       address: "",
+      work_city: "",
+      national_address_code: "",
       emergency_contact_name: "",
       emergency_contact_phone: "",
       national_id: "",
       date_of_birth: "",
+      date_of_birth_hijri: "",
       gender: "",
       hiring_date: "",
       department_id: "",
       job_title: "",
       manager_id: "",
       location_id: "",
+      company_id: "",
+      project_id: "",
       city: "",
       province: "",
       employment_type: "full_time",
@@ -384,6 +427,10 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       leave_accrual_start_date: "",
       payment_method: "",
       bank_account: "",
+      bank_account_name: "",
+      bank_name: "",
+      iban: "",
+      education_level: "",
     });
     setIsDepartmentManager(false);
     setSelectedLocationIds([]);
@@ -424,11 +471,28 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>الاسم الكامل *</Label>
-                <Input value={form.full_name} onChange={(e) => set("full_name", e.target.value)} placeholder="أحمد يوسف" />
+                <Input value={form.full_name_ar} onChange={(e) => setArabicName(e.target.value)} placeholder="أحمد يوسف" />
               </div>
               <div className="space-y-2">
                 <Label>رقم الموظف</Label>
-                <Input value={form.employee_code} onChange={(e) => set("employee_code", e.target.value)} placeholder="EMP-001" />
+                <Input value={form.employee_code || "سيتم توليده تلقائيا"} readOnly className="bg-gray-50 text-gray-500" />
+              </div>
+            </div>
+            <div className={twoColumnGridClass}>
+              <div className="space-y-2">
+                <Label>الاسم بالإنجليزي</Label>
+                <Input value={form.full_name_en} onChange={(e) => set("full_name_en", e.target.value)} placeholder="Ahmed Youssef" dir="ltr" />
+              </div>
+              <div className="space-y-2">
+                <Label>المؤهل العلمي</Label>
+                <Select value={form.education_level} onValueChange={(v) => set("education_level", v || "")}>
+                  <SelectTrigger><SelectValue placeholder="اختر المؤهل" /></SelectTrigger>
+                  <SelectContent>
+                    {educationLevelOptions.map((level) => (
+                      <SelectItem key={level} value={level}>{level}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className={twoColumnGridClass}>
@@ -444,17 +508,38 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
                 <Label>العنوان</Label>
-                <Input value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="الشارع، المدينة" />
+                <Input value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="العنوان الوطني التفصيلي" />
               </div>
               <div className="space-y-2">
                 <Label>رقم الهوية</Label>
                 <Input value={form.national_id} onChange={(e) => set("national_id", e.target.value)} placeholder="رقم الهوية" />
               </div>
             </div>
+            <div className={twoColumnGridClass}>
+              <div className="space-y-2">
+                <Label>مدينة العمل *</Label>
+                <Select value={form.work_city} onValueChange={(value) => setWorkCity(value)}>
+                  <SelectTrigger><SelectValue placeholder="اختر المدينة" /></SelectTrigger>
+                  <SelectContent>
+                    {saudiCityOptions.map((city) => (
+                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>العنوان الوطني</Label>
+                <Input value={form.national_address_code} onChange={(e) => set("national_address_code", e.target.value.toUpperCase())} placeholder="EAPX0123" dir="ltr" maxLength={8} />
+              </div>
+            </div>
             <div className={threeColumnGridClass}>
               <div className="space-y-2">
-                <Label>تاريخ الميلاد</Label>
+                <Label>تاريخ الميلاد ميلادي</Label>
                 <Input type="date" value={form.date_of_birth} onChange={(e) => set("date_of_birth", e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>تاريخ الميلاد هجري</Label>
+                <Input value={form.date_of_birth_hijri} onChange={(e) => set("date_of_birth_hijri", e.target.value)} placeholder="1445/01/01" dir="ltr" />
               </div>
               <div className="space-y-2">
                 <Label>الجنس</Label>
@@ -557,18 +642,12 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>المحافظة / المدينة</Label>
-                <Select
-                  value={form.city}
-                  onValueChange={(value) => {
-                    set("city", value || "");
-                    set("province", value || "");
-                  }}
-                >
-                  <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
+                <Label>المشروع / القناة *</Label>
+                <Select value={form.project_id} onValueChange={(value) => setProject(value)}>
+                  <SelectTrigger><SelectValue placeholder="اختر المشروع" /></SelectTrigger>
                   <SelectContent>
-                    {cityOptions.map((city) => (
-                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                    {companies.map((company) => (
+                      <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -580,7 +659,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <p className="mt-1 text-xs text-gray-500">اختر الفروع المسموحة، وحدد موقعًا أساسيًا للحضور الافتراضي.</p>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">
-                {locations.map((location) => {
+                {filteredLocations.map((location) => {
                   const locationId = String(location.id);
                   const checked = selectedLocationIds.includes(locationId);
                   return (
@@ -606,6 +685,11 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                     </label>
                   );
                 })}
+                {filteredLocations.length === 0 && (
+                  <p className="rounded-md border border-dashed border-gray-200 bg-white px-3 py-3 text-sm text-gray-500 sm:col-span-2">
+                    اختر مدينة العمل والمشروع لإظهار المواقع المسموحة.
+                  </p>
+                )}
               </div>
             </div>
             <div className={threeColumnGridClass}>
@@ -771,8 +855,23 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
             </div>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
-                <Label>الحساب البنكي</Label>
-                <Input value={form.bank_account} onChange={(e) => set("bank_account", e.target.value)} placeholder="IBAN / رقم الحساب" />
+                <Label>اسم صاحب الحساب</Label>
+                <Input value={form.bank_account_name} onChange={(e) => set("bank_account_name", e.target.value)} placeholder="الاسم حسب البنك" />
+              </div>
+              <div className="space-y-2">
+                <Label>اسم البنك</Label>
+                <Select value={form.bank_name} onValueChange={(value) => set("bank_name", value || "")}>
+                  <SelectTrigger><SelectValue placeholder="اختر البنك" /></SelectTrigger>
+                  <SelectContent>
+                    {bankOptions.map((bank) => (
+                      <SelectItem key={bank} value={bank}>{bank}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>رقم الآيبان</Label>
+                <Input value={form.iban} onChange={(e) => setIban(e.target.value.toUpperCase())} placeholder="SA0000000000000000000000" dir="ltr" />
               </div>
             </div>
           </div>

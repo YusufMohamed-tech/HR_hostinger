@@ -13,6 +13,8 @@ import { useEmployees } from "@/hooks/use-data";
 import { updateLocation } from "@/lib/services/locations";
 import { locationFormSchema, getValidationMessage } from "@/lib/validation";
 import { LocationMapPicker } from "@/components/locations/LocationMapPicker";
+import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
+import { saudiCityOptions } from "@/lib/hr-options";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,10 +27,14 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [companies, setCompanies] = useState<SalesCompany[]>([]);
 
   const [form, setForm] = useState({
     name: "",
     type: "branch",
+    city: "",
+    project_id: "",
+    address_details: "",
     latitude: "",
     longitude: "",
     radius_meters: "100",
@@ -40,6 +46,9 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
       setForm({
         name: location.name || "",
         type: location.type || "branch",
+        city: location.city || "",
+        project_id: location.project_id || "",
+        address_details: location.address_details || "",
         latitude: location.latitude ? String(location.latitude) : "",
         longitude: location.longitude ? String(location.longitude) : "",
         radius_meters: location.radius_meters ? String(location.radius_meters) : "100",
@@ -50,9 +59,15 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   const selectedManagerName = String(employees.find((emp) => String(emp.id) === form.manager_employee_id)?.full_name || employees.find((emp) => String(emp.id) === form.manager_employee_id)?.name || "");
+  const selectedProjectName = String(companies.find((company) => company.id === form.project_id)?.name || "");
   const setMapCoordinates = (latitude: string, longitude: string) => {
     setForm((prev) => ({ ...prev, latitude, longitude }));
   };
+
+  useEffect(() => {
+    if (!open) return;
+    getSalesCompanies().then((result) => setCompanies(result.data || []));
+  }, [open]);
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -68,6 +83,10 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
     const { error: err } = await updateLocation(location.id, {
       name: parsed.data.name,
       type: parsed.data.type,
+      city: parsed.data.city,
+      project_id: parsed.data.project_id,
+      project_name: selectedProjectName || parsed.data.project_name,
+      address_details: parsed.data.address_details,
       latitude: parsed.data.latitude,
       longitude: parsed.data.longitude,
       radius_meters: parsed.data.radius_meters,
@@ -98,9 +117,37 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
         </DialogHeader>
 
         <div className="grid flex-1 gap-4 overflow-y-auto px-4 py-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>المدينة *</Label>
+              <Select value={form.city} onValueChange={(v) => set("city", v || "")}>
+                <SelectTrigger><SelectValue placeholder="اختر المدينة" /></SelectTrigger>
+                <SelectContent>
+                  {saudiCityOptions.map((city) => (
+                    <SelectItem key={city} value={city}>{city}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>المشروع / القناة *</Label>
+              <Select value={form.project_id} onValueChange={(v) => set("project_id", v || "")}>
+                <SelectTrigger><SelectValue placeholder="اختر المشروع" /></SelectTrigger>
+                <SelectContent>
+                  {companies.map((company) => (
+                    <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <div className="space-y-2">
             <Label>اسم الموقع *</Label>
             <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>تفاصيل العنوان</Label>
+            <Input value={form.address_details} onChange={(e) => set("address_details", e.target.value)} placeholder="الشارع، الدور، ملاحظات الوصول..." />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -153,7 +200,7 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
 
         <DialogFooter className="mx-0 mb-0 shrink-0 rounded-b-xl">
           <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
-          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.name}>
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.name || !form.city || !form.project_id}>
             {submitting ? "جار الحفظ..." : "حفظ التغييرات"}
           </Button>
         </DialogFooter>
