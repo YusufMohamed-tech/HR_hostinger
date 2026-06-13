@@ -3,8 +3,20 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
 import { ensureEmployeeLeaveBalanceServer } from "@/lib/server/leave-balances";
+import { inclusiveDays, leaveTypeRequiresAttachment } from "@/lib/hr-options";
 
 const allowedSelfServiceRoles = new Set(["employee", "training_manager", "hr_admin", "hr_recruitment", "sales", "sales_manager"]);
+const allowedLeaveAttachmentTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+const maxLeaveAttachmentBytes = 10 * 1024 * 1024;
+
+function safeFilename(name: string) {
+  return name.replace(/[^\w.\-()[\]\u0600-\u06FF ]+/g, "_").slice(0, 160) || "attachment";
+}
 
 function getEmployeeApprovalManagerId(employee: Record<string, unknown> | null | undefined) {
   if (!employee) return "";
@@ -47,11 +59,39 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Self-service leave requests are not available for this role." }, { status: 403 });
   }
 
-  const body = await request.json().catch(() => ({}));
+  const contentType = request.headers.get("content-type") || "";
+  let attachmentFile: File | null = null;
+  let body: Record<string, unknown> = {};
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    body = {
+      leave_type: String(formData.get("leave_type") || ""),
+      start_date: String(formData.get("start_date") || ""),
+      end_date: String(formData.get("end_date") || ""),
+      reason: String(formData.get("reason") || ""),
+      attachment_url: String(formData.get("attachment_url") || ""),
+      attachment_name: String(formData.get("attachment_name") || ""),
+    };
+    const file = formData.get("attachment");
+    if (file instanceof File && file.size > 0) attachmentFile = file;
+  } else {
+    body = await request.json().catch(() => ({}));
+  }
   const parsed = leaveRequestFormSchema.safeParse(body);
 
   if (!parsed.success) {
     return NextResponse.json({ message: getValidationMessage(parsed.error) }, { status: 400 });
+  }
+
+  const attachmentRequired = leaveTypeRequiresAttachment(parsed.data.leave_type);
+  if (attachmentRequired && !attachmentFile && !parsed.data.attachment_url) {
+    return NextResponse.json({ message: "هذا النوع من الإجازات يتطلب إرفاق مستند قبل الإرسال." }, { status: 400 });
+  }
+
+  if (attachmentFile) {
+    if (attachmentFile.size > maxLeaveAttachmentBytes || !allowedLeaveAttachmentTypes.has(attachmentFile.type)) {
+      return NextResponse.json({ message: "نوع الملف غير مدعوم أو حجمه أكبر من 10MB." }, { status: 400 });
+    }
   }
 
   const admin = createAdminClient();
@@ -135,6 +175,23 @@ export async function POST(request: NextRequest) {
   const totalSteps = rawRole === "hr_admin" || rawRole === "hr_recruitment" ? 1 : 2;
   const currentStep = directHrReview ? 2 : 1;
   const managerApprovalStatus = directHrReview ? "approved" : "pending";
+  let attachmentUrl = parsed.data.attachment_url || "";
+  let attachmentName = parsed.data.attachment_name || "";
+
+  if (attachmentFile) {
+    const filename = safeFilename(attachmentFile.name);
+    const path = `leave-requests/${orgId}/${employeeId}/${Date.now()}-${filename}`;
+    const upload = await admin.storage
+      .from("balance-attachments")
+      .upload(path, attachmentFile, { contentType: attachmentFile.type, upsert: false });
+
+    if (upload.error) {
+      return NextResponse.json({ message: upload.error.message }, { status: 500 });
+    }
+
+    attachmentUrl = admin.storage.from("balance-attachments").getPublicUrl(path).data.publicUrl;
+    attachmentName = filename;
+  }
 
   const { data: leaveRequest, error: leaveRequestError } = await admin
     .from("leave_requests")
@@ -142,6 +199,10 @@ export async function POST(request: NextRequest) {
       org_id: orgId,
       employee_id: employeeId,
       ...parsed.data,
+      days_count: inclusiveDays(parsed.data.start_date, parsed.data.end_date),
+      attachment_url: attachmentUrl || null,
+      attachment_name: attachmentName || null,
+      attachment_required: attachmentRequired,
       status: "pending",
       manager_approval_status: managerApprovalStatus,
       hr_approval_status: "pending",

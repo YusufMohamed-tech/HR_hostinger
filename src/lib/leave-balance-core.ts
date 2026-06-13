@@ -1,4 +1,4 @@
-export type LeaveTypeKey = "sick" | "vacation" | "emergency";
+export type LeaveTypeKey = "sick" | "vacation" | "emergency" | "unpaid" | "weekly" | "marriage" | "bereavement";
 
 export const MONTHLY_ANNUAL_LEAVE_ACCRUAL_DAYS = 1.75;
 
@@ -6,6 +6,10 @@ export const leaveBalanceColumns: Record<LeaveTypeKey, string> = {
   sick: "sick_remaining",
   vacation: "vacation_remaining",
   emergency: "emergency_remaining",
+  unpaid: "",
+  weekly: "",
+  marriage: "",
+  bereavement: "",
 };
 
 export function leaveDays(startDateValue: unknown, endDateValue: unknown) {

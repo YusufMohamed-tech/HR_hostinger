@@ -127,12 +127,24 @@ async function getLeaveRequesterRole(orgId: string, employeeId: string) {
   return { data: roleFromOrgRole(rawRole), error: null };
 }
 
-export async function createLeaveRequest(values: Record<string, unknown>) {
-    const response = await fetch("/api/leave-requests/self", {
+export async function createLeaveRequest(values: Record<string, unknown>, attachment?: File | null) {
+    const requestOptions: RequestInit = {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
-    });
+    };
+
+    if (attachment) {
+      const formData = new FormData();
+      for (const [key, value] of Object.entries(values)) {
+        if (value !== undefined && value !== null) formData.append(key, String(value));
+      }
+      formData.append("attachment", attachment);
+      requestOptions.body = formData;
+    } else {
+      requestOptions.headers = { "Content-Type": "application/json" };
+      requestOptions.body = JSON.stringify(values);
+    }
+
+    const response = await fetch("/api/leave-requests/self", requestOptions);
 
     const data = await response.json().catch(() => null);
 

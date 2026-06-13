@@ -5,7 +5,7 @@ export async function getEmployees(orgId: string) {
   const supabase = createClient();
   const result = await supabase
     .from("employees")
-    .select("*, department:department_id(name, manager_employee_id), location:location_id(name, manager_employee_id, latitude, longitude, radius_meters), manager:manager_id(full_name), employee_locations(location_id, is_primary, assigned_from, assigned_to, location:location_id(id, name, latitude, longitude, radius_meters))")
+    .select("*, department:department_id(name, manager_employee_id), company:company_id(id, name, slug, code), project:project_id(id, name, slug, code), location:location_id(name, city, project_id, manager_employee_id, latitude, longitude, radius_meters), manager:manager_id(full_name), employee_locations(location_id, is_primary, assigned_from, assigned_to, location:location_id(id, name, city, project_id, latitude, longitude, radius_meters))")
     .eq("org_id", orgId)
     .order("full_name");
 
@@ -16,7 +16,7 @@ export async function getEmployeeById(id: string) {
   const supabase = createClient();
   const result = await supabase
     .from("employees")
-    .select("*, department:department_id(name), location:location_id(name), employee_locations(location_id, is_primary, assigned_from, assigned_to, location:location_id(id, name, latitude, longitude, radius_meters))")
+    .select("*, department:department_id(name), company:company_id(id, name, slug, code), project:project_id(id, name, slug, code), location:location_id(name, city, project_id), employee_locations(location_id, is_primary, assigned_from, assigned_to, location:location_id(id, name, city, project_id, latitude, longitude, radius_meters))")
     .eq("id", id)
     .single();
 

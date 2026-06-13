@@ -20,20 +20,30 @@ const optionalMoney = z.preprocess(
 
 export const employeeFormSchema = z.object({
   full_name: z.string().trim().min(2, "Full name is required.").max(160),
+  full_name_ar: optionalTrimmedString,
+  full_name_en: optionalTrimmedString,
   employee_code: optionalTrimmedString,
   email: z.preprocess(emptyToUndefined, z.string().email("Use a valid email address.").optional()),
   phone: optionalTrimmedString,
   address: optionalLongString,
+  work_city: optionalTrimmedString,
+  national_address_code: z.preprocess(
+    emptyToUndefined,
+    z.string().regex(/^[A-Za-z]{4}\d{4}$/, "National address must be 4 letters followed by 4 numbers.").optional()
+  ),
   emergency_contact_name: optionalTrimmedString,
   emergency_contact_phone: optionalTrimmedString,
   national_id: optionalTrimmedString,
   date_of_birth: optionalDate,
+  date_of_birth_hijri: optionalTrimmedString,
   gender: z.preprocess(emptyToUndefined, z.enum(["male", "female"]).optional()),
   hiring_date: optionalDate,
   department_id: optionalUuid,
   job_title: optionalTrimmedString,
   manager_id: optionalUuid,
   location_id: optionalUuid,
+  company_id: optionalUuid,
+  project_id: optionalUuid,
   city: optionalTrimmedString,
   province: optionalTrimmedString,
   employment_type: z.enum(["full_time", "part_time", "intern", "contract"]),
@@ -45,14 +55,20 @@ export const employeeFormSchema = z.object({
   leave_accrual_start_date: optionalDate,
   payment_method: optionalTrimmedString,
   bank_account: optionalTrimmedString,
+  bank_account_name: optionalTrimmedString,
+  bank_name: optionalTrimmedString,
+  iban: optionalTrimmedString,
+  education_level: optionalTrimmedString,
 });
 
 export const leaveRequestFormSchema = z
   .object({
-    leave_type: z.enum(["sick", "vacation", "emergency"]),
+    leave_type: z.enum(["sick", "vacation", "emergency", "unpaid", "weekly", "marriage", "bereavement"]),
     start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Start date is required."),
     end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "End date is required."),
     reason: optionalLongString,
+    attachment_url: optionalLongString,
+    attachment_name: optionalTrimmedString,
   })
   .refine((value) => new Date(value.end_date) >= new Date(value.start_date), {
     message: "End date cannot be before start date.",
@@ -76,6 +92,10 @@ export const departmentFormSchema = z.object({
 export const locationFormSchema = z.object({
   name: z.string().trim().min(2, "Location name is required.").max(160),
   type: z.enum(["branch", "booth", "office", "area"]),
+  city: optionalTrimmedString,
+  project_id: optionalUuid,
+  project_name: optionalTrimmedString,
+  address_details: optionalLongString,
   latitude: z.preprocess(emptyToUndefined, z.coerce.number().min(-90).max(90).optional()),
   longitude: z.preprocess(emptyToUndefined, z.coerce.number().min(-180).max(180).optional()),
   radius_meters: z.preprocess(emptyToUndefined, z.coerce.number().min(10).max(10000).optional()),

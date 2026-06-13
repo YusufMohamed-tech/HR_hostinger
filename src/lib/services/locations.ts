@@ -4,7 +4,7 @@ export async function getLocations(orgId: string) {
   const supabase = createClient();
   const result = await supabase
     .from("locations")
-    .select("*, manager:manager_employee_id(full_name)")
+    .select("*, manager:manager_employee_id(full_name), project:project_id(id, name, slug, code, brand_color)")
     .eq("org_id", orgId)
     .order("name");
 
