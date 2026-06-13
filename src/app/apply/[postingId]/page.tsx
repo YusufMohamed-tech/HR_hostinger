@@ -18,6 +18,15 @@ const EMP_TYPE_MAP: Record<string, string> = {
   internship: "تدريب",
 };
 
+function getQuestionOptions(question: FormQuestion) {
+  const rawOptions = (question as Record<string, unknown>).options;
+  if (Array.isArray(rawOptions)) return rawOptions.map((option) => String(option)).filter(Boolean);
+  if (typeof rawOptions === "string") {
+    return rawOptions.split(/[,،]/).map((option) => option.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 function QuestionField({
   q,
   value,
@@ -35,7 +44,7 @@ function QuestionField({
     return (
       <select className={base} required={q.required} value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">اختر...</option>
-        {(q.options || []).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+        {getQuestionOptions(q).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
       </select>
     );
   }

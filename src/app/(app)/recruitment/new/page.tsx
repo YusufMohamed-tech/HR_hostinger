@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { FormBuilder } from "@/components/recruitment/FormBuilder";
 import { FormPreview } from "@/components/recruitment/FormPreview";
-import { createJobPosting, getJobTemplates } from "@/lib/services/recruitment";
+import { createJobPosting, getJobTemplates, sanitizeFormQuestions } from "@/lib/services/recruitment";
 import type { FormQuestion } from "@/lib/services/recruitment";
 import { useDepartments } from "@/hooks/use-data";
 
@@ -88,7 +88,7 @@ export default function NewJobPage() {
       salary_min: salaryMin ? parseFloat(salaryMin) : null,
       salary_max: salaryMax ? parseFloat(salaryMax) : null,
       deadline: deadline || null,
-      form_schema: questions,
+      form_schema: sanitizeFormQuestions(questions),
       status,
     } as Parameters<typeof createJobPosting>[0]);
     setSaving(false);

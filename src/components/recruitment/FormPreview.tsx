@@ -10,6 +10,15 @@ type Props = {
   questions: FormQuestion[];
 };
 
+function getQuestionOptions(question: FormQuestion) {
+  const rawOptions = (question as Record<string, unknown>).options;
+  if (Array.isArray(rawOptions)) return rawOptions.map((option) => String(option)).filter(Boolean);
+  if (typeof rawOptions === "string") {
+    return rawOptions.split(/[,،]/).map((option) => option.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 function QuestionPreview({ q }: { q: FormQuestion }) {
   return (
     <div className="space-y-1">
@@ -54,7 +63,7 @@ function QuestionPreview({ q }: { q: FormQuestion }) {
           className="w-full border border-border rounded-md px-3 py-2 text-sm bg-muted/40 text-muted-foreground"
         >
           <option>اختر...</option>
-          {(q.options || []).map((opt) => (
+          {getQuestionOptions(q).map((opt) => (
             <option key={opt}>{opt}</option>
           ))}
         </select>
