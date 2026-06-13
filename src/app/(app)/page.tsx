@@ -15,7 +15,8 @@ import {
   ClipboardList,
   CheckSquare,
   Bell,
-  CalendarDays
+  CalendarDays,
+  MapPin
 } from "lucide-react";
 
 function getEmployeeFromRow(row: Record<string, unknown>) {
@@ -31,6 +32,98 @@ function isEmployeeManagedBy(employee: Record<string, unknown>, managerEmployeeI
 
   const location = (employee.location ?? null) as Record<string, unknown> | null;
   return String(location?.manager_employee_id || "") === managerEmployeeId;
+}
+
+function asRecord(value: unknown) {
+  return (value && typeof value === "object" ? value : null) as Record<string, unknown> | null;
+}
+
+function getText(value: unknown, fallback = "") {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || fallback;
+}
+
+function getEmployeeName(employee: Record<string, unknown>) {
+  return getText(employee.full_name, getText(employee.name, "موظف"));
+}
+
+function getEmployeeLocationRows(employee: Record<string, unknown>) {
+  const rows = Array.isArray(employee.employee_locations) ? employee.employee_locations : [];
+  return rows
+    .map((row) => asRecord(row))
+    .filter((row): row is Record<string, unknown> => Boolean(row));
+}
+
+function getEmployeeLocationIds(employee: Record<string, unknown>) {
+  const ids = new Set<string>();
+  const directLocationId = getText(employee.location_id);
+  if (directLocationId) ids.add(directLocationId);
+  getEmployeeLocationRows(employee).forEach((row) => {
+    const locationId = getText(row.location_id);
+    if (locationId) ids.add(locationId);
+  });
+  return ids;
+}
+
+function getEmployeeLocationFields(employee: Record<string, unknown>) {
+  const cities = new Set<string>();
+  const projects = new Set<string>();
+  const locationNames = new Set<string>();
+  const directLocation = asRecord(employee.location);
+  if (directLocation) {
+    const city = getText(directLocation.city);
+    const projectId = getText(directLocation.project_id);
+    const name = getText(directLocation.name);
+    if (city) cities.add(city);
+    if (projectId) projects.add(projectId);
+    if (name) locationNames.add(name);
+  }
+  getEmployeeLocationRows(employee).forEach((row) => {
+    const location = asRecord(row.location);
+    if (!location) return;
+    const city = getText(location.city);
+    const projectId = getText(location.project_id);
+    const name = getText(location.name);
+    if (city) cities.add(city);
+    if (projectId) projects.add(projectId);
+    if (name) locationNames.add(name);
+  });
+  return { cities, projects, locationNames };
+}
+
+function sharesHrScope(employee: Record<string, unknown>, scope: { locationIds: Set<string>; cities: Set<string>; projects: Set<string> }) {
+  const employeeLocationIds = getEmployeeLocationIds(employee);
+  if (Array.from(employeeLocationIds).some((id) => scope.locationIds.has(id))) return true;
+
+  const fields = getEmployeeLocationFields(employee);
+  if (Array.from(fields.cities).some((city) => scope.cities.has(city))) return true;
+  if (Array.from(fields.projects).some((projectId) => scope.projects.has(projectId))) return true;
+
+  return scope.locationIds.size === 0 && scope.cities.size === 0 && scope.projects.size === 0;
+}
+
+function isActiveEmployee(employee: Record<string, unknown>) {
+  const status = getText(employee.status, "active").toLowerCase();
+  return !["inactive", "terminated", "archived", "deleted", "موقوف", "منتهي"].includes(status);
+}
+
+function isTrainee(employee: Record<string, unknown>) {
+  const employmentType = getText(employee.employment_type).toLowerCase();
+  const jobTitle = getText(employee.job_title).toLowerCase();
+  return employmentType.includes("intern")
+    || employmentType.includes("trainee")
+    || jobTitle.includes("trainee")
+    || jobTitle.includes("متدرب");
+}
+
+function getProbationDays(employee: Record<string, unknown>) {
+  const hiringDate = getText(employee.hiring_date);
+  if (!hiringDate) return null;
+  const parsed = new Date(hiringDate);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const elapsed = Math.floor((Date.now() - parsed.getTime()) / 86400000);
+  if (elapsed < 0 || elapsed > 180) return null;
+  return elapsed;
 }
 
 export default function DashboardPage() {
@@ -66,6 +159,59 @@ export default function DashboardPage() {
     : [];
   const dashboardEmployees = isManager ? teamEmployees : employees;
   const teamEmployeeIds = new Set(teamEmployees.map((employee) => String((employee as Record<string, unknown>).id || "")));
+  const isHrDashboard = ["Admin", "HR_Admin"].includes(currentUser?.role || "");
+  const currentEmployeeRecord = employees.find((employee) => String((employee as Record<string, unknown>).id || "") === currentUser?.employeeId) as Record<string, unknown> | undefined;
+  const currentEmployeeLocationFields = currentEmployeeRecord ? getEmployeeLocationFields(currentEmployeeRecord) : { cities: new Set<string>(), projects: new Set<string>(), locationNames: new Set<string>() };
+  const currentEmployeeLocationIds = currentEmployeeRecord ? getEmployeeLocationIds(currentEmployeeRecord) : new Set<string>();
+  const hrScope = {
+    locationIds: currentEmployeeLocationIds,
+    cities: currentEmployeeLocationFields.cities,
+    projects: currentEmployeeLocationFields.projects,
+  };
+  const hasHrLocationScope = hrScope.locationIds.size > 0 || hrScope.cities.size > 0 || hrScope.projects.size > 0;
+  const hrScopeLabel = hasHrLocationScope
+    ? Array.from(currentEmployeeLocationFields.cities).slice(0, 2).join("، ")
+      || Array.from(currentEmployeeLocationFields.locationNames).slice(0, 2).join("، ")
+      || "نطاق المواقع المسندة"
+    : "كل المناطق";
+  const hrRegionalEmployees = isHrDashboard
+    ? employees
+        .map((employee) => employee as Record<string, unknown>)
+        .filter((employee) => isActiveEmployee(employee))
+        .filter((employee) => !hasHrLocationScope || sharesHrScope(employee, hrScope))
+    : [];
+  const hrRegionalEmployeeIds = new Set(hrRegionalEmployees.map((employee) => String(employee.id || "")));
+  const hrTrainees = hrRegionalEmployees.filter(isTrainee);
+  const hrJobTitleSummary = Object.entries(
+    hrRegionalEmployees.reduce<Record<string, number>>((acc, employee) => {
+      const title = getText(employee.job_title, "بدون مسمى");
+      acc[title] = (acc[title] || 0) + 1;
+      return acc;
+    }, {})
+  ).sort((a, b) => b[1] - a[1]);
+  const hrLeavesToday = leaves
+    .map((leave) => leave as Record<string, unknown>)
+    .filter((leave) => {
+      const status = getText(leave.status).toLowerCase();
+      const employeeId = getText(leave.employee_id);
+      const startDate = getText(leave.start_date);
+      const endDate = getText(leave.end_date);
+      return status === "approved"
+        && hrRegionalEmployeeIds.has(employeeId)
+        && startDate <= today
+        && endDate >= today;
+    });
+  const hrEmployeesOnLeave = hrLeavesToday
+    .map((leave) => {
+      const employeeId = getText(leave.employee_id);
+      const employee = hrRegionalEmployees.find((item) => String(item.id || "") === employeeId);
+      return employee ? { employee, leave } : null;
+    })
+    .filter((entry): entry is { employee: Record<string, unknown>; leave: Record<string, unknown> } => Boolean(entry));
+  const hrProbationEmployees = hrRegionalEmployees
+    .map((employee) => ({ employee, days: getProbationDays(employee) }))
+    .filter((entry): entry is { employee: Record<string, unknown>; days: number } => entry.days !== null)
+    .sort((a, b) => b.days - a.days);
 
   const scopedAttendance = isManager
     ? allAttendance.filter((row) => {
@@ -186,6 +332,117 @@ export default function DashboardPage() {
           );
         })}
       </div>
+
+      {isHrDashboard && (
+        <Card className="border-none shadow-sm">
+          <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle>لوحة الموارد البشرية في المنطقة</CardTitle>
+              <CardDescription>
+                متابعة المتدربين والموظفين والإجازات وفترة التجربة داخل نطاق HR الحالي.
+              </CardDescription>
+            </div>
+            <Badge variant="outline" className="w-fit border-brand/20 bg-brand-light text-brand-dark">
+              <MapPin className="ml-1 h-3.5 w-3.5" />
+              {hrScopeLabel}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-lg bg-slate-50 p-4">
+                <p className="text-xs text-slate-500">الموظفون الحاليون</p>
+                <p className="mt-1 text-2xl font-semibold text-slate-950">{hrRegionalEmployees.length}</p>
+              </div>
+              <div className="rounded-lg bg-blue-50 p-4">
+                <p className="text-xs text-blue-700">المتدربون الحاليون</p>
+                <p className="mt-1 text-2xl font-semibold text-blue-900">{hrTrainees.length}</p>
+              </div>
+              <div className="rounded-lg bg-amber-50 p-4">
+                <p className="text-xs text-amber-700">في إجازة اليوم</p>
+                <p className="mt-1 text-2xl font-semibold text-amber-900">{hrEmployeesOnLeave.length}</p>
+              </div>
+              <div className="rounded-lg bg-emerald-50 p-4">
+                <p className="text-xs text-emerald-700">فترة التجربة 180 يوم</p>
+                <p className="mt-1 text-2xl font-semibold text-emerald-900">{hrProbationEmployees.length}</p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="rounded-lg border border-slate-100 bg-white p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-slate-950">الموظفون حسب المسمى الوظيفي</h3>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/employees">الموظفون</Link>
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {hrJobTitleSummary.slice(0, 8).map(([title, count]) => (
+                    <div key={title} className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 text-sm">
+                      <span className="truncate text-slate-700">{title}</span>
+                      <span className="font-semibold text-slate-950">{count}</span>
+                    </div>
+                  ))}
+                  {hrJobTitleSummary.length === 0 && (
+                    <p className="py-6 text-center text-sm text-slate-500">لا توجد بيانات موظفين في هذا النطاق.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-100 bg-white p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-slate-950">الموظفون في إجازة اليوم</h3>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/leave">الإجازات</Link>
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {hrEmployeesOnLeave.slice(0, 8).map(({ employee, leave }) => (
+                    <Link
+                      key={`${String(leave.id || "")}-${String(employee.id || "")}`}
+                      href={`/employees/${String(employee.id || "")}`}
+                      className="block rounded-md bg-amber-50 px-3 py-2 transition-colors hover:bg-amber-100"
+                    >
+                      <p className="font-medium text-slate-950">{getEmployeeName(employee)}</p>
+                      <p className="mt-1 text-xs text-amber-800">
+                        {getText(employee.job_title, "بدون مسمى")} · {getText(leave.start_date, "-")} إلى {getText(leave.end_date, "-")}
+                      </p>
+                    </Link>
+                  ))}
+                  {hrEmployeesOnLeave.length === 0 && (
+                    <p className="py-6 text-center text-sm text-slate-500">لا يوجد موظفون في إجازة اليوم.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-slate-100 bg-white p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-slate-950">داخل فترة التجربة</h3>
+                  <Badge variant="outline" className="bg-emerald-50 text-emerald-700">
+                    180 يوم
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  {hrProbationEmployees.slice(0, 8).map(({ employee, days }) => (
+                    <Link
+                      key={String(employee.id || "")}
+                      href={`/employees/${String(employee.id || "")}`}
+                      className="block rounded-md bg-emerald-50 px-3 py-2 transition-colors hover:bg-emerald-100"
+                    >
+                      <p className="font-medium text-slate-950">{getEmployeeName(employee)}</p>
+                      <p className="mt-1 text-xs text-emerald-800">
+                        {getText(employee.job_title, "بدون مسمى")} · مضى {days} يوم · المتبقي {Math.max(0, 180 - days)} يوم
+                      </p>
+                    </Link>
+                  ))}
+                  {hrProbationEmployees.length === 0 && (
+                    <p className="py-6 text-center text-sm text-slate-500">لا يوجد موظفون داخل فترة التجربة في هذا النطاق.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {isManager && (
         <Card>
