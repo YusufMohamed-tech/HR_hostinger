@@ -126,6 +126,7 @@ export function SidebarContent() {
         {
           title: "المبيعات",
           links: [
+            { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
             { name: "سجل المبيعات", href: "/sales/history", icon: ClipboardList },
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },

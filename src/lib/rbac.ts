@@ -36,7 +36,7 @@ export function roleFromOrgRole(role: string | null | undefined): Role | null {
 export function getDefaultPathForRole(role: Role): string {
   if (role === "Superadmin") return "/superadmin";
   if (role === "HR_Recruitment") return "/recruitment";
-  if (role === "Sales") return "/sales/log";
+  if (role === "Sales") return "/sales/dashboard";
   if (role === "Sales_Manager") return "/sales/dashboard";
   return "/";
 }
@@ -104,7 +104,11 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return ["Admin", "HR_Recruitment"].includes(role);
   }
 
-  if (normalizedPath.startsWith("/sales/log") || normalizedPath.startsWith("/sales/history")) {
+  if (
+    normalizedPath.startsWith("/sales/dashboard") ||
+    normalizedPath.startsWith("/sales/log") ||
+    normalizedPath.startsWith("/sales/history")
+  ) {
     return ["Sales", "Sales_Manager", "Admin", "HR_Admin"].includes(role);
   }
 
