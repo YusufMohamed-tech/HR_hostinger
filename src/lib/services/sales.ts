@@ -100,6 +100,45 @@ export type SalesChartPoint = {
   total: number;
 };
 
+export type SalesDashboardSettings = {
+  id?: string;
+  organization_id?: string;
+  company_id?: string | null;
+  channel_title: string;
+  partner_label: string;
+  monthly_target: number;
+  working_days: number;
+  focus_1_label: string;
+  focus_1_query: string;
+  focus_2_label: string;
+  focus_2_query: string;
+  focus_3_label: string;
+  focus_3_query: string;
+};
+
+export type SalesDashboardReport = {
+  date: string;
+  dayName: string;
+  company: { id: string; name: string; code: string; brandColor: string } | null;
+  settings: SalesDashboardSettings;
+  metrics: {
+    partner: string;
+    target: number;
+    activations: number;
+    actualPercent: number;
+    remainingOver: number;
+    dailyTarget: number;
+    remainingDays: number;
+    expectedPercent: number;
+    salesGap: number;
+    requiredDaily: number;
+    expectedTarget: number;
+  };
+  focusGroups: Array<{ label: string; value: number; percent: number }>;
+  calendarDays: Array<{ date: string; day: number; label: string; value: number; percent: number; isFuture: boolean }>;
+  trend: SalesChartPoint[];
+};
+
 export type SalesDashboardAgent = SalesAgent & {
   today: number;
   week: number;
@@ -113,6 +152,11 @@ export type SalesDashboardData = {
     month: number;
     activeAgents: number;
   };
+  companies?: SalesCompany[];
+  selectedCompanyId?: string;
+  canManageSettings?: boolean;
+  dashboardSettings?: SalesDashboardSettings;
+  report?: SalesDashboardReport;
   dailySales: SalesChartPoint[];
   monthlySales: SalesChartPoint[];
   leaderboard: SalesDashboardAgent[];
@@ -214,8 +258,16 @@ export async function getSalesReports(params?: URLSearchParams) {
   return apiFetch<{ logs: SalesLog[]; agents: SalesAgent[]; products: SalesProduct[]; companies: SalesCompany[]; summary: Record<string, unknown> }>(`/api/sales/reports${suffix}`);
 }
 
-export async function getSalesDashboard() {
-  return apiFetch<SalesDashboardData>("/api/sales/dashboard");
+export async function getSalesDashboard(companyId?: string) {
+  const suffix = companyId ? `?company_id=${encodeURIComponent(companyId)}` : "";
+  return apiFetch<SalesDashboardData>(`/api/sales/dashboard${suffix}`);
+}
+
+export async function updateSalesDashboardSettings(values: Partial<SalesDashboardSettings> & { company_id?: string | null }) {
+  return apiFetch<SalesDashboardSettings>("/api/sales/dashboard", {
+    method: "PATCH",
+    body: JSON.stringify(values),
+  });
 }
 
 export async function getSalesTeam() {
