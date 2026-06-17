@@ -90,6 +90,10 @@ export type SalesAgent = {
   national_id?: string | null;
   status: string;
   employee_id?: string | null;
+  location_id?: string | null;
+  location?: { id: string; name: string | null; city?: string | null; radius_meters?: number | null } | null;
+  shift_id?: string | null;
+  shift?: { id: string; name: string | null; start_time?: string | null; end_time?: string | null; location_id?: string | null } | null;
   company_assignments?: SalesCompanyAssignment[];
 };
 
@@ -281,6 +285,8 @@ export async function createSalesAgent(values: {
   phone?: string;
   national_id?: string;
   role?: "sales" | "sales_manager";
+  location_id?: string | null;
+  shift_id?: string | null;
   company_assignments?: Array<{ company_id: string; assignment_role: "sales" | "manager"; start_date?: string; end_date?: string | null }>;
 }) {
   return apiFetch<SalesAgent>("/api/sales/team", {
@@ -296,6 +302,8 @@ export async function updateSalesAgent(values: {
   national_id?: string;
   status?: string;
   role?: "sales" | "sales_manager";
+  location_id?: string | null;
+  shift_id?: string | null;
   company_assignments?: Array<{ company_id: string; assignment_role: "sales" | "manager"; start_date?: string; end_date?: string | null }>;
 }) {
   return apiFetch<SalesAgent>("/api/sales/team", {

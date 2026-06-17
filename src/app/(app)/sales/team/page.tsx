@@ -19,6 +19,7 @@ import {
   type SalesAgent,
   type SalesCompany,
 } from "@/lib/services/sales";
+import { useLocations, useShifts } from "@/hooks/use-data";
 import { PageSkeleton } from "@/components/Skeletons";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +43,8 @@ export default function SalesTeamPage() {
   const [companies, setCompanies] = useState<SalesCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const { data: locations, loading: loadingLocations } = useLocations();
+  const { data: shifts, loading: loadingShifts } = useShifts();
 
   const load = async () => {
     setLoading(true);
@@ -57,7 +60,7 @@ export default function SalesTeamPage() {
     load();
   }, []);
 
-  if (loading) return <PageSkeleton />;
+  if (loading || loadingLocations || loadingShifts) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-6" dir="rtl">
@@ -67,7 +70,7 @@ export default function SalesTeamPage() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-950">فريق المبيعات</h1>
           <p className="mt-2 text-gray-500">إنشاء حسابات المبيعات وربط كل شخص بشركة أو أكثر.</p>
         </div>
-        <AgentDialog companies={companies} onDone={load} onMessage={setMessage} />
+        <AgentDialog companies={companies} locations={locations} shifts={shifts} onDone={load} onMessage={setMessage} />
       </div>
 
       <Card className="border-none shadow-sm">
@@ -78,6 +81,8 @@ export default function SalesTeamPage() {
                 <TableHead>البائع</TableHead>
                 <TableHead>الدور</TableHead>
                 <TableHead>الشركات المسندة</TableHead>
+                <TableHead>موقع الحضور</TableHead>
+                <TableHead>الوردية</TableHead>
                 <TableHead>الجوال</TableHead>
                 <TableHead>رقم الهوية</TableHead>
                 <TableHead>الحالة</TableHead>
@@ -108,6 +113,20 @@ export default function SalesTeamPage() {
                         )) : <span className="text-sm text-gray-400">غير مسند</span>}
                       </div>
                     </TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{agent.location?.name || "-"}</p>
+                        {agent.location?.city && <p className="text-xs text-gray-500">{agent.location.city}</p>}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">{agent.shift?.name || "-"}</p>
+                        {(agent.shift?.start_time || agent.shift?.end_time) && (
+                          <p className="text-xs text-gray-500">{agent.shift?.start_time || "--"} - {agent.shift?.end_time || "--"}</p>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{agent.phone || "-"}</TableCell>
                     <TableCell>{agent.national_id || "-"}</TableCell>
                     <TableCell>
@@ -117,7 +136,7 @@ export default function SalesTeamPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center justify-end gap-2">
-                        <AgentDialog agent={agent} companies={companies} onDone={load} onMessage={setMessage} />
+                        <AgentDialog agent={agent} companies={companies} locations={locations} shifts={shifts} onDone={load} onMessage={setMessage} />
                         <Button
                           variant="ghost"
                           size="sm"
@@ -153,23 +172,29 @@ export default function SalesTeamPage() {
 function AgentDialog({
   agent,
   companies,
+  locations,
+  shifts,
   onDone,
   onMessage,
 }: {
   agent?: SalesAgent;
   companies: SalesCompany[];
+  locations: Record<string, unknown>[];
+  shifts: Record<string, unknown>[];
   onDone: () => void;
   onMessage: (message: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<{ full_name: string; email: string; password: string; phone: string; national_id: string; role: "sales" | "sales_manager" }>({
+  const [form, setForm] = useState<{ full_name: string; email: string; password: string; phone: string; national_id: string; role: "sales" | "sales_manager"; location_id: string; shift_id: string }>({
     full_name: "",
     email: "",
     password: "",
     phone: "",
     national_id: "",
     role: "sales",
+    location_id: "",
+    shift_id: "",
   });
   const [assignments, setAssignments] = useState<AssignmentForm>({});
 
@@ -198,7 +223,9 @@ function AgentDialog({
       phone: agent.phone || "",
       national_id: agent.national_id || "",
       role: agent.role === "sales_manager" ? "sales_manager" : "sales",
-    } : { full_name: "", email: "", password: "", phone: "", national_id: "", role: "sales" });
+      location_id: agent.location_id || "",
+      shift_id: agent.shift_id || "",
+    } : { full_name: "", email: "", password: "", phone: "", national_id: "", role: "sales", location_id: "", shift_id: "" });
   }, [agent, companies, open]);
 
   const updateAssignment = (companyId: string, patch: Partial<AssignmentForm[string]>) => {
@@ -244,9 +271,11 @@ function AgentDialog({
           phone: form.phone,
           national_id: form.national_id,
           role: form.role,
+          location_id: form.location_id || null,
+          shift_id: form.shift_id || null,
           company_assignments: companyAssignments,
         })
-      : await createSalesAgent({ ...form, company_assignments: companyAssignments });
+      : await createSalesAgent({ ...form, location_id: form.location_id || null, shift_id: form.shift_id || null, company_assignments: companyAssignments });
     setSaving(false);
     if (result.error) {
       onMessage(result.error);
@@ -306,6 +335,59 @@ function AgentDialog({
             <div className="space-y-2">
               <Label>رقم الهوية</Label>
               <Input value={form.national_id} onChange={(event) => setForm((prev) => ({ ...prev, national_id: event.target.value }))} />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-4">
+            <div>
+              <h3 className="font-bold text-gray-950">الحضور والوردية</h3>
+              <p className="mt-1 text-sm text-gray-500">حدد موقع الحضور والوردية حتى يتم حساب التأخير والانصراف تلقائيًا.</p>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>موقع الحضور</Label>
+                <Select
+                  value={form.location_id || "none"}
+                  onValueChange={(value) => {
+                    const selected = String(value || "");
+                    setForm((prev) => ({ ...prev, location_id: selected === "none" ? "" : selected }));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر موقع الحضور" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">بدون موقع</SelectItem>
+                    {locations.map((location) => (
+                      <SelectItem key={String(location.id)} value={String(location.id)}>
+                        {String(location.name || "موقع")} {location.city ? `- ${String(location.city)}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>الوردية</Label>
+                <Select
+                  value={form.shift_id || "none"}
+                  onValueChange={(value) => {
+                    const selected = String(value || "");
+                    setForm((prev) => ({ ...prev, shift_id: selected === "none" ? "" : selected }));
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر الوردية" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">بدون وردية</SelectItem>
+                    {shifts.map((shift) => (
+                      <SelectItem key={String(shift.id)} value={String(shift.id)}>
+                        {String(shift.name || "وردية")} · {String(shift.start_time || "--")} - {String(shift.end_time || "--")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
 

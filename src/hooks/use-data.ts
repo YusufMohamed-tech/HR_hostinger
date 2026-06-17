@@ -81,13 +81,19 @@ export function useSchedule() {
   return useShifts();
 }
 
-export function useEmployeeShifts(employeeId?: string) {
+export function useEmployeeShifts(employeeId?: string, options?: { requireEmployee?: boolean }) {
   const { currentUser } = useRoleContext();
   const [data, setData] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
+  const requireEmployee = Boolean(options?.requireEmployee);
 
   const refetch = useCallback(async () => {
     if (!currentUser?.orgId) {
+      setData([]);
+      setLoading(false);
+      return;
+    }
+    if (requireEmployee && !employeeId) {
       setData([]);
       setLoading(false);
       return;
@@ -97,7 +103,7 @@ export function useEmployeeShifts(employeeId?: string) {
     const result = await getEmployeeShifts(currentUser.orgId, employeeId);
     setData(result.data || []);
     setLoading(false);
-  }, [currentUser?.orgId, employeeId]);
+  }, [currentUser?.orgId, employeeId, requireEmployee]);
 
   useEffect(() => {
     refetch();

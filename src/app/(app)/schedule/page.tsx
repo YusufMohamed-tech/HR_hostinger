@@ -29,9 +29,11 @@ export default function SchedulePage() {
   const { currentUser } = useRoleContext();
   const { data: shifts, loading: loadingShifts, refetch: refetchShifts } = useShifts();
   const { data: employees } = useEmployees();
-  const { data: assignments, loading: loadingAssignments, refetch: refetchAssignments } = useEmployeeShifts();
-
   const canManageSchedule = ["Superadmin", "Admin", "HR_Admin"].includes(currentUser?.role || "");
+  const assignmentEmployeeId = canManageSchedule ? undefined : currentUser?.employeeId;
+  const { data: assignments, loading: loadingAssignments, refetch: refetchAssignments } = useEmployeeShifts(assignmentEmployeeId, {
+    requireEmployee: !canManageSchedule,
+  });
 
   if (loadingShifts || loadingAssignments) return <PageSkeleton />;
 
@@ -56,40 +58,40 @@ export default function SchedulePage() {
         )}
       </div>
 
-      <Card className="border-none shadow-sm">
-        <CardContent className="p-0">
-          <div className="border-b border-gray-100 px-6 py-4">
-            <h2 className="text-lg font-semibold text-gray-900">الورديات</h2>
-            <p className="mt-1 text-sm text-gray-500">قوالب الورديات المتاحة لاستخدامها عند إسناد الجداول.</p>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
-                <TableHead className="font-semibold text-gray-600">اسم الوردية</TableHead>
-                <TableHead className="font-semibold text-gray-600">النوع</TableHead>
-                <TableHead className="font-semibold text-gray-600">الوقت</TableHead>
-                <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
-                {canManageSchedule && <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {shifts.map((shift) => {
-                const shiftRecord = shift as Record<string, unknown>;
-                const shiftId = String(shiftRecord.id ?? "");
-                const shiftName = typeof shiftRecord.name === "string" ? shiftRecord.name : "—";
-                const shiftType = typeof shiftRecord.shift_type === "string" ? shiftRecord.shift_type : "—";
-                const shiftStart = typeof shiftRecord.start_time === "string" ? shiftRecord.start_time : "—";
-                const shiftEnd = typeof shiftRecord.end_time === "string" ? shiftRecord.end_time : "—";
-                const shiftLocation = (shiftRecord.location ?? null) as Record<string, unknown> | null;
-                const shiftLocationName = typeof shiftLocation?.name === "string" ? shiftLocation.name : "—";
+      {canManageSchedule && (
+        <Card className="border-none shadow-sm">
+          <CardContent className="p-0">
+            <div className="border-b border-gray-100 px-6 py-4">
+              <h2 className="text-lg font-semibold text-gray-900">الورديات</h2>
+              <p className="mt-1 text-sm text-gray-500">قوالب الورديات المتاحة لاستخدامها عند إسناد الجداول.</p>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
+                  <TableHead className="font-semibold text-gray-600">اسم الوردية</TableHead>
+                  <TableHead className="font-semibold text-gray-600">النوع</TableHead>
+                  <TableHead className="font-semibold text-gray-600">الوقت</TableHead>
+                  <TableHead className="font-semibold text-gray-600">الموقع</TableHead>
+                  <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {shifts.map((shift) => {
+                  const shiftRecord = shift as Record<string, unknown>;
+                  const shiftId = String(shiftRecord.id ?? "");
+                  const shiftName = typeof shiftRecord.name === "string" ? shiftRecord.name : "—";
+                  const shiftType = typeof shiftRecord.shift_type === "string" ? shiftRecord.shift_type : "—";
+                  const shiftStart = typeof shiftRecord.start_time === "string" ? shiftRecord.start_time : "—";
+                  const shiftEnd = typeof shiftRecord.end_time === "string" ? shiftRecord.end_time : "—";
+                  const shiftLocation = (shiftRecord.location ?? null) as Record<string, unknown> | null;
+                  const shiftLocationName = typeof shiftLocation?.name === "string" ? shiftLocation.name : "—";
 
-                return (
-                  <TableRow key={shiftId}>
-                    <TableCell className="font-medium text-gray-900">{shiftName}</TableCell>
-                    <TableCell className="text-gray-600">{shiftType}</TableCell>
-                    <TableCell className="text-gray-600">{shiftStart} - {shiftEnd}</TableCell>
-                    <TableCell className="text-gray-600">{shiftLocationName}</TableCell>
-                    {canManageSchedule && (
+                  return (
+                    <TableRow key={shiftId}>
+                      <TableCell className="font-medium text-gray-900">{shiftName}</TableCell>
+                      <TableCell className="text-gray-600">{shiftType}</TableCell>
+                      <TableCell className="text-gray-600">{shiftStart} - {shiftEnd}</TableCell>
+                      <TableCell className="text-gray-600">{shiftLocationName}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
                           <EditShiftDialog
@@ -118,28 +120,30 @@ export default function SchedulePage() {
                           </ConfirmActionButton>
                         </div>
                       </TableCell>
-                    )}
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
 
-          {shifts.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-10 text-center">
-              <CalendarDays className="h-10 w-10 text-gray-300 mb-3" />
-              <p className="text-sm font-medium text-gray-900">لا توجد ورديات بعد</p>
-              <p className="text-xs text-gray-500 mt-1">أنشئ وردية أولًا ثم اسندها للموظفين.</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            {shifts.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <CalendarDays className="h-10 w-10 text-gray-300 mb-3" />
+                <p className="text-sm font-medium text-gray-900">لا توجد ورديات بعد</p>
+                <p className="text-xs text-gray-500 mt-1">أنشئ وردية أولًا ثم اسندها للموظفين.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-none shadow-sm">
         <CardContent className="p-0">
           <div className="border-b border-gray-100 px-6 py-4">
-            <h2 className="text-lg font-semibold text-gray-900">إسنادات الورديات</h2>
-            <p className="mt-1 text-sm text-gray-500">الموظفون المرتبطون بورديات محددة وتواريخ الإسناد.</p>
+            <h2 className="text-lg font-semibold text-gray-900">{canManageSchedule ? "إسنادات الورديات" : "ورديتي"}</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              {canManageSchedule ? "الموظفون المرتبطون بورديات محددة وتواريخ الإسناد." : "الوردية المسندة لك وتفاصيل الموقع والوقت."}
+            </p>
           </div>
           <Table>
             <TableHeader>
