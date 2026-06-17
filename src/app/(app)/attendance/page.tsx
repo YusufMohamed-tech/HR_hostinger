@@ -70,9 +70,9 @@ export default function AttendancePage() {
   const today = new Date().toISOString().split("T")[0];
   const [selectedDate, setSelectedDate] = useState(today);
   const { data: attendance, loading, refetch } = useAttendance(selectedDate);
-  const { data: employees } = useEmployees();
-  const { data: locations } = useLocations();
-  const { data: employeeShifts } = useEmployeeShifts(currentUser?.employeeId);
+  const { data: employees, loading: loadingEmployees } = useEmployees();
+  const { data: locations, loading: loadingLocations } = useLocations();
+  const { data: employeeShifts } = useEmployeeShifts(currentUser?.employeeId, { requireEmployee: true });
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -133,6 +133,10 @@ export default function AttendancePage() {
     if (!currentUser?.orgId || !currentUser?.employeeId) return;
     if (!isViewingToday) {
       setError("يمكن تسجيل الحضور لليوم الحالي فقط. غيّر التاريخ إلى اليوم للتسجيل.");
+      return;
+    }
+    if (assignedLocations !== null && assignedLocations.length === 0) {
+      setError("لم يتم تعيين موقع حضور لك بعد. تواصل مع HR لتحديد موقعك.");
       return;
     }
     setSubmitting(true);
@@ -212,6 +216,10 @@ export default function AttendancePage() {
       setError("يمكن تسجيل الانصراف لليوم الحالي فقط. غيّر التاريخ إلى اليوم للتسجيل.");
       return;
     }
+    if (assignedLocations !== null && assignedLocations.length === 0) {
+      setError("لم يتم تعيين موقع حضور لك بعد. تواصل مع HR لتحديد موقعك.");
+      return;
+    }
     setSubmitting(true);
     setError("");
 
@@ -271,7 +279,7 @@ export default function AttendancePage() {
     setSubmitting(false);
   };
 
-  if (loading) return <PageSkeleton />;
+  if (loading || loadingEmployees || loadingLocations) return <PageSkeleton />;
 
   return (
     <div className="flex flex-col gap-6">

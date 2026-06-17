@@ -127,6 +127,8 @@ export function SidebarContent() {
           title: "المبيعات",
           links: [
             { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
+            { name: "الحضور", href: "/attendance", icon: Clock },
+            { name: "ورديتي", href: "/schedule", icon: CalendarDays },
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
             { name: "سجل المبيعات", href: "/sales/history", icon: ClipboardList },
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
@@ -144,6 +146,8 @@ export function SidebarContent() {
           title: "إدارة المبيعات",
           links: [
             ...salesManagementOps,
+            { name: "الحضور", href: "/attendance", icon: Clock },
+            { name: "الجداول", href: "/schedule", icon: CalendarDays },
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
             { name: "سجل مبيعاتي", href: "/sales/history", icon: ClipboardList },
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },

@@ -21,6 +21,12 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function yesterdayIso() {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
 function validDate(value: unknown) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
 }
@@ -35,6 +41,13 @@ function isActiveAssignment(assignment: Record<string, unknown>) {
   const start = String(assignment.start_date || today);
   const end = assignment.end_date ? String(assignment.end_date) : "";
   return start <= today && (!end || end >= today);
+}
+
+function activeEmployeeShift(employee: Record<string, unknown>) {
+  const rows = Array.isArray(employee.employee_shifts) ? employee.employee_shifts as Record<string, unknown>[] : [];
+  return rows
+    .filter(isActiveAssignment)
+    .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")))[0] || null;
 }
 
 function normalizeAssignment(input: AssignmentInput) {
@@ -198,6 +211,124 @@ async function recordSalesCareerEvent(
   return { error: result.error ? { message: result.error.message } : null };
 }
 
+async function ensureOrgRecord(
+  admin: ReturnType<typeof createAdminClient>,
+  table: "locations" | "shifts",
+  orgId: string,
+  id: string
+) {
+  if (!id) return { ok: true as const };
+  const result = await admin.from(table).select("id").eq("org_id", orgId).eq("id", id).maybeSingle();
+  if (result.error) return { ok: false as const, message: result.error.message, status: 500 };
+  if (!result.data) {
+    return {
+      ok: false as const,
+      message: table === "locations" ? "اختر موقع حضور صحيح داخل نفس المنظمة." : "اختر وردية صحيحة داخل نفس المنظمة.",
+      status: 400,
+    };
+  }
+  return { ok: true as const };
+}
+
+async function replacePrimaryEmployeeLocation(
+  admin: ReturnType<typeof createAdminClient>,
+  employeeId: string,
+  locationId: string
+) {
+  const deleteResult = await admin.from("employee_locations").delete().eq("employee_id", employeeId);
+  if (deleteResult.error) return { error: { message: deleteResult.error.message, status: 500 } };
+  if (!locationId) return { error: null };
+
+  const insertResult = await admin.from("employee_locations").insert({
+    employee_id: employeeId,
+    location_id: locationId,
+    is_primary: true,
+    assigned_from: todayIso(),
+  } as never);
+
+  return { error: insertResult.error ? { message: insertResult.error.message, status: 500 } : null };
+}
+
+async function replaceActiveEmployeeShift(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  employeeId: string,
+  shiftId: string
+) {
+  const existingResult = await admin
+    .from("employee_shifts")
+    .select("id, shift_id, start_date, end_date")
+    .eq("org_id", orgId)
+    .eq("employee_id", employeeId);
+
+  if (existingResult.error) return { error: { message: existingResult.error.message, status: 500 } };
+
+  const activeRows = ((existingResult.data ?? []) as Record<string, unknown>[]).filter(isActiveAssignment);
+  const alreadyAssigned = Boolean(shiftId) && activeRows.some((row) => String(row.shift_id || "") === shiftId);
+  const rowsToClose = activeRows.filter((row) => !shiftId || String(row.shift_id || "") !== shiftId);
+
+  for (const row of rowsToClose) {
+    const updateResult = await admin
+      .from("employee_shifts")
+      .update({ end_date: yesterdayIso() } as never)
+      .eq("id", String(row.id || ""));
+    if (updateResult.error) return { error: { message: updateResult.error.message, status: 500 } };
+  }
+
+  if (!shiftId || alreadyAssigned) return { error: null };
+
+  const insertResult = await admin.from("employee_shifts").insert({
+    org_id: orgId,
+    employee_id: employeeId,
+    shift_id: shiftId,
+    start_date: todayIso(),
+    end_date: null,
+  } as never);
+
+  return { error: insertResult.error ? { message: insertResult.error.message, status: 500 } : null };
+}
+
+async function applyAttendanceSetup(
+  admin: ReturnType<typeof createAdminClient>,
+  auth: AuthContext,
+  employeeId: string,
+  values: {
+    locationId?: string;
+    shiftId?: string;
+    locationTouched?: boolean;
+    shiftTouched?: boolean;
+  }
+) {
+  if (!employeeId) return { error: { message: "لا يوجد ملف موظف مرتبط بحساب المبيعات.", status: 400 } };
+
+  if (values.locationTouched) {
+    const locationId = values.locationId || "";
+    const locationScope = await ensureOrgRecord(admin, "locations", auth.orgId, locationId);
+    if (!locationScope.ok) return { error: locationScope };
+
+    const updateEmployee = await admin
+      .from("employees")
+      .update({ location_id: locationId || null } as never)
+      .eq("id", employeeId)
+      .eq("org_id", auth.orgId);
+    if (updateEmployee.error) return { error: { message: updateEmployee.error.message, status: 500 } };
+
+    const locationResult = await replacePrimaryEmployeeLocation(admin, employeeId, locationId);
+    if (locationResult.error) return { error: locationResult.error };
+  }
+
+  if (values.shiftTouched) {
+    const shiftId = values.shiftId || "";
+    const shiftScope = await ensureOrgRecord(admin, "shifts", auth.orgId, shiftId);
+    if (!shiftScope.ok) return { error: shiftScope };
+
+    const shiftResult = await replaceActiveEmployeeShift(admin, auth.orgId, employeeId, shiftId);
+    if (shiftResult.error) return { error: shiftResult.error };
+  }
+
+  return { error: null };
+}
+
 async function loadTeam(orgId: string, visibleCompanyIds?: string[] | null) {
   const admin = createAdminClient();
   if (Array.isArray(visibleCompanyIds) && visibleCompanyIds.length === 0) {
@@ -207,7 +338,10 @@ async function loadTeam(orgId: string, visibleCompanyIds?: string[] | null) {
   const [membersResult, profilesResult, employeesResult, assignmentsResult, companiesResult] = await Promise.all([
     admin.from("org_members").select("user_id, role, org_id").eq("org_id", orgId).in("role", ["sales", "sales_manager"]),
     admin.from("profiles").select("user_id, full_name, email, phone, account_status").eq("org_id", orgId),
-    admin.from("employees").select("id, user_id, national_id, status, job_title").eq("org_id", orgId),
+    admin
+      .from("employees")
+      .select("id, user_id, national_id, status, job_title, location_id, location:location_id(id, name, city, radius_meters), employee_shifts(id, shift_id, start_date, end_date, shift:shift_id(id, name, start_time, end_time, location_id))")
+      .eq("org_id", orgId),
     admin
       .from("sales_company_assignments")
       .select("id, user_id, company_id, assignment_role, start_date, end_date, is_active")
@@ -243,6 +377,8 @@ async function loadTeam(orgId: string, visibleCompanyIds?: string[] | null) {
       const userId = String(member.user_id || "");
       const profile = profiles.get(userId) || {};
       const employee = employees.get(userId) || {};
+      const activeShift = activeEmployeeShift(employee);
+      const shiftRecord = (activeShift?.shift ?? null) as Record<string, unknown> | null;
       return {
         user_id: userId,
         org_id: String(member.org_id || ""),
@@ -253,6 +389,10 @@ async function loadTeam(orgId: string, visibleCompanyIds?: string[] | null) {
         national_id: typeof employee.national_id === "string" ? employee.national_id : null,
         status: String(profile.account_status || employee.status || "active"),
         employee_id: String(employee.id || ""),
+        location_id: typeof employee.location_id === "string" ? employee.location_id : null,
+        location: employee.location || null,
+        shift_id: typeof activeShift?.shift_id === "string" ? activeShift.shift_id : null,
+        shift: shiftRecord,
         company_assignments: assignmentsByUser.get(userId) || [],
       };
     })
@@ -289,6 +429,10 @@ export async function POST(request: NextRequest) {
   const requestedRole = String(body.role || "sales").trim().toLowerCase();
   const salesRole = requestedRole === "sales_manager" ? "sales_manager" : "sales";
   const salesTitle = salesRole === "sales_manager" ? "Sales Manager" : "Sales";
+  const locationId = typeof body.location_id === "string" ? body.location_id.trim() : "";
+  const shiftId = typeof body.shift_id === "string" ? body.shift_id.trim() : "";
+  const locationTouched = Object.prototype.hasOwnProperty.call(body, "location_id");
+  const shiftTouched = Object.prototype.hasOwnProperty.call(body, "shift_id");
 
   if (fullName.length < 2) return NextResponse.json({ message: "اسم البائع مطلوب." }, { status: 400 });
   if (!email.includes("@")) return NextResponse.json({ message: "بريد إلكتروني صحيح مطلوب." }, { status: 400 });
@@ -361,8 +505,11 @@ export async function POST(request: NextRequest) {
 
   if (employeeResult.error) return NextResponse.json({ message: employeeResult.error.message }, { status: 500 });
 
+  let salesEmployeeId = "";
+
   if (employeeResult.data) {
     const employeeRecord = employeeResult.data as Record<string, unknown>;
+    salesEmployeeId = String(employeeRecord.id || "");
     const previousTitle = String(employeeRecord.job_title || "");
     const updateError = (await admin.from("employees").update({
       full_name: fullName,
@@ -397,9 +544,10 @@ export async function POST(request: NextRequest) {
       status: "Active",
     } as never).select("id").single();
     if (createResult.error) return NextResponse.json({ message: createResult.error.message }, { status: 500 });
+    salesEmployeeId = String((createResult.data as Record<string, unknown> | null)?.id || "");
 
     const eventResult = await recordSalesCareerEvent(admin, {
-      employee_id: String((createResult.data as Record<string, unknown> | null)?.id || ""),
+      employee_id: salesEmployeeId,
       event_type: "hired",
       previous_value: null,
       new_value: { job_title: salesTitle, sales_role: salesRole },
@@ -407,6 +555,16 @@ export async function POST(request: NextRequest) {
       created_by: auth.user.id,
     });
     if (eventResult.error) return NextResponse.json({ message: eventResult.error.message }, { status: 500 });
+  }
+
+  const attendanceSetup = await applyAttendanceSetup(admin, auth, salesEmployeeId, {
+    locationId,
+    shiftId,
+    locationTouched,
+    shiftTouched,
+  });
+  if (attendanceSetup.error) {
+    return NextResponse.json({ message: attendanceSetup.error.message }, { status: attendanceSetup.error.status });
   }
 
   const assignmentResult = await replaceAssignments(admin, auth, userId, requestedAssignments);
@@ -466,6 +624,10 @@ export async function PATCH(request: NextRequest) {
   const status = String(body.status || "").trim().toLowerCase();
   const requestedRole = String(body.role || "").trim().toLowerCase();
   const nextRole = requestedRole === "sales" || requestedRole === "sales_manager" ? requestedRole : "";
+  const locationId = typeof body.location_id === "string" ? body.location_id.trim() : "";
+  const shiftId = typeof body.shift_id === "string" ? body.shift_id.trim() : "";
+  const locationTouched = Object.prototype.hasOwnProperty.call(body, "location_id");
+  const shiftTouched = Object.prototype.hasOwnProperty.call(body, "shift_id");
   const profileValues: Record<string, unknown> = {};
   const employeeValues: Record<string, unknown> = {};
 
@@ -507,6 +669,18 @@ export async function PATCH(request: NextRequest) {
   if (Object.keys(employeeValues).length > 0) {
     const employeeError = (await admin.from("employees").update(employeeValues as never).eq("user_id", userId).eq("org_id", auth.orgId)).error;
     if (employeeError) return NextResponse.json({ message: employeeError.message }, { status: 500 });
+  }
+
+  if (locationTouched || shiftTouched) {
+    const attendanceSetup = await applyAttendanceSetup(admin, auth, employeeId, {
+      locationId,
+      shiftId,
+      locationTouched,
+      shiftTouched,
+    });
+    if (attendanceSetup.error) {
+      return NextResponse.json({ message: attendanceSetup.error.message }, { status: attendanceSetup.error.status });
+    }
   }
 
   if ("company_assignments" in body) {

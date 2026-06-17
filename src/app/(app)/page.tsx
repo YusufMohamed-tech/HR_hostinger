@@ -135,7 +135,7 @@ export default function DashboardPage() {
   const { data: tasks } = useTasks();
   const { data: leaves } = useLeaveRequests();
   const { data: notifications } = useNotifications();
-  const { data: myShifts } = useEmployeeShifts(currentUser?.employeeId);
+  const { data: myShifts } = useEmployeeShifts(currentUser?.employeeId, { requireEmployee: true });
 
   useEffect(() => {
     if (currentUser?.role === "Superadmin") {
