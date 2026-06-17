@@ -116,6 +116,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return ["Sales_Manager", "Admin", "HR_Admin"].includes(role);
   }
 
+  if (normalizedPath.startsWith("/attendance") || normalizedPath.startsWith("/api/attendance")) {
+    return role !== "HR_Recruitment";
+  }
+
   if (
     normalizedPath.startsWith("/employees") ||
     normalizedPath.startsWith("/departments") ||
@@ -137,7 +141,6 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (
-    normalizedPath.startsWith("/attendance") ||
     normalizedPath.startsWith("/schedule") ||
     normalizedPath.startsWith("/locations") ||
     normalizedPath.startsWith("/notifications") ||
