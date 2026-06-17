@@ -23,7 +23,13 @@ import { useLocations, useShifts } from "@/hooks/use-data";
 import { PageSkeleton } from "@/components/Skeletons";
 import { cn } from "@/lib/utils";
 
-type AssignmentForm = Record<string, { role: "none" | "sales" | "manager"; start_date: string; end_date: string }>;
+type AssignmentForm = Record<string, {
+  role: "none" | "sales" | "manager";
+  start_date: string;
+  end_date: string;
+  daily_target: string;
+  target_notes: string;
+}>;
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -204,7 +210,7 @@ function AgentDialog({
     if (!open) return;
     const baseAssignments: AssignmentForm = {};
     companies.forEach((company) => {
-      baseAssignments[company.id] = { role: "none", start_date: todayIso(), end_date: "" };
+      baseAssignments[company.id] = { role: "none", start_date: todayIso(), end_date: "", daily_target: "", target_notes: "" };
     });
     (agent?.company_assignments || []).forEach((assignment) => {
       if (!assignment.company_id) return;
@@ -212,6 +218,8 @@ function AgentDialog({
         role: assignment.assignment_role === "manager" ? "manager" : "sales",
         start_date: assignment.start_date || todayIso(),
         end_date: assignment.end_date || "",
+        daily_target: assignment.daily_target ? String(assignment.daily_target) : "",
+        target_notes: assignment.target_notes || "",
       };
     });
 
@@ -235,6 +243,8 @@ function AgentDialog({
         role: prev[companyId]?.role || "none",
         start_date: prev[companyId]?.start_date || todayIso(),
         end_date: prev[companyId]?.end_date || "",
+        daily_target: prev[companyId]?.daily_target || "",
+        target_notes: prev[companyId]?.target_notes || "",
         ...patch,
       },
     }));
@@ -256,6 +266,8 @@ function AgentDialog({
         assignment_role: assignment.role as "sales" | "manager",
         start_date: assignment.start_date || todayIso(),
         end_date: assignment.end_date || null,
+        daily_target: Number(assignment.daily_target || 0),
+        target_notes: assignment.target_notes.trim() || null,
       }));
 
     if (companyAssignments.length === 0) {
@@ -401,9 +413,9 @@ function AgentDialog({
             </div>
             <div className="mt-4 grid gap-3">
               {companies.map((company) => {
-                const assignment = assignments[company.id] || { role: "none", start_date: todayIso(), end_date: "" };
+                const assignment = assignments[company.id] || { role: "none", start_date: todayIso(), end_date: "", daily_target: "", target_notes: "" };
                 return (
-                  <div key={company.id} className={cn("grid gap-3 rounded-lg border bg-white p-3 md:grid-cols-[1fr_160px_140px_140px]", assignment.role !== "none" ? "border-brand/40" : "border-gray-100")}>
+                  <div key={company.id} className={cn("grid gap-3 rounded-lg border bg-white p-3 md:grid-cols-[1fr_150px_128px_128px_140px]", assignment.role !== "none" ? "border-brand/40" : "border-gray-100")}>
                     <div className="flex items-center gap-2">
                       <Building2 className="h-4 w-4 text-gray-400" />
                       {company.brand_color && <span className="h-3 w-3 rounded-full" style={{ backgroundColor: company.brand_color }} />}
@@ -424,6 +436,22 @@ function AgentDialog({
                     </Select>
                     <Input type="date" value={assignment.start_date} onChange={(event) => updateAssignment(company.id, { start_date: event.target.value })} />
                     <Input type="date" value={assignment.end_date} onChange={(event) => updateAssignment(company.id, { end_date: event.target.value })} />
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={assignment.daily_target}
+                      onChange={(event) => updateAssignment(company.id, { daily_target: event.target.value })}
+                      placeholder="هدف اليوم"
+                    />
+                    {assignment.role !== "none" && (
+                      <Input
+                        className="md:col-span-5"
+                        value={assignment.target_notes}
+                        onChange={(event) => updateAssignment(company.id, { target_notes: event.target.value })}
+                        placeholder="ملاحظة اختيارية عن الهدف أو المنطقة"
+                      />
+                    )}
                   </div>
                 );
               })}

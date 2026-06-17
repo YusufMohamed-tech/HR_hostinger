@@ -14,6 +14,8 @@ type AssignmentInput = {
   assignment_role?: string;
   start_date?: string;
   end_date?: string | null;
+  daily_target?: number | string | null;
+  target_notes?: string | null;
   notes?: string | null;
 };
 
@@ -29,6 +31,11 @@ function yesterdayIso() {
 
 function validDate(value: unknown) {
   return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+}
+
+function toMoney(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Number(parsed.toFixed(2)) : 0;
 }
 
 function isOrgSalesAdmin(role: string) {
@@ -55,7 +62,16 @@ function normalizeAssignment(input: AssignmentInput) {
   const role = String(input.assignment_role || "").trim() === "manager" ? "manager" : "sales";
   const startDate = validDate(input.start_date) || todayIso();
   const endDate = validDate(input.end_date) || null;
-  return companyId ? { company_id: companyId, assignment_role: role, start_date: startDate, end_date: endDate, notes: input.notes || null } : null;
+  const targetNotes = String(input.target_notes || input.notes || "").trim();
+  return companyId ? {
+    company_id: companyId,
+    assignment_role: role,
+    start_date: startDate,
+    end_date: endDate,
+    daily_target: toMoney(input.daily_target),
+    target_notes: targetNotes || null,
+    notes: input.notes || null,
+  } : null;
 }
 
 function uniqueAssignments(raw: unknown) {
@@ -161,6 +177,8 @@ async function replaceAssignments(
     assignment_role: assignment.assignment_role,
     start_date: assignment.start_date,
     end_date: assignment.end_date,
+    daily_target: assignment.daily_target,
+    target_notes: assignment.target_notes,
     notes: assignment.notes,
     is_active: true,
     created_by: auth.user.id,
@@ -344,7 +362,7 @@ async function loadTeam(orgId: string, visibleCompanyIds?: string[] | null) {
       .eq("org_id", orgId),
     admin
       .from("sales_company_assignments")
-      .select("id, user_id, company_id, assignment_role, start_date, end_date, is_active")
+      .select("id, user_id, company_id, assignment_role, start_date, end_date, daily_target, target_notes, is_active")
       .eq("organization_id", orgId)
       .eq("is_active", true),
     admin.from("sales_companies").select("id, name, slug, code, brand_color, is_active").eq("organization_id", orgId),

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Edit3, RotateCcw, Send } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +49,7 @@ function calculateItems(products: SalesProduct[], state: ProductState): SalesLog
 }
 
 export default function SalesLogPage() {
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [companies, setCompanies] = useState<SalesCompany[]>([]);
@@ -83,8 +85,8 @@ export default function SalesLogPage() {
   };
 
   useEffect(() => {
-    load();
-  }, []);
+    load(searchParams.get("company_id") || undefined);
+  }, [searchParams]);
 
   const selectedCompany = useMemo(
     () => companies.find((company) => company.id === selectedCompanyId) || null,
