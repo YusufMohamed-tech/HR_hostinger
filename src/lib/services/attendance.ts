@@ -109,6 +109,21 @@ export async function updateCheckOut(id: string, values: Record<string, unknown>
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
+export async function notifyMissingAttendanceLocation(action: "check_in" | "check_out") {
+  try {
+    const response = await fetch("/api/attendance/missing-location", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const json = await response.json().catch(() => ({})) as { data?: Record<string, unknown>; message?: string; error?: string };
+    if (!response.ok) return { data: null, error: { message: json.message || json.error || "تعذر إرسال تنبيه الموارد البشرية." } };
+    return { data: json.data ?? null, error: null };
+  } catch (error) {
+    return { data: null, error: { message: error instanceof Error ? error.message : "تعذر الاتصال بالخادم." } };
+  }
+}
+
 export async function uploadAttendanceSelfie(
   orgId: string,
   employeeId: string,
