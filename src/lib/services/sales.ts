@@ -31,8 +31,39 @@ export type SalesCompanyAssignment = {
   assignment_role: "sales" | "manager";
   start_date: string;
   end_date: string | null;
+  daily_target?: number | null;
+  target_notes?: string | null;
   is_active: boolean;
   company?: SalesCompany | null;
+};
+
+export type SalesShiftPromptType = "hourly" | "mid_shift" | "end_shift";
+
+export type SalesShiftMonitorPrompt = {
+  type: SalesShiftPromptType;
+  key: string;
+  title: string;
+  body: string;
+  requires_reason: boolean;
+  action_url: string;
+  company_id: string;
+  company_name: string;
+  target_amount: number;
+  achieved_amount: number;
+  progress_percent: number;
+  remaining_amount: number;
+  snooze_minutes: number;
+};
+
+export type SalesShiftMonitorData = {
+  inShift: boolean;
+  company: SalesCompany | null;
+  shift: { id: string; name: string | null; start_time: string | null; end_time: string | null } | null;
+  target_amount: number;
+  achieved_amount: number;
+  progress_percent: number;
+  remaining_amount: number;
+  prompt: SalesShiftMonitorPrompt | null;
 };
 
 export type SalesLogItem = {
@@ -229,6 +260,24 @@ export async function submitSalesLog(values: { company_id: string; items: SalesL
   });
 }
 
+export async function getSalesShiftMonitor(companyId?: string) {
+  const suffix = companyId ? `?company_id=${encodeURIComponent(companyId)}` : "";
+  return apiFetch<SalesShiftMonitorData>(`/api/sales/shift-monitor${suffix}`);
+}
+
+export async function respondSalesShiftPrompt(values: {
+  prompt_type: SalesShiftPromptType;
+  prompt_key: string;
+  company_id?: string | null;
+  action: "snooze" | "acknowledge" | "open_sales" | "submit_reason";
+  reason?: string;
+}) {
+  return apiFetch<SalesShiftMonitorData>("/api/sales/shift-monitor", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
 export async function requestSalesLogEdit(values: { sales_log_id: string; requested_changes: string }) {
   return apiFetch<SalesLogEditRequest>("/api/sales/log/edit-requests", {
     method: "POST",
@@ -287,7 +336,14 @@ export async function createSalesAgent(values: {
   role?: "sales" | "sales_manager";
   location_id?: string | null;
   shift_id?: string | null;
-  company_assignments?: Array<{ company_id: string; assignment_role: "sales" | "manager"; start_date?: string; end_date?: string | null }>;
+  company_assignments?: Array<{
+    company_id: string;
+    assignment_role: "sales" | "manager";
+    start_date?: string;
+    end_date?: string | null;
+    daily_target?: number | null;
+    target_notes?: string | null;
+  }>;
 }) {
   return apiFetch<SalesAgent>("/api/sales/team", {
     method: "POST",
@@ -304,7 +360,14 @@ export async function updateSalesAgent(values: {
   role?: "sales" | "sales_manager";
   location_id?: string | null;
   shift_id?: string | null;
-  company_assignments?: Array<{ company_id: string; assignment_role: "sales" | "manager"; start_date?: string; end_date?: string | null }>;
+  company_assignments?: Array<{
+    company_id: string;
+    assignment_role: "sales" | "manager";
+    start_date?: string;
+    end_date?: string | null;
+    daily_target?: number | null;
+    target_notes?: string | null;
+  }>;
 }) {
   return apiFetch<SalesAgent>("/api/sales/team", {
     method: "PATCH",
