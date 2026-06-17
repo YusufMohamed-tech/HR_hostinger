@@ -100,8 +100,9 @@ export default function SalesDashboardPage() {
   const stats = dashboard?.stats ?? { today: 0, week: 0, month: 0, activeAgents: 0 };
   const leaderboard = useMemo(() => dashboard?.leaderboard ?? [], [dashboard]);
   const report = dashboard?.report ?? null;
-  const companies = dashboard?.companies ?? [];
+  const companies = useMemo(() => dashboard?.companies ?? [], [dashboard?.companies]);
   const canManageSettings = Boolean(dashboard?.canManageSettings);
+  const companyNameById = useMemo(() => new Map(companies.map((company) => [company.id, company.name])), [companies]);
 
   const setDraft = (key: keyof SalesDashboardSettings, value: string | number | null) => {
     setSettingsDraft((previous) => ({ ...previous, [key]: value }));
@@ -145,7 +146,9 @@ export default function SalesDashboardPage() {
             <Label className="mb-1 block text-xs text-gray-500">الشركة</Label>
             <Select value={selectedCompanyId} onValueChange={handleCompanyChange} disabled={refreshing}>
               <SelectTrigger>
-                <SelectValue placeholder="اختر الشركة" />
+                <SelectValue placeholder="اختر الشركة">
+                  {(value: string | null) => value ? companyNameById.get(value) || "اختر الشركة" : "اختر الشركة"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {companies.map((company) => (
