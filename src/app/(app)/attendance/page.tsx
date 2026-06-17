@@ -15,8 +15,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useAttendance, useEmployees, useLocations, useEmployeeShifts } from "@/hooks/use-data";
-import { createCheckIn, updateCheckOut } from "@/lib/services/attendance";
+import { createCheckIn, notifyMissingAttendanceLocation, updateCheckOut } from "@/lib/services/attendance";
 import { PageSkeleton } from "@/components/Skeletons";
+import { MessageDialog } from "@/components/ui/feedback-dialog";
 
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (v: number) => (v * Math.PI) / 180;
@@ -76,6 +77,7 @@ export default function AttendancePage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [popupMessage, setPopupMessage] = useState("");
   const checkInClickIntentRef = useRef(false);
   const checkOutClickIntentRef = useRef(false);
   const isViewingToday = selectedDate === today;
@@ -124,6 +126,13 @@ export default function AttendancePage() {
   const shiftStartTime = typeof assignedShift?.start_time === "string" ? assignedShift.start_time : undefined;
   const shiftId = typeof assignedShift?.id === "string" ? assignedShift.id : undefined;
 
+  const showMissingLocationPopup = async (action: "check_in" | "check_out") => {
+    const message = "لم يتم تعيين موقع حضور لحسابك بعد. تم إرسال تنبيه إلى الموارد البشرية لتحديد موقعك، ولن يمكن تسجيل الحضور أو الانصراف قبل ربط الموقع.";
+    setError(message);
+    setPopupMessage(message);
+    await notifyMissingAttendanceLocation(action);
+  };
+
   const handleCheckIn = async () => {
     if (!checkInClickIntentRef.current) {
       setError("لا يتم تسجيل الحضور تلقائيًا. اضغط زر تسجيل الحضور للمتابعة.");
@@ -136,7 +145,7 @@ export default function AttendancePage() {
       return;
     }
     if (assignedLocations !== null && assignedLocations.length === 0) {
-      setError("لم يتم تعيين موقع حضور لك بعد. تواصل مع HR لتحديد موقعك.");
+      await showMissingLocationPopup("check_in");
       return;
     }
     setSubmitting(true);
@@ -217,7 +226,7 @@ export default function AttendancePage() {
       return;
     }
     if (assignedLocations !== null && assignedLocations.length === 0) {
-      setError("لم يتم تعيين موقع حضور لك بعد. تواصل مع HR لتحديد موقعك.");
+      await showMissingLocationPopup("check_out");
       return;
     }
     setSubmitting(true);
@@ -283,6 +292,12 @@ export default function AttendancePage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <MessageDialog
+        open={Boolean(popupMessage)}
+        onOpenChange={(open) => !open && setPopupMessage("")}
+        title="موقع الحضور غير محدد"
+        description={popupMessage}
+      />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">الحضور</h1>
