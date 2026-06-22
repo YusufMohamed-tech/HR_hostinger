@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { LogOut, Menu, Search, Network, Users, MapPin, Calendar, CheckSquare, Bell, ClipboardList, Layers, Briefcase, Settings } from "lucide-react";
+import { LogOut, Menu, Search, Network, Users, MapPin, Calendar, CheckSquare, Bell, ClipboardList, Layers, Briefcase, Settings, Calculator } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { SidebarContent } from "./Sidebar";
@@ -29,6 +29,7 @@ const ALL_SEARCH_ITEMS = [
   { label: "الجداول", href: "/schedule", icon: Calendar, keywords: ["shifts", "roster", "timetable", "وردية", "جدول"] },
   { label: "التوظيف", href: "/recruitment", icon: Briefcase, keywords: ["recruitment", "jobs", "candidates", "توظيف", "وظائف", "مرشحين"] },
   { label: "الإشعارات", href: "/notifications", icon: Bell, keywords: ["alerts", "updates", "تنبيه"] },
+  { label: "المالية والمحاسبة", href: "/accounting", icon: Calculator, keywords: ["finance", "accounting", "ledger", "invoice", "journal", "محاسبة", "مالية", "قيود", "فواتير"] },
   { label: "الإعدادات", href: "/settings", icon: Settings, keywords: ["profile", "preferences", "config", "إعدادات"] },
 ];
 
@@ -36,6 +37,9 @@ const RECRUITER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
   ["/recruitment", "/notifications", "/settings"].includes(item.href)
 );
 const HR_ADMIN_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) => item.href !== "/recruitment");
+const FINANCE_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
+  item.href.startsWith("/accounting") || item.href === "/notifications" || item.href === "/settings"
+);
 
 const ROLE_LABELS: Record<string, string> = {
   Superadmin: "المشرف العام",
@@ -43,6 +47,11 @@ const ROLE_LABELS: Record<string, string> = {
   HR_Admin: "مسؤول الموارد البشرية",
   HR_Recruitment: "مسؤول التوظيف",
   Training_Manager: "مدير التدريب",
+  Finance_Manager: "مدير المالية",
+  Accountant: "محاسب",
+  Finance_Viewer: "مطلع مالي",
+  Sales: "المبيعات",
+  Sales_Manager: "مدير المبيعات",
   Employee: "موظف",
 };
 
@@ -56,6 +65,7 @@ export function Header() {
   const searchItems = useMemo(() => {
     if (currentUser?.role === "HR_Recruitment") return RECRUITER_SEARCH_ITEMS;
     if (currentUser?.role === "HR_Admin") return HR_ADMIN_SEARCH_ITEMS;
+    if (["Finance_Manager", "Accountant", "Finance_Viewer"].includes(currentUser?.role || "")) return FINANCE_SEARCH_ITEMS;
     if (currentUser?.role === "Employee") {
       return ALL_SEARCH_ITEMS.map((item) =>
         item.href === "/tasks" ? { ...item, label: "مهامي", href: "/tasks/mine" } : item
