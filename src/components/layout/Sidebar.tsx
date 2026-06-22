@@ -56,9 +56,12 @@ export function SidebarContent() {
   const getSections = (): NavSection[] => {
     const role = currentUser?.role ?? "Employee";
     const isSuperAdmin = role === "Superadmin";
-    const isAdmin = role === "Admin" || isSuperAdmin;
+    const isOrgAdmin = role === "Admin";
+    const isAdmin = isOrgAdmin || isSuperAdmin;
     const isHRAdmin = role === "HR_Admin";
     const isFinance = ["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+    const canSeeFullAccounting = isSuperAdmin || isFinance;
+    const canSeeFinanceTeam = isSuperAdmin || isOrgAdmin || isHRAdmin || role === "Finance_Manager";
 
     const taskLinks: NavLink[] = (isAdmin || isHRAdmin)
       ? [
@@ -127,8 +130,16 @@ export function SidebarContent() {
       { name: "المدفوعات", href: "/accounting/payments", icon: WalletCards },
       { name: "مراكز التكلفة", href: "/accounting/cost-centers", icon: Layers },
       { name: "التقارير", href: "/accounting/reports", icon: ClipboardList },
+      { name: "فريق المالية", href: "/accounting/team", icon: Users },
       { name: "الإعدادات", href: "/accounting/settings", icon: Settings },
-    ].filter((link) => link.href !== "/accounting/settings" || isAdmin || role === "Finance_Manager");
+    ].filter((link) => {
+      if (link.href === "/accounting/settings") return isSuperAdmin || role === "Finance_Manager";
+      if (link.href === "/accounting/team") return canSeeFinanceTeam;
+      return true;
+    });
+    const accountingTeamOps: NavLink[] = [
+      { name: "فريق المالية", href: "/accounting/team", icon: Users },
+    ];
 
     const system: NavLink[] = [{ name: "الإعدادات", href: "/settings", icon: Settings }];
 
@@ -181,7 +192,7 @@ export function SidebarContent() {
       { title: "الأساسي", links: core },
       { title: "الإدارة", links: isAdmin ? fullAdminOps : isHRAdmin ? hrAdminOps : role === "Employee" ? employeeSelfOps : [] },
       { title: "المبيعات", links: isAdmin || isHRAdmin ? salesManagementOps : [] },
-      { title: "المالية والمحاسبة", links: isAdmin || isFinance ? accountingOps : [] },
+      { title: "المالية والمحاسبة", links: canSeeFullAccounting ? accountingOps : canSeeFinanceTeam ? accountingTeamOps : [] },
       { title: "النظام", links: system },
     ];
   };

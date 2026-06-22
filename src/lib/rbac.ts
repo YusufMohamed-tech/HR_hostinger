@@ -92,6 +92,9 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     if (normalizedPath.startsWith("/accounting/settings")) {
       return role === "Finance_Manager";
     }
+    if (normalizedPath.startsWith("/accounting/team")) {
+      return role === "Finance_Manager";
+    }
     if (
       role === "Finance_Viewer" &&
       (
@@ -153,8 +156,16 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return ["Sales_Manager", "Admin", "HR_Admin"].includes(role);
   }
 
+  if (normalizedPath.startsWith("/accounting/reports")) {
+    return ["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+  }
+
+  if (normalizedPath.startsWith("/accounting/team")) {
+    return ["Admin", "HR_Admin", "Finance_Manager"].includes(role);
+  }
+
   if (normalizedPath.startsWith("/accounting")) {
-    return ["Admin", "Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+    return ["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
   }
 
   if (normalizedPath.startsWith("/attendance") || normalizedPath.startsWith("/api/attendance")) {

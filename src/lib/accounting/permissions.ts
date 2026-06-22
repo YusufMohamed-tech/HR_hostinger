@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-export type AccountingAction = "view" | "manage" | "post" | "settings" | "payroll" | "sales";
+export type AccountingAction = "view" | "manage" | "post" | "settings" | "payroll" | "sales" | "reports";
 
 export type AccountingAuthContext = {
   user: { id: string; email?: string | null };
@@ -12,11 +12,12 @@ export type AccountingAuthContext = {
   canManage: boolean;
   canPost: boolean;
   canManageSettings: boolean;
+  canViewReports: boolean;
 };
 
-const viewRoles = new Set(["admin", "finance_manager", "accountant", "finance_viewer"]);
-const manageRoles = new Set(["admin", "finance_manager", "accountant"]);
-const postRoles = new Set(["admin", "finance_manager"]);
+const viewRoles = new Set(["finance_manager", "accountant", "finance_viewer"]);
+const manageRoles = new Set(["finance_manager", "accountant"]);
+const postRoles = new Set(["finance_manager"]);
 
 export function getAccountingCapabilities(role: string, isSuperadmin = false) {
   return {
@@ -24,8 +25,9 @@ export function getAccountingCapabilities(role: string, isSuperadmin = false) {
     canManage: manageRoles.has(role),
     canPost: postRoles.has(role),
     canManageSettings: postRoles.has(role),
-    canViewPayrollStatus: role === "hr_admin" || viewRoles.has(role) || isSuperadmin,
+    canViewPayrollStatus: role === "admin" || role === "hr_admin" || viewRoles.has(role) || isSuperadmin,
     canViewSalesStatus: role === "sales_manager" || viewRoles.has(role) || isSuperadmin,
+    canViewReports: viewRoles.has(role) || isSuperadmin,
   };
 }
 
@@ -69,13 +71,14 @@ export async function requireAccountingAccess(action: AccountingAction = "view")
     action === "settings" ? capabilities.canManageSettings :
     action === "payroll" ? capabilities.canViewPayrollStatus :
     action === "sales" ? capabilities.canViewSalesStatus :
+    action === "reports" ? capabilities.canViewReports :
     false;
 
   if (!allowed) {
     return { error: NextResponse.json({ message: "ليست لديك صلاحية للوصول إلى المالية والمحاسبة." }, { status: 403 }) };
   }
 
-  if (isSuperadmin && action !== "view" && action !== "payroll" && action !== "sales") {
+  if (isSuperadmin && action !== "view" && action !== "payroll" && action !== "sales" && action !== "reports") {
     return { error: NextResponse.json({ message: "المشرف العام لديه وصول قراءة فقط لسجلات المحاسبة التشغيلية." }, { status: 403 }) };
   }
 
