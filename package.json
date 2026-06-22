@@ -10,6 +10,7 @@
     "apply:schema": "node scripts/apply-schema.mjs",
     "apply:migration": "node scripts/apply-migration.mjs",
     "apply:supabase-sql": "node scripts/apply-supabase-sql.mjs",
+    "verify:accounting": "node scripts/verify-accounting-module.mjs",
     "seed:admin": "node scripts/seed-initial-admin.mjs",
     "seed:dr-amr": "node scripts/seed-dr-amr-admin.mjs",
     "seed:demo": "node scripts/seed-demo-users.mjs",

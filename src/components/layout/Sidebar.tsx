@@ -128,7 +128,7 @@ export function SidebarContent() {
       { name: "مراكز التكلفة", href: "/accounting/cost-centers", icon: Layers },
       { name: "التقارير", href: "/accounting/reports", icon: ClipboardList },
       { name: "الإعدادات", href: "/accounting/settings", icon: Settings },
-    ];
+    ].filter((link) => link.href !== "/accounting/settings" || isAdmin || role === "Finance_Manager");
 
     const system: NavLink[] = [{ name: "الإعدادات", href: "/settings", icon: Settings }];
 

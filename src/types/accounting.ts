@@ -152,8 +152,32 @@ export interface AccountingPayment {
   direction: AccountingPaymentDirection;
   amount: number;
   currency: string;
+  account_id?: string | null;
+  counterpart_account_id?: string | null;
+  cost_center_id?: string | null;
+  description?: string | null;
+  attachment_url?: string | null;
   status: AccountingPaymentStatus;
   journal_entry_id: string | null;
+}
+
+export type PayrollAccountingStatusValue = "not_generated" | "draft_created" | "posted" | "paid";
+
+export interface PayrollAccountingStatus {
+  month: string;
+  payroll_id: string;
+  status: PayrollAccountingStatusValue;
+  payslip_count: number;
+  total_net: number;
+  advance_deductions: number;
+  journal_entry_id: string | null;
+  journal_entry_no: string | null;
+  journal_status: AccountingJournalStatus | null;
+  payment_id: string | null;
+  payment_no: string | null;
+  payment_status: AccountingPaymentStatus | null;
+  payment_journal_entry_id: string | null;
+  payment_journal_entry_no: string | null;
 }
 
 export interface AccountingSettings {
@@ -187,4 +211,14 @@ export interface AccountingReportRow {
   credit: number;
   balance: number;
   [key: string]: unknown;
+}
+
+export interface AccountingSalesCompanyLink {
+  id: string;
+  name: string;
+  code: string | null;
+  brand_color: string | null;
+  is_active: boolean;
+  accounting_customer_id: string | null;
+  accounting_customer?: Pick<AccountingCustomer, "id" | "name_ar"> | null;
 }

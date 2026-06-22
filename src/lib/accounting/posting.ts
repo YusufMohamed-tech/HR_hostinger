@@ -106,6 +106,7 @@ async function notifyFinance(admin: AdminClient, orgId: string, title: string, b
 
 export async function createJournalEntry(admin: AdminClient, input: JournalInput) {
   const status = input.status || "draft";
+  const initialStatus = status === "posted" ? "draft" : status;
   const validation = validateJournalLines(input.lines);
   if (!validation.valid) throw new Error(validation.message);
   await assertOpenPeriod(admin, input.orgId, input.entryDate);
@@ -148,15 +149,15 @@ export async function createJournalEntry(admin: AdminClient, input: JournalInput
       description: input.description,
       source_module: input.sourceModule || "manual",
       source_id: input.sourceId || null,
-      status,
+      status: initialStatus,
       currency: "SAR",
       total_debit: totals.debit,
       total_credit: totals.credit,
       created_by: input.userId,
-      approved_by: status === "posted" ? input.userId : null,
-      posted_by: status === "posted" ? input.userId : null,
-      approved_at: status === "posted" ? new Date().toISOString() : null,
-      posted_at: status === "posted" ? new Date().toISOString() : null,
+      approved_by: null,
+      posted_by: null,
+      approved_at: null,
+      posted_at: null,
       reversal_of: input.reversalOf || null,
       notes: input.notes || null,
     })
@@ -182,13 +183,33 @@ export async function createJournalEntry(admin: AdminClient, input: JournalInput
   const lineResult = await db(admin).from("accounting_journal_lines").insert(lineRows).select("*");
   if (lineResult.error) throw new Error(lineResult.error.message);
 
-  if (status === "posted" && input.sourceModule && input.sourceId) {
+  let finalEntry = entry as Record<string, unknown>;
+  if (status === "posted") {
+    const now = new Date().toISOString();
+    const updateResult = await db(admin)
+      .from("accounting_journal_entries")
+      .update({
+        status: "posted",
+        approved_by: input.userId,
+        posted_by: input.userId,
+        approved_at: now,
+        posted_at: now,
+      })
+      .eq("organization_id", input.orgId)
+      .eq("id", entryId)
+      .select("*")
+      .single();
+    if (updateResult.error) throw new Error(updateResult.error.message);
+    finalEntry = updateResult.data as Record<string, unknown>;
+  }
+
+  if (input.sourceModule && input.sourceId) {
     await db(admin).from("accounting_source_postings").insert({
       organization_id: input.orgId,
       source_module: input.sourceModule,
       source_id: input.sourceId,
       journal_entry_id: entryId,
-      status: "posted",
+      status,
     });
   }
 
@@ -205,7 +226,7 @@ export async function createJournalEntry(admin: AdminClient, input: JournalInput
     await notifyFinance(admin, input.orgId, "قيد محاسبي بانتظار الاعتماد", input.description, `/accounting/journal-entries/${entryId}`);
   }
 
-  return { ...entry, lines: lineResult.data || [] } as Record<string, unknown>;
+  return { ...finalEntry, lines: lineResult.data || [] } as Record<string, unknown>;
 }
 
 export async function postJournalEntry(admin: AdminClient, orgId: string, entryId: string, userId: string) {
@@ -297,6 +318,17 @@ export async function reverseJournalEntry(admin: AdminClient, orgId: string, ent
   if (!entry) throw new Error("القيد غير موجود.");
   if (entry.status !== "posted") throw new Error("يمكن عكس القيود المرحلة فقط.");
 
+  const existingReversal = await db(admin)
+    .from("accounting_journal_entries")
+    .select("id")
+    .eq("organization_id", orgId)
+    .eq("reversal_of", entryId)
+    .in("status", ["posted", "reversed"])
+    .limit(1)
+    .maybeSingle();
+  if (existingReversal.error) throw new Error(existingReversal.error.message);
+  if (existingReversal.data?.id) throw new Error("تم عكس هذا القيد مسبقا.");
+
   const lines = (Array.isArray(entry.lines) ? entry.lines : []) as Record<string, unknown>[];
   const reversal = await createJournalEntry(admin, {
     orgId,
@@ -320,7 +352,7 @@ export async function reverseJournalEntry(admin: AdminClient, orgId: string, ent
     })),
   });
 
-  await db(admin)
+  const updateResult = await db(admin)
     .from("accounting_journal_entries")
     .update({
       status: "reversed",
@@ -328,7 +360,10 @@ export async function reverseJournalEntry(admin: AdminClient, orgId: string, ent
       reversed_at: new Date().toISOString(),
     })
     .eq("organization_id", orgId)
-    .eq("id", entryId);
+    .eq("id", entryId)
+    .select("id")
+    .single();
+  if (updateResult.error) throw new Error(updateResult.error.message);
 
   await writeAuditLog(admin, {
     org_id: orgId,

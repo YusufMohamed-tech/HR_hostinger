@@ -7,6 +7,7 @@ export type SalesProduct = {
   unit: string | null;
   category: string | null;
   price: number;
+  revenue_account_id: string | null;
   is_active: boolean;
   created_by: string | null;
   created_at: string;
@@ -20,6 +21,7 @@ export type SalesCompany = {
   slug: string;
   code: string | null;
   brand_color: string | null;
+  accounting_customer_id?: string | null;
   is_active: boolean;
   assignment_role?: "sales" | "manager" | "admin" | null;
 };
@@ -35,6 +37,13 @@ export type SalesCompanyAssignment = {
   target_notes?: string | null;
   is_active: boolean;
   company?: SalesCompany | null;
+};
+
+export type SalesRevenueAccount = {
+  id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
 };
 
 export type SalesShiftPromptType = "hourly" | "mid_shift" | "end_shift";
@@ -217,6 +226,10 @@ export async function getSalesProducts(includeInactive = false) {
 
 export async function getSalesCompanies() {
   return apiFetch<SalesCompany[]>("/api/sales/companies");
+}
+
+export async function getSalesRevenueAccounts() {
+  return apiFetch<SalesRevenueAccount[]>("/api/accounting/sales/revenue-accounts");
 }
 
 export async function createSalesProduct(values: Partial<SalesProduct>) {

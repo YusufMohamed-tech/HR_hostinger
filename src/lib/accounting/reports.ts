@@ -21,7 +21,7 @@ async function getPostedLines(admin: AdminClient, orgId: string, dateFrom?: stri
   if (error) throw new Error(error.message);
   return ((data || []) as Record<string, unknown>[]).filter((line) => {
     const entry = line.entry as Record<string, unknown> | null;
-    return entry?.status === "posted" && inDateRange(String(entry.entry_date), dateFrom, dateTo);
+    return ["posted", "reversed"].includes(String(entry?.status)) && inDateRange(String(entry?.entry_date), dateFrom, dateTo);
   });
 }
 
@@ -55,7 +55,18 @@ export async function getTrialBalance(admin: AdminClient, orgId: string, dateFro
 }
 
 export async function getGeneralLedger(admin: AdminClient, orgId: string, accountId?: string, dateFrom?: string, dateTo?: string) {
-  const lines = (await getPostedLines(admin, orgId, dateFrom, dateTo))
+  const allLines = await getPostedLines(admin, orgId, undefined, dateTo);
+  const openingLines = dateFrom
+    ? allLines.filter((line) => {
+        const entry = line.entry as Record<string, unknown>;
+        return String(entry.entry_date) < dateFrom && (!accountId || String(line.account_id) === accountId);
+      })
+    : [];
+  const lines = allLines
+    .filter((line) => {
+      const entry = line.entry as Record<string, unknown>;
+      return inDateRange(String(entry.entry_date), dateFrom, dateTo);
+    })
     .filter((line) => !accountId || String(line.account_id) === accountId)
     .sort((a, b) => {
       const ea = a.entry as Record<string, unknown>;
@@ -63,14 +74,19 @@ export async function getGeneralLedger(admin: AdminClient, orgId: string, accoun
       return String(ea.entry_date).localeCompare(String(eb.entry_date)) || String(ea.entry_no).localeCompare(String(eb.entry_no));
     });
 
-  let runningBalance = 0;
-  return lines.map((line) => {
-    const entry = (line.entry || {}) as Record<string, unknown>;
+  const movementFor = (line: Record<string, unknown>) => {
     const account = (line.account || {}) as Record<string, unknown>;
     const normal = String(account.normal_balance || "debit");
-    const movement = normal === "credit"
+    return normal === "credit"
       ? Number(line.credit || 0) - Number(line.debit || 0)
       : Number(line.debit || 0) - Number(line.credit || 0);
+  };
+
+  let runningBalance = roundMoney(openingLines.reduce((sum, line) => sum + movementFor(line), 0));
+  const rows = lines.map((line) => {
+    const entry = (line.entry || {}) as Record<string, unknown>;
+    const account = (line.account || {}) as Record<string, unknown>;
+    const movement = movementFor(line);
     runningBalance = roundMoney(runningBalance + movement);
     return {
       id: line.id,
@@ -86,6 +102,12 @@ export async function getGeneralLedger(admin: AdminClient, orgId: string, accoun
       running_balance: runningBalance,
     };
   });
+
+  return {
+    openingBalance: roundMoney(openingLines.reduce((sum, line) => sum + movementFor(line), 0)),
+    rows,
+    closingBalance: runningBalance,
+  };
 }
 
 export async function getProfitLoss(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
@@ -102,77 +124,79 @@ export async function getBalanceSheet(admin: AdminClient, orgId: string, asOf?: 
   const assets = rows.filter((row) => row.account_type === "asset");
   const liabilities = rows.filter((row) => row.account_type === "liability");
   const equity = rows.filter((row) => row.account_type === "equity");
+  const revenue = rows.filter((row) => row.account_type === "revenue");
+  const expenses = rows.filter((row) => row.account_type === "expense");
+  const currentEarnings = roundMoney(
+    revenue.reduce((sum, row) => sum + Number(row.balance || 0), 0) -
+    expenses.reduce((sum, row) => sum + Number(row.balance || 0), 0)
+  );
+  const totalAssets = roundMoney(assets.reduce((sum, row) => sum + Number(row.balance || 0), 0));
+  const totalLiabilities = roundMoney(liabilities.reduce((sum, row) => sum + Number(row.balance || 0), 0));
+  const totalEquityAccounts = roundMoney(equity.reduce((sum, row) => sum + Number(row.balance || 0), 0));
+  const totalEquity = roundMoney(totalEquityAccounts + currentEarnings);
   return {
     assets,
     liabilities,
     equity,
-    totalAssets: roundMoney(assets.reduce((sum, row) => sum + Number(row.balance || 0), 0)),
-    totalLiabilities: roundMoney(liabilities.reduce((sum, row) => sum + Number(row.balance || 0), 0)),
-    totalEquity: roundMoney(equity.reduce((sum, row) => sum + Number(row.balance || 0), 0)),
+    currentEarnings,
+    totalAssets,
+    totalLiabilities,
+    totalEquity,
+    balanceCheck: roundMoney(totalAssets - totalLiabilities - totalEquity),
   };
 }
 
 export async function getVatReport(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
-  const [invoicesResult, expensesResult] = await Promise.all([
-    db(admin)
-      .from("accounting_invoices")
-      .select("invoice_no, invoice_date, vat_amount, status")
-      .eq("organization_id", orgId)
-      .in("status", ["issued", "partially_paid", "paid"]),
-    db(admin)
-      .from("accounting_expenses")
-      .select("expense_no, expense_date, vat_amount, status")
-      .eq("organization_id", orgId)
-      .in("status", ["approved", "paid"]),
-  ]);
+  const settings = await db(admin)
+    .from("accounting_settings")
+    .select("default_vat_payable_id, default_vat_receivable_id")
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (settings.error) throw new Error(settings.error.message);
 
-  if (invoicesResult.error) throw new Error(invoicesResult.error.message);
-  if (expensesResult.error) throw new Error(expensesResult.error.message);
-
-  const invoices = ((invoicesResult.data || []) as Record<string, unknown>[]).filter((row) => inDateRange(String(row.invoice_date), dateFrom, dateTo));
-  const expenses = ((expensesResult.data || []) as Record<string, unknown>[]).filter((row) => inDateRange(String(row.expense_date), dateFrom, dateTo));
-  const vatCollected = roundMoney(invoices.reduce((sum, row) => sum + Number(row.vat_amount || 0), 0));
-  const vatPaid = roundMoney(expenses.reduce((sum, row) => sum + Number(row.vat_amount || 0), 0));
-  return { invoices, expenses, vatCollected, vatPaid, netVat: roundMoney(vatCollected - vatPaid) };
+  const payableId = String(settings.data?.default_vat_payable_id || "");
+  const receivableId = String(settings.data?.default_vat_receivable_id || "");
+  const lines = await getPostedLines(admin, orgId, dateFrom, dateTo);
+  const payableLines = payableId ? lines.filter((line) => String(line.account_id) === payableId) : [];
+  const receivableLines = receivableId ? lines.filter((line) => String(line.account_id) === receivableId) : [];
+  const vatCollected = roundMoney(payableLines.reduce((sum, line) => sum + Number(line.credit || 0) - Number(line.debit || 0), 0));
+  const vatPaid = roundMoney(receivableLines.reduce((sum, line) => sum + Number(line.debit || 0) - Number(line.credit || 0), 0));
+  return { payableLines, receivableLines, vatCollected, vatPaid, netVat: roundMoney(vatCollected - vatPaid) };
 }
 
 export async function getPayrollCostReport(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
-  const { data, error } = await db(admin)
-    .from("payslips")
-    .select("*, employee:employee_id(full_name, employee_code, department_id, department:department_id(name))")
-    .eq("org_id", orgId)
-    .order("month", { ascending: false });
-  if (error) throw new Error(error.message);
+  const settings = await db(admin)
+    .from("accounting_settings")
+    .select("default_salary_expense_id")
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (settings.error) throw new Error(settings.error.message);
 
-  const rows = ((data || []) as Record<string, unknown>[]).filter((row) => inDateRange(String(row.month).slice(0, 10), dateFrom, dateTo));
-  const totalNet = roundMoney(rows.reduce((sum, row) => sum + Number(row.net_salary || 0), 0));
-  const totalDeductions = roundMoney(rows.reduce((sum, row) => sum + Number(row.total_deductions || 0), 0));
-  return { rows, totalNet, totalDeductions, totalGross: roundMoney(totalNet + totalDeductions) };
+  const salaryExpenseId = String(settings.data?.default_salary_expense_id || "");
+  const rows = salaryExpenseId
+    ? (await getPostedLines(admin, orgId, dateFrom, dateTo)).filter((line) => String(line.account_id) === salaryExpenseId)
+    : [];
+  const totalPayrollCost = roundMoney(rows.reduce((sum, line) => sum + Number(line.debit || 0) - Number(line.credit || 0), 0));
+  return { rows, totalPayrollCost };
 }
 
 export async function getEmployeeAdvancesReport(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
-  const [requestsResult, balancesResult] = await Promise.all([
-    db(admin)
-      .from("advance_requests")
-      .select("*, employee:employee_id(full_name, employee_code)")
-      .eq("organization_id", orgId)
-      .in("status", ["approved", "partial_approved"]),
-    db(admin)
-      .from("financial_balances")
-      .select("*, employee:employee_id(full_name, employee_code)")
-      .eq("org_id", orgId)
-      .eq("balance_type", "advance_payment"),
-  ]);
-  if (requestsResult.error) throw new Error(requestsResult.error.message);
-  if (balancesResult.error) throw new Error(balancesResult.error.message);
+  const settings = await db(admin)
+    .from("accounting_settings")
+    .select("default_employee_advances_id")
+    .eq("organization_id", orgId)
+    .maybeSingle();
+  if (settings.error) throw new Error(settings.error.message);
 
-  const advances = ((requestsResult.data || []) as Record<string, unknown>[]).filter((row) => inDateRange(String(row.created_at).slice(0, 10), dateFrom, dateTo));
-  const balances = ((balancesResult.data || []) as Record<string, unknown>[]).filter((row) => inDateRange(String(row.created_at).slice(0, 10), dateFrom, dateTo));
+  const advancesAccountId = String(settings.data?.default_employee_advances_id || "");
+  const rows = advancesAccountId
+    ? (await getPostedLines(admin, orgId, dateFrom, dateTo)).filter((line) => String(line.account_id) === advancesAccountId)
+    : [];
   return {
-    advances,
-    balances,
-    totalAdvanced: roundMoney(advances.reduce((sum, row) => sum + Number(row.approved_amount || row.requested_amount || 0), 0)),
-    remainingBalance: roundMoney(balances.reduce((sum, row) => sum + Number(row.amount || 0), 0)),
+    rows,
+    totalAdvanced: roundMoney(rows.reduce((sum, line) => sum + Number(line.debit || 0), 0)),
+    totalRecovered: roundMoney(rows.reduce((sum, line) => sum + Number(line.credit || 0), 0)),
+    remainingBalance: roundMoney(rows.reduce((sum, line) => sum + Number(line.debit || 0) - Number(line.credit || 0), 0)),
   };
 }
 

@@ -101,6 +101,7 @@ export async function POST(request: NextRequest) {
       unit: String(body.unit || "").trim() || null,
       category: String(body.category || "").trim() || null,
       price,
+      revenue_account_id: String(body.revenue_account_id || "").trim() || null,
       is_active: body.is_active !== false,
       created_by: auth.user.id,
     } as never)
@@ -144,6 +145,7 @@ export async function PATCH(request: NextRequest) {
   if ("description" in body) values.description = String(body.description || "").trim() || null;
   if ("unit" in body) values.unit = String(body.unit || "").trim() || null;
   if ("category" in body) values.category = String(body.category || "").trim() || null;
+  if ("revenue_account_id" in body) values.revenue_account_id = String(body.revenue_account_id || "").trim() || null;
   if ("price" in body) {
     const price = asNumber(body.price);
     if (price < 0) return NextResponse.json({ message: "السعر لا يمكن أن يكون أقل من صفر." }, { status: 400 });

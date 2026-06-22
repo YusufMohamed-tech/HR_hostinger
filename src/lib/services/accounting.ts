@@ -6,8 +6,10 @@ import type {
   AccountingInvoice,
   AccountingJournalEntry,
   AccountingPayment,
+  AccountingSalesCompanyLink,
   AccountingSettings,
   AccountingVendor,
+  PayrollAccountingStatus,
 } from "@/types/accounting";
 
 type ApiResult<T> = { data: T | null; error: string | null };
@@ -172,5 +174,34 @@ export function createPayrollDraftEntry(month: string, payrollId?: string) {
   return apiFetch<AccountingJournalEntry>("/api/accounting/payroll/create-draft-entry", {
     method: "POST",
     body: JSON.stringify({ month, payroll_id: payrollId }),
+  });
+}
+
+export function getPayrollAccountingStatus(month: string) {
+  return apiFetch<PayrollAccountingStatus>(`/api/accounting/payroll/status${qs({ month })}`);
+}
+
+export function recordPayrollPayment(values: { month: string; amount?: number; account_id?: string; payment_date?: string; method?: string; reference_no?: string }) {
+  return apiFetch<{ payment: AccountingPayment; journal: AccountingJournalEntry; status: PayrollAccountingStatus }>("/api/accounting/payroll/record-payment", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getAccountingSalesCompanies() {
+  return apiFetch<AccountingSalesCompanyLink[]>("/api/accounting/sales/companies");
+}
+
+export function linkSalesCompanyCustomer(values: { company_id: string; customer_id: string }) {
+  return apiFetch<{ company: AccountingSalesCompanyLink; customer: AccountingCustomer }>("/api/accounting/sales/link-company-customer", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function createInvoiceFromSalesLog(values: { sales_log_id: string; customer_id?: string }) {
+  return apiFetch<AccountingInvoice>("/api/accounting/sales/create-invoice-from-log", {
+    method: "POST",
+    body: JSON.stringify(values),
   });
 }

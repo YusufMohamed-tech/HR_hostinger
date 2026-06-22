@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { getPayslips, generatePayslip, updatePayslipStatus } from "@/lib/services/payroll";
+import { createPayrollDraftEntry, getPayrollAccountingStatus, postJournalEntry, recordPayrollPayment } from "@/lib/services/accounting";
+import type { PayrollAccountingStatus } from "@/types/accounting";
 import { useEmployees } from "@/hooks/use-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +26,20 @@ const statusLabels: Record<string, string> = {
 const statusColors: Record<string, string> = {
   draft: "bg-orange-50 text-orange-700 border-orange-200",
   approved: "bg-blue-50 text-blue-700 border-blue-200",
+  paid: "bg-green-50 text-green-700 border-green-200",
+};
+
+const accountingStatusLabels: Record<string, string> = {
+  not_generated: "لم ينشأ",
+  draft_created: "مسودة جاهزة",
+  posted: "مرحل",
+  paid: "مدفوع",
+};
+
+const accountingStatusColors: Record<string, string> = {
+  not_generated: "bg-gray-50 text-gray-700 border-gray-200",
+  draft_created: "bg-orange-50 text-orange-700 border-orange-200",
+  posted: "bg-blue-50 text-blue-700 border-blue-200",
   paid: "bg-green-50 text-green-700 border-green-200",
 };
 
@@ -132,20 +149,31 @@ export default function PayrollPage() {
   const [payslips, setPayslips] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [accountingBusy, setAccountingBusy] = useState(false);
+  const [accountingStatus, setAccountingStatus] = useState<PayrollAccountingStatus | null>(null);
   const [message, setMessage] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
-  const isAdmin = currentUser?.role !== "Employee";
+  const role = String(currentUser?.role || "");
+  const canRunPayroll = ["Admin", "HR_Admin"].includes(role);
+  const canViewAccountingStatus = ["Admin", "HR_Admin", "Finance_Manager", "Accountant", "Finance_Viewer", "Superadmin"].includes(role);
+  const canGenerateAccountingDraft = ["Admin", "Finance_Manager", "Accountant"].includes(role);
+  const canPostPayrollAccounting = ["Admin", "Finance_Manager"].includes(role);
 
   const monthParam = selectedMonth + "-01";
 
   const loadPayslips = useCallback(async () => {
     if (!currentUser?.orgId) return;
     setLoading(true);
-    const { data } = await getPayslips(currentUser.orgId, monthParam);
-    if (data) setPayslips(data);
+    const [payslipsResult, accountingResult] = await Promise.all([
+      getPayslips(currentUser.orgId, monthParam),
+      canViewAccountingStatus ? getPayrollAccountingStatus(monthParam) : Promise.resolve({ data: null, error: null }),
+    ]);
+    if (payslipsResult.data) setPayslips(payslipsResult.data);
     else setPayslips([]);
+    if (accountingResult.data) setAccountingStatus(accountingResult.data);
+    else setAccountingStatus(null);
     setLoading(false);
-  }, [currentUser?.orgId, monthParam]);
+  }, [currentUser?.orgId, monthParam, canViewAccountingStatus]);
 
   useEffect(() => {
     loadPayslips();
@@ -167,6 +195,34 @@ export default function PayrollPage() {
     setPayslips((prev) =>
       prev.map((p) => (p.id === payslipId ? { ...p, status: newStatus } : p))
     );
+  };
+
+  const handleGenerateAccountingDraft = async () => {
+    setAccountingBusy(true);
+    const result = await createPayrollDraftEntry(monthParam);
+    if (result.error) setMessage(result.error);
+    else setMessage("تم إنشاء مسودة قيد الرواتب.");
+    await loadPayslips();
+    setAccountingBusy(false);
+  };
+
+  const handlePostAccountingJournal = async () => {
+    if (!accountingStatus?.journal_entry_id) return;
+    setAccountingBusy(true);
+    const result = await postJournalEntry(accountingStatus.journal_entry_id);
+    if (result.error) setMessage(result.error);
+    else setMessage("تم ترحيل قيد الرواتب.");
+    await loadPayslips();
+    setAccountingBusy(false);
+  };
+
+  const handleRecordPayrollPayment = async () => {
+    setAccountingBusy(true);
+    const result = await recordPayrollPayment({ month: monthParam, amount: accountingStatus?.total_net || totalNet, payment_date: new Date().toISOString().slice(0, 10) });
+    if (result.error) setMessage(result.error);
+    else setMessage("تم تسجيل سداد الرواتب وترحيل قيده.");
+    await loadPayslips();
+    setAccountingBusy(false);
   };
 
   // Summary totals
@@ -203,7 +259,7 @@ export default function PayrollPage() {
             onChange={(e) => setSelectedMonth(e.target.value)}
             className="w-40 text-center"
           />
-          {isAdmin && (
+          {canRunPayroll && (
             <>
               <Button variant="outline" onClick={handleExportPayroll}>
                 <Download className="w-4 h-4 ml-2" /> تصدير PDF
@@ -238,6 +294,51 @@ export default function PayrollPage() {
         </Card>
       </div>
 
+      {canViewAccountingStatus && (
+        <Card className="border-none shadow-sm">
+          <CardContent className="flex flex-col gap-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
+              <p className="text-xs text-gray-500">الحالة المحاسبية للرواتب</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className={accountingStatusColors[accountingStatus?.status || "not_generated"] || "bg-gray-50 text-gray-700 border-gray-200"}>
+                  {accountingStatusLabels[accountingStatus?.status || "not_generated"] || accountingStatus?.status || "not_generated"}
+                </Badge>
+                {accountingStatus?.journal_entry_no && <span className="text-sm text-gray-600">قيد الرواتب: {accountingStatus.journal_entry_no}</span>}
+                {accountingStatus?.payment_no && <span className="text-sm text-gray-600">دفعة الرواتب: {accountingStatus.payment_no}</span>}
+                {Number(accountingStatus?.advance_deductions || 0) > 0 && <span className="text-sm text-gray-600">خصومات السلف: {formatCurrency(accountingStatus?.advance_deductions)}</span>}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {accountingStatus?.journal_entry_id && (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/accounting/journal-entries/${accountingStatus.journal_entry_id}`}>عرض قيد الرواتب</Link>
+                </Button>
+              )}
+              {accountingStatus?.payment_journal_entry_id && (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/accounting/journal-entries/${accountingStatus.payment_journal_entry_id}`}>عرض قيد السداد</Link>
+                </Button>
+              )}
+              {canGenerateAccountingDraft && accountingStatus?.status === "not_generated" && Number(accountingStatus?.payslip_count || 0) > 0 && (
+                <Button variant="outline" size="sm" onClick={handleGenerateAccountingDraft} disabled={accountingBusy}>
+                  إنشاء مسودة محاسبية
+                </Button>
+              )}
+              {canPostPayrollAccounting && accountingStatus?.status === "draft_created" && (
+                <Button size="sm" className="bg-brand text-white hover:bg-brand-dark" onClick={handlePostAccountingJournal} disabled={accountingBusy}>
+                  ترحيل قيد الرواتب
+                </Button>
+              )}
+              {canPostPayrollAccounting && accountingStatus?.status === "posted" && (
+                <Button variant="outline" size="sm" onClick={handleRecordPayrollPayment} disabled={accountingBusy}>
+                  تسجيل سداد الرواتب
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card className="border-none shadow-sm">
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -264,7 +365,7 @@ export default function PayrollPage() {
                   <TableHead>الخصومات</TableHead>
                   <TableHead>صافي الراتب</TableHead>
                   <TableHead>الحالة</TableHead>
-                  {isAdmin && <TableHead className="text-right">الإجراءات</TableHead>}
+                  {canRunPayroll && <TableHead className="text-right">الإجراءات</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -293,7 +394,7 @@ export default function PayrollPage() {
                           {statusLabels[status] || status}
                         </Badge>
                       </TableCell>
-                      {isAdmin && (
+                      {canRunPayroll && (
                         <TableCell className="text-right">
                           <div className="flex gap-1 justify-end">
                             {status === "draft" && (

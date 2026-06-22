@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAccountingAccess, type AccountingAction } from "@/lib/accounting/permissions";
 import { generateAccountingNumber } from "@/lib/accounting/numbering";
@@ -43,9 +44,54 @@ function getQueryDates(request: NextRequest) {
   };
 }
 
+function deterministicUuid(seed: string) {
+  const hash = createHash("sha1").update(seed).digest();
+  const bytes = Buffer.from(hash.subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function normalizeMonth(value: unknown) {
+  const text = requireText(value);
+  if (/^\d{4}-\d{2}$/.test(text)) return `${text}-01`;
+  return parseDate(text);
+}
+
+function parseJsonArray(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value as Record<string, unknown>[];
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      return Array.isArray(parsed) ? parsed as Record<string, unknown>[] : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function sumAdvanceDeductions(payslips: Record<string, unknown>[]) {
+  return roundMoney(payslips.reduce((sum, slip) => {
+    const deductions = parseJsonArray(slip.deductions_details);
+    const advanceAmount = deductions.reduce((deductionSum, deduction) => {
+      const label = String(deduction.label || deduction.type || deduction.name || "").toLowerCase();
+      const isAdvance = label.includes("advance") || label.includes("سلفة") || label.includes("سلف");
+      return deductionSum + (isAdvance ? Number(deduction.amount || 0) : 0);
+    }, 0);
+    return sum + advanceAmount;
+  }, 0));
+}
+
+function payrollSourceId(orgId: string, month: string) {
+  return deterministicUuid(`payroll:${orgId}:${month}`);
+}
+
 function actionFor(method: string, parts: string[]): AccountingAction {
-  if (parts[0] === "payroll") return "payroll";
+  if (parts[0] === "payroll" && method === "GET") return "payroll";
   if (parts[0] === "sales" && method === "GET") return "sales";
+  if (parts[0] === "payroll" && parts[1] === "record-payment") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
@@ -177,9 +223,25 @@ async function buildInvoiceJournal(admin: ReturnType<typeof createAdminClient>, 
   if (!settings?.default_accounts_receivable_id || !settings?.default_sales_revenue_id) {
     throw new Error("أكمل إعدادات حسابات الذمم المدينة وإيرادات المبيعات أولا.");
   }
+  const invoiceLines = Array.isArray(invoice.lines) ? invoice.lines as Record<string, unknown>[] : [];
+  const revenueByAccount = new Map<string, number>();
+  if (invoiceLines.length > 0) {
+    for (const line of invoiceLines) {
+      const accountId = String(line.revenue_account_id || settings.default_sales_revenue_id);
+      const amount = roundMoney(Number(line.line_total || 0) - Number(line.vat_amount || 0));
+      revenueByAccount.set(accountId, roundMoney((revenueByAccount.get(accountId) || 0) + amount));
+    }
+  } else {
+    revenueByAccount.set(String(settings.default_sales_revenue_id), roundMoney(Number(invoice.subtotal || 0) - Number(invoice.discount_amount || 0)));
+  }
   const lines: JournalLineInput[] = [
     { account_id: String(settings.default_accounts_receivable_id), debit: Number(invoice.total_amount || 0), credit: 0, description: String(invoice.invoice_no) },
-    { account_id: String(settings.default_sales_revenue_id), debit: 0, credit: roundMoney(Number(invoice.subtotal || 0) - Number(invoice.discount_amount || 0)), description: String(invoice.invoice_no) },
+    ...Array.from(revenueByAccount.entries()).map(([accountId, amount]) => ({
+      account_id: accountId,
+      debit: 0,
+      credit: amount,
+      description: String(invoice.invoice_no),
+    })),
   ];
   if (Number(invoice.vat_amount || 0) > 0) {
     if (!settings.default_vat_payable_id) throw new Error("حساب ضريبة القيمة المضافة المستحقة غير محدد.");
@@ -235,17 +297,22 @@ async function postPaymentJournal(admin: ReturnType<typeof createAdminClient>, o
   if (payment.type === "vendor_payment") otherAccount = String(settings?.default_accounts_payable_id || "");
   if (payment.type === "payroll_payment") otherAccount = String(settings?.default_salary_payable_id || "");
   if (payment.type === "employee_advance") otherAccount = String(settings?.default_employee_advances_id || "");
+  if (payment.type === "manual") otherAccount = String(payment.counterpart_account_id || "");
   if (!otherAccount) throw new Error("إعدادات الحساب المقابل للدفعة غير مكتملة.");
 
+  if (bank === otherAccount) throw new Error("Payment bank/cash account and counterpart account must be different.");
+
   const inbound = payment.direction === "inbound";
+  const description = requireText(payment.description, requireText(payment.notes, String(payment.payment_no)));
+  const costCenterId = payment.cost_center_id ? String(payment.cost_center_id) : null;
   const lines: JournalLineInput[] = inbound
     ? [
-        { account_id: bank, debit: Number(payment.amount || 0), credit: 0, description: String(payment.payment_no) },
-        { account_id: otherAccount, debit: 0, credit: Number(payment.amount || 0), description: String(payment.payment_no) },
+        { account_id: bank, debit: Number(payment.amount || 0), credit: 0, description, cost_center_id: costCenterId },
+        { account_id: otherAccount, debit: 0, credit: Number(payment.amount || 0), description, cost_center_id: costCenterId },
       ]
     : [
-        { account_id: otherAccount, debit: Number(payment.amount || 0), credit: 0, description: String(payment.payment_no) },
-        { account_id: bank, debit: 0, credit: Number(payment.amount || 0), description: String(payment.payment_no) },
+        { account_id: otherAccount, debit: Number(payment.amount || 0), credit: 0, description, cost_center_id: costCenterId },
+        { account_id: bank, debit: 0, credit: Number(payment.amount || 0), description, cost_center_id: costCenterId },
       ];
 
   return createJournalEntry(admin, {
@@ -258,6 +325,93 @@ async function postPaymentJournal(admin: ReturnType<typeof createAdminClient>, o
     status: "posted",
     lines,
   });
+}
+
+async function getPayrollAccountingStatus(admin: ReturnType<typeof createAdminClient>, orgId: string, monthInput: unknown) {
+  const month = normalizeMonth(monthInput);
+  const sourceId = payrollSourceId(orgId, month);
+
+  const payslipsResult = await db(admin)
+    .from("payslips")
+    .select("id, net_salary, deductions_details, status")
+    .eq("org_id", orgId)
+    .eq("month", month);
+  if (payslipsResult.error) throw new Error(payslipsResult.error.message);
+
+  const payslips = (payslipsResult.data || []) as Record<string, unknown>[];
+  const totalNet = roundMoney(payslips.reduce((sum, row) => sum + Number(row.net_salary || 0), 0));
+  const advanceDeductions = sumAdvanceDeductions(payslips);
+
+  const sourcePosting = await db(admin)
+    .from("accounting_source_postings")
+    .select("journal_entry_id, status")
+    .eq("organization_id", orgId)
+    .eq("source_module", "payroll")
+    .eq("source_id", sourceId)
+    .maybeSingle();
+  if (sourcePosting.error) throw new Error(sourcePosting.error.message);
+
+  let journal: Record<string, unknown> | null = null;
+  if (sourcePosting.data?.journal_entry_id) {
+    const journalResult = await db(admin)
+      .from("accounting_journal_entries")
+      .select("id, entry_no, status, total_debit, total_credit, posted_at")
+      .eq("organization_id", orgId)
+      .eq("id", sourcePosting.data.journal_entry_id)
+      .maybeSingle();
+    if (journalResult.error) throw new Error(journalResult.error.message);
+    journal = journalResult.data as Record<string, unknown> | null;
+  }
+
+  const paymentResult = await db(admin)
+    .from("accounting_payments")
+    .select("id, payment_no, status, amount, journal_entry_id, posted_at")
+    .eq("organization_id", orgId)
+    .eq("type", "payroll_payment")
+    .eq("payroll_id", sourceId)
+    .neq("status", "cancelled")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (paymentResult.error) throw new Error(paymentResult.error.message);
+
+  let paymentJournal: Record<string, unknown> | null = null;
+  if (paymentResult.data?.journal_entry_id) {
+    const paymentJournalResult = await db(admin)
+      .from("accounting_journal_entries")
+      .select("id, entry_no, status")
+      .eq("organization_id", orgId)
+      .eq("id", paymentResult.data.journal_entry_id)
+      .maybeSingle();
+    if (paymentJournalResult.error) throw new Error(paymentJournalResult.error.message);
+    paymentJournal = paymentJournalResult.data as Record<string, unknown> | null;
+  }
+
+  const payment = paymentResult.data as Record<string, unknown> | null;
+  const status = payment?.status === "posted"
+    ? "paid"
+    : journal?.status === "posted"
+      ? "posted"
+      : journal
+        ? "draft_created"
+        : "not_generated";
+
+  return {
+    month,
+    payroll_id: sourceId,
+    status,
+    payslip_count: payslips.length,
+    total_net: totalNet,
+    advance_deductions: advanceDeductions,
+    journal_entry_id: journal?.id || null,
+    journal_entry_no: journal?.entry_no || null,
+    journal_status: journal?.status || null,
+    payment_id: payment?.id || null,
+    payment_no: payment?.payment_no || null,
+    payment_status: payment?.status || null,
+    payment_journal_entry_id: payment?.journal_entry_id || null,
+    payment_journal_entry_no: paymentJournal?.entry_no || null,
+  };
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -294,6 +448,45 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (parts[0] === "payments") {
       if (parts[1]) return json(await getRecord(admin, "accounting_payments", auth.orgId, parts[1]));
       return json(await listTable(admin, "accounting_payments", auth.orgId, request, "payment_date"));
+    }
+    if (parts[0] === "payroll" && parts[1] === "status") {
+      return json(await getPayrollAccountingStatus(admin, auth.orgId, request.nextUrl.searchParams.get("month") || new Date()));
+    }
+    if (parts[0] === "sales" && parts[1] === "revenue-accounts") {
+      const { data, error } = await db(admin)
+        .from("accounting_accounts")
+        .select("id, code, name_ar, name_en")
+        .eq("organization_id", auth.orgId)
+        .eq("type", "revenue")
+        .eq("is_active", true)
+        .order("code", { ascending: true });
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "sales" && parts[1] === "companies") {
+      const { data, error } = await db(admin)
+        .from("sales_companies")
+        .select("id, name, code, brand_color, is_active, accounting_customer_id, accounting_customer:accounting_customer_id(id, name_ar)")
+        .eq("organization_id", auth.orgId)
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "sales" && parts[1] === "log-status") {
+      const logId = requireText(request.nextUrl.searchParams.get("sales_log_id"));
+      if (!logId) return message("sales_log_id is required.", 400);
+      const { data, error } = await db(admin)
+        .from("accounting_invoices")
+        .select("id, invoice_no, status, total_amount, balance_due, journal_entry_id")
+        .eq("organization_id", auth.orgId)
+        .eq("source_module", "sales_log")
+        .eq("source_id", logId)
+        .not("status", "in", "(cancelled,void)")
+        .limit(1)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return json({ sales_log_id: logId, status: data ? "invoice_created" : "not_generated", invoice: data || null });
     }
     if (parts[0] === "settings") {
       const settings = await getAccountingSettings(admin, auth.orgId);
@@ -430,6 +623,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
       const result = await db(admin).from(table).insert(values).select("*").single();
       if (result.error) throw new Error(result.error.message);
+      if (table === "accounting_customers" && values.sales_company_id) {
+        const companyUpdate = await db(admin)
+          .from("sales_companies")
+          .update({ accounting_customer_id: result.data.id })
+          .eq("organization_id", auth.orgId)
+          .eq("id", values.sales_company_id);
+        if (companyUpdate.error) throw new Error(companyUpdate.error.message);
+      }
       await audit(admin, auth.orgId, auth.user.id, `accounting.${parts[0].slice(0, -1)}_created`, table, result.data.id, values);
       return json(result.data, 201);
     }
@@ -455,7 +656,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (parts[0] === "expenses" && parts[1] && parts[2] === "approve") {
       const expense = await getRecord(admin, "accounting_expenses", auth.orgId, parts[1]);
-      if (!["draft", "pending_approval", "approved"].includes(String(expense.status))) return message("لا يمكن اعتماد هذا المصروف.", 400);
+      if (!["draft", "pending_approval"].includes(String(expense.status))) return message("لا يمكن اعتماد هذا المصروف.", 400);
       const journal = await buildExpenseJournal(admin, auth.orgId, expense, auth.user.id, Boolean(body.paid_immediately));
       const next = await updateRecord(admin, "accounting_expenses", auth.orgId, parts[1], {
         status: body.paid_immediately ? "paid" : "approved",
@@ -470,6 +671,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return json(next);
     }
     if (parts[0] === "expenses" && parts[1] && parts[2] === "reject") {
+      const expense = await getRecord(admin, "accounting_expenses", auth.orgId, parts[1]);
+      if (!["draft", "pending_approval"].includes(String(expense.status))) return message("يمكن رفض المصروفات المسودة أو بانتظار الاعتماد فقط.", 400);
       const next = await updateRecord(admin, "accounting_expenses", auth.orgId, parts[1], {
         status: "rejected",
         rejection_reason: requireText(body.reason) || null,
@@ -479,6 +682,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (parts[0] === "expenses" && parts[1] && parts[2] === "pay") {
       const expense = await getRecord(admin, "accounting_expenses", auth.orgId, parts[1]);
+      if (String(expense.status) !== "approved") return message("يمكن سداد المصروفات المعتمدة وغير المسددة فقط.", 400);
+      const paidResult = await db(admin)
+        .from("accounting_payments")
+        .select("amount")
+        .eq("organization_id", auth.orgId)
+        .eq("expense_id", parts[1])
+        .eq("status", "posted");
+      if (paidResult.error) throw new Error(paidResult.error.message);
+      const alreadyPaid = roundMoney(((paidResult.data || []) as Record<string, unknown>[]).reduce((sum, row) => sum + Number(row.amount || 0), 0));
+      const unpaidAmount = roundMoney(Number(expense.total_amount || 0) - alreadyPaid);
+      const amount = roundMoney(body.amount || unpaidAmount);
+      if (amount <= 0 || amount > unpaidAmount) return message("مبلغ السداد يتجاوز الرصيد غير المسدد للمصروف.", 400);
       const settings = await getAccountingSettings(admin, auth.orgId);
       const paymentNo = await generateAccountingNumber(admin, "accounting_payments", auth.orgId, String(settings?.payment_prefix || "PAY"));
       const paymentResult = await db(admin).from("accounting_payments").insert({
@@ -487,7 +702,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         payment_date: parseDate(body.payment_date),
         type: "vendor_payment",
         direction: "outbound",
-        amount: Number(body.amount || expense.total_amount || 0),
+        amount,
         account_id: body.account_id || settings?.default_bank_account_id || settings?.default_cash_account_id || null,
         vendor_id: expense.vendor_id || null,
         expense_id: parts[1],
@@ -497,7 +712,12 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (paymentResult.error) throw new Error(paymentResult.error.message);
       const journal = await postPaymentJournal(admin, auth.orgId, paymentResult.data, auth.user.id);
       await updateRecord(admin, "accounting_payments", auth.orgId, paymentResult.data.id, { status: "posted", posted_by: auth.user.id, posted_at: new Date().toISOString(), journal_entry_id: journal.id });
-      const next = await updateRecord(admin, "accounting_expenses", auth.orgId, parts[1], { status: "paid", paid_status: "paid", paid_at: new Date().toISOString() });
+      const remaining = roundMoney(unpaidAmount - amount);
+      const next = await updateRecord(admin, "accounting_expenses", auth.orgId, parts[1], {
+        status: remaining === 0 ? "paid" : "approved",
+        paid_status: remaining === 0 ? "paid" : "partially_paid",
+        paid_at: remaining === 0 ? new Date().toISOString() : null,
+      });
       await audit(admin, auth.orgId, auth.user.id, "accounting.expense_paid", "accounting_expenses", parts[1], next);
       return json(next);
     }
@@ -549,6 +769,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (parts[0] === "invoices" && parts[1] && parts[2] === "record-payment") {
       const invoice = await getRecord(admin, "accounting_invoices", auth.orgId, parts[1]);
+      if (!["issued", "partially_paid"].includes(String(invoice.status))) return message("يمكن تسجيل السداد للفواتير الصادرة فقط.", 400);
       const settings = await getAccountingSettings(admin, auth.orgId);
       const amount = roundMoney(body.amount || invoice.balance_due);
       if (amount <= 0 || amount > Number(invoice.balance_due || 0)) return message("مبلغ السداد غير صحيح.", 400);
@@ -607,14 +828,32 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (parts[0] === "payments") {
       const settings = await getAccountingSettings(admin, auth.orgId);
       const paymentNo = await generateAccountingNumber(admin, "accounting_payments", auth.orgId, String(settings?.payment_prefix || "PAY"), new Date(parseDate(body.payment_date)));
+      const paymentType = requireText(body.type, "manual");
+      const direction = requireText(body.direction, "outbound");
+      const amount = roundMoney(body.amount);
+      const accountId = paymentType === "manual"
+        ? requireText(body.account_id)
+        : body.account_id || settings?.default_bank_account_id || settings?.default_cash_account_id || null;
+      const counterpartAccountId = requireText(body.counterpart_account_id) || null;
+      const description = requireText(body.description) || requireText(body.notes) || null;
+      if (amount <= 0) return message("مبلغ الدفعة يجب أن يكون أكبر من صفر.", 400);
+      if (!["inbound", "outbound"].includes(direction)) return message("اتجاه الدفعة غير صحيح.", 400);
+      if (paymentType === "manual") {
+        if (!accountId) return message("حساب البنك أو النقدية مطلوب للدفعة اليدوية.", 400);
+        if (!counterpartAccountId) return message("الحساب المقابل مطلوب للدفعة اليدوية.", 400);
+        if (accountId === counterpartAccountId) return message("حساب البنك أو النقدية يجب أن يختلف عن الحساب المقابل.", 400);
+        if (!description) return message("وصف الدفعة اليدوية مطلوب.", 400);
+      }
       const values = {
         organization_id: auth.orgId,
         payment_no: paymentNo,
         payment_date: parseDate(body.payment_date),
-        type: requireText(body.type, "manual"),
-        direction: requireText(body.direction, "outbound"),
-        amount: roundMoney(body.amount),
-        account_id: body.account_id || settings?.default_bank_account_id || settings?.default_cash_account_id || null,
+        type: paymentType,
+        direction,
+        amount,
+        account_id: accountId,
+        counterpart_account_id: counterpartAccountId,
+        cost_center_id: body.cost_center_id || null,
         customer_id: body.customer_id || null,
         vendor_id: body.vendor_id || null,
         employee_id: body.employee_id || null,
@@ -622,9 +861,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         expense_id: body.expense_id || null,
         advance_request_id: body.advance_request_id || null,
         payroll_id: body.payroll_id || null,
+        description,
         reference_no: requireText(body.reference_no) || null,
         method: requireText(body.method) || null,
         notes: requireText(body.notes) || null,
+        attachment_url: requireText(body.attachment_url) || null,
         created_by: auth.user.id,
       };
       const result = await db(admin).from("accounting_payments").insert(values).select("*").single();
@@ -634,7 +875,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     if (parts[0] === "payroll" && parts[1] === "create-draft-entry") {
-      const month = requireText(body.month);
+      const month = normalizeMonth(body.month);
       if (!month) return message("الشهر مطلوب.", 400);
       const settings = await getAccountingSettings(admin, auth.orgId);
       if (!settings?.default_salary_expense_id || !settings?.default_salary_payable_id) return message("إعدادات حسابات الرواتب غير مكتملة.", 400);
@@ -643,22 +884,108 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const payslips = (payslipsResult.data || []) as Record<string, unknown>[];
       if (payslips.length === 0) return message("لا توجد مسيرات رواتب لهذا الشهر.", 404);
       const totalNet = roundMoney(payslips.reduce((sum, row) => sum + Number(row.net_salary || 0), 0));
+      const advanceDeductions = sumAdvanceDeductions(payslips);
+      if (advanceDeductions > 0 && !settings.default_employee_advances_id) return message("Employee advances account is required before posting payroll advance deductions.", 400);
+      const salaryCost = roundMoney(totalNet + advanceDeductions);
       const lines: JournalLineInput[] = [
-        { account_id: String(settings.default_salary_expense_id), debit: totalNet, credit: 0, description: `رواتب ${month}` },
-        { account_id: String(settings.default_salary_payable_id), debit: 0, credit: totalNet, description: `رواتب مستحقة ${month}` },
+        { account_id: String(settings.default_salary_expense_id), debit: salaryCost, credit: 0, description: `رواتب ${month}` },
+        { account_id: String(settings.default_salary_payable_id), debit: 0, credit: salaryCost, description: `رواتب مستحقة ${month}` },
       ];
+      if (advanceDeductions > 0) {
+        lines.push(
+          { account_id: String(settings.default_salary_payable_id), debit: advanceDeductions, credit: 0, description: `خصم سلف ${month}` },
+          { account_id: String(settings.default_employee_advances_id), debit: 0, credit: advanceDeductions, description: `خصم سلف ${month}` },
+        );
+      }
+      const payrollSource = requireText(body.payroll_id) || payrollSourceId(auth.orgId, month);
       const entry = await createJournalEntry(admin, {
         orgId: auth.orgId,
         userId: auth.user.id,
         entryDate: parseDate(month),
         description: `قيد رواتب ${month}`,
         sourceModule: "payroll",
-        sourceId: body.payroll_id || null,
+        sourceId: payrollSource,
         status: "draft",
         lines,
       });
       await notifyFinance(admin, auth.orgId, "تم إنشاء مسودة قيد رواتب", `قيد رواتب ${month} جاهز للمراجعة.`, `/accounting/journal-entries/${entry.id}`);
       return json(entry, 201);
+    }
+
+    if (parts[0] === "payroll" && parts[1] === "record-payment") {
+      const month = normalizeMonth(body.month);
+      const status = await getPayrollAccountingStatus(admin, auth.orgId, month);
+      if (status.status === "not_generated" || status.status === "draft_created") return message("يجب ترحيل قيد الرواتب قبل تسجيل السداد.", 400);
+      if (status.payment_id) return message("تم تسجيل دفعة رواتب لهذا الشهر مسبقا.", 400);
+
+      const settings = await getAccountingSettings(admin, auth.orgId);
+      const amount = roundMoney(body.amount || status.total_net);
+      const totalNet = roundMoney(status.total_net);
+      if (amount <= 0 || amount !== totalNet) return message("مبلغ سداد الرواتب يجب أن يساوي صافي الرواتب المستحق للشهر.", 400);
+
+      const paymentNo = await generateAccountingNumber(admin, "accounting_payments", auth.orgId, String(settings?.payment_prefix || "PAY"), new Date(parseDate(body.payment_date)));
+      const paymentResult = await db(admin).from("accounting_payments").insert({
+        organization_id: auth.orgId,
+        payment_no: paymentNo,
+        payment_date: parseDate(body.payment_date),
+        type: "payroll_payment",
+        direction: "outbound",
+        amount,
+        account_id: body.account_id || settings?.default_bank_account_id || settings?.default_cash_account_id || null,
+        payroll_id: status.payroll_id,
+        description: `سداد رواتب ${month}`,
+        reference_no: requireText(body.reference_no) || null,
+        method: requireText(body.method) || null,
+        notes: requireText(body.notes) || null,
+        created_by: auth.user.id,
+      }).select("*").single();
+      if (paymentResult.error) throw new Error(paymentResult.error.message);
+
+      const journal = await postPaymentJournal(admin, auth.orgId, paymentResult.data, auth.user.id);
+      const next = await updateRecord(admin, "accounting_payments", auth.orgId, paymentResult.data.id, {
+        status: "posted",
+        posted_by: auth.user.id,
+        posted_at: new Date().toISOString(),
+        journal_entry_id: journal.id,
+      });
+
+      const payslipUpdate = await db(admin)
+        .from("payslips")
+        .update({ status: "paid" })
+        .eq("org_id", auth.orgId)
+        .eq("month", month);
+      if (payslipUpdate.error) throw new Error(payslipUpdate.error.message);
+
+      await audit(admin, auth.orgId, auth.user.id, "accounting.payroll_paid", "accounting_payments", paymentResult.data.id, { month, amount });
+      await notifyFinance(admin, auth.orgId, "تم سداد الرواتب", `تم تسجيل سداد رواتب ${month}.`, `/accounting/payments/${paymentResult.data.id}`);
+      return json({ payment: next, journal, status: await getPayrollAccountingStatus(admin, auth.orgId, month) }, 201);
+    }
+
+    if (parts[0] === "sales" && parts[1] === "link-company-customer") {
+      const companyId = requireText(body.company_id);
+      const customerId = requireText(body.customer_id);
+      if (!companyId || !customerId) return message("شركة المبيعات والعميل المحاسبي مطلوبان.", 400);
+
+      const companyUpdate = await db(admin)
+        .from("sales_companies")
+        .update({ accounting_customer_id: customerId })
+        .eq("organization_id", auth.orgId)
+        .eq("id", companyId)
+        .select("id, name, accounting_customer_id")
+        .single();
+      if (companyUpdate.error) throw new Error(companyUpdate.error.message);
+
+      const customerUpdate = await db(admin)
+        .from("accounting_customers")
+        .update({ sales_company_id: companyId })
+        .eq("organization_id", auth.orgId)
+        .eq("id", customerId)
+        .select("id, name_ar, sales_company_id")
+        .single();
+      if (customerUpdate.error) throw new Error(customerUpdate.error.message);
+
+      await audit(admin, auth.orgId, auth.user.id, "accounting.sales_company_customer_linked", "sales_companies", companyId, { customer_id: customerId });
+      return json({ company: companyUpdate.data, customer: customerUpdate.data });
     }
 
     if (parts[0] === "sales" && parts[1] === "create-invoice-from-log") {
@@ -669,9 +996,55 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (!data) throw new Error("سجل المبيعات غير موجود.");
         return data;
       });
-      const customerId = body.customer_id || null;
+      const companyId = String(log.company_id || "");
+      let customerId = requireText(body.customer_id);
+      if (!customerId && companyId) {
+        const companyResult = await db(admin)
+          .from("sales_companies")
+          .select("accounting_customer_id")
+          .eq("organization_id", auth.orgId)
+          .eq("id", companyId)
+          .maybeSingle();
+        if (companyResult.error) throw new Error(companyResult.error.message);
+        customerId = requireText(companyResult.data?.accounting_customer_id);
+      }
+      if (!customerId && companyId) {
+        const customerResult = await db(admin)
+          .from("accounting_customers")
+          .select("id")
+          .eq("organization_id", auth.orgId)
+          .eq("sales_company_id", companyId)
+          .eq("is_active", true)
+          .limit(1)
+          .maybeSingle();
+        if (customerResult.error) throw new Error(customerResult.error.message);
+        customerId = requireText(customerResult.data?.id);
+      }
       if (!customerId) return message("اختر العميل المرتبط بسجل المبيعات.", 400);
+      const existingInvoice = await db(admin)
+        .from("accounting_invoices")
+        .select("id")
+        .eq("organization_id", auth.orgId)
+        .eq("source_module", "sales_log")
+        .eq("source_id", logId)
+        .limit(1)
+        .maybeSingle();
+      if (existingInvoice.error) throw new Error(existingInvoice.error.message);
+      if (existingInvoice.data?.id) return message("تم إنشاء فاتورة لهذا السجل مسبقا.", 400);
       const items = Array.isArray(log.items) ? log.items as Record<string, unknown>[] : [];
+      const productIds = Array.from(new Set(items.map((item) => String(item.product_id || "")).filter(Boolean)));
+      const revenueByProduct = new Map<string, string | null>();
+      if (productIds.length > 0) {
+        const productsResult = await db(admin)
+          .from("sales_products")
+          .select("id, revenue_account_id")
+          .eq("organization_id", auth.orgId)
+          .in("id", productIds);
+        if (productsResult.error) throw new Error(productsResult.error.message);
+        for (const product of (productsResult.data || []) as Record<string, unknown>[]) {
+          revenueByProduct.set(String(product.id), product.revenue_account_id ? String(product.revenue_account_id) : null);
+        }
+      }
       body.customer_id = customerId;
       body.invoice_date = log.log_date || new Date().toISOString().slice(0, 10);
       body.lines = items.map((item) => ({
@@ -680,6 +1053,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         quantity: item.quantity,
         unit_price: item.unit_price,
         discount_amount: item.discount_amount,
+        revenue_account_id: revenueByProduct.get(String(item.product_id || "")) || null,
       }));
       const settings = await getAccountingSettings(admin, auth.orgId);
       const invoiceNo = await generateAccountingNumber(admin, "accounting_invoices", auth.orgId, String(settings?.invoice_prefix || "INV"));
@@ -740,6 +1114,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (table === "accounting_expenses") {
       const current = await getRecord(admin, table, auth.orgId, id);
       if (["paid", "rejected", "cancelled"].includes(String(current.status))) return message("لا يمكن تعديل هذا المصروف.", 400);
+    }
+    if (table === "accounting_payments") {
+      const current = await getRecord(admin, table, auth.orgId, id);
+      if (current.status !== "draft") return message("يمكن تعديل الدفعات المسودة فقط.", 400);
     }
 
     const values = { ...body };
