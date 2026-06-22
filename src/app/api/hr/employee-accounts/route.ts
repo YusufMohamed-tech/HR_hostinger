@@ -3,8 +3,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const allowedCreatorRoles = new Set(["admin", "hr_admin"]);
-const allowedEmployeeRoles = new Set(["employee", "training_manager"]);
-const privilegedRoles = new Set(["admin", "hr_admin", "hr_recruitment"]);
+const allowedEmployeeRoles = new Set(["employee", "training_manager", "finance_manager", "accountant", "finance_viewer"]);
+const privilegedRoles = new Set(["admin", "hr_admin", "hr_recruitment", "finance_manager", "accountant", "finance_viewer"]);
+
+function titleForRole(role: string, employeeRecord: Record<string, unknown>) {
+  if (role === "training_manager") return "Training Manager";
+  if (role === "finance_manager") return "Finance Manager";
+  if (role === "accountant") return "Accountant";
+  if (role === "finance_viewer") return "Finance Viewer";
+  return String(employeeRecord.job_title || "Employee");
+}
 
 async function requireHrAccess() {
   const supabase = await createServerSupabaseClient();
@@ -67,7 +75,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Password must be at least 8 characters." }, { status: 400 });
   }
   if (!allowedEmployeeRoles.has(role)) {
-    return NextResponse.json({ message: "Only Employee and Training Manager accounts can be created here." }, { status: 400 });
+    return NextResponse.json({ message: "Only employee, training manager, and finance accounts can be created here." }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -109,7 +117,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: "This email is already attached to another organization." }, { status: 409 });
     }
     if (existingMembershipRecord && privilegedRoles.has(String(existingMembershipRecord.role || ""))) {
-      return NextResponse.json({ message: "This email belongs to an admin/recruitment account." }, { status: 409 });
+      return NextResponse.json({ message: "This email belongs to an admin, recruitment, or finance account." }, { status: 409 });
     }
   }
 
@@ -136,7 +144,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Unable to create user." }, { status: 500 });
   }
 
-  const title = role === "training_manager" ? "Training Manager" : String(employeeRecord.job_title || "Employee");
+  const title = titleForRole(role, employeeRecord);
 
   const { error: profileError } = await admin.from("profiles").upsert(
     {

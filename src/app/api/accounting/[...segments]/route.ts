@@ -91,6 +91,7 @@ function payrollSourceId(orgId: string, month: string) {
 function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "payroll" && method === "GET") return "payroll";
   if (parts[0] === "sales" && method === "GET") return "sales";
+  if (parts[0] === "reports" && method === "GET") return "reports";
   if (parts[0] === "payroll" && parts[1] === "record-payment") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";

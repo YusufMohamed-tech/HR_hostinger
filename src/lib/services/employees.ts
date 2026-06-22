@@ -88,12 +88,19 @@ export async function replaceEmployeeLocations(
   return { error: insertResult.error ? { message: insertResult.error.message } : null };
 }
 
+export type EmployeeAccountRole =
+  | "employee"
+  | "training_manager"
+  | "finance_manager"
+  | "accountant"
+  | "finance_viewer";
+
 export async function createEmployeeAccount(values: {
   employee_id: string;
   email: string;
   password: string;
   full_name?: string;
-  role: "employee" | "training_manager";
+  role: EmployeeAccountRole;
 }) {
   const response = await fetch("/api/hr/employee-accounts", {
     method: "POST",

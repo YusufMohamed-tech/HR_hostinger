@@ -11,7 +11,7 @@ import {
 import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useDepartments, useLocations, useEmployees, useShifts } from "@/hooks/use-data";
-import { createEmployee, createEmployeeAccount, deleteEmployee, replaceEmployeeLocations } from "@/lib/services/employees";
+import { createEmployee, createEmployeeAccount, deleteEmployee, replaceEmployeeLocations, type EmployeeAccountRole } from "@/lib/services/employees";
 import { assignEmployeeShift } from "@/lib/services/schedule";
 import { updateDepartment } from "@/lib/services/departments";
 import {
@@ -48,6 +48,15 @@ const employeeDialogContentClass =
 const twoColumnGridClass = "grid grid-cols-1 gap-4 md:grid-cols-2";
 const threeColumnGridClass = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3";
 const todayString = () => new Date().toISOString().split("T")[0];
+const accountRoleOptions: Array<{ value: EmployeeAccountRole; label: string }> = [
+  { value: "employee", label: "موظف" },
+  { value: "training_manager", label: "مدير تدريب / موقع" },
+  { value: "finance_manager", label: "مدير المالية" },
+  { value: "accountant", label: "محاسب" },
+  { value: "finance_viewer", label: "مشاهد المالية" },
+];
+const getAccountRoleLabel = (value: string | null) =>
+  accountRoleOptions.find((option) => option.value === value)?.label || "موظف";
 
 export function AddEmployeeDialog({ onSuccess }: Props) {
   const { currentUser } = useRoleContext();
@@ -61,7 +70,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const [companies, setCompanies] = useState<SalesCompany[]>([]);
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
-  const [accountRole, setAccountRole] = useState<"employee" | "training_manager">("employee");
+  const [accountRole, setAccountRole] = useState<EmployeeAccountRole>("employee");
   const [accountPassword, setAccountPassword] = useState("");
   const [officialFile, setOfficialFile] = useState<File | null>(null);
   const [contractFile, setContractFile] = useState<File | null>(null);
@@ -761,17 +770,21 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
               <div className={twoColumnGridClass}>
                 <div className="space-y-2">
                   <Label>نوع الحساب</Label>
-                  <Select value={accountRole} onValueChange={(value) => setAccountRole(value as "employee" | "training_manager")}>
+                  <Select value={accountRole} onValueChange={(value) => setAccountRole(value as EmployeeAccountRole)}>
                     <SelectTrigger>
                       <SelectValue>
-                        {(value: string | null) => value === "training_manager" ? "مدير تدريب / موقع" : "موظف"}
+                        {(value: string | null) => getAccountRoleLabel(value)}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="employee">موظف</SelectItem>
-                      <SelectItem value="training_manager">مدير تدريب / موقع</SelectItem>
+                      {accountRoleOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-gray-500">
+                    أدوار المالية تمنح المستخدم صلاحيات داخل وحدة المالية والمحاسبة حسب مستوى الدور.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label>كلمة المرور المؤقتة *</Label>
