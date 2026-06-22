@@ -15,7 +15,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { getOrganizations, updateOrganization } from "@/lib/services/organizations";
 import { getOrgMembers } from "@/lib/services/members";
-import { createManagedUser } from "@/lib/services/admin-users";
+import { createManagedUser, type ManagedOrgRole } from "@/lib/services/admin-users";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export default function SettingsPage() {
@@ -34,6 +34,9 @@ export default function SettingsPage() {
     HR_Admin: "bg-indigo-50 text-indigo-700 border-indigo-200",
     HR_Recruitment: "bg-purple-50 text-purple-700 border-purple-200",
     Training_Manager: "bg-amber-50 text-amber-700 border-amber-200",
+    Finance_Manager: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    Accountant: "bg-teal-50 text-teal-700 border-teal-200",
+    Finance_Viewer: "bg-slate-50 text-slate-700 border-slate-200",
   };
   const roleBadgeColor = roleBadgeColors[currentUser?.role || "Employee"];
 
@@ -201,14 +204,28 @@ function UserManagementCard() {
     full_name: "",
     email: "",
     password: "",
-    role: "hr_admin" as "hr_admin" | "hr_recruitment",
+    role: "hr_admin" as ManagedOrgRole,
   });
+
+  const roleOptions: Array<{ value: ManagedOrgRole; label: string }> = [
+    { value: "admin", label: "مسؤول منظمة" },
+    { value: "hr_admin", label: "مدير الموارد البشرية" },
+    { value: "hr_recruitment", label: "مسؤول التوظيف" },
+    { value: "finance_manager", label: "مدير المالية" },
+    { value: "accountant", label: "محاسب" },
+    { value: "finance_viewer", label: "مشاهد المالية" },
+  ];
 
   const roleLabels: Record<string, string> = {
     super_admin: "مسؤول أعلى",
     admin: "مسؤول",
     hr_admin: "موارد بشرية",
     hr_recruitment: "مسؤول توظيف",
+    finance_manager: "مدير المالية",
+    accountant: "محاسب",
+    finance_viewer: "مشاهد المالية",
+    sales: "مبيعات",
+    sales_manager: "مدير المبيعات",
     training_manager: "مدير تدريب",
     employee: "موظف",
   };
@@ -233,7 +250,7 @@ function UserManagementCard() {
     setError("");
     setMessage("");
 
-    const result = await createManagedUser(form);
+    const result = await createManagedUser({ ...form, target_org_id: currentUser?.orgId });
     setSubmitting(false);
 
     if (result.error) {
@@ -260,12 +277,12 @@ function UserManagementCard() {
           </CardTitle>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger render={<Button className="bg-brand hover:bg-brand-dark text-white" />}>
-              إنشاء حساب HR
+              إنشاء حساب إداري
             </DialogTrigger>
             <DialogContent className="sm:max-w-[460px]">
               <DialogHeader>
                 <DialogTitle>إنشاء مستخدم مُدار</DialogTitle>
-                <DialogDescription>إنشاء حساب HR أو مسؤول توظيف داخل هذه المنظمة.</DialogDescription>
+                <DialogDescription>إنشاء حساب إداري أو مالي داخل هذه المنظمة.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
@@ -285,10 +302,14 @@ function UserManagementCard() {
                   <Select value={form.role} onValueChange={(value) => set("role", value || "hr_admin")}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="hr_admin">مسؤول موارد بشرية</SelectItem>
-                      <SelectItem value="hr_recruitment">مسؤول توظيف</SelectItem>
+                      {roleOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-gray-500">
+                    أدوار المالية تمنح المستخدم صلاحيات داخل وحدة المالية والمحاسبة حسب مستوى الدور.
+                  </p>
                 </div>
                 {error && <p className="text-sm text-red-600">{error}</p>}
                 {message && <p className="text-sm text-green-700">{message}</p>}

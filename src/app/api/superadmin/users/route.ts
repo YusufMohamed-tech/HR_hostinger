@@ -2,8 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordPlatformAudit, requireSuperadmin } from "@/lib/superadmin/server";
 
-const allowedRoles = new Set(["admin", "hr_admin", "hr_recruitment"]);
-const allowedActions = new Set(["suspend", "activate", "reset_password"]);
+const allowedRoles = new Set([
+  "admin",
+  "hr_admin",
+  "hr_recruitment",
+  "finance_manager",
+  "accountant",
+  "finance_viewer",
+]);
+const allowedActions = new Set(["suspend", "activate", "reset_password", "update_role"]);
+
+function titleForRole(role: string) {
+  if (role === "admin") return "Organization Admin";
+  if (role === "hr_admin") return "HR Admin";
+  if (role === "hr_recruitment") return "HR Recruiter";
+  if (role === "finance_manager") return "Finance Manager";
+  if (role === "accountant") return "Accountant";
+  if (role === "finance_viewer") return "Finance Viewer";
+  return "Organization User";
+}
 
 export async function GET() {
   const auth = await requireSuperadmin();
@@ -80,7 +97,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Full name is required." }, { status: 400 });
   }
   if (!allowedRoles.has(role)) {
-    return NextResponse.json({ message: "Only Admin, HR Admin, and HR Recruitment roles can be created here." }, { status: 400 });
+    return NextResponse.json({ message: "Only Admin, HR, and Finance roles can be created here." }, { status: 400 });
   }
   if (!targetOrgId) {
     return NextResponse.json({ message: "Target organization is required." }, { status: 400 });
@@ -132,7 +149,7 @@ export async function POST(request: NextRequest) {
       org_id: targetOrgId,
       full_name: fullName,
       email,
-      title: role === "admin" ? "Organization Admin" : role === "hr_admin" ? "HR Admin" : "HR Recruiter",
+      title: titleForRole(role),
       account_status: "active",
     } as never,
     { onConflict: "user_id" }
@@ -187,6 +204,7 @@ export async function PATCH(request: NextRequest) {
   const targetOrgId = String(body.target_org_id || "").trim();
   const action = String(body.action || "").trim();
   const password = String(body.password || "");
+  const nextRole = String(body.role || "").trim();
 
   if (!userId) {
     return NextResponse.json({ message: "User id is required." }, { status: 400 });
@@ -199,6 +217,9 @@ export async function PATCH(request: NextRequest) {
   }
   if (action === "reset_password" && password.length < 8) {
     return NextResponse.json({ message: "Password must be at least 8 characters." }, { status: 400 });
+  }
+  if (action === "update_role" && !allowedRoles.has(nextRole)) {
+    return NextResponse.json({ message: "Unsupported organization role." }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -251,13 +272,37 @@ export async function PATCH(request: NextRequest) {
     }
   }
 
+  if (action === "update_role") {
+    const { error: roleError } = await admin
+      .from("org_members")
+      .update({ role: nextRole } as never)
+      .eq("org_id", targetOrgId)
+      .eq("user_id", userId);
+
+    if (roleError) {
+      return NextResponse.json({ message: roleError.message }, { status: 500 });
+    }
+
+    const { error: profileError } = await admin
+      .from("profiles")
+      .update({ title: titleForRole(nextRole), updated_at: new Date().toISOString() } as never)
+      .eq("user_id", userId)
+      .eq("org_id", targetOrgId);
+
+    if (profileError) {
+      return NextResponse.json({ message: profileError.message }, { status: 500 });
+    }
+  }
+
   await recordPlatformAudit({
     actorUserId: auth.user.id,
     action: action === "suspend"
       ? "organization_user.suspended"
       : action === "activate"
         ? "organization_user.activated"
-        : "organization_user.password_reset",
+        : action === "update_role"
+          ? "organization_user.role_updated"
+          : "organization_user.password_reset",
     targetOrgId,
     targetUserId: userId,
     targetType: "org_member",
@@ -266,6 +311,7 @@ export async function PATCH(request: NextRequest) {
       email: String(profileRecord?.email || ""),
       full_name: String(profileRecord?.full_name || ""),
       role: String(membershipRecord.role || ""),
+      next_role: action === "update_role" ? nextRole : undefined,
       previous_status: String(profileRecord?.account_status || "active"),
       next_status: nextStatus,
     },
@@ -275,7 +321,7 @@ export async function PATCH(request: NextRequest) {
     user: {
       id: userId,
       org_id: targetOrgId,
-      role: String(membershipRecord.role || ""),
+      role: action === "update_role" ? nextRole : String(membershipRecord.role || ""),
       account_status: nextStatus || String(profileRecord?.account_status || "active"),
     },
   });
