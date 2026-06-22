@@ -15,28 +15,32 @@ import {
   deleteSalesProduct,
   getSalesCompanies,
   getSalesProducts,
+  getSalesRevenueAccounts,
   updateSalesProduct,
   type SalesCompany,
   type SalesProduct,
+  type SalesRevenueAccount,
 } from "@/lib/services/sales";
 import { formatCurrency } from "@/lib/utils/currency";
 import { PageSkeleton } from "@/components/Skeletons";
 
-const emptyForm = { company_id: "", name: "", description: "", unit: "", category: "", price: "0" };
+const emptyForm = { company_id: "", name: "", description: "", unit: "", category: "", price: "0", revenue_account_id: "" };
 
 export default function SalesProductsPage() {
   const [products, setProducts] = useState<SalesProduct[]>([]);
   const [companies, setCompanies] = useState<SalesCompany[]>([]);
+  const [revenueAccounts, setRevenueAccounts] = useState<SalesRevenueAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
   const load = async () => {
     setLoading(true);
-    const [productsResult, companiesResult] = await Promise.all([getSalesProducts(true), getSalesCompanies()]);
+    const [productsResult, companiesResult, accountsResult] = await Promise.all([getSalesProducts(true), getSalesCompanies(), getSalesRevenueAccounts()]);
     if (productsResult.error || !productsResult.data) setMessage(productsResult.error || "تعذر تحميل المنتجات.");
     else setProducts(productsResult.data);
     if (companiesResult.error || !companiesResult.data) setMessage(companiesResult.error || "تعذر تحميل شركات المبيعات.");
     else setCompanies(companiesResult.data);
+    if (accountsResult.data) setRevenueAccounts(accountsResult.data);
     setLoading(false);
   };
 
@@ -45,6 +49,7 @@ export default function SalesProductsPage() {
   }, []);
 
   const companyById = useMemo(() => new Map(companies.map((company) => [company.id, company])), [companies]);
+  const revenueAccountById = useMemo(() => new Map(revenueAccounts.map((account) => [account.id, account])), [revenueAccounts]);
 
   if (loading) return <PageSkeleton />;
 
@@ -56,7 +61,7 @@ export default function SalesProductsPage() {
           <h1 className="text-3xl font-bold tracking-tight text-gray-950">منتجات المبيعات</h1>
           <p className="mt-2 text-gray-500">إدارة منتجات كل شركة وأسعارها وحالتها.</p>
         </div>
-        <ProductDialog companies={companies} onDone={load} onMessage={setMessage} />
+        <ProductDialog companies={companies} revenueAccounts={revenueAccounts} onDone={load} onMessage={setMessage} />
       </div>
 
       <Card className="border-none shadow-sm">
@@ -67,6 +72,7 @@ export default function SalesProductsPage() {
                 <TableHead>المنتج</TableHead>
                 <TableHead>الشركة</TableHead>
                 <TableHead>الفئة</TableHead>
+                <TableHead>حساب الإيراد</TableHead>
                 <TableHead>الوحدة</TableHead>
                 <TableHead>السعر</TableHead>
                 <TableHead>الحالة</TableHead>
@@ -91,6 +97,11 @@ export default function SalesProductsPage() {
                       </div>
                     </TableCell>
                     <TableCell>{product.category || "-"}</TableCell>
+                    <TableCell>
+                      {product.revenue_account_id
+                        ? `${revenueAccountById.get(product.revenue_account_id)?.code || ""} ${revenueAccountById.get(product.revenue_account_id)?.name_ar || product.revenue_account_id}`.trim()
+                        : "-"}
+                    </TableCell>
                     <TableCell>{product.unit || "-"}</TableCell>
                     <TableCell>{formatCurrency(product.price)}</TableCell>
                     <TableCell>
@@ -111,7 +122,7 @@ export default function SalesProductsPage() {
                         >
                           {product.is_active ? "إيقاف" : "تفعيل"}
                         </Button>
-                        <ProductDialog product={product} companies={companies} onDone={load} onMessage={setMessage} />
+                        <ProductDialog product={product} companies={companies} revenueAccounts={revenueAccounts} onDone={load} onMessage={setMessage} />
                         <ConfirmActionButton
                           variant="ghost"
                           size="sm"
@@ -151,11 +162,13 @@ export default function SalesProductsPage() {
 function ProductDialog({
   product,
   companies,
+  revenueAccounts,
   onDone,
   onMessage,
 }: {
   product?: SalesProduct;
   companies: SalesCompany[];
+  revenueAccounts: SalesRevenueAccount[];
   onDone: () => void;
   onMessage: (message: string) => void;
 }) {
@@ -173,6 +186,7 @@ function ProductDialog({
       unit: product.unit || "",
       category: product.category || "",
       price: String(product.price || 0),
+      revenue_account_id: product.revenue_account_id || "",
     } : { ...emptyForm, company_id: defaultCompanyId });
   }, [open, product, companies]);
 
@@ -193,6 +207,7 @@ function ProductDialog({
       unit: form.unit.trim(),
       category: form.category.trim(),
       price: Number(form.price || 0),
+      revenue_account_id: form.revenue_account_id || null,
     };
     const result = product ? await updateSalesProduct(product.id, values) : await createSalesProduct(values);
     setSaving(false);
@@ -232,6 +247,21 @@ function ProductDialog({
           <div className="space-y-2">
             <Label>اسم المنتج *</Label>
             <Input value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
+          </div>
+          <div className="space-y-2">
+            <Label>حساب الإيراد</Label>
+            <select
+              value={form.revenue_account_id}
+              onChange={(event) => setForm((prev) => ({ ...prev, revenue_account_id: event.target.value }))}
+              className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
+            >
+              <option value="">الحساب الافتراضي من إعدادات المحاسبة</option>
+              {revenueAccounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.code} - {account.name_ar}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-2">

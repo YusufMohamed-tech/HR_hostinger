@@ -1,0 +1,53 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+const root = process.cwd();
+const read = (path) => readFileSync(join(root, path), "utf8");
+
+const files = {
+  api: read("src/app/api/accounting/[...segments]/route.ts"),
+  permissions: read("src/lib/accounting/permissions.ts"),
+  rbac: read("src/lib/rbac.ts"),
+  posting: read("src/lib/accounting/posting.ts"),
+  reports: read("src/lib/accounting/reports.ts"),
+  accountingUi: read("src/components/accounting/AccountingScreens.tsx"),
+  payrollUi: read("src/app/(app)/payroll/page.tsx"),
+  salesProductApi: read("src/app/api/sales/products/route.ts"),
+  salesProductUi: read("src/app/(app)/sales/products/page.tsx"),
+  migration38: read("db/schema_v38_accounting_hardening.sql"),
+  migration39: read("db/schema_v39_accounting_completion.sql"),
+};
+
+const apiAccountingGuard = files.rbac.match(/if \(normalizedPath\.startsWith\("\/api\/accounting"\)\) \{[\s\S]*?\n  \}/)?.[0] || "";
+
+const checks = [
+  ["Finance viewer cannot manage", files.permissions.includes("finance_viewer") && files.permissions.includes("manageRoles") && !/manageRoles[^;]+finance_viewer/s.test(files.permissions)],
+  ["Accountant cannot post", files.permissions.includes("postRoles") && !/postRoles[^;]+accountant/s.test(files.permissions)],
+  ["Finance manager can post", /postRoles[^;]+finance_manager/s.test(files.permissions)],
+  ["Employee and recruiter blocked from accounting API", apiAccountingGuard.includes("Finance_Manager") && !apiAccountingGuard.includes("Employee") && !apiAccountingGuard.includes("HR_Recruitment")],
+  ["Unbalanced journals blocked", files.posting.includes("validateJournalLines(input.lines)") && files.posting.includes("validateJournalLines(lines)")],
+  ["Posted journals protected by migration", files.migration38.includes("accounting_prevent_posted_entry_mutation") && files.migration38.includes("accounting_prevent_posted_line_mutation")],
+  ["Duplicate reversal blocked", files.posting.includes("existingReversal") && files.migration38.includes("idx_accounting_journal_entries_one_reversal")],
+  ["Invoice overpayment blocked", files.api.includes("amount <= 0 || amount > Number(invoice.balance_due || 0)")],
+  ["Duplicate payroll posting blocked", files.api.includes("payrollSourceId(auth.orgId, month)") && files.posting.includes("accounting_source_postings")],
+  ["Duplicate payroll payment blocked", files.api.includes("status.payment_id") && files.migration39.includes("uq_accounting_payroll_payment_source")],
+  ["Duplicate sales invoice blocked", files.api.includes('source_module", "sales_log"') && files.migration39.includes("uq_accounting_sales_log_invoice_source")],
+  ["Reports use posted ledger entries", files.reports.includes('["posted", "reversed"]') || files.reports.includes('"posted", "reversed"')],
+  ["Manual payments require counterpart account", files.api.includes("counterpart_account_id") && files.migration39.includes("Manual payment counterpart account is required")],
+  ["Sales products map revenue accounts", files.salesProductApi.includes("revenue_account_id") && files.salesProductUi.includes("revenue_account_id")],
+  ["Payroll UI exposes accounting states", files.payrollUi.includes("not_generated") && files.payrollUi.includes("draft_created") && files.payrollUi.includes("recordPayrollPayment")],
+];
+
+let failed = 0;
+for (const [name, ok] of checks) {
+  const status = ok ? "PASS" : "FAIL";
+  console.log(`${status} ${name}`);
+  if (!ok) failed += 1;
+}
+
+if (failed > 0) {
+  console.error(`\n${failed} accounting verification check(s) failed.`);
+  process.exit(1);
+}
+
+console.log("\nAccounting verification checks passed.");
