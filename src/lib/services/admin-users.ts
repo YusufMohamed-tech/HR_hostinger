@@ -1,8 +1,16 @@
+export type ManagedOrgRole =
+  | "admin"
+  | "hr_admin"
+  | "hr_recruitment"
+  | "finance_manager"
+  | "accountant"
+  | "finance_viewer";
+
 export async function createManagedUser(values: {
   full_name: string;
   email: string;
   password: string;
-  role: "admin" | "hr_admin" | "hr_recruitment";
+  role: ManagedOrgRole;
   target_org_id?: string;
 }) {
   const response = await fetch("/api/superadmin/users", {
@@ -26,8 +34,9 @@ export async function createManagedUser(values: {
 export async function updateManagedUser(values: {
   user_id: string;
   target_org_id: string;
-  action: "suspend" | "activate" | "reset_password";
+  action: "suspend" | "activate" | "reset_password" | "update_role";
   password?: string;
+  role?: ManagedOrgRole;
 }) {
   const response = await fetch("/api/superadmin/users", {
     method: "PATCH",

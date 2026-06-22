@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { ArrowRight, Building2, CheckCircle2, KeyRound, Mail, Plus, Power, Shield, UserCog, Users } from "lucide-react";
-import { createManagedUser, updateManagedUser } from "@/lib/services/admin-users";
+import { createManagedUser, updateManagedUser, type ManagedOrgRole } from "@/lib/services/admin-users";
 import {
   getSuperadminOrganization,
   updateSuperadminOrganization,
@@ -39,8 +39,13 @@ import {
 
 const roleLabels: Record<string, string> = {
   admin: "مسؤول منظمة",
-  hr_admin: "HR Admin",
-  hr_recruitment: "HR Recruitment",
+  hr_admin: "مدير الموارد البشرية",
+  hr_recruitment: "مسؤول التوظيف",
+  finance_manager: "مدير المالية",
+  accountant: "محاسب",
+  finance_viewer: "مشاهد المالية",
+  sales: "مبيعات",
+  sales_manager: "مدير المبيعات",
   training_manager: "مدير تدريب",
   employee: "موظف",
   super_admin: "مشرف عام",
@@ -50,10 +55,24 @@ const roleBadgeClasses: Record<string, string> = {
   admin: "border-blue-200 bg-blue-50 text-blue-700",
   hr_admin: "border-indigo-200 bg-indigo-50 text-indigo-700",
   hr_recruitment: "border-purple-200 bg-purple-50 text-purple-700",
+  finance_manager: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  accountant: "border-teal-200 bg-teal-50 text-teal-700",
+  finance_viewer: "border-slate-200 bg-slate-50 text-slate-700",
+  sales: "border-cyan-200 bg-cyan-50 text-cyan-700",
+  sales_manager: "border-sky-200 bg-sky-50 text-sky-700",
   training_manager: "border-amber-200 bg-amber-50 text-amber-700",
   employee: "border-emerald-200 bg-emerald-50 text-emerald-700",
   super_admin: "border-slate-200 bg-slate-900 text-white",
 };
+
+const managedRoleOptions: Array<{ value: ManagedOrgRole; label: string }> = [
+  { value: "admin", label: "مسؤول منظمة" },
+  { value: "hr_admin", label: "مدير الموارد البشرية" },
+  { value: "hr_recruitment", label: "مسؤول التوظيف" },
+  { value: "finance_manager", label: "مدير المالية" },
+  { value: "accountant", label: "محاسب" },
+  { value: "finance_viewer", label: "مشاهد المالية" },
+];
 
 export default function SuperadminOrganizationDetailPage() {
   const params = useParams<{ orgId: string }>();
@@ -151,7 +170,7 @@ export default function SuperadminOrganizationDetailPage() {
         <Card className="border-none shadow-sm">
           <CardHeader>
             <CardTitle>مستخدمو المنظمة</CardTitle>
-            <CardDescription>إنشاء ومراجعة حسابات Admin و HR Admin و HR Recruitment داخل هذه المنظمة.</CardDescription>
+            <CardDescription>إنشاء ومراجعة حسابات الإدارة والموارد البشرية والمالية داخل هذه المنظمة.</CardDescription>
           </CardHeader>
           <CardContent className="p-0">
             <Table>
@@ -346,10 +365,103 @@ function MemberActions({
           <Power className="ml-2 h-4 w-4" />
           {submitting ? "..." : isActive ? "إيقاف" : "تفعيل"}
         </Button>
+        <ChangeRoleDialog member={member} orgId={orgId} onSuccess={onSuccess} />
         <ResetPasswordDialog member={member} orgId={orgId} onSuccess={onSuccess} />
       </div>
       {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
+  );
+}
+
+function ChangeRoleDialog({
+  member,
+  orgId,
+  onSuccess,
+}: {
+  member: SuperadminOrganizationMember;
+  orgId: string;
+  onSuccess: () => Promise<void> | void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [role, setRole] = useState<ManagedOrgRole>(
+    managedRoleOptions.some((option) => option.value === member.role)
+      ? member.role as ManagedOrgRole
+      : "hr_admin"
+  );
+  const [submitting, setSubmitting] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    setRole(managedRoleOptions.some((option) => option.value === member.role) ? member.role as ManagedOrgRole : "hr_admin");
+  }, [member.role, open]);
+
+  const handleUpdate = async () => {
+    setSubmitting(true);
+    setError("");
+    const result = await updateManagedUser({
+      user_id: member.user_id,
+      target_org_id: orgId,
+      action: "update_role",
+      role,
+    });
+    setSubmitting(false);
+
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+
+    setSaved(true);
+    await onSuccess();
+    setTimeout(() => {
+      setOpen(false);
+      setSaved(false);
+    }, 1000);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+        <Shield className="ml-2 h-4 w-4" />
+        الدور
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>تحديث دور المستخدم</DialogTitle>
+          <DialogDescription>
+            أدوار المالية تمنح المستخدم صلاحيات داخل وحدة المالية والمحاسبة حسب مستوى الدور.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2">
+            <Label>الدور</Label>
+            <Select value={role} onValueChange={(value) => setRole((value || "hr_admin") as ManagedOrgRole)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {managedRoleOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>إلغاء</Button>
+          <Button className="bg-brand text-white hover:bg-brand-dark" onClick={handleUpdate} disabled={submitting || role === member.role}>
+            {saved ? (
+              <><CheckCircle2 className="ml-2 h-4 w-4" />تم التحديث</>
+            ) : submitting ? (
+              "جار التحديث..."
+            ) : (
+              "تحديث الدور"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -464,7 +576,7 @@ function CreateOrgUserDialog({
     full_name: "",
     email: "",
     password: "",
-    role: "hr_admin" as "admin" | "hr_admin" | "hr_recruitment",
+    role: "hr_admin" as ManagedOrgRole,
   });
 
   const set = (key: keyof typeof form, value: string) => {
@@ -528,11 +640,14 @@ function CreateOrgUserDialog({
             <Select value={form.role} onValueChange={(value) => set("role", value || "hr_admin")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="admin">مسؤول منظمة</SelectItem>
-                <SelectItem value="hr_admin">HR Admin</SelectItem>
-                <SelectItem value="hr_recruitment">HR Recruitment</SelectItem>
+                {managedRoleOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-slate-500">
+              أدوار المالية تمنح المستخدم صلاحيات داخل وحدة المالية والمحاسبة حسب مستوى الدور.
+            </p>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>

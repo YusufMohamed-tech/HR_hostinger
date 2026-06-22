@@ -22,6 +22,20 @@ type PlatformUser = {
   last_login_at: string;
 };
 
+const roleLabels: Record<string, string> = {
+  admin: "مسؤول منظمة",
+  hr_admin: "مدير الموارد البشرية",
+  hr_recruitment: "مسؤول التوظيف",
+  finance_manager: "مدير المالية",
+  accountant: "محاسب",
+  finance_viewer: "مشاهد المالية",
+  sales: "مبيعات",
+  sales_manager: "مدير المبيعات",
+  training_manager: "مدير تدريب",
+  employee: "موظف",
+  super_admin: "مشرف عام",
+};
+
 function downloadCsv(rows: PlatformUser[]) {
   const headers = ["name", "email", "role", "organization", "status", "created_at", "last_login_at"];
   const csv = [
@@ -29,7 +43,7 @@ function downloadCsv(rows: PlatformUser[]) {
     ...rows.map((row) => [
       row.name,
       row.email,
-      row.role,
+      roleLabels[row.role] || row.role,
       row.organization_name,
       row.status,
       row.created_at,
@@ -110,7 +124,7 @@ export default function SuperadminUsersPage() {
               <SelectTrigger><SelectValue placeholder="الدور" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">كل الأدوار</SelectItem>
-                {roles.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                {roles.map((item) => <SelectItem key={item} value={item}>{roleLabels[item] || item}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={status} onValueChange={(value) => setStatus(value || "all")}>
@@ -142,7 +156,7 @@ export default function SuperadminUsersPage() {
                   <TableRow key={`${user.id}-${user.organization_id}`}>
                     <TableCell className="font-medium">{user.name || "—"}</TableCell>
                     <TableCell>{user.email || "—"}</TableCell>
-                    <TableCell>{user.role || "—"}</TableCell>
+                    <TableCell>{roleLabels[user.role] || user.role || "—"}</TableCell>
                     <TableCell>{user.organization_name || "—"}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className={user.status.toLowerCase() === "active" ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-700"}>
