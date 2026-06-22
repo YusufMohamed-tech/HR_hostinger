@@ -8,6 +8,7 @@ import { useNotifications } from "@/hooks/use-data";
 import {
   BarChart3,
   Bell,
+  BookOpen,
   Boxes,
   Briefcase,
   Calculator,
@@ -16,12 +17,14 @@ import {
   ClipboardList,
   Clock,
   FileText,
+  Landmark,
   Layers,
   LayoutDashboard,
   MapPin,
   MessageCircle,
   Network,
   Package,
+  Receipt,
   Settings,
   ShoppingCart,
   Users,
@@ -55,6 +58,7 @@ export function SidebarContent() {
     const isSuperAdmin = role === "Superadmin";
     const isAdmin = role === "Admin" || isSuperAdmin;
     const isHRAdmin = role === "HR_Admin";
+    const isFinance = ["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
 
     const taskLinks: NavLink[] = (isAdmin || isHRAdmin)
       ? [
@@ -112,6 +116,20 @@ export function SidebarContent() {
       { name: "فريق المبيعات", href: "/sales/team", icon: Users },
     ];
 
+    const accountingOps: NavLink[] = [
+      { name: "لوحة المحاسبة", href: "/accounting", icon: BarChart3 },
+      { name: "دليل الحسابات", href: "/accounting/chart-of-accounts", icon: BookOpen },
+      { name: "القيود اليومية", href: "/accounting/journal-entries", icon: Landmark },
+      { name: "المصروفات", href: "/accounting/expenses", icon: Receipt },
+      { name: "الموردون", href: "/accounting/vendors", icon: Users },
+      { name: "العملاء", href: "/accounting/customers", icon: Users },
+      { name: "الفواتير", href: "/accounting/invoices", icon: FileText },
+      { name: "المدفوعات", href: "/accounting/payments", icon: WalletCards },
+      { name: "مراكز التكلفة", href: "/accounting/cost-centers", icon: Layers },
+      { name: "التقارير", href: "/accounting/reports", icon: ClipboardList },
+      { name: "الإعدادات", href: "/accounting/settings", icon: Settings },
+    ];
+
     const system: NavLink[] = [{ name: "الإعدادات", href: "/settings", icon: Settings }];
 
     if (role === "HR_Recruitment") {
@@ -163,6 +181,7 @@ export function SidebarContent() {
       { title: "الأساسي", links: core },
       { title: "الإدارة", links: isAdmin ? fullAdminOps : isHRAdmin ? hrAdminOps : role === "Employee" ? employeeSelfOps : [] },
       { title: "المبيعات", links: isAdmin || isHRAdmin ? salesManagementOps : [] },
+      { title: "المالية والمحاسبة", links: isAdmin || isFinance ? accountingOps : [] },
       { title: "النظام", links: system },
     ];
   };

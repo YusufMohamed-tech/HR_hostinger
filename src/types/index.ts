@@ -1,7 +1,30 @@
-export type Role = "Superadmin" | "Admin" | "Employee" | "HR_Admin" | "HR_Recruitment" | "Training_Manager" | "Sales" | "Sales_Manager";
+export type Role =
+  | "Superadmin"
+  | "Admin"
+  | "Employee"
+  | "HR_Admin"
+  | "HR_Recruitment"
+  | "Training_Manager"
+  | "Sales"
+  | "Sales_Manager"
+  | "Finance_Manager"
+  | "Accountant"
+  | "Finance_Viewer";
 export type SystemRole = "Superadmin" | null;
 export type WorkspaceRole = Exclude<Role, "Superadmin">;
-export type OrgMembershipRole = "super_admin" | "admin" | "employee" | "hr_admin" | "hr_recruitment" | "training_manager" | "sales" | "sales_manager" | null;
+export type OrgMembershipRole =
+  | "super_admin"
+  | "admin"
+  | "employee"
+  | "hr_admin"
+  | "hr_recruitment"
+  | "training_manager"
+  | "sales"
+  | "sales_manager"
+  | "finance_manager"
+  | "accountant"
+  | "finance_viewer"
+  | null;
 
 export interface User {
   id: string;

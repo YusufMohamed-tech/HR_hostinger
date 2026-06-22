@@ -2,14 +2,25 @@
  * Supabase Database Types — Phase 1 Core Workforce OS
  */
 
-export type OrgRole = "super_admin" | "admin" | "employee" | "hr_admin" | "hr_recruitment" | "training_manager";
+export type OrgRole =
+  | "super_admin"
+  | "admin"
+  | "employee"
+  | "hr_admin"
+  | "hr_recruitment"
+  | "training_manager"
+  | "sales"
+  | "sales_manager"
+  | "finance_manager"
+  | "accountant"
+  | "finance_viewer";
 export type EmploymentType = "full_time" | "part_time" | "intern" | "contract";
 export type AttendanceStatus = "present" | "late" | "absent" | "on_leave" | "half_day";
 export type TaskStatus = "pending" | "in_progress" | "completed" | "rejected" | "delayed";
 export type LeaveType = "sick" | "vacation" | "emergency";
 export type LeaveStatus = "pending" | "approved" | "rejected";
 export type ShiftType = "morning" | "night" | "flexible";
-export type NotificationType = "attendance" | "task" | "leave" | "system";
+export type NotificationType = "attendance" | "task" | "leave" | "system" | "sales" | "accounting";
 export type DocumentType = "cv" | "contract" | "national_id" | "certificate" | "other";
 export type LocationType = "branch" | "booth" | "office" | "area";
 
