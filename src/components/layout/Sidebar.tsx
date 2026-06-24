@@ -87,6 +87,12 @@ export function SidebarContent() {
       { name: "الشات", href: "/chat", icon: MessageCircle },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
+    const financeCore: NavLink[] = [
+      { name: "لوحة التحكم", href: "/", icon: LayoutDashboard },
+      ...taskLinks,
+      { name: "الشات", href: "/chat", icon: MessageCircle },
+      { name: "الإشعارات", href: "/notifications", icon: Bell },
+    ];
 
     const fullAdminOps: NavLink[] = [
       { name: "الموظفون", href: "/employees", icon: Users },
@@ -189,7 +195,7 @@ export function SidebarContent() {
     }
 
     return [
-      { title: "الأساسي", links: core },
+      { title: "الأساسي", links: isFinance ? financeCore : core },
       { title: "الإدارة", links: isAdmin ? fullAdminOps : isHRAdmin ? hrAdminOps : role === "Employee" ? employeeSelfOps : [] },
       { title: "المبيعات", links: isAdmin || isHRAdmin ? salesManagementOps : [] },
       { title: "المالية والمحاسبة", links: canSeeFullAccounting ? accountingOps : canSeeFinanceTeam ? accountingTeamOps : [] },
