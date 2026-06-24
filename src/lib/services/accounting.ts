@@ -102,6 +102,10 @@ export function createJournalEntry(values: Record<string, unknown>) {
   return apiFetch<AccountingJournalEntry>("/api/accounting/journal-entries", { method: "POST", body: JSON.stringify(values) });
 }
 
+export function updateJournalEntry(id: string, values: Record<string, unknown>) {
+  return apiFetch<AccountingJournalEntry>(`/api/accounting/journal-entries/${id}`, { method: "PATCH", body: JSON.stringify(values) });
+}
+
 export function postJournalEntry(id: string) {
   return apiFetch<AccountingJournalEntry>(`/api/accounting/journal-entries/${id}/post`, { method: "POST", body: "{}" });
 }

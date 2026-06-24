@@ -1095,6 +1095,25 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return json(result.data);
     }
 
+    if (parts[0] === "journal-entries") {
+      const id = parts[1] || body.id;
+      if (!id) return message("معرف القيد مطلوب.", 400);
+      const current = await getRecord(admin, "accounting_journal_entries", auth.orgId, id);
+      if (current.status !== "draft") return message("يمكن إرسال المسودات فقط للاعتماد.", 400);
+      if (body.status !== "pending_approval") return message("الحالة المدعومة هنا هي إرسال المسودة للاعتماد فقط.", 400);
+
+      const next = await updateRecord(admin, "accounting_journal_entries", auth.orgId, id, {
+        status: "pending_approval",
+        updated_at: new Date().toISOString(),
+      });
+      await audit(admin, auth.orgId, auth.user.id, "accounting.journal_submitted", "accounting_journal_entries", id, {
+        previous_status: current.status,
+        status: "pending_approval",
+      });
+      await notifyFinance(admin, auth.orgId, "قيد محاسبي بانتظار الاعتماد", String(current.description || ""), `/accounting/journal-entries/${id}`);
+      return json(next);
+    }
+
     const map: Record<string, string> = {
       accounts: "accounting_accounts",
       "cost-centers": "accounting_cost_centers",

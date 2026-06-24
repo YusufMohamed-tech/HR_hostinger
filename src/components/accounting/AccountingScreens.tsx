@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -67,6 +67,7 @@ import {
   rejectExpense,
   reverseJournalEntry,
   updateAccountingSettings,
+  updateJournalEntry,
 } from "@/lib/services/accounting";
 import type { AccountingAccount, AccountingCostCenter, AccountingCustomer, AccountingSalesCompanyLink, AccountingVendor } from "@/types/accounting";
 import { useRoleContext } from "@/providers/RoleProvider";
@@ -407,13 +408,14 @@ function JournalEntriesPage() {
   const { canManage, canPost } = useAccountingCapabilities();
   const { data, loading, message, setMessage, load } = useLoad(() => getJournalEntries(), []);
   const rows = data || [];
+  const submitForApproval = async (id: string) => { const r = await updateJournalEntry(id, { status: "pending_approval" }); if (r.error) setMessage(r.error); else load(); };
   const post = async (id: string) => { const r = await postJournalEntry(id); if (r.error) setMessage(r.error); else load(); };
   const reverse = async (id: string) => { const r = await reverseJournalEntry(id, "عكس من شاشة القيود"); if (r.error) setMessage(r.error); else load(); };
   return (
     <div className="space-y-6">
       <MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} />
       <AccountingPageHeader title="القيود اليومية" description="إنشاء ومراجعة وترحيل القيود المحاسبية. القيود المرحلة لا تعدل مباشرة." actions={canManage ? <Button asChild className="bg-brand text-white hover:bg-brand-dark"><Link href="/accounting/journal-entries/new"><FilePlus2 className="ml-2 h-4 w-4" />قيد جديد</Link></Button> : null} />
-      <Card className="border-none shadow-sm"><CardContent className="p-0">{loading ? <div className="p-6"><AccountingLoading /></div> : rows.length === 0 ? <div className="p-6"><AccountingEmptyState title="لا توجد قيود يومية" /></div> : <Table><TableHeader><TableRow><TableHead>الرقم</TableHead><TableHead>التاريخ</TableHead><TableHead>الوصف</TableHead><TableHead>المدين</TableHead><TableHead>الدائن</TableHead><TableHead>الحالة</TableHead><TableHead className="text-left">الإجراءات</TableHead></TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.id}><TableCell className="font-mono">{row.entry_no}</TableCell><TableCell>{row.entry_date}</TableCell><TableCell>{row.description}</TableCell><TableCell><MoneyAmount value={row.total_debit} /></TableCell><TableCell><MoneyAmount value={row.total_credit} /></TableCell><TableCell><AccountingStatusBadge status={row.status} /></TableCell><TableCell><div className="flex justify-end gap-2"><Button asChild variant="outline" size="sm"><Link href={`/accounting/journal-entries/${row.id}`}>عرض</Link></Button>{canPost && ["draft", "pending_approval"].includes(row.status) ? <Button size="sm" className="bg-brand text-white hover:bg-brand-dark" onClick={() => post(row.id)}><CheckCircle className="ml-1 h-4 w-4" />ترحيل</Button> : null}{canPost && row.status === "posted" ? <Button size="sm" variant="outline" onClick={() => reverse(row.id)}><RotateCcw className="ml-1 h-4 w-4" />عكس</Button> : null}</div></TableCell></TableRow>)}</TableBody></Table>}</CardContent></Card>
+      <Card className="border-none shadow-sm"><CardContent className="p-0">{loading ? <div className="p-6"><AccountingLoading /></div> : rows.length === 0 ? <div className="p-6"><AccountingEmptyState title="لا توجد قيود يومية" /></div> : <Table><TableHeader><TableRow><TableHead>الرقم</TableHead><TableHead>التاريخ</TableHead><TableHead>الوصف</TableHead><TableHead>المدين</TableHead><TableHead>الدائن</TableHead><TableHead>الحالة</TableHead><TableHead className="text-left">الإجراءات</TableHead></TableRow></TableHeader><TableBody>{rows.map((row) => <TableRow key={row.id}><TableCell className="font-mono">{row.entry_no}</TableCell><TableCell>{row.entry_date}</TableCell><TableCell>{row.description}</TableCell><TableCell><MoneyAmount value={row.total_debit} /></TableCell><TableCell><MoneyAmount value={row.total_credit} /></TableCell><TableCell><AccountingStatusBadge status={row.status} /></TableCell><TableCell><div className="flex justify-end gap-2"><Button asChild variant="outline" size="sm"><Link href={`/accounting/journal-entries/${row.id}`}>عرض</Link></Button>{canManage && row.status === "draft" ? <Button size="sm" variant="outline" onClick={() => submitForApproval(row.id)}>إرسال للاعتماد</Button> : null}{canPost && ["draft", "pending_approval"].includes(row.status) ? <Button size="sm" className="bg-brand text-white hover:bg-brand-dark" onClick={() => post(row.id)}><CheckCircle className="ml-1 h-4 w-4" />ترحيل</Button> : null}{canPost && row.status === "posted" ? <Button size="sm" variant="outline" onClick={() => reverse(row.id)}><RotateCcw className="ml-1 h-4 w-4" />عكس</Button> : null}</div></TableCell></TableRow>)}</TableBody></Table>}</CardContent></Card>
     </div>
   );
 }
@@ -426,19 +428,29 @@ function JournalEntryFormPage() {
   const [costCenters, setCostCenters] = useState<AccountingCostCenter[]>([]);
   const [form, setForm] = useState({ entry_date: today(), description: "", notes: "" });
   const [lines, setLines] = useState<JournalLineDraft[]>([{ account_id: "", debit: "", credit: "", description: "", cost_center_id: "" }, { account_id: "", debit: "", credit: "", description: "", cost_center_id: "" }]);
+  const [submittingStatus, setSubmittingStatus] = useState<"draft" | "pending_approval" | null>(null);
+  const submitLockRef = useRef(false);
   useEffect(() => { getAccountingAccounts().then((r) => setAccounts(r.data || [])); getCostCenters().then((r) => setCostCenters(r.data || [])); }, []);
   const totals = useMemo(() => ({ debit: lines.reduce((s, l) => s + Number(l.debit || 0), 0), credit: lines.reduce((s, l) => s + Number(l.credit || 0), 0) }), [lines]);
   const submit = async (status: "draft" | "pending_approval") => {
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+    setSubmittingStatus(status);
     const result = await createJournalEntry({ ...form, status, lines: lines.map((line) => ({ ...line, debit: Number(line.debit || 0), credit: Number(line.credit || 0), cost_center_id: line.cost_center_id || null })) });
-    if (result.error) setMessage(result.error);
-    else router.push(`/accounting/journal-entries/${result.data?.id}`);
+    if (result.error) {
+      submitLockRef.current = false;
+      setSubmittingStatus(null);
+      setMessage(result.error);
+    } else {
+      router.push(`/accounting/journal-entries/${result.data?.id}`);
+    }
   };
   if (!canManage) return <AccountingEmptyState title="صلاحية القراءة فقط" description="لا يمكن لهذا الدور إنشاء قيود محاسبية." />;
   return (
     <div className="space-y-6">
       <MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} />
       <AccountingPageHeader title="قيد يومية جديد" description="أضف سطور المدين والدائن ثم احفظ القيد كمسودة أو أرسله للاعتماد." />
-      <Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5"><div className="grid gap-4 md:grid-cols-3"><div className="space-y-2"><Label>تاريخ القيد</Label><Input type="date" value={form.entry_date} onChange={(e) => setForm((p) => ({ ...p, entry_date: e.target.value }))} /></div><div className="space-y-2 md:col-span-2"><Label>الوصف</Label><Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div></div><JournalLinesEditor accounts={accounts} costCenters={costCenters} lines={lines} setLines={setLines} /><div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 p-3 text-sm"><div>إجمالي المدين: <MoneyAmount value={totals.debit} /> · إجمالي الدائن: <MoneyAmount value={totals.credit} /></div><div className={totals.debit === totals.credit ? "text-green-700" : "text-red-700"}>{totals.debit === totals.credit ? "القيد متوازن" : "القيد غير متوازن"}</div></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => submit("draft")}><Save className="ml-2 h-4 w-4" />حفظ مسودة</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={() => submit("pending_approval")}>إرسال للاعتماد</Button></div></CardContent></Card>
+      <Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5"><div className="grid gap-4 md:grid-cols-3"><div className="space-y-2"><Label>تاريخ القيد</Label><Input type="date" value={form.entry_date} onChange={(e) => setForm((p) => ({ ...p, entry_date: e.target.value }))} /></div><div className="space-y-2 md:col-span-2"><Label>الوصف</Label><Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div></div><JournalLinesEditor accounts={accounts} costCenters={costCenters} lines={lines} setLines={setLines} /><div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 p-3 text-sm"><div>إجمالي المدين: <MoneyAmount value={totals.debit} /> · إجمالي الدائن: <MoneyAmount value={totals.credit} /></div><div className={totals.debit === totals.credit ? "text-green-700" : "text-red-700"}>{totals.debit === totals.credit ? "القيد متوازن" : "القيد غير متوازن"}</div></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => submit("draft")} disabled={Boolean(submittingStatus)}><Save className="ml-2 h-4 w-4" />{submittingStatus === "draft" ? "جاري الحفظ..." : "حفظ مسودة"}</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={() => submit("pending_approval")} disabled={Boolean(submittingStatus)}>{submittingStatus === "pending_approval" ? "جاري الإرسال..." : "إرسال للاعتماد"}</Button></div></CardContent></Card>
     </div>
   );
 }
@@ -469,14 +481,22 @@ export function AccountingDetailPage({ entity, id }: { entity: "journal-entries"
 }
 
 function JournalDetail({ id }: { id: string }) {
-  const { canPost } = useAccountingCapabilities();
+  const { canManage, canPost } = useAccountingCapabilities();
   const { data, loading, message, setMessage, load } = useLoad(() => getJournalEntry(id), [id]);
+  const [submittingApproval, setSubmittingApproval] = useState(false);
+  const submitForApproval = async () => {
+    setSubmittingApproval(true);
+    const r = await updateJournalEntry(id, { status: "pending_approval" });
+    setSubmittingApproval(false);
+    if (r.error) setMessage(r.error);
+    else load();
+  };
   const post = async () => { const r = await postJournalEntry(id); if (r.error) setMessage(r.error); else load(); };
   const reverse = async () => { const r = await reverseJournalEntry(id, "عكس من صفحة التفاصيل"); if (r.error) setMessage(r.error); else load(); };
   if (loading) return <AccountingLoading />;
   if (!data) return <AccountingEmptyState title="القيد غير موجود" />;
   const lines = data.lines || [];
-  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title={`قيد ${data.entry_no}`} description={data.description} actions={canPost ? <>{["draft", "pending_approval"].includes(data.status) ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={post}>ترحيل</Button> : null}{data.status === "posted" ? <Button variant="outline" onClick={reverse}>عكس القيد</Button> : null}</> : null} /><Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5 md:grid-cols-4"><AccountingStatCard label="الحالة" value={<AccountingStatusBadge status={data.status} />} /><AccountingStatCard label="التاريخ" value={data.entry_date} /><AccountingStatCard label="إجمالي المدين" value={<MoneyAmount value={data.total_debit} />} /><AccountingStatCard label="إجمالي الدائن" value={<MoneyAmount value={data.total_credit} />} /></CardContent></Card><SimpleTable rows={lines} emptyTitle="لا توجد سطور" columns={[["account.code", "الحساب"], ["description", "الوصف"], ["debit", "مدين"], ["credit", "دائن"]]} moneyColumns={["debit", "credit"]} /></div>;
+  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title={`قيد ${data.entry_no}`} description={data.description} actions={<>{canManage && data.status === "draft" ? <Button variant="outline" onClick={submitForApproval} disabled={submittingApproval}>{submittingApproval ? "جاري الإرسال..." : "إرسال للاعتماد"}</Button> : null}{canPost && ["draft", "pending_approval"].includes(data.status) ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={post}>ترحيل</Button> : null}{canPost && data.status === "posted" ? <Button variant="outline" onClick={reverse}>عكس القيد</Button> : null}</>} /><Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5 md:grid-cols-4"><AccountingStatCard label="الحالة" value={<AccountingStatusBadge status={data.status} />} /><AccountingStatCard label="التاريخ" value={data.entry_date} /><AccountingStatCard label="إجمالي المدين" value={<MoneyAmount value={data.total_debit} />} /><AccountingStatCard label="إجمالي الدائن" value={<MoneyAmount value={data.total_credit} />} /></CardContent></Card><SimpleTable rows={lines} emptyTitle="لا توجد سطور" columns={[["account.code", "الحساب"], ["description", "الوصف"], ["debit", "مدين"], ["credit", "دائن"]]} moneyColumns={["debit", "credit"]} /></div>;
 }
 
 function ExpensesPage() {
