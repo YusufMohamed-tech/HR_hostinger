@@ -10,7 +10,9 @@ import {
   CheckCircle,
   FilePlus2,
   Landmark,
+  Pencil,
   Plus,
+  Power,
   Receipt,
   RotateCcw,
   Save,
@@ -22,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { MessageDialog } from "@/components/ui/feedback-dialog";
+import { ConfirmActionButton, MessageDialog } from "@/components/ui/feedback-dialog";
 import {
   AccountingEmptyState,
   AccountingLoading,
@@ -43,6 +45,10 @@ import {
   createPayment,
   createPayrollDraftEntry,
   createVendor,
+  deactivateAccountingAccount,
+  deactivateCostCenter,
+  deactivateCustomer,
+  deactivateVendor,
   getAccountingAccounts,
   getAccountingDashboard,
   getAccountingReport,
@@ -57,6 +63,7 @@ import {
   getJournalEntries,
   getJournalEntry,
   getPayments,
+  getTaxRates,
   getVendors,
   initializeAccountingDefaults,
   issueInvoice,
@@ -66,10 +73,14 @@ import {
   recordInvoicePayment,
   rejectExpense,
   reverseJournalEntry,
+  updateAccountingAccount,
   updateAccountingSettings,
+  updateCostCenter,
+  updateCustomer,
   updateJournalEntry,
+  updateVendor,
 } from "@/lib/services/accounting";
-import type { AccountingAccount, AccountingCostCenter, AccountingCustomer, AccountingSalesCompanyLink, AccountingVendor } from "@/types/accounting";
+import type { AccountingAccount, AccountingCostCenter, AccountingCustomer, AccountingPayment, AccountingSalesCompanyLink, AccountingTaxRate, AccountingVendor } from "@/types/accounting";
 import { useRoleContext } from "@/providers/RoleProvider";
 
 type AccountingView =
@@ -139,9 +150,9 @@ function useAccountingCapabilities() {
   const { currentUser } = useRoleContext();
   const role = currentUser?.role;
   return {
-    canManage: ["Admin", "Finance_Manager", "Accountant"].includes(String(role)),
-    canPost: ["Admin", "Finance_Manager"].includes(String(role)),
-    canManageSettings: ["Admin", "Finance_Manager"].includes(String(role)),
+    canManage: ["Finance_Manager", "Accountant"].includes(String(role)),
+    canPost: role === "Finance_Manager",
+    canManageSettings: role === "Finance_Manager",
   };
 }
 
@@ -301,8 +312,8 @@ function AccountsPage() {
             <div className="p-6"><AccountingEmptyState title="لا يوجد دليل حسابات" description="ابدأ بتهيئة الإعدادات المحاسبية أو أضف حسابا يدويا." action={canManageSettings ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={async () => { const r = await initializeAccountingDefaults(); if (r.error) setMessage(r.error); else load(); }}>تهيئة الإعدادات المحاسبية</Button> : undefined} /></div>
           ) : (
             <Table>
-              <TableHeader><TableRow><TableHead>الكود</TableHead><TableHead>الحساب</TableHead><TableHead>النوع</TableHead><TableHead>الرصيد الطبيعي</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader>
-              <TableBody>{rows.map((account) => <TableRow key={account.id}><TableCell className="font-mono">{account.code}</TableCell><TableCell className="font-medium">{account.name_ar}<div className="text-xs text-gray-500">{account.name_en}</div></TableCell><TableCell>{accountTypeLabels[account.type] || account.type}</TableCell><TableCell>{account.normal_balance === "debit" ? "Debit" : "Credit"}</TableCell><TableCell><AccountingStatusBadge status={account.is_active ? "active" : "cancelled"} /></TableCell></TableRow>)}</TableBody>
+              <TableHeader><TableRow><TableHead>الكود</TableHead><TableHead>الحساب</TableHead><TableHead>النوع</TableHead><TableHead>الرصيد الطبيعي</TableHead><TableHead>الحالة</TableHead><TableHead className="text-left">الإجراءات</TableHead></TableRow></TableHeader>
+              <TableBody>{rows.map((account) => <TableRow key={account.id}><TableCell className="font-mono">{account.code}</TableCell><TableCell className="font-medium">{account.name_ar}<div className="text-xs text-gray-500">{account.name_en}</div></TableCell><TableCell>{accountTypeLabels[account.type] || account.type}</TableCell><TableCell>{account.normal_balance === "debit" ? "Debit" : "Credit"}</TableCell><TableCell><AccountingStatusBadge status={account.is_active ? "active" : "cancelled"} /></TableCell><TableCell><div className="flex justify-end gap-2">{canManage ? <><AccountDialog account={account} onDone={load} onMessage={setMessage} />{account.is_active ? <ConfirmActionButton variant="ghost" size="sm" className="text-red-700 hover:bg-red-50" title="تعطيل الحساب" description="سيتم تعطيل الحساب ومنعه من الاستخدام في قيود جديدة دون حذف سجلاته السابقة." confirmLabel="تعطيل" destructive onConfirm={async () => { const r = await deactivateAccountingAccount(account.id); if (r.error) setMessage(r.error); else load(); }}><Power className="h-4 w-4" /></ConfirmActionButton> : null}</> : <span className="text-xs text-gray-400">عرض فقط</span>}</div></TableCell></TableRow>)}</TableBody>
             </Table>
           )}
         </CardContent>
@@ -311,11 +322,22 @@ function AccountsPage() {
   );
 }
 
-function AccountDialog({ onDone, onMessage }: { onDone: () => void; onMessage: (message: string) => void }) {
+function AccountDialog({ account, onDone, onMessage }: { account?: AccountingAccount; onDone: () => void; onMessage: (message: string) => void }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ code: "", name_ar: "", name_en: "", type: "asset", normal_balance: "debit", description: "" });
+  useEffect(() => {
+    if (!open) return;
+    setForm(account ? {
+      code: account.code || "",
+      name_ar: account.name_ar || "",
+      name_en: account.name_en || "",
+      type: account.type || "asset",
+      normal_balance: account.normal_balance || "debit",
+      description: account.description || "",
+    } : { code: "", name_ar: "", name_en: "", type: "asset", normal_balance: "debit", description: "" });
+  }, [account, open]);
   const save = async () => {
-    const result = await createAccountingAccount(form as Partial<AccountingAccount>);
+    const result = account ? await updateAccountingAccount(account.id, form as Partial<AccountingAccount>) : await createAccountingAccount(form as Partial<AccountingAccount>);
     if (result.error) onMessage(result.error);
     else {
       setOpen(false);
@@ -325,9 +347,9 @@ function AccountDialog({ onDone, onMessage }: { onDone: () => void; onMessage: (
   };
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button className="bg-brand text-white hover:bg-brand-dark" />}><Plus className="ml-2 h-4 w-4" />إضافة حساب</DialogTrigger>
+      <DialogTrigger render={<Button variant={account ? "ghost" : "default"} size={account ? "sm" : "default"} className={account ? "text-brand hover:text-brand-dark" : "bg-brand text-white hover:bg-brand-dark"} />}>{account ? <Pencil className="h-4 w-4" /> : <><Plus className="ml-2 h-4 w-4" />إضافة حساب</>}</DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>إضافة حساب</DialogTitle><DialogDescription>أدخل بيانات الحساب المحاسبي.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>{account ? "تعديل حساب" : "إضافة حساب"}</DialogTitle><DialogDescription>أدخل بيانات الحساب المحاسبي.</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-4">
           <Input placeholder="الكود" value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))} />
           <Input placeholder="الاسم العربي" value={form.name_ar} onChange={(e) => setForm((p) => ({ ...p, name_ar: e.target.value }))} />
@@ -350,24 +372,37 @@ function AccountDialog({ onDone, onMessage }: { onDone: () => void; onMessage: (
 function CostCentersPage() {
   const { canManage } = useAccountingCapabilities();
   const { data, loading, message, setMessage, load } = useLoad(() => getCostCenters(), []);
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ code: "", name_ar: "", name_en: "", type: "custom" });
-  const save = async () => {
-    const result = await createCostCenter(form as Partial<AccountingCostCenter>);
-    if (result.error) setMessage(result.error);
-    else { setOpen(false); setForm({ code: "", name_ar: "", name_en: "", type: "custom" }); load(); }
-  };
   return (
     <div className="space-y-6">
       <MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} />
-      <AccountingPageHeader title="مراكز التكلفة" description="ربط المصروفات والقيود بالأقسام والمواقع والمشاريع وقنوات البيع." actions={canManage ? (
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger render={<Button className="bg-brand text-white hover:bg-brand-dark" />}><Plus className="ml-2 h-4 w-4" />إضافة مركز تكلفة</DialogTrigger>
-          <DialogContent><DialogHeader><DialogTitle>إضافة مركز تكلفة</DialogTitle></DialogHeader><div className="grid gap-3 py-4"><Input placeholder="الكود" value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))} /><Input placeholder="الاسم العربي" value={form.name_ar} onChange={(e) => setForm((p) => ({ ...p, name_ar: e.target.value }))} /><Input placeholder="الاسم الإنجليزي" value={form.name_en} onChange={(e) => setForm((p) => ({ ...p, name_en: e.target.value }))} /><SelectField value={form.type} onChange={(value) => setForm((p) => ({ ...p, type: value }))}><option value="custom">مخصص</option><option value="department">قسم</option><option value="location">موقع</option><option value="sales_company">شركة مبيعات</option><option value="project">مشروع</option><option value="branch">فرع</option><option value="channel">قناة</option></SelectField></div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={save}>حفظ</Button></DialogFooter></DialogContent>
-        </Dialog>
-      ) : null} />
-      <SimpleTable loading={loading} rows={data || []} emptyTitle="لا توجد مراكز تكلفة" columns={[["code", "الكود"], ["name_ar", "الاسم"], ["type", "النوع"]]} />
+      <AccountingPageHeader title="مراكز التكلفة" description="ربط المصروفات والقيود بالأقسام والمواقع والمشاريع وقنوات البيع." actions={canManage ? <CostCenterDialog onDone={load} onMessage={setMessage} /> : null} />
+      <Card className="border-none shadow-sm"><CardContent className="p-0">{loading ? <div className="p-6"><AccountingLoading /></div> : !data?.length ? <div className="p-6"><AccountingEmptyState title="لا توجد مراكز تكلفة" /></div> : <Table><TableHeader><TableRow><TableHead>الكود</TableHead><TableHead>الاسم</TableHead><TableHead>النوع</TableHead><TableHead>الحالة</TableHead><TableHead className="text-left">الإجراءات</TableHead></TableRow></TableHeader><TableBody>{data.map((center) => <TableRow key={center.id}><TableCell className="font-mono">{center.code}</TableCell><TableCell>{center.name_ar}<div className="text-xs text-gray-500">{center.name_en}</div></TableCell><TableCell>{center.type}</TableCell><TableCell><AccountingStatusBadge status={center.is_active ? "active" : "cancelled"} /></TableCell><TableCell><div className="flex justify-end gap-2">{canManage ? <><CostCenterDialog center={center} onDone={load} onMessage={setMessage} />{center.is_active ? <ConfirmActionButton variant="ghost" size="sm" className="text-red-700 hover:bg-red-50" title="تعطيل مركز التكلفة" description="سيتم تعطيل مركز التكلفة ومنعه من الاستخدام في عمليات جديدة." confirmLabel="تعطيل" destructive onConfirm={async () => { const r = await deactivateCostCenter(center.id); if (r.error) setMessage(r.error); else load(); }}><Power className="h-4 w-4" /></ConfirmActionButton> : null}</> : <span className="text-xs text-gray-400">عرض فقط</span>}</div></TableCell></TableRow>)}</TableBody></Table>}</CardContent></Card>
     </div>
+  );
+}
+
+function CostCenterDialog({ center, onDone, onMessage }: { center?: AccountingCostCenter; onDone: () => void; onMessage: (message: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ code: "", name_ar: "", name_en: "", type: "custom" });
+  useEffect(() => {
+    if (!open) return;
+    setForm(center ? {
+      code: center.code || "",
+      name_ar: center.name_ar || "",
+      name_en: center.name_en || "",
+      type: center.type || "custom",
+    } : { code: "", name_ar: "", name_en: "", type: "custom" });
+  }, [center, open]);
+  const save = async () => {
+    const result = center ? await updateCostCenter(center.id, form as Partial<AccountingCostCenter>) : await createCostCenter(form as Partial<AccountingCostCenter>);
+    if (result.error) onMessage(result.error);
+    else { setOpen(false); onDone(); }
+  };
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant={center ? "ghost" : "default"} size={center ? "sm" : "default"} className={center ? "text-brand hover:text-brand-dark" : "bg-brand text-white hover:bg-brand-dark"} />}>{center ? <Pencil className="h-4 w-4" /> : <><Plus className="ml-2 h-4 w-4" />إضافة مركز تكلفة</>}</DialogTrigger>
+      <DialogContent><DialogHeader><DialogTitle>{center ? "تعديل مركز تكلفة" : "إضافة مركز تكلفة"}</DialogTitle></DialogHeader><div className="grid gap-3 py-4"><Input placeholder="الكود" value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))} /><Input placeholder="الاسم العربي" value={form.name_ar} onChange={(e) => setForm((p) => ({ ...p, name_ar: e.target.value }))} /><Input placeholder="الاسم الإنجليزي" value={form.name_en} onChange={(e) => setForm((p) => ({ ...p, name_en: e.target.value }))} /><SelectField value={form.type} onChange={(value) => setForm((p) => ({ ...p, type: value }))}><option value="custom">مخصص</option><option value="department">قسم</option><option value="location">موقع</option><option value="sales_company">شركة مبيعات</option><option value="project">مشروع</option><option value="branch">فرع</option><option value="channel">قناة</option></SelectField></div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={save}>حفظ</Button></DialogFooter></DialogContent>
+    </Dialog>
   );
 }
 
@@ -375,31 +410,48 @@ function PartyPage({ kind }: { kind: "vendors" | "customers" }) {
   const { canManage } = useAccountingCapabilities();
   const isVendor = kind === "vendors";
   const { data, loading, message, setMessage, load } = useLoad(() => isVendor ? getVendors() : getCustomers(), [kind]);
+  const rows = data || [];
   return (
     <div className="space-y-6">
       <MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} />
       <AccountingPageHeader title={isVendor ? "الموردون" : "العملاء"} description={isVendor ? "ملفات الموردين ومعلومات السداد والضريبة." : "ملفات العملاء وربطهم بشركات المبيعات والفواتير."} actions={canManage ? <PartyDialog kind={kind} onDone={load} onMessage={setMessage} /> : null} />
-      <SimpleTable loading={loading} rows={(data || []) as unknown as Record<string, unknown>[]} emptyTitle={isVendor ? "لا يوجد موردون" : "لا يوجد عملاء"} columns={[["name_ar", "الاسم"], ["vat_number", "الرقم الضريبي"], ["commercial_registration", "السجل التجاري"], ["phone", "الجوال"], ["city", "المدينة"]]} />
+      <Card className="border-none shadow-sm"><CardContent className="p-0">{loading ? <div className="p-6"><AccountingLoading /></div> : rows.length === 0 ? <div className="p-6"><AccountingEmptyState title={isVendor ? "لا يوجد موردون" : "لا يوجد عملاء"} /></div> : <Table><TableHeader><TableRow><TableHead>الاسم</TableHead><TableHead>الرقم الضريبي</TableHead><TableHead>السجل التجاري</TableHead><TableHead>الجوال</TableHead><TableHead>المدينة</TableHead><TableHead>الحالة</TableHead><TableHead className="text-left">الإجراءات</TableHead></TableRow></TableHeader><TableBody>{rows.map((party) => <TableRow key={party.id}><TableCell className="font-medium">{party.name_ar}<div className="text-xs text-gray-500">{party.name_en}</div></TableCell><TableCell>{party.vat_number || "-"}</TableCell><TableCell>{party.commercial_registration || "-"}</TableCell><TableCell>{party.phone || "-"}</TableCell><TableCell>{party.city || "-"}</TableCell><TableCell><AccountingStatusBadge status={party.is_active ? "active" : "cancelled"} /></TableCell><TableCell><div className="flex justify-end gap-2">{canManage ? <><PartyDialog kind={kind} party={party} onDone={load} onMessage={setMessage} />{party.is_active ? <ConfirmActionButton variant="ghost" size="sm" className="text-red-700 hover:bg-red-50" title={isVendor ? "تعطيل مورد" : "تعطيل عميل"} description={isVendor ? "سيتم تعطيل المورد ومنعه من الاستخدام في عمليات جديدة." : "سيتم تعطيل العميل ومنعه من الاستخدام في فواتير جديدة."} confirmLabel="تعطيل" destructive onConfirm={async () => { const r = isVendor ? await deactivateVendor(party.id) : await deactivateCustomer(party.id); if (r.error) setMessage(r.error); else load(); }}><Power className="h-4 w-4" /></ConfirmActionButton> : null}</> : <span className="text-xs text-gray-400">عرض فقط</span>}</div></TableCell></TableRow>)}</TableBody></Table>}</CardContent></Card>
     </div>
   );
 }
 
-function PartyDialog({ kind, onDone, onMessage }: { kind: "vendors" | "customers"; onDone: () => void; onMessage: (message: string) => void }) {
+function PartyDialog({ kind, party, onDone, onMessage }: { kind: "vendors" | "customers"; party?: AccountingVendor | AccountingCustomer; onDone: () => void; onMessage: (message: string) => void }) {
   const [open, setOpen] = useState(false);
   const [salesCompanies, setSalesCompanies] = useState<AccountingSalesCompanyLink[]>([]);
   const [form, setForm] = useState({ name_ar: "", name_en: "", vat_number: "", commercial_registration: "", phone: "", email: "", city: "", bank_name: "", iban: "", sales_company_id: "" });
   useEffect(() => {
     if (kind === "customers" && open) getAccountingSalesCompanies().then((result) => setSalesCompanies(result.data || []));
-  }, [kind, open]);
+    if (!open) return;
+    const customer = party as AccountingCustomer | undefined;
+    setForm(party ? {
+      name_ar: party.name_ar || "",
+      name_en: party.name_en || "",
+      vat_number: party.vat_number || "",
+      commercial_registration: party.commercial_registration || "",
+      phone: party.phone || "",
+      email: party.email || "",
+      city: party.city || "",
+      bank_name: (party as AccountingVendor).bank_name || "",
+      iban: (party as AccountingVendor).iban || "",
+      sales_company_id: customer?.sales_company_id || "",
+    } : { name_ar: "", name_en: "", vat_number: "", commercial_registration: "", phone: "", email: "", city: "", bank_name: "", iban: "", sales_company_id: "" });
+  }, [kind, party, open]);
   const save = async () => {
-    const result = kind === "vendors" ? await createVendor(form as Partial<AccountingVendor>) : await createCustomer(form as Partial<AccountingCustomer>);
+    const result = kind === "vendors"
+      ? party ? await updateVendor(party.id, form as Partial<AccountingVendor>) : await createVendor(form as Partial<AccountingVendor>)
+      : party ? await updateCustomer(party.id, form as Partial<AccountingCustomer>) : await createCustomer(form as Partial<AccountingCustomer>);
     if (result.error) onMessage(result.error);
     else { setOpen(false); setForm({ name_ar: "", name_en: "", vat_number: "", commercial_registration: "", phone: "", email: "", city: "", bank_name: "", iban: "", sales_company_id: "" }); onDone(); }
   };
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button className="bg-brand text-white hover:bg-brand-dark" />}><Plus className="ml-2 h-4 w-4" />{kind === "vendors" ? "إضافة مورد" : "إضافة عميل"}</DialogTrigger>
-      <DialogContent><DialogHeader><DialogTitle>{kind === "vendors" ? "إضافة مورد" : "إضافة عميل"}</DialogTitle></DialogHeader><div className="grid gap-3 py-4 sm:grid-cols-2"><Input placeholder="الاسم العربي" value={form.name_ar} onChange={(e) => setForm((p) => ({ ...p, name_ar: e.target.value }))} /><Input placeholder="الاسم الإنجليزي" value={form.name_en} onChange={(e) => setForm((p) => ({ ...p, name_en: e.target.value }))} /><Input placeholder="الرقم الضريبي" value={form.vat_number} onChange={(e) => setForm((p) => ({ ...p, vat_number: e.target.value }))} /><Input placeholder="السجل التجاري" value={form.commercial_registration} onChange={(e) => setForm((p) => ({ ...p, commercial_registration: e.target.value }))} /><Input placeholder="الجوال" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} /><Input placeholder="البريد الإلكتروني" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} /><Input placeholder="المدينة" value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} />{kind === "customers" ? <SelectField value={form.sales_company_id} onChange={(value) => setForm((p) => ({ ...p, sales_company_id: value }))}><option value="">بدون ربط بشركة مبيعات</option>{salesCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</SelectField> : null}{kind === "vendors" ? <><Input placeholder="البنك" value={form.bank_name} onChange={(e) => setForm((p) => ({ ...p, bank_name: e.target.value }))} /><Input placeholder="IBAN" dir="ltr" value={form.iban} onChange={(e) => setForm((p) => ({ ...p, iban: e.target.value }))} /></> : null}</div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={save}>حفظ</Button></DialogFooter></DialogContent>
+      <DialogTrigger render={<Button variant={party ? "ghost" : "default"} size={party ? "sm" : "default"} className={party ? "text-brand hover:text-brand-dark" : "bg-brand text-white hover:bg-brand-dark"} />}>{party ? <Pencil className="h-4 w-4" /> : <><Plus className="ml-2 h-4 w-4" />{kind === "vendors" ? "إضافة مورد" : "إضافة عميل"}</>}</DialogTrigger>
+      <DialogContent><DialogHeader><DialogTitle>{party ? (kind === "vendors" ? "تعديل مورد" : "تعديل عميل") : (kind === "vendors" ? "إضافة مورد" : "إضافة عميل")}</DialogTitle></DialogHeader><div className="grid gap-3 py-4 sm:grid-cols-2"><Input placeholder="الاسم العربي" value={form.name_ar} onChange={(e) => setForm((p) => ({ ...p, name_ar: e.target.value }))} /><Input placeholder="الاسم الإنجليزي" value={form.name_en} onChange={(e) => setForm((p) => ({ ...p, name_en: e.target.value }))} /><Input placeholder="الرقم الضريبي" value={form.vat_number} onChange={(e) => setForm((p) => ({ ...p, vat_number: e.target.value }))} /><Input placeholder="السجل التجاري" value={form.commercial_registration} onChange={(e) => setForm((p) => ({ ...p, commercial_registration: e.target.value }))} /><Input placeholder="الجوال" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} /><Input placeholder="البريد الإلكتروني" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} /><Input placeholder="المدينة" value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} />{kind === "customers" ? <SelectField value={form.sales_company_id} onChange={(value) => setForm((p) => ({ ...p, sales_company_id: value }))}><option value="">بدون ربط بشركة مبيعات</option>{salesCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</SelectField> : null}{kind === "vendors" ? <><Input placeholder="البنك" value={form.bank_name} onChange={(e) => setForm((p) => ({ ...p, bank_name: e.target.value }))} /><Input placeholder="IBAN" dir="ltr" value={form.iban} onChange={(e) => setForm((p) => ({ ...p, iban: e.target.value }))} /></> : null}</div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={save}>حفظ</Button></DialogFooter></DialogContent>
     </Dialog>
   );
 }
@@ -484,6 +536,71 @@ function JournalDetail({ id }: { id: string }) {
   const { canManage, canPost } = useAccountingCapabilities();
   const { data, loading, message, setMessage, load } = useLoad(() => getJournalEntry(id), [id]);
   const [submittingApproval, setSubmittingApproval] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [accounts, setAccounts] = useState<AccountingAccount[]>([]);
+  const [costCenters, setCostCenters] = useState<AccountingCostCenter[]>([]);
+  const [editForm, setEditForm] = useState({ entry_date: today(), description: "", notes: "" });
+  const [editLines, setEditLines] = useState<JournalLineDraft[]>([]);
+
+  useEffect(() => {
+    if (!editing) return;
+    getAccountingAccounts().then((r) => setAccounts(r.data || []));
+    getCostCenters().then((r) => setCostCenters(r.data || []));
+  }, [editing]);
+
+  useEffect(() => {
+    if (!editing || !data) return;
+    setEditForm({
+      entry_date: String(data.entry_date || today()),
+      description: data.description || "",
+      notes: data.notes || "",
+    });
+    setEditLines((data.lines || []).map((line) => ({
+      account_id: line.account_id || "",
+      debit: String(line.debit || ""),
+      credit: String(line.credit || ""),
+      description: line.description || "",
+      cost_center_id: line.cost_center_id || "",
+    })));
+  }, [data, editing]);
+
+  const validateEdit = () => {
+    if (editLines.length < 2) return "يجب أن يحتوي القيد على سطرين على الأقل.";
+    const invalidLine = editLines.find((line) => !line.account_id || (Number(line.debit || 0) > 0 && Number(line.credit || 0) > 0) || Number(line.debit || 0) < 0 || Number(line.credit || 0) < 0 || (Number(line.debit || 0) === 0 && Number(line.credit || 0) === 0));
+    if (invalidLine) return "كل سطر يحتاج حسابا نشطا ومبلغ مدين أو دائن فقط دون قيم سالبة.";
+    const debit = editLines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
+    const credit = editLines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
+    if (Math.round(debit * 100) !== Math.round(credit * 100)) return "يجب أن يتساوى إجمالي المدين مع إجمالي الدائن.";
+    return "";
+  };
+
+  const saveDraft = async (status?: "pending_approval") => {
+    const validationMessage = validateEdit();
+    if (validationMessage) {
+      setMessage(validationMessage);
+      return;
+    }
+    setSavingEdit(true);
+    const r = await updateJournalEntry(id, {
+      ...editForm,
+      status,
+      lines: editLines.map((line) => ({
+        account_id: line.account_id,
+        debit: Number(line.debit || 0),
+        credit: Number(line.credit || 0),
+        description: line.description || null,
+        cost_center_id: line.cost_center_id || null,
+      })),
+    });
+    setSavingEdit(false);
+    if (r.error) setMessage(r.error);
+    else {
+      setEditing(false);
+      load();
+    }
+  };
+
   const submitForApproval = async () => {
     setSubmittingApproval(true);
     const r = await updateJournalEntry(id, { status: "pending_approval" });
@@ -496,7 +613,63 @@ function JournalDetail({ id }: { id: string }) {
   if (loading) return <AccountingLoading />;
   if (!data) return <AccountingEmptyState title="القيد غير موجود" />;
   const lines = data.lines || [];
-  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title={`قيد ${data.entry_no}`} description={data.description} actions={<>{canManage && data.status === "draft" ? <Button variant="outline" onClick={submitForApproval} disabled={submittingApproval}>{submittingApproval ? "جاري الإرسال..." : "إرسال للاعتماد"}</Button> : null}{canPost && ["draft", "pending_approval"].includes(data.status) ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={post}>ترحيل</Button> : null}{canPost && data.status === "posted" ? <Button variant="outline" onClick={reverse}>عكس القيد</Button> : null}</>} /><Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5 md:grid-cols-4"><AccountingStatCard label="الحالة" value={<AccountingStatusBadge status={data.status} />} /><AccountingStatCard label="التاريخ" value={data.entry_date} /><AccountingStatCard label="إجمالي المدين" value={<MoneyAmount value={data.total_debit} />} /><AccountingStatCard label="إجمالي الدائن" value={<MoneyAmount value={data.total_credit} />} /></CardContent></Card><SimpleTable rows={lines} emptyTitle="لا توجد سطور" columns={[["account.code", "الحساب"], ["description", "الوصف"], ["debit", "مدين"], ["credit", "دائن"]]} moneyColumns={["debit", "credit"]} /></div>;
+  const editTotals = {
+    debit: editLines.reduce((sum, line) => sum + Number(line.debit || 0), 0),
+    credit: editLines.reduce((sum, line) => sum + Number(line.credit || 0), 0),
+  };
+
+  return (
+    <div className="space-y-6">
+      <MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} />
+      <AccountingPageHeader
+        title={`قيد ${data.entry_no}`}
+        description={data.description}
+        actions={
+          <>
+            {canManage && data.status === "draft" ? <Button variant="outline" onClick={() => setEditing((value) => !value)}>{editing ? "إلغاء التعديل" : "تعديل المسودة"}</Button> : null}
+            {canManage && data.status === "draft" && !editing ? <Button variant="outline" onClick={submitForApproval} disabled={submittingApproval}>{submittingApproval ? "جاري الإرسال..." : "إرسال للاعتماد"}</Button> : null}
+            {canPost && ["draft", "pending_approval"].includes(data.status) && !editing ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={post}>ترحيل</Button> : null}
+            {canPost && data.status === "posted" ? <Button variant="outline" onClick={reverse}>عكس القيد</Button> : null}
+          </>
+        }
+      />
+      <Card className="border-none shadow-sm">
+        <CardContent className="grid gap-4 p-5 md:grid-cols-4">
+          <AccountingStatCard label="الحالة" value={<AccountingStatusBadge status={data.status} />} />
+          <AccountingStatCard label="التاريخ" value={data.entry_date} />
+          <AccountingStatCard label="إجمالي المدين" value={<MoneyAmount value={data.total_debit} />} />
+          <AccountingStatCard label="إجمالي الدائن" value={<MoneyAmount value={data.total_credit} />} />
+        </CardContent>
+      </Card>
+      {editing ? (
+        <Card className="border-none shadow-sm">
+          <CardContent className="grid gap-4 p-5">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label>تاريخ القيد</Label>
+                <Input type="date" value={editForm.entry_date} onChange={(e) => setEditForm((p) => ({ ...p, entry_date: e.target.value }))} />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>الوصف</Label>
+                <Input value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} />
+              </div>
+            </div>
+            <JournalLinesEditor accounts={accounts} costCenters={costCenters} lines={editLines} setLines={setEditLines} />
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 p-3 text-sm">
+              <div>إجمالي المدين: <MoneyAmount value={editTotals.debit} /> · إجمالي الدائن: <MoneyAmount value={editTotals.credit} /></div>
+              <div className={Math.round(editTotals.debit * 100) === Math.round(editTotals.credit * 100) ? "text-green-700" : "text-red-700"}>{Math.round(editTotals.debit * 100) === Math.round(editTotals.credit * 100) ? "القيد متوازن" : "القيد غير متوازن"}</div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => saveDraft()} disabled={savingEdit}>حفظ التعديل</Button>
+              <Button className="bg-brand text-white hover:bg-brand-dark" onClick={() => saveDraft("pending_approval")} disabled={savingEdit}>حفظ وإرسال للاعتماد</Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <SimpleTable rows={lines} emptyTitle="لا توجد سطور" columns={[["account.code", "الحساب"], ["description", "الوصف"], ["debit", "مدين"], ["credit", "دائن"]]} moneyColumns={["debit", "credit"]} />
+      )}
+    </div>
+  );
 }
 
 function ExpensesPage() {
@@ -514,19 +687,57 @@ function ExpenseFormPage() {
   const [accounts, setAccounts] = useState<AccountingAccount[]>([]);
   const [costCenters, setCostCenters] = useState<AccountingCostCenter[]>([]);
   const [vendors, setVendors] = useState<AccountingVendor[]>([]);
-  const [form, setForm] = useState({ expense_date: today(), vendor_id: "", category_account_id: "", payment_account_id: "", cost_center_id: "", description: "", amount_before_vat: "", vat_amount: "", status: "pending_approval" });
+  const [form, setForm] = useState({ expense_date: today(), vendor_id: "", category_account_id: "", payment_account_id: "", cost_center_id: "", description: "", amount_before_vat: "", vat_amount: "", attachment_url: "", status: "pending_approval" });
   useEffect(() => { getAccountingAccounts().then((r) => setAccounts(r.data || [])); getCostCenters().then((r) => setCostCenters(r.data || [])); getVendors().then((r) => setVendors(r.data || [])); }, []);
   const submit = async () => { const r = await createExpense(form); if (r.error) setMessage(r.error); else router.push(`/accounting/expenses/${r.data?.id}`); };
   if (!canManage) return <AccountingEmptyState title="صلاحية القراءة فقط" description="لا يمكن لهذا الدور إنشاء مصروفات." />;
-  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title="مصروف جديد" /><Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5 md:grid-cols-2"><Input type="date" value={form.expense_date} onChange={(e) => setForm((p) => ({ ...p, expense_date: e.target.value }))} /><SelectField value={form.vendor_id} onChange={(v) => setForm((p) => ({ ...p, vendor_id: v }))}><option value="">المورد</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name_ar}</option>)}</SelectField><SelectField value={form.category_account_id} onChange={(v) => setForm((p) => ({ ...p, category_account_id: v }))}><option value="">حساب المصروف</option>{accounts.filter((a) => a.type === "expense").map((a) => <option key={a.id} value={a.id}>{a.code} - {a.name_ar}</option>)}</SelectField><SelectField value={form.cost_center_id} onChange={(v) => setForm((p) => ({ ...p, cost_center_id: v }))}><option value="">مركز التكلفة</option>{costCenters.map((c) => <option key={c.id} value={c.id}>{c.name_ar}</option>)}</SelectField><Input placeholder="الوصف" className="md:col-span-2" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /><Input type="number" placeholder="المبلغ قبل الضريبة" value={form.amount_before_vat} onChange={(e) => setForm((p) => ({ ...p, amount_before_vat: e.target.value }))} /><Input type="number" placeholder="ضريبة القيمة المضافة" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} /><div className="md:col-span-2 flex justify-end"><Button className="bg-brand text-white hover:bg-brand-dark" onClick={submit}>حفظ المصروف</Button></div></CardContent></Card></div>;
+  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title="مصروف جديد" /><Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5 md:grid-cols-2"><Input type="date" value={form.expense_date} onChange={(e) => setForm((p) => ({ ...p, expense_date: e.target.value }))} /><SelectField value={form.vendor_id} onChange={(v) => setForm((p) => ({ ...p, vendor_id: v }))}><option value="">المورد</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name_ar}</option>)}</SelectField><SelectField value={form.category_account_id} onChange={(v) => setForm((p) => ({ ...p, category_account_id: v }))}><option value="">حساب المصروف</option>{accounts.filter((a) => a.is_active !== false && a.type === "expense").map((a) => <option key={a.id} value={a.id}>{a.code} - {a.name_ar}</option>)}</SelectField><SelectField value={form.cost_center_id} onChange={(v) => setForm((p) => ({ ...p, cost_center_id: v }))}><option value="">مركز التكلفة</option>{costCenters.filter((c) => c.is_active !== false).map((c) => <option key={c.id} value={c.id}>{c.name_ar}</option>)}</SelectField><SelectField value={form.payment_account_id} onChange={(v) => setForm((p) => ({ ...p, payment_account_id: v }))}><option value="">حساب الدفع عند السداد الفوري</option>{accounts.filter((a) => a.is_active !== false && a.type === "asset").map((a) => <option key={a.id} value={a.id}>{a.code} - {a.name_ar}</option>)}</SelectField><Input placeholder="رابط المرفق" value={form.attachment_url} onChange={(e) => setForm((p) => ({ ...p, attachment_url: e.target.value }))} /><Input placeholder="الوصف" className="md:col-span-2" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /><Input type="number" min={0} step="0.01" placeholder="المبلغ قبل الضريبة" value={form.amount_before_vat} onChange={(e) => setForm((p) => ({ ...p, amount_before_vat: e.target.value }))} /><Input type="number" min={0} step="0.01" placeholder="ضريبة القيمة المضافة" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} /><div className="md:col-span-2 flex justify-end"><Button className="bg-brand text-white hover:bg-brand-dark" onClick={submit}>حفظ المصروف</Button></div></CardContent></Card></div>;
 }
 
 function ExpenseDetail({ id }: { id: string }) {
   const { canPost } = useAccountingCapabilities();
   const { data, loading, message, setMessage, load } = useLoad(() => getExpense(id), [id]);
+  const [rejectReason, setRejectReason] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState(today());
+  const [postedPaidAmount, setPostedPaidAmount] = useState(0);
+  useEffect(() => {
+    getPayments().then((result) => {
+      const rows = (result.data || []) as Array<AccountingPayment & { expense_id?: string | null }>;
+      const paid = rows
+        .filter((payment) => payment.expense_id === id && payment.status === "posted")
+        .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+      setPostedPaidAmount(paid);
+    });
+  }, [id, data?.paid_status]);
+  const reject = async () => {
+    const r = await rejectExpense(id, rejectReason || "مرفوض من شاشة التفاصيل");
+    if (r.error) setMessage(r.error);
+    else {
+      setRejectReason("");
+      load();
+    }
+  };
+  const pay = async () => {
+    const unpaidAmount = Math.max(0, Number(data?.total_amount || 0) - postedPaidAmount);
+    const amount = Number(paymentAmount || unpaidAmount);
+    if (amount <= 0 || amount > unpaidAmount) {
+      setMessage("مبلغ السداد يجب أن يكون أكبر من صفر ولا يتجاوز الرصيد غير المسدد للمصروف.");
+      return;
+    }
+    const r = await payExpense(id, { amount, payment_date: paymentDate });
+    if (r.error) setMessage(r.error);
+    else {
+      setPaymentAmount("");
+      load();
+    }
+  };
   if (loading) return <AccountingLoading />;
   if (!data) return <AccountingEmptyState title="المصروف غير موجود" />;
-  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title={`مصروف ${data.expense_no}`} description={data.description} actions={canPost ? <>{["draft", "pending_approval"].includes(data.status) ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={async () => { const r = await approveExpense(id); if (r.error) setMessage(r.error); else load(); }}>اعتماد</Button> : null}{data.status === "approved" ? <Button variant="outline" onClick={async () => { const r = await payExpense(id); if (r.error) setMessage(r.error); else load(); }}>سداد</Button> : null}{["draft", "pending_approval"].includes(data.status) ? <Button variant="outline" className="text-red-700" onClick={async () => { const r = await rejectExpense(id, "مرفوض من شاشة التفاصيل"); if (r.error) setMessage(r.error); else load(); }}>رفض</Button> : null}</> : null} /><div className="grid gap-4 md:grid-cols-4"><AccountingStatCard label="المبلغ" value={<MoneyAmount value={data.total_amount} />} /><AccountingStatCard label="الضريبة" value={<MoneyAmount value={data.vat_amount} />} /><AccountingStatCard label="الحالة" value={<AccountingStatusBadge status={data.status} />} /><AccountingStatCard label="السداد" value={<AccountingStatusBadge status={data.paid_status} />} /></div></div>;
+  const canApproveOrReject = ["draft", "pending_approval"].includes(data.status);
+  const canPayExpense = data.status === "approved" && data.paid_status !== "paid";
+  const unpaidAmount = Math.max(0, Number(data.total_amount || 0) - postedPaidAmount);
+  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title={`مصروف ${data.expense_no}`} description={data.description} actions={canPost && canApproveOrReject ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={async () => { const r = await approveExpense(id); if (r.error) setMessage(r.error); else load(); }}>اعتماد</Button> : null} /><div className="grid gap-4 md:grid-cols-5"><AccountingStatCard label="المبلغ" value={<MoneyAmount value={data.total_amount} />} /><AccountingStatCard label="الضريبة" value={<MoneyAmount value={data.vat_amount} />} /><AccountingStatCard label="المسدد" value={<MoneyAmount value={postedPaidAmount} />} /><AccountingStatCard label="المتبقي" value={<MoneyAmount value={unpaidAmount} />} /><AccountingStatCard label="الحالة" value={<AccountingStatusBadge status={data.status} />} /></div>{data.attachment_url ? <Card className="border-none shadow-sm"><CardContent className="p-5"><a className="text-sm font-medium text-brand hover:text-brand-dark" href={data.attachment_url} target="_blank" rel="noreferrer">عرض المرفق</a></CardContent></Card> : null}{canPost && canApproveOrReject ? <Card className="border-none shadow-sm"><CardContent className="grid gap-3 p-5 md:grid-cols-[1fr_auto]"><Input placeholder="سبب الرفض" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} /><Button variant="outline" className="text-red-700" onClick={reject}>رفض المصروف</Button></CardContent></Card> : null}{canPost && canPayExpense ? <Card className="border-none shadow-sm"><CardContent className="grid gap-3 p-5 md:grid-cols-[160px_180px_auto]"><Input type="number" min={0} step="0.01" max={unpaidAmount} placeholder="مبلغ السداد" value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} /><Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} /><Button variant="outline" onClick={pay}>سداد المصروف</Button></CardContent></Card> : null}{data.rejection_reason ? <Card className="border-none shadow-sm"><CardContent className="p-5 text-sm text-red-700">سبب الرفض: {data.rejection_reason}</CardContent></Card> : null}</div>;
 }
 
 function InvoicesPage() {
@@ -540,12 +751,38 @@ function InvoiceFormPage() {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [customers, setCustomers] = useState<AccountingCustomer[]>([]);
+  const [revenueAccounts, setRevenueAccounts] = useState<AccountingAccount[]>([]);
+  const [taxRates, setTaxRates] = useState<AccountingTaxRate[]>([]);
   const [form, setForm] = useState({ customer_id: "", invoice_date: today(), due_date: "", notes: "" });
-  const [lines, setLines] = useState([{ description_ar: "", quantity: "1", unit_price: "", discount_amount: "", vat_amount: "" }]);
-  useEffect(() => { getCustomers().then((r) => setCustomers(r.data || [])); }, []);
-  const submit = async () => { const r = await createInvoice({ ...form, lines }); if (r.error) setMessage(r.error); else router.push(`/accounting/invoices/${r.data?.id}`); };
+  const [lines, setLines] = useState([{ description_ar: "", quantity: "1", unit_price: "", discount_amount: "", vat_amount: "", revenue_account_id: "", tax_rate_id: "" }]);
+  useEffect(() => {
+    getCustomers().then((r) => setCustomers(r.data || []));
+    getAccountingAccounts({ type: "revenue" }).then((r) => setRevenueAccounts(r.data || []));
+    getTaxRates().then((r) => setTaxRates(r.data || []));
+  }, []);
+  const patchLine = (index: number, values: Partial<(typeof lines)[number]>) => setLines(lines.map((line, i) => i === index ? { ...line, ...values } : line));
+  const submit = async () => {
+    const preparedLines = lines
+      .filter((line) => line.description_ar.trim() || Number(line.unit_price || 0) > 0)
+      .map((line) => ({
+        description_ar: line.description_ar || "بند فاتورة",
+        quantity: Number(line.quantity || 1),
+        unit_price: Number(line.unit_price || 0),
+        discount_amount: Number(line.discount_amount || 0),
+        vat_amount: line.vat_amount === "" ? undefined : Number(line.vat_amount || 0),
+        revenue_account_id: line.revenue_account_id || null,
+        tax_rate_id: line.tax_rate_id || null,
+      }));
+    if (preparedLines.length === 0) {
+      setMessage("أضف بندا واحدا على الأقل قبل حفظ الفاتورة.");
+      return;
+    }
+    const r = await createInvoice({ ...form, lines: preparedLines });
+    if (r.error) setMessage(r.error);
+    else router.push(`/accounting/invoices/${r.data?.id}`);
+  };
   if (!canManage) return <AccountingEmptyState title="صلاحية القراءة فقط" description="لا يمكن لهذا الدور إنشاء فواتير." />;
-  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title="فاتورة جديدة" /><Card className="border-none shadow-sm"><CardContent className="space-y-4 p-5"><div className="grid gap-4 md:grid-cols-3"><SelectField value={form.customer_id} onChange={(v) => setForm((p) => ({ ...p, customer_id: v }))}><option value="">العميل</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.name_ar}</option>)}</SelectField><Input type="date" value={form.invoice_date} onChange={(e) => setForm((p) => ({ ...p, invoice_date: e.target.value }))} /><Input type="date" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} /></div><div className="space-y-3">{lines.map((line, i) => <div key={i} className="grid gap-3 rounded-lg border border-gray-100 p-3 md:grid-cols-[1.5fr_90px_120px_120px_120px_auto]"><Input placeholder="الوصف" value={line.description_ar} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, description_ar: e.target.value } : l))} /><Input type="number" placeholder="الكمية" value={line.quantity} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, quantity: e.target.value } : l))} /><Input type="number" placeholder="سعر الوحدة" value={line.unit_price} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, unit_price: e.target.value } : l))} /><Input type="number" placeholder="خصم" value={line.discount_amount} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, discount_amount: e.target.value } : l))} /><Input type="number" placeholder="ضريبة" value={line.vat_amount} onChange={(e) => setLines(lines.map((l, idx) => idx === i ? { ...l, vat_amount: e.target.value } : l))} /><Button variant="ghost" onClick={() => setLines(lines.filter((_, idx) => idx !== i))}>حذف</Button></div>)}</div><Button variant="outline" onClick={() => setLines([...lines, { description_ar: "", quantity: "1", unit_price: "", discount_amount: "", vat_amount: "" }])}>إضافة بند</Button><div className="flex justify-end"><Button className="bg-brand text-white hover:bg-brand-dark" onClick={submit}>حفظ الفاتورة</Button></div></CardContent></Card></div>;
+  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title="فاتورة جديدة" /><Card className="border-none shadow-sm"><CardContent className="space-y-4 p-5"><div className="grid gap-4 md:grid-cols-3"><SelectField value={form.customer_id} onChange={(v) => setForm((p) => ({ ...p, customer_id: v }))}><option value="">العميل</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.name_ar}</option>)}</SelectField><Input type="date" value={form.invoice_date} onChange={(e) => setForm((p) => ({ ...p, invoice_date: e.target.value }))} /><Input type="date" value={form.due_date} onChange={(e) => setForm((p) => ({ ...p, due_date: e.target.value }))} /></div><div className="space-y-3">{lines.map((line, i) => <div key={i} className="grid gap-3 rounded-lg border border-gray-100 p-3 md:grid-cols-[1.4fr_80px_110px_110px_1fr_1fr_100px_auto]"><Input placeholder="الوصف" value={line.description_ar} onChange={(e) => patchLine(i, { description_ar: e.target.value })} /><Input type="number" min={0} step="0.01" placeholder="الكمية" value={line.quantity} onChange={(e) => patchLine(i, { quantity: e.target.value })} /><Input type="number" min={0} step="0.01" placeholder="سعر الوحدة" value={line.unit_price} onChange={(e) => patchLine(i, { unit_price: e.target.value })} /><Input type="number" min={0} step="0.01" placeholder="خصم" value={line.discount_amount} onChange={(e) => patchLine(i, { discount_amount: e.target.value })} /><SelectField value={line.revenue_account_id} onChange={(value) => patchLine(i, { revenue_account_id: value })}><option value="">حساب الإيراد الافتراضي</option>{revenueAccounts.filter((account) => account.is_active !== false).map((account) => <option key={account.id} value={account.id}>{account.code} - {account.name_ar}</option>)}</SelectField><SelectField value={line.tax_rate_id} onChange={(value) => patchLine(i, { tax_rate_id: value, vat_amount: "" })}><option value="">بدون ضريبة / إدخال يدوي</option>{taxRates.filter((tax) => tax.is_active !== false).map((tax) => <option key={tax.id} value={tax.id}>{tax.name_ar} - {tax.rate}%</option>)}</SelectField><Input type="number" min={0} step="0.01" placeholder="ضريبة" value={line.vat_amount} onChange={(e) => patchLine(i, { vat_amount: e.target.value })} /><Button variant="ghost" onClick={() => setLines(lines.filter((_, idx) => idx !== i))}>حذف</Button></div>)}</div><p className="text-xs text-gray-500">عند ترك حساب الإيراد فارغا سيتم استخدام حساب إيرادات المبيعات الافتراضي من إعدادات المحاسبة.</p><Button variant="outline" onClick={() => setLines([...lines, { description_ar: "", quantity: "1", unit_price: "", discount_amount: "", vat_amount: "", revenue_account_id: "", tax_rate_id: "" }])}>إضافة بند</Button><div className="flex justify-end"><Button className="bg-brand text-white hover:bg-brand-dark" onClick={submit}>حفظ الفاتورة</Button></div></CardContent></Card></div>;
 }
 
 function InvoiceDetail({ id }: { id: string }) {
@@ -555,7 +792,29 @@ function InvoiceDetail({ id }: { id: string }) {
   if (loading) return <AccountingLoading />;
   if (!data) return <AccountingEmptyState title="الفاتورة غير موجودة" />;
   const lines = data.lines || [];
-  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title={`فاتورة ${data.invoice_no}`} description={`تاريخ الفاتورة ${data.invoice_date}`} actions={canPost ? <>{data.status === "draft" ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={async () => { const r = await issueInvoice(id); if (r.error) setMessage(r.error); else load(); }}>إصدار</Button> : null}{["issued", "partially_paid"].includes(data.status) ? <div className="flex gap-2"><Input className="w-36" type="number" placeholder="مبلغ السداد" value={amount} onChange={(e) => setAmount(e.target.value)} /><Button variant="outline" onClick={async () => { const r = await recordInvoicePayment(id, { amount: Number(amount || data.balance_due), payment_date: today() }); if (r.error) setMessage(r.error); else { setAmount(""); load(); } }}>تسجيل سداد</Button></div> : null}</> : null} /><div className="grid gap-4 md:grid-cols-4"><AccountingStatCard label="الإجمالي" value={<MoneyAmount value={data.total_amount} />} /><AccountingStatCard label="المدفوع" value={<MoneyAmount value={data.paid_amount} />} /><AccountingStatCard label="المتبقي" value={<MoneyAmount value={data.balance_due} />} /><AccountingStatCard label="الحالة" value={<AccountingStatusBadge status={data.status} />} /></div><SimpleTable rows={lines} emptyTitle="لا توجد بنود" columns={[["description_ar", "الوصف"], ["quantity", "الكمية"], ["unit_price", "سعر الوحدة"], ["vat_amount", "الضريبة"], ["line_total", "الإجمالي"]]} moneyColumns={["unit_price", "vat_amount", "line_total"]} /></div>;
+  const issue = async () => {
+    if (lines.length === 0) {
+      setMessage("لا يمكن إصدار فاتورة بدون بنود.");
+      return;
+    }
+    const r = await issueInvoice(id);
+    if (r.error) setMessage(r.error);
+    else load();
+  };
+  const recordPayment = async () => {
+    const paymentAmount = Number(amount || data.balance_due);
+    if (paymentAmount <= 0 || paymentAmount > Number(data.balance_due || 0)) {
+      setMessage("مبلغ السداد يجب ألا يتجاوز رصيد الفاتورة.");
+      return;
+    }
+    const r = await recordInvoicePayment(id, { amount: paymentAmount, payment_date: today() });
+    if (r.error) setMessage(r.error);
+    else {
+      setAmount("");
+      load();
+    }
+  };
+  return <div className="space-y-6"><MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} /><AccountingPageHeader title={`فاتورة ${data.invoice_no}`} description={`تاريخ الفاتورة ${data.invoice_date}`} actions={canPost ? <>{data.status === "draft" ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={issue}>إصدار</Button> : null}{["issued", "partially_paid"].includes(data.status) ? <div className="flex gap-2"><Input className="w-36" type="number" min={0} step="0.01" placeholder="مبلغ السداد" value={amount} onChange={(e) => setAmount(e.target.value)} /><Button variant="outline" onClick={recordPayment}>تسجيل سداد</Button></div> : null}</> : null} /><div className="grid gap-4 md:grid-cols-4"><AccountingStatCard label="الإجمالي" value={<MoneyAmount value={data.total_amount} />} /><AccountingStatCard label="المدفوع" value={<MoneyAmount value={data.paid_amount} />} /><AccountingStatCard label="المتبقي" value={<MoneyAmount value={data.balance_due} />} /><AccountingStatCard label="الحالة" value={<AccountingStatusBadge status={data.status} />} /></div><SimpleTable rows={lines} emptyTitle="لا توجد بنود" columns={[["description_ar", "الوصف"], ["quantity", "الكمية"], ["unit_price", "سعر الوحدة"], ["vat_amount", "الضريبة"], ["line_total", "الإجمالي"]]} moneyColumns={["unit_price", "vat_amount", "line_total"]} /></div>;
 }
 
 function PaymentsPage() {

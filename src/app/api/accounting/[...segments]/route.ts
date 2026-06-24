@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAccountingAccess, type AccountingAction } from "@/lib/accounting/permissions";
 import { generateAccountingNumber } from "@/lib/accounting/numbering";
-import { createJournalEntry, getAccountingSettings, initializeAccountingDefaults, postJournalEntry, reverseJournalEntry } from "@/lib/accounting/posting";
+import { createJournalEntry, getAccountingSettings, initializeAccountingDefaults, postJournalEntry, reverseJournalEntry, updateDraftJournalEntry } from "@/lib/accounting/posting";
 import {
   getAccountingDashboard,
   getBalanceSheet,
@@ -450,6 +450,9 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (parts[1]) return json(await getRecord(admin, "accounting_payments", auth.orgId, parts[1]));
       return json(await listTable(admin, "accounting_payments", auth.orgId, request, "payment_date"));
     }
+    if (parts[0] === "tax-rates") {
+      return json(await listTable(admin, "accounting_tax_rates", auth.orgId, request, "name_ar"));
+    }
     if (parts[0] === "payroll" && parts[1] === "status") {
       return json(await getPayrollAccountingStatus(admin, auth.orgId, request.nextUrl.searchParams.get("month") || new Date()));
     }
@@ -494,6 +497,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return json(settings);
     }
     if (parts[0] === "reports") {
+      // Official financial reports are generated from posted/reversed ledger entries only.
       if (parts[1] === "trial-balance") return json(await getTrialBalance(admin, auth.orgId, dateFrom, dateTo));
       if (parts[1] === "general-ledger") return json(await getGeneralLedger(admin, auth.orgId, request.nextUrl.searchParams.get("account_id") || undefined, dateFrom, dateTo));
       if (parts[1] === "profit-loss") return json(await getProfitLoss(admin, auth.orgId, dateFrom, dateTo));
@@ -501,31 +505,37 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (parts[1] === "vat") return json(await getVatReport(admin, auth.orgId, dateFrom, dateTo));
       if (parts[1] === "payroll-cost") return json(await getPayrollCostReport(admin, auth.orgId, dateFrom, dateTo));
       if (parts[1] === "employee-advances") return json(await getEmployeeAdvancesReport(admin, auth.orgId, dateFrom, dateTo));
+      // Operational AR aging uses business document status, not draft invoices.
       if (parts[1] === "ar-aging") {
         const { data, error } = await db(admin)
           .from("accounting_invoices")
           .select("invoice_no, invoice_date, due_date, total_amount, paid_amount, balance_due, status, customer:customer_id(name_ar)")
           .eq("organization_id", auth.orgId)
+          .in("status", ["issued", "partially_paid"])
           .gt("balance_due", 0)
           .order("due_date", { ascending: true });
         if (error) throw new Error(error.message);
         return json(data || []);
       }
+      // Operational AP aging includes approved unpaid expenses only, excluding draft/rejected/cancelled.
       if (parts[1] === "ap-aging") {
         const { data, error } = await db(admin)
           .from("accounting_expenses")
           .select("expense_no, expense_date, total_amount, paid_status, status, vendor:vendor_id(name_ar)")
           .eq("organization_id", auth.orgId)
+          .eq("status", "approved")
           .neq("paid_status", "paid")
           .order("expense_date", { ascending: true });
         if (error) throw new Error(error.message);
         return json(data || []);
       }
+      // Operational expense report excludes draft/rejected/cancelled unless a dedicated status filter is added later.
       if (parts[1] === "expenses") {
         const { data, error } = await db(admin)
           .from("accounting_expenses")
           .select("expense_no, expense_date, description, amount_before_vat, vat_amount, total_amount, status, cost_center:cost_center_id(name_ar, code)")
           .eq("organization_id", auth.orgId)
+          .in("status", ["approved", "paid"])
           .gte("expense_date", dateFrom || "1900-01-01")
           .lte("expense_date", dateTo || "2999-12-31")
           .order("expense_date", { ascending: false });
@@ -679,6 +689,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         rejection_reason: requireText(body.reason) || null,
       });
       await audit(admin, auth.orgId, auth.user.id, "accounting.expense_rejected", "accounting_expenses", parts[1], next);
+      await notifyFinance(admin, auth.orgId, "تم رفض مصروف", `${String(expense.description || "")}${next.rejection_reason ? ` - ${next.rejection_reason}` : ""}`, `/accounting/expenses/${parts[1]}`);
       return json(next);
     }
     if (parts[0] === "expenses" && parts[1] && parts[2] === "pay") {
@@ -720,6 +731,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         paid_at: remaining === 0 ? new Date().toISOString() : null,
       });
       await audit(admin, auth.orgId, auth.user.id, "accounting.expense_paid", "accounting_expenses", parts[1], next);
+      await notifyFinance(admin, auth.orgId, "تم سداد مصروف", `${String(expense.expense_no || "")} - ${amount}`, `/accounting/expenses/${parts[1]}`);
       return json(next);
     }
     if (parts[0] === "expenses") {
@@ -795,6 +807,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const balanceDue = roundMoney(Number(invoice.total_amount || 0) - paidAmount);
       const next = await updateRecord(admin, "accounting_invoices", auth.orgId, parts[1], { paid_amount: paidAmount, balance_due: balanceDue, status: balanceDue === 0 ? "paid" : "partially_paid" });
       await audit(admin, auth.orgId, auth.user.id, "accounting.payment_received", "accounting_payments", paymentResult.data.id, { invoice_id: parts[1], amount });
+      await notifyFinance(admin, auth.orgId, "تم تسجيل سداد فاتورة", `${String(invoice.invoice_no || "")} - ${amount}`, `/accounting/invoices/${parts[1]}`);
       return json(next);
     }
     if (parts[0] === "invoices") {
@@ -824,6 +837,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const journal = await postPaymentJournal(admin, auth.orgId, payment, auth.user.id);
       const next = await updateRecord(admin, "accounting_payments", auth.orgId, parts[1], { status: "posted", posted_by: auth.user.id, posted_at: new Date().toISOString(), journal_entry_id: journal.id });
       await audit(admin, auth.orgId, auth.user.id, "accounting.payment_posted", "accounting_payments", parts[1], next);
+      await notifyFinance(admin, auth.orgId, payment.type === "manual" ? "تم ترحيل دفعة يدوية" : "تم ترحيل دفعة", String(payment.description || payment.payment_no || ""), `/accounting/payments/${parts[1]}`);
       return json(next);
     }
     if (parts[0] === "payments") {
@@ -1070,6 +1084,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }).select("*").single();
       if (invoiceResult.error) throw new Error(invoiceResult.error.message);
       await createOrUpdateInvoiceLines(admin, auth.orgId, invoiceResult.data.id, body.lines);
+      await audit(admin, auth.orgId, auth.user.id, "accounting.sales_invoice_generated", "accounting_invoices", invoiceResult.data.id, { sales_log_id: logId, invoice_no: invoiceNo });
+      await notifyFinance(admin, auth.orgId, "تم إنشاء فاتورة من المبيعات", String(invoiceNo), `/accounting/invoices/${invoiceResult.data.id}`);
       return json(await getRecord(admin, "accounting_invoices", auth.orgId, invoiceResult.data.id, "*, lines:accounting_invoice_lines(*)"), 201);
     }
 
@@ -1092,6 +1108,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const result = await db(admin).from("accounting_settings").upsert(values, { onConflict: "organization_id" }).select("*").single();
       if (result.error) throw new Error(result.error.message);
       await audit(admin, auth.orgId, auth.user.id, "accounting.settings_updated", "accounting_settings", result.data.id, body);
+      await notifyFinance(admin, auth.orgId, "تم تحديث إعدادات المحاسبة", "تم تعديل الحسابات أو الترقيم الافتراضي لوحدة المالية.", "/accounting/settings");
       return json(result.data);
     }
 
@@ -1099,10 +1116,25 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const id = parts[1] || body.id;
       if (!id) return message("معرف القيد مطلوب.", 400);
       const current = await getRecord(admin, "accounting_journal_entries", auth.orgId, id);
-      if (current.status !== "draft") return message("يمكن إرسال المسودات فقط للاعتماد.", 400);
-      if (body.status !== "pending_approval") return message("الحالة المدعومة هنا هي إرسال المسودة للاعتماد فقط.", 400);
+      if (current.status !== "draft") return message("يمكن تعديل أو إرسال القيود المسودة فقط.", 400);
 
-      const next = await updateRecord(admin, "accounting_journal_entries", auth.orgId, id, {
+      if (Array.isArray(body.lines)) {
+        const updated = await updateDraftJournalEntry(admin, {
+          orgId: auth.orgId,
+          userId: auth.user.id,
+          entryId: id,
+          entryDate: parseDate(body.entry_date || current.entry_date),
+          description: requireText(body.description, String(current.description || "")),
+          notes: body.notes === undefined ? (current.notes as string | null) : requireText(body.notes) || null,
+          lines: body.lines as JournalLineInput[],
+        });
+
+        if (body.status !== "pending_approval") return json(updated);
+      } else if (body.status !== "pending_approval") {
+        return message("أرسل سطور القيد للتعديل أو status=pending_approval للإرسال للاعتماد.", 400);
+      }
+
+      await updateRecord(admin, "accounting_journal_entries", auth.orgId, id, {
         status: "pending_approval",
         updated_at: new Date().toISOString(),
       });
@@ -1111,7 +1143,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         status: "pending_approval",
       });
       await notifyFinance(admin, auth.orgId, "قيد محاسبي بانتظار الاعتماد", String(current.description || ""), `/accounting/journal-entries/${id}`);
-      return json(next);
+      return json(await getRecord(admin, "accounting_journal_entries", auth.orgId, id, "*, lines:accounting_journal_lines(*, account:account_id(*), cost_center:cost_center_id(*))"));
     }
 
     const map: Record<string, string> = {
@@ -1148,10 +1180,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     if (table === "accounting_invoices" && Array.isArray(body.lines)) {
       await createOrUpdateInvoiceLines(admin, auth.orgId, id, body.lines);
+      await audit(admin, auth.orgId, auth.user.id, `accounting.${parts[0]}_updated`, table, id, values);
       return json(await getRecord(admin, table, auth.orgId, id, "*, lines:accounting_invoice_lines(*)"));
     }
 
     await audit(admin, auth.orgId, auth.user.id, `accounting.${parts[0]}_updated`, table, id, values);
+    if (["accounting_accounts", "accounting_cost_centers", "accounting_vendors", "accounting_customers"].includes(table)) {
+      await notifyFinance(admin, auth.orgId, "تم تحديث بيانات محاسبية", `تم تحديث ${parts[0]}.`, `/accounting/${parts[0]}`);
+    }
     return json(data);
   } catch (error) {
     return message(error);
@@ -1184,6 +1220,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     if (!table) return message("مسار الحذف غير مدعوم.", 404);
     const data = await updateRecord(admin, table, auth.orgId, id, { is_active: false });
     await audit(admin, auth.orgId, auth.user.id, `accounting.${parts[0]}_deactivated`, table, id, data);
+    await notifyFinance(admin, auth.orgId, "تم تعطيل سجل محاسبي", `تم تعطيل ${parts[0]}.`, `/accounting/${parts[0]}`);
     return json(data);
   } catch (error) {
     return message(error);

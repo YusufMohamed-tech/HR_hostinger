@@ -8,6 +8,7 @@ import type {
   AccountingPayment,
   AccountingSalesCompanyLink,
   AccountingSettings,
+  AccountingTaxRate,
   AccountingVendor,
   PayrollAccountingStatus,
 } from "@/types/accounting";
@@ -66,12 +67,24 @@ export function updateAccountingAccount(id: string, values: Partial<AccountingAc
   return apiFetch<AccountingAccount>(`/api/accounting/accounts/${id}`, { method: "PATCH", body: JSON.stringify(values) });
 }
 
+export function deactivateAccountingAccount(id: string) {
+  return apiFetch<AccountingAccount>(`/api/accounting/accounts/${id}`, { method: "DELETE" });
+}
+
 export function getCostCenters() {
   return apiFetch<AccountingCostCenter[]>("/api/accounting/cost-centers");
 }
 
 export function createCostCenter(values: Partial<AccountingCostCenter>) {
   return apiFetch<AccountingCostCenter>("/api/accounting/cost-centers", { method: "POST", body: JSON.stringify(values) });
+}
+
+export function updateCostCenter(id: string, values: Partial<AccountingCostCenter>) {
+  return apiFetch<AccountingCostCenter>(`/api/accounting/cost-centers/${id}`, { method: "PATCH", body: JSON.stringify(values) });
+}
+
+export function deactivateCostCenter(id: string) {
+  return apiFetch<AccountingCostCenter>(`/api/accounting/cost-centers/${id}`, { method: "DELETE" });
 }
 
 export function getVendors(params?: Record<string, string | undefined>) {
@@ -82,12 +95,28 @@ export function createVendor(values: Partial<AccountingVendor>) {
   return apiFetch<AccountingVendor>("/api/accounting/vendors", { method: "POST", body: JSON.stringify(values) });
 }
 
+export function updateVendor(id: string, values: Partial<AccountingVendor>) {
+  return apiFetch<AccountingVendor>(`/api/accounting/vendors/${id}`, { method: "PATCH", body: JSON.stringify(values) });
+}
+
+export function deactivateVendor(id: string) {
+  return apiFetch<AccountingVendor>(`/api/accounting/vendors/${id}`, { method: "DELETE" });
+}
+
 export function getCustomers(params?: Record<string, string | undefined>) {
   return apiFetch<AccountingCustomer[]>(`/api/accounting/customers${qs(params)}`);
 }
 
 export function createCustomer(values: Partial<AccountingCustomer>) {
   return apiFetch<AccountingCustomer>("/api/accounting/customers", { method: "POST", body: JSON.stringify(values) });
+}
+
+export function updateCustomer(id: string, values: Partial<AccountingCustomer>) {
+  return apiFetch<AccountingCustomer>(`/api/accounting/customers/${id}`, { method: "PATCH", body: JSON.stringify(values) });
+}
+
+export function deactivateCustomer(id: string) {
+  return apiFetch<AccountingCustomer>(`/api/accounting/customers/${id}`, { method: "DELETE" });
 }
 
 export function getJournalEntries(params?: Record<string, string | undefined>) {
@@ -160,6 +189,10 @@ export function recordInvoicePayment(id: string, values: Record<string, unknown>
 
 export function getPayments(params?: Record<string, string | undefined>) {
   return apiFetch<AccountingPayment[]>(`/api/accounting/payments${qs(params)}`);
+}
+
+export function getTaxRates(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingTaxRate[]>(`/api/accounting/tax-rates${qs(params)}`);
 }
 
 export function createPayment(values: Record<string, unknown>) {

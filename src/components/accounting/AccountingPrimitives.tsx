@@ -74,6 +74,8 @@ export function AccountingStatusBadge({ status }: { status: string }) {
     issued: { label: "مصدرة", className: "bg-blue-50 text-blue-700 border-blue-200" },
     partially_paid: { label: "مدفوعة جزئيا", className: "bg-amber-50 text-amber-700 border-amber-200" },
     unpaid: { label: "غير مدفوع", className: "bg-amber-50 text-amber-700 border-amber-200" },
+    active: { label: "نشط", className: "bg-green-50 text-green-700 border-green-200" },
+    inactive: { label: "غير نشط", className: "bg-gray-50 text-gray-700 border-gray-200" },
   };
   const item = map[status] || { label: status || "-", className: "bg-gray-50 text-gray-700 border-gray-200" };
   return <Badge variant="outline" className={item.className}>{item.label}</Badge>;
