@@ -13,6 +13,7 @@ function inDateRange(date: string, from?: string, to?: string) {
 }
 
 async function getPostedLines(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
+  // Official financial reports use posted/reversed ledger entries only; draft operational records stay out.
   const { data, error } = await db(admin)
     .from("accounting_journal_lines")
     .select("*, account:account_id(id, code, name_ar, name_en, type, normal_balance), entry:journal_entry_id(id, entry_no, entry_date, description, status, source_module)")

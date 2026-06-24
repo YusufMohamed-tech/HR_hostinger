@@ -229,6 +229,81 @@ export async function createJournalEntry(admin: AdminClient, input: JournalInput
   return { ...finalEntry, lines: lineResult.data || [] } as Record<string, unknown>;
 }
 
+export async function updateDraftJournalEntry(admin: AdminClient, input: JournalInput & { entryId: string }) {
+  const { data: entry, error } = await db(admin)
+    .from("accounting_journal_entries")
+    .select("id, entry_no, status, source_module, source_id")
+    .eq("organization_id", input.orgId)
+    .eq("id", input.entryId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!entry) throw new Error("القيد غير موجود.");
+  if (entry.status !== "draft") throw new Error("يمكن تعديل القيود المسودة فقط.");
+
+  const validation = validateJournalLines(input.lines);
+  if (!validation.valid) throw new Error(validation.message);
+  await assertOpenPeriod(admin, input.orgId, input.entryDate);
+  await assertActiveAccounts(admin, input.orgId, input.lines);
+
+  const totals = {
+    debit: roundMoney(validation.totalDebit),
+    credit: roundMoney(validation.totalCredit),
+  };
+
+  const updateResult = await db(admin)
+    .from("accounting_journal_entries")
+    .update({
+      entry_date: input.entryDate,
+      description: input.description,
+      notes: input.notes || null,
+      total_debit: totals.debit,
+      total_credit: totals.credit,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("organization_id", input.orgId)
+    .eq("id", input.entryId)
+    .eq("status", "draft")
+    .select("*")
+    .single();
+
+  if (updateResult.error) throw new Error(updateResult.error.message);
+
+  const deleteResult = await db(admin)
+    .from("accounting_journal_lines")
+    .delete()
+    .eq("organization_id", input.orgId)
+    .eq("journal_entry_id", input.entryId);
+  if (deleteResult.error) throw new Error(deleteResult.error.message);
+
+  const lineRows = input.lines.map((line) => ({
+    organization_id: input.orgId,
+    journal_entry_id: input.entryId,
+    account_id: line.account_id,
+    debit: roundMoney(line.debit),
+    credit: roundMoney(line.credit),
+    description: line.description || null,
+    cost_center_id: line.cost_center_id || null,
+    employee_id: line.employee_id || null,
+    department_id: line.department_id || null,
+    location_id: line.location_id || null,
+  }));
+
+  const lineResult = await db(admin).from("accounting_journal_lines").insert(lineRows).select("*");
+  if (lineResult.error) throw new Error(lineResult.error.message);
+
+  await writeAuditLog(admin, {
+    org_id: input.orgId,
+    actor_user_id: input.userId,
+    action: "accounting.journal_updated",
+    entity: "accounting_journal_entries",
+    entity_id: input.entryId,
+    new_values: { entry_no: entry.entry_no, total_debit: totals.debit, total_credit: totals.credit },
+  });
+
+  return { ...(updateResult.data as Record<string, unknown>), lines: lineResult.data || [] } as Record<string, unknown>;
+}
+
 export async function postJournalEntry(admin: AdminClient, orgId: string, entryId: string, userId: string) {
   const { data: entry, error } = await db(admin)
     .from("accounting_journal_entries")

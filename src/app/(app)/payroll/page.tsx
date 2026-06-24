@@ -156,8 +156,8 @@ export default function PayrollPage() {
   const role = String(currentUser?.role || "");
   const canRunPayroll = ["Admin", "HR_Admin"].includes(role);
   const canViewAccountingStatus = ["Admin", "HR_Admin", "Finance_Manager", "Accountant", "Finance_Viewer", "Superadmin"].includes(role);
-  const canGenerateAccountingDraft = ["Admin", "Finance_Manager", "Accountant"].includes(role);
-  const canPostPayrollAccounting = ["Admin", "Finance_Manager"].includes(role);
+  const canGenerateAccountingDraft = ["Finance_Manager", "Accountant"].includes(role);
+  const canPostPayrollAccounting = role === "Finance_Manager";
 
   const monthParam = selectedMonth + "-01";
 

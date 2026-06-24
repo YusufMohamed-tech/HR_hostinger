@@ -84,6 +84,19 @@ export interface AccountingVendor {
   email: string | null;
   city: string | null;
   country: string | null;
+  bank_name?: string | null;
+  iban?: string | null;
+  is_active: boolean;
+}
+
+export interface AccountingTaxRate {
+  id: string;
+  organization_id: string;
+  name_ar: string;
+  name_en: string | null;
+  rate: number;
+  tax_account_id: string | null;
+  is_default: boolean;
   is_active: boolean;
 }
 
@@ -140,6 +153,8 @@ export interface AccountingExpense {
   total_amount: number;
   status: AccountingExpenseStatus;
   paid_status: "unpaid" | "partially_paid" | "paid";
+  rejection_reason?: string | null;
+  attachment_url?: string | null;
   journal_entry_id: string | null;
 }
 

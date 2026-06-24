@@ -16,6 +16,7 @@ const files = {
   salesProductUi: read("src/app/(app)/sales/products/page.tsx"),
   migration38: read("db/schema_v38_accounting_hardening.sql"),
   migration39: read("db/schema_v39_accounting_completion.sql"),
+  migration40: read("db/schema_v40_accounting_audit_fixes.sql"),
 };
 
 const apiAccountingGuard = files.rbac.match(/if \(normalizedPath\.startsWith\("\/api\/accounting"\)\) \{[\s\S]*?\n  \}/)?.[0] || "";
@@ -36,6 +37,12 @@ const checks = [
   ["Manual payments require counterpart account", files.api.includes("counterpart_account_id") && files.migration39.includes("Manual payment counterpart account is required")],
   ["Sales products map revenue accounts", files.salesProductApi.includes("revenue_account_id") && files.salesProductUi.includes("revenue_account_id")],
   ["Payroll UI exposes accounting states", files.payrollUi.includes("not_generated") && files.payrollUi.includes("draft_created") && files.payrollUi.includes("recordPayrollPayment")],
+  ["DB manage helper excludes admin", files.migration40.includes("can_manage_accounting()") && files.migration40.includes("'finance_manager', 'accountant'") && !/can_manage_accounting\(\)[\s\S]*?'admin'/.test(files.migration40)],
+  ["DB post helper is finance manager only", files.migration40.includes("can_post_accounting()") && /role::text = 'finance_manager'/.test(files.migration40) && !/can_post_accounting\(\)[\s\S]*?'admin'/.test(files.migration40)],
+  ["Accounting settings use finance-manager DB guard", files.migration40.includes("can_manage_accounting_settings()") && files.migration40.includes("accounting_settings_update")],
+  ["Admin payroll post/payment UI hidden", !/canPostPayrollAccounting[^;\n]*Admin/s.test(files.payrollUi) && !/canGenerateAccountingDraft[^;\n]*Admin/s.test(files.payrollUi)],
+  ["Draft journal edit supported", files.posting.includes("updateDraftJournalEntry") && files.api.includes("updateDraftJournalEntry") && files.accountingUi.includes("تعديل المسودة")],
+  ["Operational reports exclude draft records", files.api.includes('.in("status", ["issued", "partially_paid"])') && files.api.includes('.eq("status", "approved")') && files.api.includes('.in("status", ["approved", "paid"])')],
 ];
 
 let failed = 0;
