@@ -301,7 +301,7 @@ function AccountsPage() {
           ) : (
             <Table>
               <TableHeader><TableRow><TableHead>الكود</TableHead><TableHead>الحساب</TableHead><TableHead>النوع</TableHead><TableHead>الرصيد الطبيعي</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader>
-              <TableBody>{rows.map((account) => <TableRow key={account.id}><TableCell className="font-mono">{account.code}</TableCell><TableCell className="font-medium">{account.name_ar}<div className="text-xs text-gray-500">{account.name_en}</div></TableCell><TableCell>{accountTypeLabels[account.type] || account.type}</TableCell><TableCell>{account.normal_balance === "debit" ? "مدين" : "دائن"}</TableCell><TableCell><AccountingStatusBadge status={account.is_active ? "active" : "cancelled"} /></TableCell></TableRow>)}</TableBody>
+              <TableBody>{rows.map((account) => <TableRow key={account.id}><TableCell className="font-mono">{account.code}</TableCell><TableCell className="font-medium">{account.name_ar}<div className="text-xs text-gray-500">{account.name_en}</div></TableCell><TableCell>{accountTypeLabels[account.type] || account.type}</TableCell><TableCell>{account.normal_balance === "debit" ? "Debit" : "Credit"}</TableCell><TableCell><AccountingStatusBadge status={account.is_active ? "active" : "cancelled"} /></TableCell></TableRow>)}</TableBody>
             </Table>
           )}
         </CardContent>
@@ -336,7 +336,7 @@ function AccountDialog({ onDone, onMessage }: { onDone: () => void; onMessage: (
               {Object.entries(accountTypeLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
             </SelectField>
             <SelectField value={form.normal_balance} onChange={(value) => setForm((p) => ({ ...p, normal_balance: value }))}>
-              <option value="debit">مدين</option><option value="credit">دائن</option>
+              <option value="debit">Debit</option><option value="credit">Credit</option>
             </SelectField>
           </div>
         </div>
