@@ -21,8 +21,8 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return Math.round(earthRadius * c);
 }
 
-function getOrCreateDeviceFingerprint() {
-  const key = "tatwir-attendance-device-id";
+function getOrCreateDeviceFingerprint(orgId: string) {
+  const key = `tatwir-attendance-device-id-${orgId}`;
   const existing = window.localStorage.getItem(key);
   if (existing) return existing;
   const next = `${Date.now()}-${crypto.randomUUID()}`;
@@ -94,7 +94,7 @@ export function AutoAttendanceRecorder() {
       check_in_lat: latitude,
       check_in_lng: longitude,
       check_in_device: navigator.userAgent,
-      device_fingerprint: getOrCreateDeviceFingerprint(),
+      device_fingerprint: getOrCreateDeviceFingerprint(currentUser.orgId),
       status: "present",
       late_minutes: 0,
       within_geofence: true,
@@ -148,16 +148,21 @@ export function AutoAttendanceRecorder() {
       ? Math.max(0, Math.round((now.getTime() - new Date(myAttendanceCheckInAt).getTime()) / 60000))
       : 0;
 
-    const { error } = await updateCheckOut(attendanceId, {
-      check_out_at: now.toISOString(),
-      check_out_lat: latitude,
-      check_out_lng: longitude,
-      check_out_device: navigator.userAgent,
-      device_fingerprint: getOrCreateDeviceFingerprint(),
-      total_minutes: totalMinutes,
-      check_out_within_geofence: false,
-      check_out_distance_meters: distance,
-    });
+    const { error } = await updateCheckOut(
+      currentUser.orgId,
+      currentUser.employeeId,
+      attendanceId,
+      {
+        check_out_at: now.toISOString(),
+        check_out_lat: latitude,
+        check_out_lng: longitude,
+        check_out_device: navigator.userAgent,
+        device_fingerprint: getOrCreateDeviceFingerprint(currentUser.orgId),
+        total_minutes: totalMinutes,
+        check_out_within_geofence: false,
+        check_out_distance_meters: distance,
+      }
+    );
 
     if (!error) {
       setStatus("تم تسجيل انصرافك تلقائيًا.");

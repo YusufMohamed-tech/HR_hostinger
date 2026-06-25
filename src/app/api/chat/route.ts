@@ -17,6 +17,47 @@ function safeFilename(name: string) {
   return name.replace(/[^\w.\-()[\]\u0600-\u06FF ]+/g, "_").slice(0, 160) || "attachment";
 }
 
+function pathFromPublicUrl(bucket: string, url: string) {
+  try {
+    const parsed = new URL(url);
+    const marker = `/storage/v1/object/public/${bucket}/`;
+    const index = parsed.pathname.indexOf(marker);
+    if (index === -1) return "";
+    return decodeURIComponent(parsed.pathname.slice(index + marker.length));
+  } catch {
+    return "";
+  }
+}
+
+function getAttachmentPath(bucket: string, attachment: Record<string, unknown>) {
+  const directPath = String(attachment.path || "");
+  if (directPath) return directPath;
+
+  const url = String(attachment.url || "");
+  return pathFromPublicUrl(bucket, url);
+}
+
+async function signAttachments(
+  admin: ReturnType<typeof createAdminClient>,
+  bucket: string,
+  attachments: Record<string, unknown>[]
+) {
+  return Promise.all(
+    attachments.map(async (attachment) => {
+      const path = getAttachmentPath(bucket, attachment);
+      if (!path) return attachment;
+
+      const signedUrl = await admin.storage.from(bucket).createSignedUrl(path, 60 * 60);
+      return {
+        ...attachment,
+        bucket,
+        path,
+        url: signedUrl.data?.signedUrl || attachment.url || "",
+      };
+    })
+  );
+}
+
 async function getAuthContext() {
   const supabase = await createServerSupabaseClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -175,7 +216,14 @@ export async function GET() {
     for (const message of (messagesResult.data ?? []) as Record<string, unknown>[]) {
       const conversationId = String(message.conversation_id || "");
       const list = messagesByConversation.get(conversationId) || [];
-      list.push({ ...message, sender: userMap.get(String(message.sender_user_id || "")) || null });
+      const attachments = Array.isArray(message.attachments)
+        ? await signAttachments(admin, "chat-attachments", message.attachments as Record<string, unknown>[])
+        : [];
+      list.push({
+        ...message,
+        attachments,
+        sender: userMap.get(String(message.sender_user_id || "")) || null,
+      });
       messagesByConversation.set(conversationId, list);
     }
 
@@ -309,8 +357,15 @@ export async function POST(request: NextRequest) {
       upsert: false,
     });
     if (upload.error) return NextResponse.json({ message: upload.error.message }, { status: 500 });
-    const publicUrl = admin.storage.from("chat-attachments").getPublicUrl(path).data.publicUrl;
-    attachments.push({ filename, url: publicUrl, type: file.type, size_bytes: file.size });
+    const signedUrl = await admin.storage.from("chat-attachments").createSignedUrl(path, 60 * 60);
+    attachments.push({
+      bucket: "chat-attachments",
+      path,
+      filename,
+      url: signedUrl.data?.signedUrl || "",
+      type: file.type,
+      size_bytes: file.size,
+    });
   }
 
   const messageResult = await admin

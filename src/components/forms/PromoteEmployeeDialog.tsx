@@ -111,7 +111,13 @@ export function PromoteEmployeeDialog({ employee, onSuccess, compact = false }: 
       assigned_as_department_manager: form.assign_department_manager,
     };
 
-    const updateResult = await updateEmployee(employeeId, {
+    if (!currentUser?.orgId) {
+      setSubmitting(false);
+      setError("Organization context is required.");
+      return;
+    }
+
+    const updateResult = await updateEmployee(currentUser.orgId, employeeId, {
       job_title: form.job_title.trim(),
       department_id: form.department_id || null,
       manager_id: form.manager_id || null,

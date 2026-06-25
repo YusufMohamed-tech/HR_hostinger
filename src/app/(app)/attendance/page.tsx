@@ -29,8 +29,8 @@ function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return Math.round(R * c);
 }
 
-function getOrCreateDeviceFingerprint() {
-  const key = "tatwir-attendance-device-id";
+function getOrCreateDeviceFingerprint(orgId: string) {
+  const key = `tatwir-attendance-device-id-${orgId}`;
   const existing = window.localStorage.getItem(key);
   if (existing) return existing;
   const next = `${Date.now()}-${crypto.randomUUID()}`;
@@ -175,7 +175,7 @@ export default function AttendancePage() {
 
     const now = new Date();
     const deviceInfo = navigator.userAgent;
-    const deviceFingerprint = getOrCreateDeviceFingerprint();
+    const deviceFingerprint = getOrCreateDeviceFingerprint(currentUser.orgId);
     let status = "present";
     let lateMinutes = 0;
 
@@ -220,7 +220,7 @@ export default function AttendancePage() {
       return;
     }
     checkOutClickIntentRef.current = false;
-    if (!currentUser?.employeeId || !myAttendance) return;
+    if (!currentUser?.orgId || !currentUser?.employeeId || !myAttendance) return;
     if (!isViewingToday) {
       setError("يمكن تسجيل الانصراف لليوم الحالي فقط. غيّر التاريخ إلى اليوم للتسجيل.");
       return;
@@ -251,7 +251,7 @@ export default function AttendancePage() {
 
     const now = new Date();
     const deviceInfo = navigator.userAgent;
-    const deviceFingerprint = getOrCreateDeviceFingerprint();
+    const deviceFingerprint = getOrCreateDeviceFingerprint(currentUser.orgId);
     const { latitude, longitude } = position.coords;
     const closestLocation = findClosestAllowedLocation(latitude, longitude);
     const radius = closestLocation?.radius || 0;
@@ -268,16 +268,21 @@ export default function AttendancePage() {
     const startTime = checkInAt ? new Date(checkInAt).getTime() : now.getTime();
     const totalMinutes = Math.max(0, Math.round((now.getTime() - startTime) / 60000));
 
-    const { error: err } = await updateCheckOut(attendanceId, {
-      check_out_at: now.toISOString(),
-      check_out_lat: latitude,
-      check_out_lng: longitude,
-      check_out_device: deviceInfo,
-      device_fingerprint: deviceFingerprint,
-      total_minutes: totalMinutes,
-      check_out_within_geofence: withinGeofence,
-      check_out_distance_meters: distance,
-    });
+    const { error: err } = await updateCheckOut(
+      currentUser.orgId,
+      currentUser.employeeId,
+      attendanceId,
+      {
+        check_out_at: now.toISOString(),
+        check_out_lat: latitude,
+        check_out_lng: longitude,
+        check_out_device: deviceInfo,
+        device_fingerprint: deviceFingerprint,
+        total_minutes: totalMinutes,
+        check_out_within_geofence: withinGeofence,
+        check_out_distance_meters: distance,
+      }
+    );
 
     if (err) {
       setError(err.message);

@@ -94,6 +94,7 @@ export default function DepartmentsPage() {
                         )}
                         {canManageDepartments ? (
                           <ManageDepartmentMembersDialog
+                            orgId={currentUser?.orgId || ""}
                             department={deptRecord}
                             employees={assignableEmployees}
                             onSuccess={() => {
@@ -143,10 +144,12 @@ export default function DepartmentsPage() {
 }
 
 function ManageDepartmentMembersDialog({
+  orgId,
   department,
   employees,
   onSuccess,
 }: {
+  orgId: string;
   department: Record<string, unknown>;
   employees: Record<string, unknown>[];
   onSuccess: () => void;
@@ -200,6 +203,12 @@ function ManageDepartmentMembersDialog({
       return;
     }
 
+    if (!orgId) {
+      setError("Organization context is required.");
+      setSubmitting(false);
+      return;
+    }
+
     const updates = employees
       .filter((employee) => {
         const employeeId = String(employee.id || "");
@@ -212,7 +221,7 @@ function ManageDepartmentMembersDialog({
         const currentManager = String(employee.manager_id || "");
         const shouldClearManager = !shouldBelongToDepartment && currentManager === resolvedManagerId;
 
-        return updateEmployee(employeeId, {
+        return updateEmployee(orgId, employeeId, {
           department_id: shouldBelongToDepartment ? departmentId : null,
           manager_id: shouldBelongToDepartment
             ? isDepartmentManager

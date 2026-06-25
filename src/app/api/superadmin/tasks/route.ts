@@ -257,6 +257,7 @@ export async function POST(request: NextRequest) {
     }
 
     const uploadResult = await uploadTaskUpdateAttachments(admin, {
+      orgId,
       taskId,
       updateId: String((attachmentUpdateResult.data as Record<string, unknown>).id || ""),
       files,

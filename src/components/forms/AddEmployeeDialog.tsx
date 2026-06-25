@@ -266,7 +266,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     if (createdEmployee?.id) {
       const employeeId = String(createdEmployee.id);
       const rollbackEmployee = async (message: string) => {
-        await deleteEmployee(employeeId);
+        await deleteEmployee(currentUser.orgId, employeeId);
         setError(message);
         setSubmitting(false);
       };
@@ -329,6 +329,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       }
 
       const { error: locationsError } = await replaceEmployeeLocations(
+        currentUser.orgId,
         employeeId,
         selectedLocationIds,
         parsed.data.location_id

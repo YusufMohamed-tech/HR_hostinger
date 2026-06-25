@@ -34,6 +34,10 @@
 | [Dependencies](./dependencies.md) | All packages and external integrations |
 | [Development Guide](./development.md) | Development workflows, conventions, scripts |
 | [Known Issues](./known-issues.md) | Bugs, limitations, and assumptions |
+| [Multi-Tenancy Audit](./audit.md) | Full multi-tenancy readiness audit and phased roadmap |
+| [Audit Remediation](./audit-remediation.md) | Remediation progress, completed fixes, and rollout checks |
+| [Schema Apply Notes](./schema-apply.md) | Database schema application notes |
+| [Agent Instruction](./Agent%20instruction.md) | Required workflow for future agents before and after changes |
 
 ## Quick Start
 

@@ -32,6 +32,7 @@ import { useTasks, useEmployees } from "@/hooks/use-data";
 import { createManagerTask, createTask, assignTask, updateManagerTask, updateMyTaskAssignment, updateTask, updateTaskAssignment, createTaskUpdate, createMyTaskUpdate, sendTaskMessage } from "@/lib/services/tasks";
 import { notifyTaskAssigned } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
+import { AttachmentLink } from "@/components/AttachmentLink";
 import { getValidationMessage, taskFormSchema } from "@/lib/validation";
 
 const statusStyles: Record<string, string> = {
@@ -666,7 +667,7 @@ function EditTaskDialog({
           employee_id: parsed.data.employee_id,
           attachments,
         })
-      : await updateTask(taskId, {
+      : await updateTask(currentUser.orgId, taskId, {
           title: parsed.data.title,
           description: parsed.data.description,
           priority: parsed.data.priority,
@@ -683,7 +684,7 @@ function EditTaskDialog({
     if (!managerMode) {
       const assignmentId = String(firstAssignment?.id || "");
       const assignmentError = assignmentId
-        ? (await updateTaskAssignment(assignmentId, { employee_id: parsed.data.employee_id })).error
+        ? (await updateTaskAssignment(currentUser.orgId, assignmentId, { employee_id: parsed.data.employee_id })).error
         : (await assignTask({
             org_id: currentUser.orgId,
             task_id: taskId,
@@ -842,13 +843,13 @@ function TaskHistoryDialog({
                   {attachments.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {attachments.map((attachment, attachmentIndex) => {
-                        const url = String(attachment.url || "");
+                        const path = String(attachment.path || attachment.url || "");
                         const filename = String(attachment.filename || "ملف");
                         const type = String(attachment.type || "");
                         return (
-                          <a key={`${url}-${attachmentIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-brand hover:bg-brand-light">
+                          <AttachmentLink key={`${path}-${attachmentIndex}`} bucket="task-attachments" attachment={attachment} className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-brand hover:bg-brand-light">
                             {type.startsWith("image/") ? "صورة" : "ملف"}: {filename}
-                          </a>
+                          </AttachmentLink>
                         );
                       })}
                     </div>

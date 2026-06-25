@@ -30,6 +30,7 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import { useTasks } from "@/hooks/use-data";
 import { updateMyTaskAssignment, createMyTaskUpdate } from "@/lib/services/tasks";
 import { PageSkeleton } from "@/components/Skeletons";
+import { AttachmentLink } from "@/components/AttachmentLink";
 
 const statusStyles: Record<string, string> = {
   pending: "bg-amber-50 text-amber-700 border-amber-200",
@@ -326,13 +327,13 @@ function TaskHistoryDialog({ title, updates }: { title: string; updates: TaskRec
                 {attachments.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {attachments.map((attachment, attachmentIndex) => {
-                      const url = String(attachment.url || "");
+                      const path = String(attachment.path || attachment.url || "");
                       const filename = String(attachment.filename || "ملف");
                       const type = String(attachment.type || "");
                       return (
-                        <a key={`${url}-${attachmentIndex}`} href={url} target="_blank" rel="noreferrer" className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-brand hover:bg-brand-light">
+                        <AttachmentLink key={`${path}-${attachmentIndex}`} bucket="task-attachments" attachment={attachment} className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-xs text-brand hover:bg-brand-light">
                           {type.startsWith("image/") ? "صورة" : "ملف"}: {filename}
-                        </a>
+                        </AttachmentLink>
                       );
                     })}
                   </div>

@@ -22,7 +22,13 @@ export async function writeAuditLog(
   supabase: SupabaseClient<any>,
   entry: AuditEntry
 ) {
-  const { error } = await supabase.from("audit_logs").insert({
+  if (!entry.org_id || !entry.action || !entry.entity) {
+    const message = "[audit] org_id, action, and entity are required.";
+    console.error(message);
+    return { data: null, error: { message } };
+  }
+
+  const { data, error } = await supabase.from("audit_logs").insert({
     org_id: entry.org_id,
     actor_user_id: entry.actor_user_id ?? null,
     action: entry.action,
@@ -30,9 +36,12 @@ export async function writeAuditLog(
     entity_id: entry.entity_id ?? null,
     old_values: entry.old_values ?? null,
     new_values: entry.new_values ?? null,
-  });
+  }).select("id").single();
 
   if (error) {
     console.error("[audit] Failed to write audit log:", error.message);
+    return { data: null, error: { message: error.message } };
   }
+
+  return { data: data as { id: string } | null, error: null };
 }
