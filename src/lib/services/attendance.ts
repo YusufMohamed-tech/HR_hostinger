@@ -16,11 +16,12 @@ export async function getAttendance(orgId: string, workDate?: string) {
   return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
 }
 
-export async function getEmployeeAttendance(employeeId: string, workDate?: string) {
+export async function getEmployeeAttendance(orgId: string, employeeId: string, workDate?: string) {
   const supabase = createClient();
   let query = supabase
     .from("attendance_records")
     .select("*")
+    .eq("org_id", orgId)
     .eq("employee_id", employeeId)
     .order("work_date", { ascending: false });
 
@@ -34,11 +35,17 @@ export async function getEmployeeAttendance(employeeId: string, workDate?: strin
 
 export async function createCheckIn(values: Record<string, unknown>) {
   const supabase = createClient();
+  const orgId = values.org_id as string;
   const employeeId = values.employee_id as string;
   const currentDevice = values.device_fingerprint as string || values.check_in_device as string;
 
   const workDate = String(values.work_date || new Date().toISOString().split("T")[0]);
-  const empRes = await supabase.from("employees").select("registered_device_id, can_multi_checkin").eq("id", employeeId).single();
+  const empRes = await supabase
+    .from("employees")
+    .select("registered_device_id, can_multi_checkin")
+    .eq("org_id", orgId)
+    .eq("id", employeeId)
+    .single();
   const employee = empRes.data as { registered_device_id?: string | null; can_multi_checkin?: boolean | null } | null;
   const registeredDevice = employee?.registered_device_id;
   const canMultiCheckin = Boolean(employee?.can_multi_checkin);
@@ -47,6 +54,7 @@ export async function createCheckIn(values: Record<string, unknown>) {
     const existing = await supabase
       .from("attendance_records")
       .select("id")
+      .eq("org_id", orgId)
       .eq("employee_id", employeeId)
       .eq("work_date", workDate)
       .limit(1);
@@ -63,7 +71,7 @@ export async function createCheckIn(values: Record<string, unknown>) {
     await supabase.from("employees").update({
       registered_device_id: currentDevice,
       registered_device_name: values.check_in_device || "Registered mobile device",
-    } as never).eq("id", employeeId);
+    } as never).eq("org_id", orgId).eq("id", employeeId);
   }
 
   values.is_registered_device = true;
@@ -81,7 +89,7 @@ export async function createCheckIn(values: Record<string, unknown>) {
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
-export async function updateCheckOut(id: string, values: Record<string, unknown>) {
+export async function updateCheckOut(orgId: string, employeeId: string, id: string, values: Record<string, unknown>) {
   const supabase = createClient();
   const currentDevice = values.device_fingerprint as string | undefined;
 
@@ -89,6 +97,8 @@ export async function updateCheckOut(id: string, values: Record<string, unknown>
     const recordResult = await supabase
       .from("attendance_records")
       .select("employee_id, employee:employee_id(registered_device_id)")
+      .eq("org_id", orgId)
+      .eq("employee_id", employeeId)
       .eq("id", id)
       .single();
 
@@ -102,6 +112,8 @@ export async function updateCheckOut(id: string, values: Record<string, unknown>
   const result = await supabase
     .from("attendance_records")
     .update(values as never)
+    .eq("org_id", orgId)
+    .eq("employee_id", employeeId)
     .eq("id", id)
     .select()
     .single();

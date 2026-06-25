@@ -28,11 +28,12 @@ export async function getTasks(orgId: string) {
   return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
 }
 
-export async function getTaskById(id: string) {
+export async function getTaskById(orgId: string, id: string) {
   const supabase = createClient();
   const result = await supabase
     .from("tasks")
     .select("*, assignments:task_assignments(*, employee:employee_id(full_name)), updates:task_updates(status, note, attachments, created_at, employee:employee_id(full_name))")
+    .eq("org_id", orgId)
     .eq("id", id)
     .single();
 
@@ -95,11 +96,14 @@ export async function updateManagerTask(id: string, values: Record<string, unkno
   };
 }
 
-export async function updateTask(id: string, values: Record<string, unknown>) {
+export async function updateTask(orgId: string, id: string, values: Record<string, unknown>) {
   const supabase = createClient();
+  const safeValues = { ...values };
+  delete safeValues.org_id;
   const result = await supabase
     .from("tasks")
-    .update(values as never)
+    .update(safeValues as never)
+    .eq("org_id", orgId)
     .eq("id", id)
     .select()
     .single();
@@ -107,11 +111,12 @@ export async function updateTask(id: string, values: Record<string, unknown>) {
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
-export async function deleteTask(id: string) {
+export async function deleteTask(orgId: string, id: string) {
   const supabase = createClient();
   const result = await supabase
     .from("tasks")
     .delete()
+    .eq("org_id", orgId)
     .eq("id", id);
 
   return result as unknown as { error: { message: string } | null };
@@ -128,11 +133,14 @@ export async function assignTask(values: Record<string, unknown>) {
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
-export async function updateTaskAssignment(id: string, values: Record<string, unknown>) {
+export async function updateTaskAssignment(orgId: string, id: string, values: Record<string, unknown>) {
   const supabase = createClient();
+  const safeValues = { ...values };
+  delete safeValues.org_id;
   const result = await supabase
     .from("task_assignments")
-    .update(values as never)
+    .update(safeValues as never)
+    .eq("org_id", orgId)
     .eq("id", id)
     .select()
     .single();

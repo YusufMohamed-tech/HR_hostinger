@@ -119,7 +119,7 @@ export async function PATCH(request: NextRequest) {
   const taskUpdateRecord = taskUpdate as Record<string, unknown>;
   const updateId = String(taskUpdateRecord.id || "");
   if (files.length > 0) {
-    const uploadResult = await uploadTaskUpdateAttachments(admin, { taskId, updateId, files });
+    const uploadResult = await uploadTaskUpdateAttachments(admin, { orgId, taskId, updateId, files });
     if (uploadResult.error) return NextResponse.json({ message: uploadResult.error.message }, { status: 500 });
     taskUpdateRecord.attachments = uploadResult.data;
   }

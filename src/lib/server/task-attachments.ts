@@ -30,6 +30,7 @@ export async function uploadTaskUpdateAttachments(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any,
   values: {
+    orgId: string;
     taskId: string;
     updateId: string;
     files: File[];
@@ -39,7 +40,7 @@ export async function uploadTaskUpdateAttachments(
 
   for (const file of values.files) {
     const filename = safeFilename(file.name);
-    const path = `${values.taskId}/${values.updateId}/${Date.now()}-${filename}`;
+    const path = `${values.orgId}/${values.taskId}/${values.updateId}/${Date.now()}-${filename}`;
     const upload = await admin.storage
       .from("task-attachments")
       .upload(path, file, { contentType: file.type, upsert: false });
@@ -51,8 +52,15 @@ export async function uploadTaskUpdateAttachments(
       };
     }
 
-    const publicUrl = admin.storage.from("task-attachments").getPublicUrl(path).data.publicUrl;
-    attachments.push({ filename, url: publicUrl, type: file.type, size_bytes: file.size });
+    const signedUrl = await admin.storage.from("task-attachments").createSignedUrl(path, 60 * 60);
+    attachments.push({
+      bucket: "task-attachments",
+      path,
+      filename,
+      url: signedUrl.data?.signedUrl || "",
+      type: file.type,
+      size_bytes: file.size,
+    });
   }
 
   if (attachments.length === 0) {

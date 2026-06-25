@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { getChatInbox, sendChatMessage, type ChatConversation, type ChatUser } from "@/lib/services/chat";
+import { AttachmentLink } from "@/components/AttachmentLink";
 
 function roleLabel(role: string) {
   const labels: Record<string, string> = {
@@ -265,18 +266,17 @@ export default function ChatPage() {
                             {Boolean(message.attachments?.length) && (
                               <div className="mt-2 space-y-1">
                                 {message.attachments?.map((attachment, index) => (
-                                  <a
+                                  <AttachmentLink
                                     key={`${message.id}-${index}`}
-                                    href={String(attachment.url || "#")}
-                                    target="_blank"
-                                    rel="noreferrer"
+                                    bucket="chat-attachments"
+                                    attachment={attachment}
                                     className={`flex items-center gap-2 rounded-md border px-2 py-1 text-xs underline ${
                                       mine ? "border-white/30 text-white" : "border-gray-200 text-brand"
                                     }`}
                                   >
                                     <Paperclip className="h-3.5 w-3.5" />
                                     {String(attachment.filename || "مرفق")}
-                                  </a>
+                                  </AttachmentLink>
                                 ))}
                               </div>
                             )}

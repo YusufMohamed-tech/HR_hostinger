@@ -341,7 +341,13 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
         created_by: currentUser?.id,
       }));
 
-    const { error: err } = await updateEmployee(employee.id, payload);
+    if (!currentUser?.orgId) {
+      setError("Organization context is required.");
+      setSubmitting(false);
+      return;
+    }
+
+    const { error: err } = await updateEmployee(currentUser.orgId, String(employee.id), payload);
 
     if (err) {
       setError(err.message);
@@ -357,6 +363,7 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
     }
 
     const { error: locationsError } = await replaceEmployeeLocations(
+      currentUser.orgId,
       String(employee.id),
       selectedLocationIds,
       form.location_id

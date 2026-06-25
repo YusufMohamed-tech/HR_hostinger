@@ -12,11 +12,12 @@ export async function getEmployees(orgId: string) {
   return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
 }
 
-export async function getEmployeeById(id: string) {
+export async function getEmployeeById(orgId: string, id: string) {
   const supabase = createClient();
   const result = await supabase
     .from("employees")
     .select("*, department:department_id(name), company:company_id(id, name, slug, code), project:project_id(id, name, slug, code), location:location_id(name, city, project_id), employee_locations(location_id, is_primary, assigned_from, assigned_to, location:location_id(id, name, city, project_id, latitude, longitude, radius_meters))")
+    .eq("org_id", orgId)
     .eq("id", id)
     .single();
 
@@ -51,6 +52,7 @@ export async function createEmployee(values: Record<string, unknown>) {
 }
 
 export async function replaceEmployeeLocations(
+  orgId: string,
   employeeId: string,
   locationIds: string[],
   primaryLocationId?: string
@@ -64,6 +66,7 @@ export async function replaceEmployeeLocations(
   const deleteResult = await supabase
     .from("employee_locations")
     .delete()
+    .eq("org_id", orgId)
     .eq("employee_id", employeeId);
 
   if (deleteResult.error) {
@@ -75,6 +78,7 @@ export async function replaceEmployeeLocations(
   }
 
   const rows = uniqueLocationIds.map((locationId) => ({
+    org_id: orgId,
     employee_id: employeeId,
     location_id: locationId,
     is_primary: locationId === primaryId,
@@ -122,11 +126,14 @@ export async function createEmployeeAccount(values: {
   } as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
-export async function updateEmployee(id: string, values: Record<string, unknown>) {
+export async function updateEmployee(orgId: string, id: string, values: Record<string, unknown>) {
   const supabase = createClient();
+  const safeValues = { ...values };
+  delete safeValues.org_id;
   const result = await supabase
     .from("employees")
-    .update(values as never)
+    .update(safeValues as never)
+    .eq("org_id", orgId)
     .eq("id", id)
     .select()
     .single() as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
@@ -150,11 +157,12 @@ export async function updateEmployee(id: string, values: Record<string, unknown>
   return result;
 }
 
-export async function deleteEmployee(id: string) {
+export async function deleteEmployee(orgId: string, id: string) {
   const supabase = createClient();
   const result = await supabase
     .from("employees")
     .delete()
+    .eq("org_id", orgId)
     .eq("id", id);
 
   return result as unknown as { error: { message: string } | null };

@@ -164,6 +164,7 @@ export async function POST(request: NextRequest) {
 
   if (files.length > 0) {
     const uploadResult = await uploadTaskUpdateAttachments(admin, {
+      orgId,
       taskId,
       updateId: String((initialUpdateResult.data as Record<string, unknown>).id || ""),
       files,
@@ -341,6 +342,7 @@ export async function PATCH(request: NextRequest) {
 
   if (files.length > 0) {
     const uploadResult = await uploadTaskUpdateAttachments(admin, {
+      orgId,
       taskId,
       updateId: String((editUpdateResult.data as Record<string, unknown>).id || ""),
       files,

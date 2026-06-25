@@ -226,7 +226,8 @@ export default function EmployeesPage() {
                             confirmLabel="حذف"
                             destructive
                             onConfirm={async () => {
-                              await deleteEmployee(empId);
+                              if (!currentUser?.orgId) return;
+                              await deleteEmployee(currentUser.orgId, empId);
                               refetch();
                             }}
                           >
