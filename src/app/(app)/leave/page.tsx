@@ -33,6 +33,7 @@ import {
 } from "@/lib/services/leaves";
 import { notifyLeaveDecision } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
+import { AttachmentLink } from "@/components/AttachmentLink";
 import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
 import { inclusiveDays, leaveTypeLabels, leaveTypeOptions, leaveTypeRequiresAttachment } from "@/lib/hr-options";
 
@@ -345,9 +346,9 @@ export default function LeavePage() {
                     <TableCell className="text-gray-600">{dayCount || "—"}</TableCell>
                     <TableCell className="text-gray-600">
                       {attachmentUrl ? (
-                        <a className="text-brand hover:text-brand-dark" href={attachmentUrl} target="_blank" rel="noreferrer">
+                        <AttachmentLink bucket="balance-attachments" attachment={{ path: attachmentUrl, url: attachmentUrl }} className="text-brand hover:text-brand-dark">
                           {attachmentName}
-                        </a>
+                        </AttachmentLink>
                       ) : "—"}
                     </TableCell>
                     <TableCell className="text-gray-600">{getWorkflowStageLabel(reqRecord)}</TableCell>
@@ -663,9 +664,9 @@ function EmployeeLeaveProfileDialog({
                         </TableCell>
                         <TableCell>
                           {attachmentUrl ? (
-                            <a className="text-brand hover:text-brand-dark" href={attachmentUrl} target="_blank" rel="noreferrer">
+                            <AttachmentLink bucket="balance-attachments" attachment={{ path: attachmentUrl, url: attachmentUrl }} className="text-brand hover:text-brand-dark">
                               {attachmentName}
-                            </a>
+                            </AttachmentLink>
                           ) : "لا يوجد"}
                         </TableCell>
                         <TableCell className="max-w-[220px] whitespace-normal text-gray-600">{getText(request.reason, "-")}</TableCell>

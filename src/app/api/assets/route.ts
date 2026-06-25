@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { requireTenantContext } from "@/lib/server/tenant-context";
 
+// Kept temporarily for older route parity while active handlers use requireTenantContext.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function getAuthContext() {
   const supabase = await createServerSupabaseClient();
   const { data: userData, error: userError } = await supabase.auth.getUser();
@@ -47,7 +50,7 @@ async function notifyHr(admin: ReturnType<typeof createAdminClient>, orgId: stri
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await getAuthContext();
+  const auth = await requireTenantContext({ roles: ["admin", "hr_admin"], feature: "assets" });
   if ("error" in auth) return auth.error;
   if (!["admin", "hr_admin"].includes(auth.role)) {
     return NextResponse.json({ message: "تسليم العهد متاح للموارد البشرية فقط." }, { status: 403 });
@@ -160,6 +163,7 @@ export async function POST(request: NextRequest) {
         current_assignment_id: String((data as Record<string, unknown>).id || ""),
         updated_by: auth.user.id,
       } as never)
+      .eq("org_id", auth.orgId)
       .eq("id", inventoryId);
   }
 
@@ -180,7 +184,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await getAuthContext();
+  const auth = await requireTenantContext({ feature: "assets" });
   if ("error" in auth) return auth.error;
 
   const body = await request.json().catch(() => ({}));
@@ -261,7 +265,7 @@ export async function PATCH(request: NextRequest) {
 
   if (!signaturePath) {
     const bytes = new TextEncoder().encode(signatureData);
-    const filePath = `${id}/asset-signature-${Date.now()}.txt`;
+    const filePath = `${auth.orgId}/assets/${id}/asset-signature-${Date.now()}.txt`;
     const uploadResult = await admin.storage
       .from("balance-attachments")
       .upload(filePath, bytes, {
@@ -281,6 +285,7 @@ export async function PATCH(request: NextRequest) {
       acknowledgment_signature_url: signaturePath,
       acknowledged_at: new Date().toISOString(),
     } as never)
+    .eq("org_id", auth.orgId)
     .eq("id", id)
     .select("*, employee:employee_id(full_name, employee_code)")
     .single();

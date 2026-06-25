@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: upload.error.message }, { status: 500 });
     }
 
-    attachmentUrl = admin.storage.from("balance-attachments").getPublicUrl(path).data.publicUrl;
+    attachmentUrl = path;
     attachmentName = filename;
   }
 

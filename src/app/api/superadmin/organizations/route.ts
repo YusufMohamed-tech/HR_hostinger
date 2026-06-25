@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { provisionOrganizationDefaults } from "@/lib/server/tenant-provisioning";
 import { recordPlatformAudit, requireSuperadmin } from "@/lib/superadmin/server";
 
 function normalizeSlug(value: string) {
@@ -15,6 +16,7 @@ function normalizeSlug(value: string) {
 
 function normalizeStatus(value: string) {
   const normalized = value.trim().toLowerCase();
+  if (normalized === "deleted" || normalized === "soft_deleted") return "Deleted";
   if (normalized === "suspended" || normalized === "inactive" || normalized === "disabled") return "Suspended";
   return "Active";
 }
@@ -123,6 +125,11 @@ export async function POST(request: NextRequest) {
   }
 
   const organization = createResult.data as Record<string, unknown> | null;
+  const provisionResult = await provisionOrganizationDefaults(admin, String(organization?.id || ""), auth.user.id);
+  if (provisionResult.error) {
+    return NextResponse.json({ message: provisionResult.error.message }, { status: 500 });
+  }
+
   await recordPlatformAudit({
     actorUserId: auth.user.id,
     action: "organization.created",
@@ -169,6 +176,13 @@ export async function PATCH(request: NextRequest) {
   if (name) updateValues.name = name;
   if (slug !== undefined) updateValues.slug = normalizeSlug(slug || name || id);
   if (status) updateValues.status = normalizeStatus(status);
+  if (updateValues.status === "Deleted") {
+    updateValues.deleted_at = new Date().toISOString();
+    updateValues.deletion_requested_at = updateValues.deleted_at;
+    updateValues.deletion_requested_by = auth.user.id;
+  } else if (updateValues.status === "Active") {
+    updateValues.deleted_at = null;
+  }
 
   const admin = createAdminClient();
   const currentResult = await admin
@@ -207,6 +221,8 @@ export async function PATCH(request: NextRequest) {
   const action = statusChanged
     ? nextStatus.toLowerCase() === "suspended"
       ? "organization.suspended"
+      : nextStatus.toLowerCase() === "deleted"
+        ? "organization.deleted"
       : "organization.activated"
     : "organization.updated";
 

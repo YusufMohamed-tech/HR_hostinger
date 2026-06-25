@@ -6,9 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 type AttachmentLinkProps = {
   bucket: string;
   attachment: Record<string, unknown>;
-  className?: string;
   children: React.ReactNode;
-};
+} & Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, "href">;
 
 function pathFromPublicUrl(bucket: string, url: string) {
   try {
@@ -24,16 +23,22 @@ function pathFromPublicUrl(bucket: string, url: string) {
 
 function getAttachmentPath(bucket: string, attachment: Record<string, unknown>) {
   const directPath = String(attachment.path || "");
-  if (directPath) return directPath;
+  if (directPath && !/^https?:\/\//i.test(directPath)) return directPath;
 
-  const url = String(attachment.url || "");
+  const url = String(attachment.url || directPath || "");
   return pathFromPublicUrl(bucket, url);
 }
 
-export function AttachmentLink({ bucket, attachment, className, children }: AttachmentLinkProps) {
-  const fallbackUrl = String(attachment.url || "");
+export const AttachmentLink = React.forwardRef<HTMLAnchorElement, AttachmentLinkProps>(function AttachmentLink(
+  { bucket, attachment, className, children, target, rel, download, ...props },
+  ref
+) {
+  const rawUrl = String(attachment.url || "");
+  const fallbackUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : "";
   const path = useMemo(() => getAttachmentPath(bucket, attachment), [attachment, bucket]);
   const [href, setHref] = useState(fallbackUrl || "#");
+  const targetValue = target ?? (download ? undefined : "_blank");
+  const relValue = rel ?? (targetValue === "_blank" ? "noreferrer" : undefined);
 
   useEffect(() => {
     let active = true;
@@ -58,8 +63,8 @@ export function AttachmentLink({ bucket, attachment, className, children }: Atta
   }, [bucket, fallbackUrl, path]);
 
   return (
-    <a href={href} target="_blank" rel="noreferrer" className={className}>
+    <a ref={ref} href={href} target={targetValue} rel={relValue} download={download} className={className} {...props}>
       {children}
     </a>
   );
-}
+});

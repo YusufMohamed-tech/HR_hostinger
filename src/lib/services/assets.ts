@@ -88,10 +88,10 @@ export async function createAssetInventory(values: Record<string, unknown>) {
   return { data: payload?.data || null, error: null };
 }
 
-export async function uploadAssetSignature(assetId: string, signatureData: string) {
+export async function uploadAssetSignature(orgId: string, assetId: string, signatureData: string) {
   const supabase = createClient();
   const bytes = new TextEncoder().encode(signatureData);
-  const filePath = `${assetId}/signature-${Date.now()}.txt`;
+  const filePath = `${orgId}/assets/${assetId}/signature-${Date.now()}.txt`;
 
   const result = await supabase.storage
     .from("balance-attachments")

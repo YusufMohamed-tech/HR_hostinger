@@ -406,7 +406,6 @@ function EditCompanyDialog() {
 
     const result = await updateOrganization(currentUser.orgId, {
       name: companyName,
-      status: form.status.trim() || "active",
     });
 
     setSubmitting(false);
@@ -441,7 +440,7 @@ function EditCompanyDialog() {
               </div>
               <div className="space-y-2">
                 <Label>الحالة</Label>
-                <Input value={form.status} onChange={(e) => set("status", e.target.value)} />
+                <Input value={form.status} onChange={(e) => set("status", e.target.value)} disabled />
               </div>
               {error && <p className="text-sm text-red-600">{error}</p>}
             </div>
