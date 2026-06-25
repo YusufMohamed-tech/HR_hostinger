@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConfirmActionButton, MessageDialog } from "@/components/ui/feedback-dialog";
+import { AttachmentLink } from "@/components/AttachmentLink";
 import { updateApplication, updateApplicationStage, scheduleInterview, hireCandidate, getInterviews } from "@/lib/services/recruitment";
 import type { JobApplication, JobPosting, FormQuestion, Interview } from "@/lib/services/recruitment";
 import { cn } from "@/lib/utils";
@@ -187,16 +188,16 @@ export function ApplicationPanel({ application, posting, onClose, onUpdated }: P
               <FileText className="w-4 h-4 text-brand" />
               <span className="text-sm font-medium">السيرة الذاتية</span>
               <Button size="sm" variant="outline" className="text-xs h-7 mr-auto" asChild>
-                <a href={cvUrl} target="_blank" rel="noopener noreferrer">
+                <AttachmentLink bucket="recruitment" attachment={{ path: cvUrl, url: cvUrl }} download>
                   <ExternalLink className="w-3 h-3 ml-1" />
                   عرض
-                </a>
+                </AttachmentLink>
               </Button>
               <Button size="sm" variant="outline" className="text-xs h-7" asChild>
-                <a href={cvUrl} download>
+                <AttachmentLink bucket="recruitment" attachment={{ path: cvUrl, url: cvUrl }}>
                   <Download className="w-3 h-3 ml-1" />
                   تحميل
-                </a>
+                </AttachmentLink>
               </Button>
             </div>
           )}

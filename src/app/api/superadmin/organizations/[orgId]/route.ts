@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requireSuperadmin } from "@/lib/superadmin/server";
+import { recordPlatformAudit, requireSuperadmin } from "@/lib/superadmin/server";
 
 export async function GET(
   _request: Request,
@@ -86,4 +86,61 @@ export async function GET(
       counts,
     },
   });
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { orgId: string } }
+) {
+  const auth = await requireSuperadmin();
+  if ("error" in auth) return auth.error;
+
+  const orgId = String(params.orgId || "").trim();
+  if (!orgId) {
+    return NextResponse.json({ message: "Organization id is required." }, { status: 400 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const reason = typeof (body as Record<string, unknown>).reason === "string"
+    ? String((body as Record<string, unknown>).reason).trim()
+    : "";
+  const now = new Date().toISOString();
+  const admin = createAdminClient();
+
+  const updateResult = await admin
+    .from("organizations")
+    .update({
+      status: "Deleted",
+      deleted_at: now,
+      deletion_requested_at: now,
+      deletion_requested_by: auth.user.id,
+      deletion_reason: reason || null,
+      updated_at: now,
+    } as never)
+    .eq("id", orgId)
+    .is("deleted_at", null)
+    .select()
+    .maybeSingle();
+
+  if (updateResult.error) {
+    return NextResponse.json({ message: updateResult.error.message }, { status: 500 });
+  }
+
+  if (!updateResult.data) {
+    return NextResponse.json({ message: "Organization was not found or is already deleted." }, { status: 404 });
+  }
+
+  await recordPlatformAudit({
+    actorUserId: auth.user.id,
+    action: "organization.deleted",
+    targetOrgId: orgId,
+    targetType: "organization",
+    targetId: orgId,
+    metadata: {
+      reason: reason || null,
+      soft_delete: true,
+    },
+  });
+
+  return NextResponse.json({ data: updateResult.data });
 }

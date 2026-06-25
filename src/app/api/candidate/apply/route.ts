@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
   let cvUrl: string | null = null;
   if (cvFile) {
     const filename = safeFilename(cvFile.name);
-    const path = `cv/${String(p.id)}/${Date.now()}-${filename}`;
+    const path = `${String(p.org_id)}/cv/${String(p.id)}/${Date.now()}-${filename}`;
     const upload = await admin.storage.from("recruitment").upload(path, cvFile, {
       contentType: cvFile.type,
       upsert: false,
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
     if (upload.error) {
       return NextResponse.json({ error: "تعذر رفع السيرة الذاتية. يرجى المحاولة مرة أخرى." }, { status: 500 });
     }
-    cvUrl = admin.storage.from("recruitment").getPublicUrl(path).data.publicUrl;
+    cvUrl = path;
   }
 
   const { data: application, error: insertError } = await admin

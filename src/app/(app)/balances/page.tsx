@@ -192,7 +192,7 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
         return;
       }
       if (uploadData?.path) {
-        await updateFinancialBalance(String(data.id), { attachment_url: uploadData.path });
+        await updateFinancialBalance(currentUser.orgId, String(data.id), { attachment_url: uploadData.path });
       }
     }
     setSubmitting(false);
@@ -266,6 +266,7 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
 }
 
 function AcknowledgeDialog({ balanceId, onSuccess }: { balanceId: string; onSuccess: () => void }) {
+  const { currentUser } = useRoleContext();
   const [open, setOpen] = useState(false);
   const [signature, setSignature] = useState("");
 
@@ -287,11 +288,12 @@ function AcknowledgeDialog({ balanceId, onSuccess }: { balanceId: string; onSucc
           <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button
             className="bg-brand hover:bg-brand-dark text-white"
-            disabled={!signature.trim()}
+            disabled={!signature.trim() || !currentUser?.orgId}
             onClick={async () => {
-              const { data: uploadData, error: uploadError } = await uploadBalanceSignature(balanceId, signature.trim());
+              if (!currentUser?.orgId) return;
+              const { data: uploadData, error: uploadError } = await uploadBalanceSignature(currentUser.orgId, balanceId, signature.trim());
               if (uploadError || !uploadData?.path) return;
-              await acknowledgeFinancialBalance(balanceId, uploadData.path);
+              await acknowledgeFinancialBalance(currentUser.orgId, balanceId, uploadData.path);
               setOpen(false);
               setSignature("");
               onSuccess();

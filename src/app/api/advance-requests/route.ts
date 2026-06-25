@@ -1,49 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { requireTenantContext } from "@/lib/server/tenant-context";
 import { formatCurrency } from "@/lib/utils/currency";
 
 const reviewStatuses = new Set(["approved", "partial_approved", "rejected"]);
-
-async function getAuthContext() {
-  const supabase = await createServerSupabaseClient();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  const user = userData?.user;
-  if (userError || !user) return { error: NextResponse.json({ message: "غير مصرح بالدخول." }, { status: 401 }) };
-
-  const { data: membership, error: membershipError } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const member = membership as Record<string, unknown> | null;
-  const orgId = String(member?.org_id || "");
-  const role = String(member?.role || "");
-  if (membershipError || !orgId || !role) return { error: NextResponse.json({ message: "لا توجد صلاحية منظمة." }, { status: 403 }) };
-  return { user, orgId, role };
-}
+const reviewerRoles = ["admin", "hr_admin"];
 
 export async function GET() {
-  const auth = await getAuthContext();
+  const auth = await requireTenantContext({ feature: "hr" });
   if ("error" in auth) return auth.error;
 
-  const admin = createAdminClient();
-  let query = admin
+  let query = auth.admin
     .from("advance_requests")
     .select("*, employee:employee_id(full_name, employee_code, user_id)")
     .eq("organization_id", auth.orgId)
     .order("created_at", { ascending: false });
 
-  if (!["admin", "hr_admin"].includes(auth.role)) {
-    const { data: employee } = await admin
-      .from("employees")
-      .select("id")
-      .eq("org_id", auth.orgId)
-      .eq("user_id", auth.user.id)
-      .maybeSingle();
-    const employeeId = String((employee as Record<string, unknown> | null)?.id || "");
-    query = query.eq("employee_id", employeeId);
+  if (!reviewerRoles.includes(auth.role)) {
+    if (!auth.employeeId) return NextResponse.json({ data: [] });
+    query = query.eq("employee_id", auth.employeeId);
   }
 
   const { data, error } = await query;
@@ -52,7 +26,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await getAuthContext();
+  const auth = await requireTenantContext({ feature: "hr", requireEmployee: true });
   if ("error" in auth) return auth.error;
 
   const body = await request.json().catch(() => ({}));
@@ -60,27 +34,30 @@ export async function POST(request: NextRequest) {
   const reason = String((body as Record<string, unknown>).reason || "").trim();
   const signature = String((body as Record<string, unknown>).employee_signature_data || "").trim();
 
-  if (requestedAmount <= 0) return NextResponse.json({ message: "مبلغ السلفة مطلوب." }, { status: 400 });
-  if (!signature.startsWith("data:image/")) return NextResponse.json({ message: "توقيع الموظف مطلوب قبل إرسال الطلب." }, { status: 400 });
+  if (requestedAmount <= 0) {
+    return NextResponse.json({ message: "Advance amount is required." }, { status: 400 });
+  }
 
-  const admin = createAdminClient();
-  const { data: employee, error: employeeError } = await admin
+  if (!signature.startsWith("data:image/")) {
+    return NextResponse.json({ message: "Employee signature is required before submitting the request." }, { status: 400 });
+  }
+
+  const { data: employee, error: employeeError } = await auth.admin
     .from("employees")
     .select("id, full_name")
     .eq("org_id", auth.orgId)
-    .eq("user_id", auth.user.id)
+    .eq("id", auth.employeeId)
     .maybeSingle();
 
   if (employeeError) return NextResponse.json({ message: employeeError.message }, { status: 500 });
   const employeeRecord = employee as Record<string, unknown> | null;
-  const employeeId = String(employeeRecord?.id || "");
-  if (!employeeId) return NextResponse.json({ message: "ملف الموظف مطلوب." }, { status: 403 });
+  if (!employeeRecord) return NextResponse.json({ message: "Employee profile is required." }, { status: 403 });
 
-  const { data, error } = await admin
+  const { data, error } = await auth.admin
     .from("advance_requests")
     .insert({
       organization_id: auth.orgId,
-      employee_id: employeeId,
+      employee_id: auth.employeeId,
       requested_amount: requestedAmount,
       reason: reason || null,
       employee_signature_data: signature,
@@ -92,33 +69,31 @@ export async function POST(request: NextRequest) {
 
   if (error) return NextResponse.json({ message: error.message }, { status: 500 });
 
-  const { data: hrMembers } = await admin
+  const { data: hrMembers } = await auth.admin
     .from("org_members")
     .select("user_id")
     .eq("org_id", auth.orgId)
-    .in("role", ["admin", "hr_admin"]);
+    .in("role", reviewerRoles);
 
-  const employeeName = String(employeeRecord?.full_name || "موظف");
+  const employeeName = String(employeeRecord.full_name || "Employee");
   const rows = ((hrMembers ?? []) as Record<string, unknown>[]).map((member) => ({
     org_id: auth.orgId,
     user_id: String(member.user_id),
-    title: "طلب سلفة جديد",
-    body: `طلب سلفة جديد من ${employeeName} بقيمة ${formatCurrency(requestedAmount)}`,
+    title: "New advance request",
+    body: `${employeeName} submitted an advance request for ${formatCurrency(requestedAmount)}.`,
     type: "system",
     link: "/balances",
     is_read: false,
   }));
-  if (rows.length > 0) await admin.from("notifications").insert(rows as never);
+
+  if (rows.length > 0) await auth.admin.from("notifications").insert(rows as never);
 
   return NextResponse.json({ data });
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await getAuthContext();
+  const auth = await requireTenantContext({ roles: reviewerRoles, feature: "hr" });
   if ("error" in auth) return auth.error;
-  if (!["admin", "hr_admin"].includes(auth.role)) {
-    return NextResponse.json({ message: "مراجعة طلبات السلف متاحة للموارد البشرية فقط." }, { status: 403 });
-  }
 
   const body = await request.json().catch(() => ({}));
   const id = String((body as Record<string, unknown>).id || "").trim();
@@ -126,12 +101,13 @@ export async function PATCH(request: NextRequest) {
   const approvedAmount = Number((body as Record<string, unknown>).approved_amount || 0);
   const hrNotes = String((body as Record<string, unknown>).hr_notes || "").trim();
 
-  if (!id) return NextResponse.json({ message: "معرف الطلب مطلوب." }, { status: 400 });
-  if (!reviewStatuses.has(status)) return NextResponse.json({ message: "قرار غير مدعوم." }, { status: 400 });
-  if (status !== "rejected" && approvedAmount <= 0) return NextResponse.json({ message: "مبلغ الموافقة مطلوب." }, { status: 400 });
+  if (!id) return NextResponse.json({ message: "Request id is required." }, { status: 400 });
+  if (!reviewStatuses.has(status)) return NextResponse.json({ message: "Unsupported review status." }, { status: 400 });
+  if (status !== "rejected" && approvedAmount <= 0) {
+    return NextResponse.json({ message: "Approved amount is required." }, { status: 400 });
+  }
 
-  const admin = createAdminClient();
-  const { data: requestRow, error: requestError } = await admin
+  const { data: requestRow, error: requestError } = await auth.admin
     .from("advance_requests")
     .select("*, employee:employee_id(full_name, user_id)")
     .eq("organization_id", auth.orgId)
@@ -139,17 +115,17 @@ export async function PATCH(request: NextRequest) {
     .maybeSingle();
 
   if (requestError) return NextResponse.json({ message: requestError.message }, { status: 500 });
-  if (!requestRow) return NextResponse.json({ message: "طلب السلفة غير موجود." }, { status: 404 });
+  if (!requestRow) return NextResponse.json({ message: "Advance request was not found." }, { status: 404 });
 
   const row = requestRow as Record<string, unknown>;
   const employee = (row.employee ?? null) as Record<string, unknown> | null;
   const requestedAmount = Number(row.requested_amount || 0);
   if (status === "partial_approved" && approvedAmount >= requestedAmount) {
-    return NextResponse.json({ message: "مبلغ الموافقة الجزئية يجب أن يكون أقل من المبلغ المطلوب." }, { status: 400 });
+    return NextResponse.json({ message: "Partial approval amount must be lower than requested amount." }, { status: 400 });
   }
-  const finalAmount = status === "rejected" ? null : approvedAmount;
 
-  const { data, error } = await admin
+  const finalAmount = status === "rejected" ? null : approvedAmount;
+  const { data, error } = await auth.admin
     .from("advance_requests")
     .update({
       status,
@@ -158,6 +134,7 @@ export async function PATCH(request: NextRequest) {
       reviewed_by: auth.user.id,
       reviewed_at: new Date().toISOString(),
     } as never)
+    .eq("organization_id", auth.orgId)
     .eq("id", id)
     .select("*, employee:employee_id(full_name, employee_code, user_id)")
     .single();
@@ -165,24 +142,31 @@ export async function PATCH(request: NextRequest) {
   if (error) return NextResponse.json({ message: error.message }, { status: 500 });
 
   if (status !== "rejected" && finalAmount) {
-    await admin.from("financial_balances").insert({
+    await auth.admin.from("financial_balances").insert({
       org_id: auth.orgId,
       employee_id: String(row.employee_id),
       balance_type: "advance_payment",
       amount: finalAmount,
       status: "unpaid",
-      description: `سلفة معتمدة من طلب رقم ${id}`,
+      description: `Approved advance request ${id}`,
     } as never);
   }
 
   const employeeUserId = String(employee?.user_id || "");
   if (employeeUserId) {
-    const decisionLabel = status === "rejected" ? "تم رفض طلب السلفة" : status === "partial_approved" ? "تمت الموافقة الجزئية على طلب السلفة" : "تمت الموافقة على طلب السلفة";
-    await admin.from("notifications").insert({
+    const decisionLabel = status === "rejected"
+      ? "Advance request rejected"
+      : status === "partial_approved"
+        ? "Advance request partially approved"
+        : "Advance request approved";
+
+    await auth.admin.from("notifications").insert({
       org_id: auth.orgId,
       user_id: employeeUserId,
       title: decisionLabel,
-      body: status === "rejected" ? (hrNotes || "تمت مراجعة طلبك.") : `المبلغ المعتمد: ${formatCurrency(finalAmount)}`,
+      body: status === "rejected"
+        ? (hrNotes || "Your request has been reviewed.")
+        : `Approved amount: ${formatCurrency(Number(finalAmount || 0))}`,
       type: "system",
       link: "/balances",
       is_read: false,

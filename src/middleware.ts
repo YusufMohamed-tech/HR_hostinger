@@ -9,6 +9,26 @@ import {
 } from "./lib/rbac";
 import type { Role } from "./types";
 
+function requiredFeatureForPath(pathname: string) {
+  const normalized = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  if (normalized.startsWith("/sales") || normalized.startsWith("/api/sales")) return "sales";
+  if (normalized.startsWith("/recruitment") || normalized.startsWith("/api/recruitment")) return "recruitment";
+  if (normalized.startsWith("/accounting") || normalized.startsWith("/api/accounting")) return "accounting";
+  if (normalized.startsWith("/chat") || normalized.startsWith("/api/chat")) return "chat";
+  if (normalized.startsWith("/assets") || normalized.startsWith("/api/assets")) return "assets";
+  if (normalized.startsWith("/payroll")) return "payroll";
+  if (normalized.startsWith("/personnel")) return "personnel";
+  return null;
+}
+
+function featureEnabled(featureRecord: Record<string, unknown> | null, feature: string) {
+  if (!featureRecord) return true;
+  if (featureRecord[`${feature}_enabled`] === false) return false;
+  const enabledModules = featureRecord.enabled_modules;
+  if (Array.isArray(enabledModules)) return enabledModules.map(String).includes(feature);
+  return true;
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request: { headers: request.headers } });
   const pathname = request.nextUrl.pathname;
@@ -107,6 +127,22 @@ export async function middleware(request: NextRequest) {
           return NextResponse.json({ message: "Account or organization is suspended." }, { status: 403 });
         }
         return NextResponse.redirect(new URL("/suspended", request.url));
+      }
+
+      const requiredFeature = requiredFeatureForPath(pathname);
+      if (requiredFeature) {
+        const { data: organizationFeatures, error: organizationFeaturesError } = await supabase
+          .from("organization_features")
+          .select("*")
+          .eq("org_id", membershipRecord.org_id)
+          .maybeSingle();
+
+        if (!organizationFeaturesError && !featureEnabled(organizationFeatures as Record<string, unknown> | null, requiredFeature)) {
+          if (isApi) {
+            return NextResponse.json({ message: "This module is not enabled for the organization plan." }, { status: 403 });
+          }
+          return NextResponse.redirect(new URL(getDefaultPathForRole(role), request.url));
+        }
       }
     }
   }

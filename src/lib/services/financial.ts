@@ -27,11 +27,12 @@ export async function createFinancialBalance(values: Record<string, unknown>) {
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
-export async function updateFinancialBalance(id: string, values: Record<string, unknown>) {
+export async function updateFinancialBalance(orgId: string, id: string, values: Record<string, unknown>) {
   const supabase = createClient();
   const result = await supabase
     .from("financial_balances")
     .update(values as never)
+    .eq("org_id", orgId)
     .eq("id", id)
     .select()
     .single();
@@ -52,10 +53,10 @@ export async function uploadBalanceAttachment(orgId: string, balanceId: string, 
   return result as unknown as { data: { path: string } | null; error: { message: string } | null };
 }
 
-export async function uploadBalanceSignature(balanceId: string, signatureData: string) {
+export async function uploadBalanceSignature(orgId: string, balanceId: string, signatureData: string) {
   const supabase = createClient();
   const bytes = new TextEncoder().encode(signatureData);
-  const filePath = `${balanceId}/signature-${Date.now()}.txt`;
+  const filePath = `${orgId}/${balanceId}/signature-${Date.now()}.txt`;
 
   const result = await supabase.storage
     .from("balance-attachments")
@@ -67,7 +68,7 @@ export async function uploadBalanceSignature(balanceId: string, signatureData: s
   return result as unknown as { data: { path: string } | null; error: { message: string } | null };
 }
 
-export async function acknowledgeFinancialBalance(id: string, signaturePath: string) {
+export async function acknowledgeFinancialBalance(orgId: string, id: string, signaturePath: string) {
   const supabase = createClient();
   const result = await supabase
     .from("financial_balances")
@@ -76,6 +77,7 @@ export async function acknowledgeFinancialBalance(id: string, signaturePath: str
       status: "acknowledged",
       updated_at: new Date().toISOString(),
     } as never)
+    .eq("org_id", orgId)
     .eq("id", id)
     .select()
     .single();

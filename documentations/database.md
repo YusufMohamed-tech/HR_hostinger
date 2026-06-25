@@ -10,6 +10,22 @@ Tatwir Talent HRMS uses **Supabase (PostgreSQL)** as its database, with Row Leve
 |------|---------|
 | `db/schema-production-clean.sql` | Canonical base schema (v1) |
 | `db/schema_v2_additions.sql` through `db/schema_v40_accounting_audit_fixes.sql` | Incremental migrations |
+| `db/schema_v41_multi_tenancy_audit_fixes.sql` | Tenant isolation hardening for employee locations, profiles, chat RLS, audit logs, and task/chat storage |
+| `db/schema_v42_tenant_platform_completion.sql` | Tenant settings, feature flags, plans, subscriptions, usage, workflows, soft delete, quotas, private balance/recruitment storage, and composite indexes |
+
+## Tenant Platform Tables
+
+Migration v42 adds these tenant platform tables:
+
+| Table | Purpose |
+|---|---|
+| `organization_settings` | Per-tenant branding, locale, timezone, attendance, leave, workflow, and shift defaults |
+| `organization_features` | Per-tenant module flags and enabled module list |
+| `plans` | Sellable plan definitions, features, limits, and prices |
+| `organization_subscriptions` | Tenant subscription state and provider identifiers |
+| `organization_usage` | Tenant usage snapshot for employee count, storage, API usage, sales agents, and accounting entries |
+| `organization_quota_events` | Quota observations, warnings, and blocks |
+| `approval_workflows` | Configurable per-tenant workflow steps |
 
 ## Multi-Tenancy Model
 
@@ -215,6 +231,9 @@ Migrations are versioned SQL files applied sequentially:
 ```bash
 # Safe incremental migration (production-safe)
 npm run apply:migration -- db/schema_v12_safe_saves_and_policy_fix.sql
+
+# Supabase Management API path when direct DB networking is unavailable
+npm run apply:supabase-sql -- db/schema_v42_tenant_platform_completion.sql
 
 # Full destructive reset (local/staging only)
 ALLOW_DESTRUCTIVE_SCHEMA_APPLY=true npm run apply:schema

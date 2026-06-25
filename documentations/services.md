@@ -8,6 +8,25 @@ All services follow the `{ data, error }` return pattern from Supabase.
 
 ---
 
+## Server Tenant Helpers
+
+### `src/lib/server/tenant-context.ts`
+
+Shared tenant authorization for API routes that use the service-role admin client.
+
+| Function | Description |
+|----------|-------------|
+| `requireTenantContext(options)` | Authenticates the current user, resolves org/role/employee, blocks suspended or deleted tenants, and optionally checks role, module feature, or employee profile requirements |
+| `withTenantContext(handler, options)` | Wraps route handlers with the same tenant guard |
+
+### `src/lib/server/tenant-provisioning.ts`
+
+| Function | Description |
+|----------|-------------|
+| `provisionOrganizationDefaults(admin, orgId, actorUserId?)` | Creates default tenant settings, features, subscription, usage row, and approval workflows after superadmin organization creation |
+
+---
+
 ## Core HR Services
 
 ### `employees.ts`
@@ -150,14 +169,16 @@ Event-driven notification creation.
 ## Organization & Member Services
 
 ### `organizations.ts`
-Organization CRUD.
+Current-tenant organization settings.
 
 | Function | Description |
 |----------|-------------|
-| `getOrganizations()` | Get all visible organizations |
-| `createOrganization(values)` | Create new organization |
-| `updateOrganization(id, values)` | Update organization |
-| `deleteOrganization(id)` | Delete organization |
+| `getCurrentOrganizationSettings()` | Fetch current tenant organization, settings, features, subscription, and usage via `/api/organization/settings` |
+| `updateCurrentOrganizationSettings(values)` | Persist current tenant company profile/settings via authenticated API route |
+| `getOrganizations()` | Compatibility wrapper returning the current tenant organization only |
+| `createOrganization(values)` | Disabled for workspace users; organization creation is handled by superadmin provisioning |
+| `updateOrganization(id, values)` | Compatibility wrapper for updating current tenant name/settings |
+| `deleteOrganization(id)` | Disabled; organization deletion is superadmin soft-delete only |
 
 ### `members.ts`
 Organization membership management.
