@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs head -20)",
+      "Bash(xargs grep -l \"export\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(xargs grep -l \"AccountingAccount\\\\|accounting_accounts\")",
+      "Bash(npx tsc *)",
+      "Bash(./node_modules/.bin/tsc --noEmit --skipLibCheck)",
+      "Bash(npx --package=typescript tsc --noEmit --skipLibCheck)",
+      "Bash(npm install *)",
+      "Bash(node scripts/seed-accounting-full.mjs)",
+      "Bash(node -e ' *)",
+      "Bash(grep -E \"^d:\\\\\\\\Msaratech.*src\")"
+    ]
+  }
+}

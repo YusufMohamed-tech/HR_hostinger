@@ -227,6 +227,21 @@ export async function POST(request: NextRequest) {
 
   if (logResult.error) return NextResponse.json({ message: logResult.error.message }, { status: 500 });
 
+  // Phase 1: Auto-post sales revenue to GL (non-blocking)
+  try {
+    const { autoPostSalesLog } = await import("@/lib/accounting/auto-posting");
+    const logData = logResult.data as Record<string, unknown>;
+    await autoPostSalesLog(admin, auth.orgId, auth.user.id, {
+      id: String(logData.id),
+      log_date: today,
+      grand_total: grandTotal,
+      vat_amount: 0,
+      company_id: companyId,
+    });
+  } catch {
+    // Auto-posting failure must not block sales log submission
+  }
+
   const [companyManagersResult, orgManagersResult] = await Promise.all([
     admin
       .from("sales_company_assignments")
