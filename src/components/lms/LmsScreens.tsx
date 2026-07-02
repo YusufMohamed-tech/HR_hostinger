@@ -942,7 +942,6 @@ function RichTextLessonEditor({ value, onChange }: { value: string; onChange: (v
           className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
           defaultValue="P"
           title="نمط النص"
-          onMouseDown={(event) => event.preventDefault()}
           onChange={(event) => {
             applyCommand("formatBlock", event.target.value);
             event.currentTarget.value = "P";
@@ -1190,224 +1189,303 @@ export function LmsCourseEditorScreen({ courseId }: { courseId?: string }) {
     <div className="space-y-6">
       <PageHeader
         title={editing ? "تحرير الدورة" : "إنشاء دورة"}
-        description="إعداد بيانات الدورة والمحتوى والاختبارات والمهام."
+        description="إعداد دورة تدريبية داخلية من خلال تبويبات واضحة لكل جزء."
         action={usableCourseId ? <Button asChild variant="outline"><Link href={`/lms/courses/${usableCourseId}/instructors`}>المدربون</Link></Button> : null}
       />
       <Message status={status} />
-      <form onSubmit={saveCourse} className="grid gap-4 lg:grid-cols-[1fr_320px]">
-        <Card>
-          <CardHeader>
-            <CardTitle>بيانات الدورة</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2 md:col-span-2">
-              <Label>العنوان</Label>
-              <Input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>الوصف</Label>
-              <textarea
-                className="min-h-24 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
-                value={form.description}
-                onChange={(event) => setForm({ ...form, description: event.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>التصنيف</Label>
-              <select className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm" value={form.category_id} onChange={(event) => setForm({ ...form, category_id: event.target.value })}>
-                <option value="">بدون تصنيف</option>
-                {categories.map((category) => <option key={str(category, "id")} value={str(category, "id")}>{str(category, "name")}</option>)}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>الظهور</Label>
-              <select className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm" value={form.visibility} onChange={(event) => setForm({ ...form, visibility: event.target.value })}>
-                <option value="assigned_only">مخصصة</option>
-                <option value="catalog">كتالوج</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>المستوى</Label>
-              <select className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm" value={form.difficulty} onChange={(event) => setForm({ ...form, difficulty: event.target.value })}>
-                <option value="beginner">مبتدئ</option>
-                <option value="intermediate">متوسط</option>
-                <option value="advanced">متقدم</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>المدة بالدقائق</Label>
-              <Input type="number" min="1" value={form.estimated_minutes} onChange={(event) => setForm({ ...form, estimated_minutes: event.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label>درجة النجاح</Label>
-              <Input type="number" min="0" max="100" value={form.passing_score} onChange={(event) => setForm({ ...form, passing_score: event.target.value })} />
-            </div>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.requires_quiz_pass} onChange={(event) => setForm({ ...form, requires_quiz_pass: event.target.checked })} />
-              يتطلب اجتياز اختبار
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.requires_task_pass} onChange={(event) => setForm({ ...form, requires_task_pass: event.target.checked })} />
-              يتطلب قبول مهمة
-            </label>
-            <div className="md:col-span-2">
-              <Button type="submit">{editing ? "حفظ التغييرات" : "إنشاء الدورة"}</Button>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>حالة الدورة</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <StatusBadge value={course?.status || "draft"} />
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="rounded-lg bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">الأقسام</div>
-                <div className="mt-1 font-semibold">{sections.length}</div>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">الدروس</div>
-                <div className="mt-1 font-semibold">{lessons.length}</div>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">الاختبارات</div>
-                <div className="mt-1 font-semibold">{quizzes.length}</div>
-              </div>
-              <div className="rounded-lg bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">المهام</div>
-                <div className="mt-1 font-semibold">{tasks.length}</div>
-              </div>
-            </div>
-            {usableCourseId ? <Button className="w-full" onClick={() => void publishLmsCourse(usableCourseId).then(() => reloadCourse())} type="button">نشر الدورة</Button> : null}
-          </CardContent>
-        </Card>
-      </form>
-      {usableCourseId ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card>
-            <CardHeader><CardTitle>الأقسام</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <form className="flex gap-2" onSubmit={addSection}>
-                <Input value={sectionTitle} onChange={(event) => setSectionTitle(event.target.value)} placeholder="عنوان القسم" />
-                <Button type="submit" size="icon" aria-label="إضافة قسم"><Plus className="h-4 w-4" /></Button>
-              </form>
-              {sections.map((section) => <div key={str(section, "id")} className="rounded-lg border border-slate-100 px-3 py-2 text-sm">{str(section, "title")}</div>)}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle>الدروس</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <form className="grid gap-3" onSubmit={addLesson}>
-                <Input value={lesson.title} onChange={(event) => setLesson({ ...lesson, title: event.target.value })} placeholder="عنوان الدرس" />
-                <div className="grid gap-3 md:grid-cols-2">
-                  <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={lesson.section_id} onChange={(event) => setLesson({ ...lesson, section_id: event.target.value })}>
-                    <option value="">بدون قسم</option>
-                    {sections.map((section) => <option key={str(section, "id")} value={str(section, "id")}>{str(section, "title")}</option>)}
-                  </select>
-                  <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={lesson.lesson_type} onChange={(event) => setLesson({ ...lesson, lesson_type: event.target.value })}>
-                    <option value="text">نص</option>
-                    <option value="video">فيديو</option>
-                    <option value="document">مستند</option>
-                    <option value="file">ملف</option>
-                    <option value="link">رابط</option>
-                  </select>
-                </div>
-                <textarea className="min-h-20 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={lesson.content} onChange={(event) => setLesson({ ...lesson, content: event.target.value })} placeholder="محتوى الدرس" />
-                <Input value={lesson.content_url} onChange={(event) => setLesson({ ...lesson, content_url: event.target.value })} placeholder="رابط خارجي" />
-                <div className="grid gap-3 md:grid-cols-2">
-                  <Input type="number" value={lesson.duration_minutes} onChange={(event) => setLesson({ ...lesson, duration_minutes: event.target.value })} />
-                  <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-600">
-                    <UploadCloud className="h-4 w-4" />
-                    <span>{uploadFile ? uploadFile.name : "ملف خاص"}</span>
-                    <input className="sr-only" type="file" onChange={(event) => setUploadFile(event.target.files?.[0] || null)} />
+      <Tabs defaultValue="course-data" className="space-y-4">
+        <TabsList className="h-auto w-full flex-wrap justify-start rounded-lg bg-white p-1 shadow-sm">
+          <TabsTrigger value="course-data" className="h-10 gap-2 px-4 data-active:bg-brand data-active:text-white">
+            <FileText className="h-4 w-4" />
+            بيانات الدورة
+          </TabsTrigger>
+          <TabsTrigger value="content" disabled={!usableCourseId} className="h-10 gap-2 px-4 data-active:bg-brand data-active:text-white">
+            <BookOpen className="h-4 w-4" />
+            المحتوى
+            <Badge className="border border-slate-200 bg-slate-50 text-slate-600">{lessons.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="quizzes" disabled={!usableCourseId} className="h-10 gap-2 px-4 data-active:bg-brand data-active:text-white">
+            <ClipboardCheck className="h-4 w-4" />
+            الاختبارات
+            <Badge className="border border-slate-200 bg-slate-50 text-slate-600">{quizzes.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="tasks" disabled={!usableCourseId} className="h-10 gap-2 px-4 data-active:bg-brand data-active:text-white">
+            <Send className="h-4 w-4" />
+            المهام والإعلانات
+            <Badge className="border border-slate-200 bg-slate-50 text-slate-600">{tasks.length}</Badge>
+          </TabsTrigger>
+        </TabsList>
+
+        {!usableCourseId ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            احفظ بيانات الدورة أولاً لتفعيل تبويبات المحتوى والاختبارات والمهام.
+          </div>
+        ) : null}
+
+        <TabsContent value="course-data" className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+            <form onSubmit={saveCourse}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>بيانات الدورة</CardTitle>
+                  <CardDescription>العنوان والتصنيف وشروط إكمال الدورة.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>العنوان</Label>
+                    <Input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} required />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>الوصف</Label>
+                    <textarea
+                      className="min-h-28 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                      value={form.description}
+                      onChange={(event) => setForm({ ...form, description: event.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>التصنيف</Label>
+                    <select className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm" value={form.category_id} onChange={(event) => setForm({ ...form, category_id: event.target.value })}>
+                      <option value="">بدون تصنيف</option>
+                      {categories.map((category) => <option key={str(category, "id")} value={str(category, "id")}>{str(category, "name")}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>الظهور</Label>
+                    <select className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm" value={form.visibility} onChange={(event) => setForm({ ...form, visibility: event.target.value })}>
+                      <option value="assigned_only">مخصصة</option>
+                      <option value="catalog">كتالوج</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>المستوى</Label>
+                    <select className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm" value={form.difficulty} onChange={(event) => setForm({ ...form, difficulty: event.target.value })}>
+                      <option value="beginner">مبتدئ</option>
+                      <option value="intermediate">متوسط</option>
+                      <option value="advanced">متقدم</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>المدة بالدقائق</Label>
+                    <Input type="number" min="1" value={form.estimated_minutes} onChange={(event) => setForm({ ...form, estimated_minutes: event.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>درجة النجاح</Label>
+                    <Input type="number" min="0" max="100" value={form.passing_score} onChange={(event) => setForm({ ...form, passing_score: event.target.value })} />
+                  </div>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+                    <input type="checkbox" checked={form.requires_quiz_pass} onChange={(event) => setForm({ ...form, requires_quiz_pass: event.target.checked })} />
+                    يتطلب اجتياز اختبار
                   </label>
-                </div>
-                <Button type="submit">إضافة درس</Button>
-              </form>
-              {lessons.map((item) => (
-                <div key={str(item, "id")} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm">
-                  <span>{str(item, "title")}</span>
-                  <div className="flex items-center gap-2">
-                    <Badge className="border border-slate-200 bg-slate-50 text-slate-600">{lessonTypeLabels[str(item, "lesson_type")]}</Badge>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => void deleteLmsLesson(str(item, "id")).then(() => reloadCourse())}
-                      className="text-rose-500 hover:text-rose-700"
-                    >
-                      حذف
-                    </Button>
+                  <label className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+                    <input type="checkbox" checked={form.requires_task_pass} onChange={(event) => setForm({ ...form, requires_task_pass: event.target.checked })} />
+                    يتطلب قبول مهمة
+                  </label>
+                  <div className="md:col-span-2">
+                    <Button type="submit">{editing ? "حفظ التغييرات" : "إنشاء الدورة"}</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </form>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>حالة الدورة</CardTitle>
+                <CardDescription>ملخص سريع قبل النشر.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <StatusBadge value={course?.status || "draft"} />
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">الأقسام</div>
+                    <div className="mt-1 font-semibold">{sections.length}</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">الدروس</div>
+                    <div className="mt-1 font-semibold">{lessons.length}</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">الاختبارات</div>
+                    <div className="mt-1 font-semibold">{quizzes.length}</div>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 p-3">
+                    <div className="text-xs text-slate-500">المهام</div>
+                    <div className="mt-1 font-semibold">{tasks.length}</div>
                   </div>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle>الاختبارات</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <form className="grid gap-3 md:grid-cols-2" onSubmit={addQuiz}>
-                <Input className="md:col-span-2" value={quiz.title} onChange={(event) => setQuiz({ ...quiz, title: event.target.value })} placeholder="عنوان الاختبار" />
-                <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={quiz.lesson_id} onChange={(event) => setQuiz({ ...quiz, lesson_id: event.target.value })}>
-                  <option value="">على مستوى الدورة</option>
-                  {lessons.map((item) => <option key={str(item, "id")} value={str(item, "id")}>{str(item, "title")}</option>)}
-                </select>
-                <Input type="number" placeholder="درجة النجاح %" value={quiz.passing_score} onChange={(event) => setQuiz({ ...quiz, passing_score: event.target.value })} />
-                <Input type="number" placeholder="عدد المحاولات" value={quiz.max_attempts} onChange={(event) => setQuiz({ ...quiz, max_attempts: event.target.value })} />
-                <Button type="submit">إضافة اختبار</Button>
-              </form>
-              {quizzes.map((item) => (
-                <QuizQuestionBuilder
-                  key={str(item, "id")}
-                  quiz={item}
-                  onDelete={() => void deleteLmsQuiz(str(item, "id")).then(() => reloadCourse())}
-                  onQuestionAdded={() => reloadCourse()}
-                />
-              ))}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader><CardTitle>المهام والإعلانات</CardTitle></CardHeader>
-            <CardContent className="space-y-5">
-              <form className="grid gap-3" onSubmit={addTask}>
-                <Input value={task.title} onChange={(event) => setTask({ ...task, title: event.target.value })} placeholder="عنوان المهمة" />
-                <textarea className="min-h-20 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={task.instructions} onChange={(event) => setTask({ ...task, instructions: event.target.value })} placeholder="تعليمات المهمة" />
-                <div className="grid gap-3 md:grid-cols-3">
-                  <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={task.task_type} onChange={(event) => setTask({ ...task, task_type: event.target.value })}>
-                    <option value="text_response">نص</option>
-                    <option value="file_upload">ملف</option>
-                    <option value="link_submission">رابط</option>
-                    <option value="mixed">مختلط</option>
+                {usableCourseId ? <Button className="w-full" onClick={() => void publishLmsCourse(usableCourseId).then(() => reloadCourse())} type="button">نشر الدورة</Button> : null}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="content" className="space-y-4">
+          {usableCourseId ? (
+            <div className="grid gap-4 xl:grid-cols-[320px_1fr]">
+              <Card>
+                <CardHeader>
+                  <CardTitle>أقسام الدورة</CardTitle>
+                  <CardDescription>قسّم المسار إلى وحدات سهلة التصفح.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <form className="flex gap-2" onSubmit={addSection}>
+                    <Input value={sectionTitle} onChange={(event) => setSectionTitle(event.target.value)} placeholder="عنوان القسم" />
+                    <Button type="submit" size="icon" aria-label="إضافة قسم"><Plus className="h-4 w-4" /></Button>
+                  </form>
+                  <div className="space-y-2">
+                    {sections.map((section, index) => (
+                      <div key={str(section, "id")} className="flex items-center gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-semibold text-slate-500">{index + 1}</span>
+                        <span className="font-medium text-slate-800">{str(section, "title")}</span>
+                      </div>
+                    ))}
+                    {sections.length === 0 ? <p className="text-sm text-slate-400">لا توجد أقسام بعد.</p> : null}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>محتوى الدرس</CardTitle>
+                  <CardDescription>اكتب النص بتنسيق غني أو أضف فيديو/مستند/رابط للدرس.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <form className="grid gap-4" onSubmit={addLesson}>
+                    <div className="grid gap-3 md:grid-cols-[1fr_180px_180px]">
+                      <Input value={lesson.title} onChange={(event) => setLesson({ ...lesson, title: event.target.value })} placeholder="عنوان الدرس" />
+                      <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={lesson.section_id} onChange={(event) => setLesson({ ...lesson, section_id: event.target.value })}>
+                        <option value="">بدون قسم</option>
+                        {sections.map((section) => <option key={str(section, "id")} value={str(section, "id")}>{str(section, "title")}</option>)}
+                      </select>
+                      <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={lesson.lesson_type} onChange={(event) => setLesson({ ...lesson, lesson_type: event.target.value })}>
+                        <option value="text">نص</option>
+                        <option value="video">فيديو</option>
+                        <option value="document">مستند</option>
+                        <option value="file">ملف</option>
+                        <option value="link">رابط</option>
+                      </select>
+                    </div>
+                    <RichTextLessonEditor value={lesson.content} onChange={(content) => setLesson({ ...lesson, content })} />
+                    <div className="grid gap-3 md:grid-cols-[1fr_160px_220px]">
+                      <Input value={lesson.content_url} onChange={(event) => setLesson({ ...lesson, content_url: event.target.value })} placeholder="رابط خارجي اختياري" />
+                      <Input type="number" value={lesson.duration_minutes} onChange={(event) => setLesson({ ...lesson, duration_minutes: event.target.value })} placeholder="المدة" />
+                      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-600">
+                        <UploadCloud className="h-4 w-4" />
+                        <span className="truncate">{uploadFile ? uploadFile.name : "رفع ملف خاص"}</span>
+                        <input className="sr-only" type="file" onChange={(event) => setUploadFile(event.target.files?.[0] || null)} />
+                      </label>
+                    </div>
+                    <Button type="submit" className="w-fit">إضافة درس</Button>
+                  </form>
+
+                  <div className="space-y-2 border-t border-slate-100 pt-4">
+                    {lessons.map((item) => (
+                      <div key={str(item, "id")} className="flex flex-col gap-2 rounded-lg border border-slate-100 bg-slate-50 px-3 py-3 text-sm md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <div className="font-medium text-slate-900">{str(item, "title")}</div>
+                          <div className="mt-1 text-xs text-slate-500">{num(item, "duration_minutes")} دقيقة</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge className="border border-slate-200 bg-white text-slate-600">{lessonTypeLabels[str(item, "lesson_type")]}</Badge>
+                          <Button size="xs" variant="ghost" onClick={() => void deleteLmsLesson(str(item, "id")).then(() => reloadCourse())} className="text-rose-500 hover:text-rose-700">حذف</Button>
+                        </div>
+                      </div>
+                    ))}
+                    {lessons.length === 0 ? <p className="text-sm text-slate-400">لا توجد دروس بعد.</p> : null}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="quizzes" className="space-y-4">
+          {usableCourseId ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>الاختبارات</CardTitle>
+                <CardDescription>اختبارات مرتبطة بالدورة أو بدرس محدد.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <form className="grid gap-3 md:grid-cols-2" onSubmit={addQuiz}>
+                  <Input className="md:col-span-2" value={quiz.title} onChange={(event) => setQuiz({ ...quiz, title: event.target.value })} placeholder="عنوان الاختبار" />
+                  <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={quiz.lesson_id} onChange={(event) => setQuiz({ ...quiz, lesson_id: event.target.value })}>
+                    <option value="">على مستوى الدورة</option>
+                    {lessons.map((item) => <option key={str(item, "id")} value={str(item, "id")}>{str(item, "title")}</option>)}
                   </select>
-                  <Input type="number" value={task.max_score} onChange={(event) => setTask({ ...task, max_score: event.target.value })} />
-                  <Input type="number" value={task.pass_score} onChange={(event) => setTask({ ...task, pass_score: event.target.value })} />
+                  <Input type="number" placeholder="درجة النجاح %" value={quiz.passing_score} onChange={(event) => setQuiz({ ...quiz, passing_score: event.target.value })} />
+                  <Input type="number" placeholder="عدد المحاولات" value={quiz.max_attempts} onChange={(event) => setQuiz({ ...quiz, max_attempts: event.target.value })} />
+                  <Button type="submit" className="w-fit">إضافة اختبار</Button>
+                </form>
+                <div className="space-y-3 border-t border-slate-100 pt-4">
+                  {quizzes.map((item) => (
+                    <QuizQuestionBuilder
+                      key={str(item, "id")}
+                      quiz={item}
+                      onDelete={() => void deleteLmsQuiz(str(item, "id")).then(() => reloadCourse())}
+                      onQuestionAdded={() => reloadCourse()}
+                    />
+                  ))}
+                  {quizzes.length === 0 ? <p className="text-sm text-slate-400">لا توجد اختبارات بعد.</p> : null}
                 </div>
-                <Button type="submit">إضافة مهمة</Button>
-              </form>
-              <div className="space-y-2">
-                {tasks.map((item) => (
-                  <div key={str(item, "id")} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm">
-                    <span>{str(item, "title")}</span>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => void deleteLmsTask(str(item, "id")).then(() => reloadCourse())}
-                      className="text-rose-500 hover:text-rose-700"
-                    >
-                      حذف
-                    </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+        </TabsContent>
+
+        <TabsContent value="tasks" className="space-y-4">
+          {usableCourseId ? (
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>المهام</CardTitle>
+                  <CardDescription>مشاريع أو واجبات مرتبطة بإكمال الدورة.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5">
+                  <form className="grid gap-3" onSubmit={addTask}>
+                    <Input value={task.title} onChange={(event) => setTask({ ...task, title: event.target.value })} placeholder="عنوان المهمة" />
+                    <textarea className="min-h-24 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={task.instructions} onChange={(event) => setTask({ ...task, instructions: event.target.value })} placeholder="تعليمات المهمة" />
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <select className="h-9 rounded-lg border border-input bg-background px-3 text-sm" value={task.task_type} onChange={(event) => setTask({ ...task, task_type: event.target.value })}>
+                        <option value="text_response">نص</option>
+                        <option value="file_upload">ملف</option>
+                        <option value="link_submission">رابط</option>
+                        <option value="mixed">مختلط</option>
+                      </select>
+                      <Input type="number" value={task.max_score} onChange={(event) => setTask({ ...task, max_score: event.target.value })} placeholder="الدرجة" />
+                      <Input type="number" value={task.pass_score} onChange={(event) => setTask({ ...task, pass_score: event.target.value })} placeholder="درجة النجاح" />
+                    </div>
+                    <Button type="submit" className="w-fit">إضافة مهمة</Button>
+                  </form>
+                  <div className="space-y-2 border-t border-slate-100 pt-4">
+                    {tasks.map((item) => (
+                      <div key={str(item, "id")} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+                        <span className="font-medium text-slate-900">{str(item, "title")}</span>
+                        <Button size="xs" variant="ghost" onClick={() => void deleteLmsTask(str(item, "id")).then(() => reloadCourse())} className="text-rose-500 hover:text-rose-700">حذف</Button>
+                      </div>
+                    ))}
+                    {tasks.length === 0 ? <p className="text-sm text-slate-400">لا توجد مهام بعد.</p> : null}
                   </div>
-                ))}
-              </div>
-              <form className="grid gap-3 border-t border-slate-100 pt-4" onSubmit={addAnnouncement}>
-                <Input value={announcement.title} onChange={(event) => setAnnouncement({ ...announcement, title: event.target.value })} placeholder="عنوان الإعلان" />
-                <textarea className="min-h-20 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={announcement.body} onChange={(event) => setAnnouncement({ ...announcement, body: event.target.value })} placeholder="نص الإعلان" />
-                <Button type="submit" variant="outline">نشر إعلان</Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-      ) : null}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>الإعلانات</CardTitle>
+                  <CardDescription>رسائل تظهر للمتعلمين داخل مجتمع الدورة.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form className="grid gap-3" onSubmit={addAnnouncement}>
+                    <Input value={announcement.title} onChange={(event) => setAnnouncement({ ...announcement, title: event.target.value })} placeholder="عنوان الإعلان" />
+                    <textarea className="min-h-32 rounded-lg border border-input bg-background px-3 py-2 text-sm" value={announcement.body} onChange={(event) => setAnnouncement({ ...announcement, body: event.target.value })} placeholder="نص الإعلان" />
+                    <Button type="submit" variant="outline" className="w-fit">نشر إعلان</Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -1810,7 +1888,7 @@ export function LmsPlayerScreen({ enrollmentId }: { enrollmentId: string }) {
                       <h3 className="font-semibold text-slate-950">{str(lessonItem, "title")}</h3>
                       <Badge className="border border-slate-200 bg-slate-50 text-slate-600">{lessonTypeLabels[lessonType]}</Badge>
                     </div>
-                    {!hasMedia && <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{str(lessonItem, "content") || str(lessonItem, "content_url")}</p>}
+                    {!hasMedia && <RichLessonContent html={str(lessonItem, "content")} fallbackUrl={str(lessonItem, "content_url")} />}
                     {hasMedia && <VideoLessonPlayer lesson={lessonItem} />}
                   </div>
                   <Button size="sm" variant={completed ? "outline" : "default"} onClick={() => void complete(id)}>
