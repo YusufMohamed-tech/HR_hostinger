@@ -19,6 +19,7 @@ function requiredFeatureForPath(pathname: string) {
   if (normalized.startsWith("/payroll")) return "payroll";
   if (normalized.startsWith("/personnel")) return "personnel";
   if (normalized.startsWith("/lms") || normalized.startsWith("/api/lms")) return "lms";
+  if (normalized.startsWith("/learn") || normalized.startsWith("/api/learn")) return "lms";
   return null;
 }
 

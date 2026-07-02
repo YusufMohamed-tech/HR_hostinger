@@ -606,6 +606,7 @@ export function LmsCoursesScreen() {
                       <TableCell>{num(row, "estimated_minutes")} دقيقة</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
+                          <Button asChild size="sm"><Link href={`/lms/courses/${id}/studio`}>الاستوديو</Link></Button>
                           <Button asChild size="sm" variant="outline"><Link href={`/lms/courses/${id}/edit`}>تحرير</Link></Button>
                           <Button asChild size="sm" variant="outline"><Link href={`/lms/courses/${id}/instructors`}>المدربون</Link></Button>
                           <Button size="sm" variant="outline" onClick={() => void publish(id)}>نشر</Button>

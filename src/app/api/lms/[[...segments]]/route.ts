@@ -56,9 +56,24 @@ import {
   upsertLmsCourse,
 } from "@/lib/server/lms";
 import {
+  deleteCourseResource,
+  deleteRubricItem,
+  getCourseBuilderState,
+  getLearnerPreview,
+  getProjectRubric,
+  getPublishChecklist,
+  listCourseResources,
+  reviewProjectWithRubric,
+  updateCourseBuilderOverview,
+  upsertCourseResource,
+  upsertProjectRubric,
+  upsertWorkspaceConfig,
+} from "@/lib/server/lms-builder";
+import {
   getValidationMessage,
   lmsAnnouncementSchema,
   lmsAssignmentSchema,
+  lmsBuilderOverviewSchema,
   lmsCategorySchema,
   lmsCommunityCommentSchema,
   lmsCommunityPostSchema,
@@ -68,10 +83,14 @@ import {
   lmsLearningPathSchema,
   lmsLessonSchema,
   lmsQuizSchema,
+  lmsResourceSchema,
+  lmsRubricReviewSchema,
+  lmsRubricSchema,
   lmsSectionSchema,
   lmsTaskReviewSchema,
   lmsTaskSchema,
   lmsTaskSubmissionSchema,
+  lmsWorkspaceConfigSchema,
 } from "@/lib/validation";
 
 type RouteContext = { params?: { segments?: string[] } };
@@ -145,6 +164,11 @@ const getHandler: Handler = async (request, auth, routeContext) => {
       return response((course?.announcements as unknown[]) ?? []);
     }
     if (a === "courses" && b && c === "community") return response(await listCommunity(auth, b));
+    if (a === "courses" && b && c === "builder") return response(await getCourseBuilderState(auth, b));
+    if (a === "courses" && b && c === "publish-checklist") return response(await getPublishChecklist(auth, b));
+    if (a === "courses" && b && c === "learner-preview") return response(await getLearnerPreview(auth, b));
+    if (a === "courses" && b && c === "resources") return response(await listCourseResources(auth, b));
+    if (a === "tasks" && b && c === "rubric") return response(await getProjectRubric(auth, b));
     if (a === "my" && !b) return response(await getLearnerDashboard(auth));
     if (a === "my" && b) return response(await getEnrollmentDetail(auth, b));
     if (a === "certificates" && !b) return response(await listCertificates(auth));
@@ -240,6 +264,26 @@ const postHandler: Handler = async (request, auth, routeContext) => {
       if (!parsed.ok) return parsed.error;
       return response(await reviewSubmission(auth, b, parsed.data));
     }
+    if (a === "submissions" && b && c === "rubric-review") {
+      const parsed = validate(lmsRubricReviewSchema, body);
+      if (!parsed.ok) return parsed.error;
+      return response(await reviewProjectWithRubric(auth, b, parsed.data));
+    }
+    if (a === "courses" && b && c === "resources") {
+      const parsed = validate(lmsResourceSchema, body);
+      if (!parsed.ok) return parsed.error;
+      return response(await upsertCourseResource(auth, b, parsed.data));
+    }
+    if (a === "courses" && b && c === "workspace-config") {
+      const parsed = validate(lmsWorkspaceConfigSchema, body);
+      if (!parsed.ok) return parsed.error;
+      return response(await upsertWorkspaceConfig(auth, b, parsed.data));
+    }
+    if (a === "tasks" && b && c === "rubric") {
+      const parsed = validate(lmsRubricSchema, body);
+      if (!parsed.ok) return parsed.error;
+      return response(await upsertProjectRubric(auth, b, parsed.data));
+    }
     if (a === "my" && b && c === "lessons" && d && e === "complete") return response(await completeLesson(auth, b, d));
     if (a === "my" && b && c === "quizzes" && d && e === "attempts") return response(await submitQuizAttempt(auth, b, d, (body as Record<string, unknown>).answers as Record<string, unknown> || {}));
     if (a === "my" && b && c === "tasks" && d && e === "submit") {
@@ -289,6 +333,16 @@ const patchHandler: Handler = async (request, auth, routeContext) => {
       if (!parsed.ok) return parsed.error;
       return response(await upsertCourseInstructor(auth, b, parsed.data, d));
     }
+    if (a === "courses" && b && c === "builder" && d === "overview") {
+      const parsed = validate(lmsBuilderOverviewSchema, body);
+      if (!parsed.ok) return parsed.error;
+      return response(await updateCourseBuilderOverview(auth, b, parsed.data));
+    }
+    if (a === "courses" && b && c === "resources" && d) {
+      const parsed = validate(lmsResourceSchema.partial(), body);
+      if (!parsed.ok) return parsed.error;
+      return response(await upsertCourseResource(auth, b, parsed.data, d));
+    }
     if (a === "lessons" && b) {
       const parsed = validate(lmsLessonSchema.partial(), body);
       if (!parsed.ok) return parsed.error;
@@ -332,6 +386,8 @@ const deleteHandler: Handler = async (_request, auth, routeContext) => {
     const parts = segments(routeContext);
     const [a, b, c, d] = parts;
     if (a === "categories" && b) return response(await archiveLmsCategory(auth, b));
+    if (a === "resources" && b) return response(await deleteCourseResource(auth, b));
+    if (a === "rubric-items" && b) return response(await deleteRubricItem(auth, b));
     if (a === "courses" && b && !c) return response(await archiveLmsCourse(auth, b));
     if (a === "courses" && b && c === "instructors" && d) return response(await removeCourseInstructor(auth, b, d));
     if (a === "lessons" && b) return response(await archiveCourseLesson(auth, b));
