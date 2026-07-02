@@ -10,7 +10,9 @@ import {
   archiveLmsCourse,
   assignLmsLearning,
   listAssignmentRules,
+  listOrgDepartments,
   listOrgEmployees,
+  listOrgLocations,
   deleteQuizQuestion,
   completeLesson,
   createCommunityComment,
@@ -180,6 +182,8 @@ const getHandler: Handler = async (request, auth, routeContext) => {
     }
     if (a === "assignments") return response(await listAssignmentRules(auth));
     if (a === "employees") return response(await listOrgEmployees(auth));
+    if (a === "departments") return response(await listOrgDepartments(auth));
+    if (a === "locations") return response(await listOrgLocations(auth));
 
     return NextResponse.json({ message: "LMS endpoint not found." }, { status: 404 });
   } catch (error) {

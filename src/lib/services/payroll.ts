@@ -53,6 +53,11 @@ export async function generatePayslip(orgId: string, employeeId: string, month: 
   const totalDeductions = fixedDeductions + absenceDeduction + lateDeduction;
   const netSalary = Math.max(0, baseSalary + totalAllowances - totalDeductions);
 
+  // GOSI — Saudi rates, capped at SAR 45,000/month base salary
+  const gosiBase = Math.min(baseSalary, 45000);
+  const employeeGosi = Math.round(gosiBase * 0.0975 * 100) / 100;
+  const employerGosi = Math.round(gosiBase * 0.1175 * 100) / 100;
+
   const values = {
     org_id: orgId,
     employee_id: employeeId,
@@ -61,12 +66,15 @@ export async function generatePayslip(orgId: string, employeeId: string, month: 
     total_allowances: totalAllowances,
     total_deductions: totalDeductions,
     net_salary: netSalary,
+    employee_gosi: employeeGosi,
+    employer_gosi: employerGosi,
     attendance_days: attendanceDays,
     allowances_details: fixedBonus > 0 ? [{ label: "Fixed bonus", amount: fixedBonus }] : [],
     deductions_details: [
       fixedDeductions > 0 ? { label: "Fixed deductions", amount: fixedDeductions } : null,
       absenceDeduction > 0 ? { label: "Attendance absence deduction", amount: absenceDeduction } : null,
       lateDeduction > 0 ? { label: "Late arrival deduction", amount: lateDeduction } : null,
+      employeeGosi > 0 ? { label: "Employee GOSI (9.75%)", amount: employeeGosi, type: "gosi" } : null,
     ].filter(Boolean),
     payroll_notes: `Attendance days: ${attendanceDays}; late minutes: ${lateMinutes}`,
     status: 'draft'

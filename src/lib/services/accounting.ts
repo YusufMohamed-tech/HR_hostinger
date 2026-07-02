@@ -242,3 +242,90 @@ export function createInvoiceFromSalesLog(values: { sales_log_id: string; custom
     body: JSON.stringify(values),
   });
 }
+
+// Budgets
+export function getAccountingBudgets() {
+  return apiFetch<Record<string, unknown>[]>("/api/accounting/budgets");
+}
+
+export function getAccountingBudget(id: string) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/budgets/${id}`);
+}
+
+export function createAccountingBudget(values: { name: string; fiscal_year: number; lines?: Record<string, unknown>[] }) {
+  return apiFetch<Record<string, unknown>>("/api/accounting/budgets", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function updateAccountingBudget(id: string, values: Record<string, unknown>) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/budgets/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(values),
+  });
+}
+
+export function approveBudget(id: string) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/budgets/${id}/approve`, { method: "POST", body: "{}" });
+}
+
+// Periods
+export function getAccountingPeriods() {
+  return apiFetch<Record<string, unknown>[]>("/api/accounting/periods");
+}
+
+export function closePeriod(id: string) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/periods/${id}/close`, { method: "POST", body: "{}" });
+}
+
+// Report Export
+export function exportReport(report: string, format: string, params?: Record<string, string | undefined>) {
+  return apiFetch<unknown>("/api/accounting/reports/export", {
+    method: "POST",
+    body: JSON.stringify({ report, format, ...params }),
+  });
+}
+
+// Auto-Posting Endpoints
+export function autoPostPayroll(month: string) {
+  return apiFetch<{ success: boolean; journalEntryId?: string; month: string }>("/api/accounting/payroll/auto-post", {
+    method: "POST",
+    body: JSON.stringify({ month }),
+  });
+}
+
+export function capitalizeAsset(values: { asset_id: string; asset_name: string; purchase_price: number; paid_immediately?: boolean }) {
+  return apiFetch<{ success: boolean; journalEntryId?: string }>("/api/accounting/assets/capitalize", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function runDepreciation(month: string) {
+  return apiFetch<{ success: boolean; journalEntryId?: string; assetsProcessed: number }>("/api/accounting/assets/run-depreciation", {
+    method: "POST",
+    body: JSON.stringify({ month }),
+  });
+}
+
+export function runEOSBAccrual(month: string) {
+  return apiFetch<{ success: boolean; journalEntryId?: string; employeesProcessed: number }>("/api/accounting/eosb/run-accrual", {
+    method: "POST",
+    body: JSON.stringify({ month }),
+  });
+}
+
+export function settleEOSB(employeeId: string) {
+  return apiFetch<{ success: boolean; journalEntryId?: string; settlementAmount: number }>("/api/accounting/eosb/settle", {
+    method: "POST",
+    body: JSON.stringify({ employee_id: employeeId }),
+  });
+}
+
+export function recordGOSIPayment(values: { month: string; amount: number }) {
+  return apiFetch<{ success: boolean; journalEntryId?: string }>("/api/accounting/gosi/record-payment", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
