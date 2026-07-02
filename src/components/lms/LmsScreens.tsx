@@ -1193,7 +1193,7 @@ export function LmsCourseEditorScreen({ courseId }: { courseId?: string }) {
         action={usableCourseId ? <Button asChild variant="outline"><Link href={`/lms/courses/${usableCourseId}/instructors`}>المدربون</Link></Button> : null}
       />
       <Message status={status} />
-      <Tabs defaultValue="course-data" className="space-y-4">
+      <Tabs defaultValue="course-data" className="flex-col gap-4">
         <TabsList className="h-auto w-full flex-wrap justify-start rounded-lg bg-white p-1 shadow-sm">
           <TabsTrigger value="course-data" className="h-10 gap-2 px-4 data-active:bg-brand data-active:text-white">
             <FileText className="h-4 w-4" />
