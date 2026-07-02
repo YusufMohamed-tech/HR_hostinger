@@ -11,8 +11,8 @@ type Db = {
 type LmsAuth = TenantAuthContext;
 type RecordMap = Record<string, unknown>;
 
-const managementRoles = new Set(["admin", "hr_admin"]);
-const elevatedRoles = new Set(["admin", "hr_admin", "training_manager"]);
+const managementRoles = new Set(["admin", "hr_admin", "super_admin", "superadmin"]);
+const elevatedRoles = new Set(["admin", "hr_admin", "training_manager", "super_admin", "superadmin"]);
 const allowedLmsMimeTypes = new Set([
   "image/jpeg",
   "image/png",
@@ -57,12 +57,20 @@ function numberValue(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function isManagement(auth: LmsAuth) {
-  return managementRoles.has(auth.role);
+function roleKey(auth: LmsAuth) {
+  return String(auth.role || "").trim().toLowerCase();
 }
 
-function isElevated(auth: LmsAuth) {
-  return elevatedRoles.has(auth.role);
+export function isManagement(auth: LmsAuth) {
+  return managementRoles.has(roleKey(auth));
+}
+
+export function isElevated(auth: LmsAuth) {
+  return elevatedRoles.has(roleKey(auth));
+}
+
+export function isTrainingManager(auth: LmsAuth) {
+  return roleKey(auth) === "training_manager";
 }
 
 function safeFilename(name: string) {
@@ -96,7 +104,7 @@ function stripQuizAnswers(course: RecordMap | null) {
   return course;
 }
 
-async function getEmployeeId(auth: LmsAuth) {
+export async function getEmployeeId(auth: LmsAuth) {
   if (auth.employeeId) return auth.employeeId;
   const result = await db(auth)
     .from("employees")
@@ -121,7 +129,7 @@ async function getEmployeeUserId(auth: LmsAuth, employeeId: string) {
 
 async function isTrainingManagerForEmployee(auth: LmsAuth, employeeId: string) {
   if (isManagement(auth)) return true;
-  if (auth.role !== "training_manager") return false;
+  if (!isTrainingManager(auth)) return false;
   const managerEmployeeId = await getEmployeeId(auth);
   if (!managerEmployeeId) return false;
   const result = await db(auth)
@@ -155,14 +163,14 @@ async function getInstructor(auth: LmsAuth, courseId: string) {
   return result.data ? asRecord(result.data) : null;
 }
 
-async function canManageCourse(auth: LmsAuth, courseId: string, permission: "can_edit_content" | "can_review_tasks" | "can_moderate_community" | "any" = "can_edit_content") {
+export async function canManageCourse(auth: LmsAuth, courseId: string, permission: "can_edit_content" | "can_review_tasks" | "can_moderate_community" | "any" = "can_edit_content") {
   if (isManagement(auth)) return true;
   const instructor = await getInstructor(auth, courseId);
   if (instructor) {
     if (permission === "any") return true;
     if (instructor[permission] === true) return true;
   }
-  if (auth.role !== "training_manager") return false;
+  if (!isTrainingManager(auth)) return false;
   const result = await db(auth)
     .from("lms_courses")
     .select("id, created_by")
@@ -300,7 +308,7 @@ export async function listLmsCourses(auth: LmsAuth, mode = "manage") {
       .neq("status", "cancelled")
       .order("assigned_at", { ascending: false });
     if (result.error) throw new Error(result.error.message);
-    return result.data ?? [];
+    return asRows(result.data).filter((row) => text(asRecord(row.course).status) === "published");
   }
 
   let query = db(auth)
@@ -309,14 +317,14 @@ export async function listLmsCourses(auth: LmsAuth, mode = "manage") {
     .eq("org_id", auth.orgId)
     .order("updated_at", { ascending: false });
 
-  if (!isManagement(auth) && auth.role === "training_manager") {
+  if (!isManagement(auth) && isTrainingManager(auth)) {
     query = query.or(`created_by.eq.${auth.user.id}`);
   }
 
   const result = await query;
   if (result.error) throw new Error(result.error.message);
 
-  if (!isManagement(auth) && auth.role !== "training_manager") {
+  if (!isManagement(auth) && !isTrainingManager(auth)) {
     const ownInstructor = await db(auth)
       .from("lms_course_instructors")
       .select("course_id")
@@ -425,7 +433,7 @@ export async function listCourseInstructors(auth: LmsAuth, courseId: string) {
 export async function upsertCourseInstructor(auth: LmsAuth, courseId: string, values: RecordMap, instructorId?: string) {
   await assertElevated(auth);
   const employeeId = text(values.employee_id);
-  if (auth.role === "training_manager" && !(await isTrainingManagerForEmployee(auth, employeeId))) {
+  if (isTrainingManager(auth) && !(await isTrainingManagerForEmployee(auth, employeeId))) {
     throw new Error("You can assign instructors only within your scope.");
   }
   const employee = await getEmployeeUserId(auth, employeeId);
@@ -635,8 +643,9 @@ async function loadAssignmentTargets(auth: LmsAuth, values: RecordMap) {
     .from("employees")
     .select("id, user_id, full_name, manager_id, department_id, location_id, status, department:department_id(manager_employee_id), location:location_id(manager_employee_id)")
     .eq("org_id", auth.orgId)
-    .eq("status", "Active");
+    .ilike("status", "active");
 
+  if (assignmentType !== "all" && !targetId) throw new Error("Select an assignment target.");
   if (assignmentType === "employee") query = query.eq("id", targetId);
   if (assignmentType === "department") query = query.eq("department_id", targetId);
   if (assignmentType === "location" || assignmentType === "team") query = query.eq("location_id", targetId);
@@ -644,7 +653,7 @@ async function loadAssignmentTargets(auth: LmsAuth, values: RecordMap) {
   const result = await query;
   if (result.error) throw new Error(result.error.message);
   let employees = asRows(result.data);
-  if (auth.role === "training_manager") {
+  if (isTrainingManager(auth)) {
     const scoped: RecordMap[] = [];
     for (const employee of employees) {
       if (await isTrainingManagerForEmployee(auth, text(employee.id))) scoped.push(employee);
@@ -658,6 +667,22 @@ export async function assignLmsLearning(auth: LmsAuth, values: RecordMap) {
   await assertElevated(auth);
   const courseId = text(values.course_id);
   const learningPathId = text(values.learning_path_id);
+  let courseIds = courseId ? [courseId] : [];
+  if (learningPathId) {
+    const pathCourses = await db(auth)
+      .from("lms_learning_path_courses")
+      .select("course_id")
+      .eq("org_id", auth.orgId)
+      .eq("learning_path_id", learningPathId)
+      .order("sort_order", { ascending: true });
+    if (pathCourses.error) throw new Error(pathCourses.error.message);
+    courseIds = asRows(pathCourses.data).map((row) => text(row.course_id)).filter(Boolean);
+  }
+  if (courseIds.length === 0) throw new Error("Select a course or learning path with courses.");
+
+  const employees = await loadAssignmentTargets(auth, values);
+  if (employees.length === 0) throw new Error("Select at least one active employee for this assignment.");
+
   const ruleResult = await db(auth).from("lms_assignment_rules").insert({
     org_id: auth.orgId,
     course_id: courseId || null,
@@ -670,19 +695,6 @@ export async function assignLmsLearning(auth: LmsAuth, values: RecordMap) {
   } as never).select().single();
   if (ruleResult.error) throw new Error(ruleResult.error.message);
 
-  let courseIds = courseId ? [courseId] : [];
-  if (learningPathId) {
-    const pathCourses = await db(auth)
-      .from("lms_learning_path_courses")
-      .select("course_id")
-      .eq("org_id", auth.orgId)
-      .eq("learning_path_id", learningPathId)
-      .order("sort_order", { ascending: true });
-    if (pathCourses.error) throw new Error(pathCourses.error.message);
-    courseIds = asRows(pathCourses.data).map((row) => text(row.course_id)).filter(Boolean);
-  }
-
-  const employees = await loadAssignmentTargets(auth, values);
   const created: RecordMap[] = [];
   for (const employee of employees) {
     for (const targetCourseId of courseIds) {
@@ -769,7 +781,7 @@ export async function getEnrollmentDetail(auth: LmsAuth, enrollmentId: string) {
   };
 }
 
-async function getEnrollmentForLearner(auth: LmsAuth, enrollmentId: string) {
+export async function getEnrollmentForLearner(auth: LmsAuth, enrollmentId: string) {
   const employeeId = await getEmployeeId(auth);
   const result = await db(auth)
     .from("lms_enrollments")
@@ -1155,7 +1167,7 @@ export async function listCertificates(auth: LmsAuth) {
   if (result.error) throw new Error(result.error.message);
   let certificateRows = asRows(result.data);
   if (isManagement(auth)) return certificateRows;
-  if (auth.role === "training_manager") {
+  if (isTrainingManager(auth)) {
     const scoped: RecordMap[] = [];
     for (const certificate of certificateRows) {
       if (await isTrainingManagerForEmployee(auth, text(certificate.employee_id))) scoped.push(certificate);
@@ -1180,7 +1192,7 @@ export async function getCertificate(auth: LmsAuth, certificateId: string) {
   const canView =
     isManagement(auth)
     || text(certificate.employee_id) === employeeId
-    || (auth.role === "training_manager" && await isTrainingManagerForEmployee(auth, text(certificate.employee_id)))
+    || (isTrainingManager(auth) && await isTrainingManagerForEmployee(auth, text(certificate.employee_id)))
     || await canManageCourse(auth, text(certificate.course_id), "any");
   if (!canView) {
     throw new Error("Forbidden");
@@ -1285,7 +1297,7 @@ export async function getLmsReports(auth: LmsAuth) {
   let postRows = asRows(posts.data);
   let feedbackRows = asRows(feedback.data);
 
-  if (auth.role === "training_manager") {
+  if (isTrainingManager(auth)) {
     const scoped: RecordMap[] = [];
     for (const enrollment of enrollmentRows) {
       if (await isTrainingManagerForEmployee(auth, text(enrollment.employee_id))) scoped.push(enrollment);
@@ -1298,7 +1310,7 @@ export async function getLmsReports(auth: LmsAuth) {
 
   const scopedEnrollmentIds = new Set(enrollmentRows.map((row) => text(row.id)).filter(Boolean));
   const scopedCourseIds = new Set(enrollmentRows.map((row) => text(row.course_id)).filter(Boolean));
-  const shouldScopeReportRows = auth.role === "training_manager" || !isElevated(auth);
+  const shouldScopeReportRows = isTrainingManager(auth) || !isElevated(auth);
 
   if (shouldScopeReportRows) {
     attemptRows = attemptRows.filter((row) => scopedEnrollmentIds.has(text(row.enrollment_id)));
@@ -1401,7 +1413,7 @@ export async function createSignedLmsUrl(auth: LmsAuth, path: string) {
   if (area === "submissions") {
     const submission = await getSubmission(auth, targetId);
     if (text(submission.course_id) !== courseId) throw new Error("Forbidden");
-  } else if (area === "lessons") {
+  } else if (area === "lessons" || area === "resources") {
     const course = await getLmsCourse(auth, courseId, { learner: true });
     if (!course) throw new Error("Forbidden");
   } else if (area === "tasks" || area === "community") {
@@ -1488,7 +1500,7 @@ export async function listOrgEmployees(auth: LmsAuth) {
     .from("employees")
     .select("id, full_name, employee_code, job_title")
     .eq("org_id", auth.orgId)
-    .eq("status", "Active")
+    .ilike("status", "active")
     .order("full_name", { ascending: true });
   if (result.error) throw new Error(result.error.message);
   return result.data ?? [];

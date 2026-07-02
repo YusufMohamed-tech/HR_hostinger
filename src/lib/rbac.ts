@@ -110,6 +110,8 @@ export function canAccessPath(role: Role, pathname: string): boolean {
       normalizedPath.startsWith("/api/accounting") ||
       normalizedPath.startsWith("/lms") ||
       normalizedPath.startsWith("/api/lms") ||
+      normalizedPath.startsWith("/learn") ||
+      normalizedPath.startsWith("/api/learn") ||
       normalizedPath.startsWith("/payroll") ||
       normalizedPath.startsWith("/notifications") ||
       normalizedPath.startsWith("/settings")
@@ -137,6 +139,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath.startsWith("/api/lms")) {
+    return ALL_ROLES.includes(role);
+  }
+
+  if (normalizedPath.startsWith("/api/learn")) {
     return ALL_ROLES.includes(role);
   }
 
@@ -175,6 +181,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath.startsWith("/lms")) {
+    return ALL_ROLES.includes(role);
+  }
+
+  if (normalizedPath.startsWith("/learn")) {
     return ALL_ROLES.includes(role);
   }
 

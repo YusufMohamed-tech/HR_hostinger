@@ -52,3 +52,73 @@ export type LmsReportSummary = {
   communityPosts: number;
   feedbackAverage: number;
 };
+
+// --- LMS v44 classroom ---
+
+export type LmsSyllabusItemKind = "lesson" | "quiz" | "project";
+export type LmsSyllabusItemStatus =
+  | "completed"
+  | "passed"
+  | "available"
+  | "submitted"
+  | "in_review"
+  | "needs_revision"
+  | "locked";
+
+export type LmsSyllabusItem = {
+  kind: LmsSyllabusItemKind;
+  id: string;
+  title: string;
+  subtitle: string | null;
+  status: LmsSyllabusItemStatus;
+  is_required: boolean;
+  meta: LmsRecord;
+};
+
+export type LmsSyllabusModule = {
+  id: string;
+  title: string;
+  description: string | null;
+  section_type: string;
+  is_milestone: boolean;
+  estimated_minutes: number | null;
+  items: LmsSyllabusItem[];
+};
+
+export type LmsSyllabusPart = LmsSyllabusModule & {
+  modules: LmsSyllabusModule[];
+};
+
+export type LmsLearnerHome = {
+  continueLearning: LmsRecord | null;
+  active: LmsRecord[];
+  completed: LmsRecord[];
+  deadlines: LmsRecord[];
+  announcements: LmsRecord[];
+  certificates: LmsRecord[];
+  stats: {
+    assigned: number;
+    inProgress: number;
+    completed: number;
+    overdue: number;
+    certificates: number;
+  };
+};
+
+export type LmsClassroomDashboard = {
+  enrollment: LmsRecord;
+  course: LmsRecord;
+  parts: LmsSyllabusPart[];
+  nextAction: LmsSyllabusItem | null;
+  checklist: {
+    totalRequired: number;
+    completedRequired: number;
+    lessons: { total: number; done: number };
+    quizzes: { total: number; passed: number };
+    projects: { total: number; accepted: number };
+  };
+  instructors: LmsRecord[];
+  deadlines: LmsRecord[];
+  certificate: LmsRecord | null;
+  workspaceState: LmsRecord | null;
+};

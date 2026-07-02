@@ -13,7 +13,8 @@ import { getLeaveRequests, getLeaveBalances } from "@/lib/services/leaves";
 import { getNotifications } from "@/lib/services/notifications";
 import { getOrganizations } from "@/lib/services/organizations";
 import { getLmsCatalog, getLmsCourses, getLmsDashboard, getLmsReports, getLmsAssignments } from "@/lib/services/lms";
-import type { LmsLearnerDashboard } from "@/types/lms";
+import { getLearnerHome, getClassroom } from "@/lib/services/learn";
+import type { LmsLearnerDashboard, LmsLearnerHome, LmsClassroomDashboard } from "@/types/lms";
 
 type Fetcher<T> = (orgId: string) => Promise<{ data: T | null; error: unknown }>;
 
@@ -348,5 +349,53 @@ export function useLmsAssignments() {
   return { data, loading, error, refetch };
 }
 
+export function useLearnerHome() {
+  const [data, setData] = useState<LmsLearnerHome | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    const result = await getLearnerHome();
+    if (result.error) {
+      setError(result.error.message);
+      setData(null);
+    } else {
+      setData(result.data);
+      setError(null);
+    }
+    setLoading(false);
+  }, []);
 
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  return { data, loading, error, refetch };
+}
+
+export function useClassroom(enrollmentId: string) {
+  const [data, setData] = useState<LmsClassroomDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(async () => {
+    if (!enrollmentId) return;
+    setLoading(true);
+    const result = await getClassroom(enrollmentId);
+    if (result.error) {
+      setError(result.error.message);
+      setData(null);
+    } else {
+      setData(result.data);
+      setError(null);
+    }
+    setLoading(false);
+  }, [enrollmentId]);
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  return { data, loading, error, refetch };
+}
