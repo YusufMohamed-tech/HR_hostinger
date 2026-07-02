@@ -6,6 +6,32 @@ Tatwir Talent HRMS is organized into distinct feature modules, each with its own
 
 ---
 
+## LMS Module v43
+
+**Paths:** `/lms`, `/lms/my`, `/lms/catalog`, `/lms/player/[enrollmentId]`, `/lms/community`, `/lms/certificates`, `/lms/courses`, `/lms/courses/new`, `/lms/courses/[courseId]/edit`, `/lms/courses/[courseId]/instructors`, `/lms/courses/[courseId]/tasks`, `/lms/courses/[courseId]/submissions`, `/lms/courses/[courseId]/community`, `/lms/assignments`, `/lms/reports`
+
+**Feature flag:** `organization_features.lms_enabled` plus `"lms"` in `organization_features.enabled_modules`
+
+**Access model:**
+- Learner pages are available to authenticated workspace roles when LMS is enabled.
+- Admin and HR_Admin can manage LMS resources across their organization.
+- Training_Manager can manage and report within the existing scoped employee model.
+- Course instructors are assigned per course in `lms_course_instructors`; no new global role is added.
+
+**Features:**
+- Categories, courses, sections, and lessons.
+- Text, video, document/file, and external link lesson types.
+- Quizzes with max attempts, score calculation, pass/fail, and sanitized learner responses.
+- Course tasks, learner submissions, instructor review, score, feedback, and revision states.
+- Course announcements and course community posts/comments/reactions/read tracking.
+- Assignments to employees or scoped groups.
+- Learner progress, completion workflow, certificate records, and printable certificate UI.
+- Reports for completion, quiz, task, certificate, feedback, and community activity.
+
+**Out of scope in v1:** SCORM, xAPI, video transcoding, public registration, paid courses, external instructors, PDF certificate generation, live sessions, and AI recommendations.
+
+---
+
 ## 1. Dashboard
 
 **Path:** `/`  
