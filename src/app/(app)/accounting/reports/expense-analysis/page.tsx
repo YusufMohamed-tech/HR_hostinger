@@ -44,7 +44,7 @@ export default function ExpenseAnalysisPage() {
         title="تحليل المصروفات"
         actions={
           <>
-            <Select value={groupBy} onValueChange={setGroupBy}>
+            <Select value={groupBy} onValueChange={(v) => v !== null && setGroupBy(v)}>
               <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="category">حسب التصنيف</SelectItem>
@@ -90,7 +90,7 @@ export default function ExpenseAnalysisPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="period" />
                   <YAxis />
-                  <Tooltip formatter={(v: number) => v.toLocaleString("ar-SA")} />
+                  <Tooltip formatter={(v: unknown) => typeof v === "number" ? v.toLocaleString("ar-SA") : String(v ?? "")} />
                   <Bar dataKey="total" fill="#ef4444" />
                 </BarChart>
               </ResponsiveContainer>
@@ -109,7 +109,7 @@ export default function ExpenseAnalysisPage() {
                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number) => v.toLocaleString("ar-SA")} />
+                    <Tooltip formatter={(v: unknown) => typeof v === "number" ? v.toLocaleString("ar-SA") : String(v ?? "")} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>

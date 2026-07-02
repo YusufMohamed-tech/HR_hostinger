@@ -55,6 +55,14 @@ npm run dev
 
 The app runs at `http://localhost:3000` by default.
 
+## LMS v43
+
+The repository now includes a professional internal LMS module for corporate employee learning. See:
+- [Modules](./modules.md#lms-module-v43)
+- [Database](./database.md#lms-v43-additive-migration)
+- [API Reference](./api.md#lms-v43-api)
+- [Frontend](./frontend.md#lms-v43-frontend)
+
 ## Current State
 
-The project is a **functional Phase 1+ prototype** with multiple active modules (HR core, Sales, Recruitment, Accounting, Chat). The frontend is well-structured with consistent patterns and the database schema is comprehensive with Row Level Security properly configured. See [Known Issues](./known-issues.md) for production-readiness gaps.
+The project is a **functional Phase 1+ prototype** with multiple active modules (HR core, Sales, Recruitment, Accounting, Chat, LMS). The frontend is well-structured with consistent patterns and the database schema is comprehensive with Row Level Security properly configured. See [Known Issues](./known-issues.md) for production-readiness gaps.

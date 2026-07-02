@@ -41,7 +41,7 @@ export default function PayrollAnalysisPage() {
         title="تحليل الرواتب"
         actions={
           <>
-            <Select value={groupBy} onValueChange={setGroupBy}>
+            <Select value={groupBy} onValueChange={(v) => v !== null && setGroupBy(v)}>
               <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="month">حسب الشهر</SelectItem>
@@ -92,7 +92,7 @@ export default function PayrollAnalysisPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="period" />
                   <YAxis />
-                  <Tooltip formatter={(v: number) => v.toLocaleString("ar-SA")} />
+                  <Tooltip formatter={(v: unknown) => typeof v === "number" ? v.toLocaleString("ar-SA") : String(v ?? "")} />
                   <Area type="monotone" dataKey="total" stroke="#8b5cf6" fill="#8b5cf680" />
                 </AreaChart>
               </ResponsiveContainer>

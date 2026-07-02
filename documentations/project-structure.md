@@ -1,5 +1,44 @@
 # Project Structure
 
+## LMS v43 Files
+
+Database and verification:
+- `db/schema_v43_lms_module.sql`
+- `scripts/verify-lms-module.mjs`
+
+Types, validation, and services:
+- `src/types/lms.ts`
+- `src/lib/validation.ts`
+- `src/lib/server/lms.ts`
+- `src/lib/services/lms.ts`
+- `src/hooks/use-data.ts`
+
+API:
+- `src/app/api/lms/[[...segments]]/route.ts`
+
+Frontend:
+- `src/components/lms/LmsScreens.tsx`
+- `src/app/(app)/lms/page.tsx`
+- `src/app/(app)/lms/my/page.tsx`
+- `src/app/(app)/lms/catalog/page.tsx`
+- `src/app/(app)/lms/player/[enrollmentId]/page.tsx`
+- `src/app/(app)/lms/certificates/page.tsx`
+- `src/app/(app)/lms/community/page.tsx`
+- `src/app/(app)/lms/courses/page.tsx`
+- `src/app/(app)/lms/courses/new/page.tsx`
+- `src/app/(app)/lms/courses/[courseId]/edit/page.tsx`
+- `src/app/(app)/lms/courses/[courseId]/instructors/page.tsx`
+- `src/app/(app)/lms/courses/[courseId]/tasks/page.tsx`
+- `src/app/(app)/lms/courses/[courseId]/submissions/page.tsx`
+- `src/app/(app)/lms/courses/[courseId]/community/page.tsx`
+- `src/app/(app)/lms/assignments/page.tsx`
+- `src/app/(app)/lms/reports/page.tsx`
+
+Navigation and gates:
+- `src/middleware.ts`
+- `src/lib/rbac.ts`
+- `src/components/layout/Sidebar.tsx`
+
 ## Root Directory
 
 ```

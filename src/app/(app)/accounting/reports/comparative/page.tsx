@@ -38,14 +38,14 @@ export default function ComparativePage() {
         title="التقارير المقارنة"
         actions={
           <>
-            <Select value={report} onValueChange={setReport}>
+            <Select value={report} onValueChange={(v) => v !== null && setReport(v)}>
               <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="profit-loss">الأرباح والخسائر</SelectItem>
                 <SelectItem value="balance-sheet">المركز المالي</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={compare} onValueChange={setCompare}>
+            <Select value={compare} onValueChange={(v) => v !== null && setCompare(v)}>
               <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="prior_period">مقارنة بالفترة السابقة</SelectItem>

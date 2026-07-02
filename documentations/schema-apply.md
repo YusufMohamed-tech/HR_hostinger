@@ -12,6 +12,28 @@ npm run apply:schema
 
 The script runs `db/schema-production-clean.sql` inside a transaction and prints success or failure.
 
+## Apply additive migrations
+
+For production or staging databases that already contain data, prefer additive migration files instead of the full schema reset:
+
+```bash
+npm run apply:migration -- db/<migration-file>.sql
+```
+
+Some networks cannot resolve or connect to Supabase direct database hosts such as `db.<project-ref>.supabase.co` because that endpoint may require working IPv6 routing. If the direct database command fails with DNS or TCP errors, use the supported Supabase Management API fallback:
+
+```bash
+npm run apply:supabase-sql -- db/schema_v43_lms_module.sql
+```
+
+This fallback requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_ACCESS_TOKEN` in `.env.local`. Do not print, paste into logs, or commit `SUPABASE_ACCESS_TOKEN`. If direct database connectivity is required, prefer a Supabase pooler URL over the direct `db.<project-ref>.supabase.co` host.
+
+After applying the LMS migration, verify it with:
+
+```bash
+npm run verify:lms
+```
+
 ## Seed the initial production admin
 Set these variables in `.env.local`:
 ```env
