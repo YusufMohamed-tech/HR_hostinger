@@ -643,8 +643,9 @@ async function loadAssignmentTargets(auth: LmsAuth, values: RecordMap) {
     .from("employees")
     .select("id, user_id, full_name, manager_id, department_id, location_id, status, department:department_id(manager_employee_id), location:location_id(manager_employee_id)")
     .eq("org_id", auth.orgId)
-    .eq("status", "Active");
+    .ilike("status", "active");
 
+  if (assignmentType !== "all" && !targetId) throw new Error("Select an assignment target.");
   if (assignmentType === "employee") query = query.eq("id", targetId);
   if (assignmentType === "department") query = query.eq("department_id", targetId);
   if (assignmentType === "location" || assignmentType === "team") query = query.eq("location_id", targetId);
@@ -666,6 +667,22 @@ export async function assignLmsLearning(auth: LmsAuth, values: RecordMap) {
   await assertElevated(auth);
   const courseId = text(values.course_id);
   const learningPathId = text(values.learning_path_id);
+  let courseIds = courseId ? [courseId] : [];
+  if (learningPathId) {
+    const pathCourses = await db(auth)
+      .from("lms_learning_path_courses")
+      .select("course_id")
+      .eq("org_id", auth.orgId)
+      .eq("learning_path_id", learningPathId)
+      .order("sort_order", { ascending: true });
+    if (pathCourses.error) throw new Error(pathCourses.error.message);
+    courseIds = asRows(pathCourses.data).map((row) => text(row.course_id)).filter(Boolean);
+  }
+  if (courseIds.length === 0) throw new Error("Select a course or learning path with courses.");
+
+  const employees = await loadAssignmentTargets(auth, values);
+  if (employees.length === 0) throw new Error("Select at least one active employee for this assignment.");
+
   const ruleResult = await db(auth).from("lms_assignment_rules").insert({
     org_id: auth.orgId,
     course_id: courseId || null,
@@ -678,19 +695,6 @@ export async function assignLmsLearning(auth: LmsAuth, values: RecordMap) {
   } as never).select().single();
   if (ruleResult.error) throw new Error(ruleResult.error.message);
 
-  let courseIds = courseId ? [courseId] : [];
-  if (learningPathId) {
-    const pathCourses = await db(auth)
-      .from("lms_learning_path_courses")
-      .select("course_id")
-      .eq("org_id", auth.orgId)
-      .eq("learning_path_id", learningPathId)
-      .order("sort_order", { ascending: true });
-    if (pathCourses.error) throw new Error(pathCourses.error.message);
-    courseIds = asRows(pathCourses.data).map((row) => text(row.course_id)).filter(Boolean);
-  }
-
-  const employees = await loadAssignmentTargets(auth, values);
   const created: RecordMap[] = [];
   for (const employee of employees) {
     for (const targetCourseId of courseIds) {
@@ -1496,7 +1500,7 @@ export async function listOrgEmployees(auth: LmsAuth) {
     .from("employees")
     .select("id, full_name, employee_code, job_title")
     .eq("org_id", auth.orgId)
-    .eq("status", "Active")
+    .ilike("status", "active")
     .order("full_name", { ascending: true });
   if (result.error) throw new Error(result.error.message);
   return result.data ?? [];
