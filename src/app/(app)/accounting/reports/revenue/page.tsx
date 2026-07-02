@@ -44,7 +44,7 @@ export default function RevenueAnalysisPage() {
         title="تحليل الإيرادات"
         actions={
           <>
-            <Select value={groupBy} onValueChange={setGroupBy}>
+            <Select value={groupBy} onValueChange={(v) => v !== null && setGroupBy(v)}>
               <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="customer">حسب العميل</SelectItem>
@@ -90,7 +90,7 @@ export default function RevenueAnalysisPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="period" />
                   <YAxis />
-                  <Tooltip formatter={(v: number) => v.toLocaleString("ar-SA")} />
+                  <Tooltip formatter={(v: unknown) => typeof v === "number" ? v.toLocaleString("ar-SA") : String(v ?? "")} />
                   <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} />
                 </LineChart>
               </ResponsiveContainer>
@@ -109,7 +109,7 @@ export default function RevenueAnalysisPage() {
                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number) => v.toLocaleString("ar-SA")} />
+                    <Tooltip formatter={(v: unknown) => typeof v === "number" ? v.toLocaleString("ar-SA") : String(v ?? "")} />
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>

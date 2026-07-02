@@ -12,6 +12,30 @@ Tatwir Talent HRMS uses **Supabase (PostgreSQL)** as its database, with Row Leve
 | `db/schema_v2_additions.sql` through `db/schema_v40_accounting_audit_fixes.sql` | Incremental migrations |
 | `db/schema_v41_multi_tenancy_audit_fixes.sql` | Tenant isolation hardening for employee locations, profiles, chat RLS, audit logs, and task/chat storage |
 | `db/schema_v42_tenant_platform_completion.sql` | Tenant settings, feature flags, plans, subscriptions, usage, workflows, soft delete, quotas, private balance/recruitment storage, and composite indexes |
+| `db/schema_v43_lms_module.sql` | Professional multi-tenant LMS module, feature flag, private LMS storage, RLS policies, LMS notifications, and verification support |
+
+## LMS v43 Additive Migration
+
+Migration file: `db/schema_v43_lms_module.sql`
+
+The LMS migration is additive and introduces a private, multi-tenant learning schema. It adds `organization_features.lms_enabled`, appends `"lms"` to `organization_features.enabled_modules`, adds notification enum value `lms`, creates private Supabase Storage bucket `lms-content`, and creates all LMS tables with `org_id`, timestamps, indexes, constraints, and RLS.
+
+### LMS Tables
+`lms_categories`, `lms_courses`, `lms_course_instructors`, `lms_course_sections`, `lms_lessons`, `lms_lesson_attachments`, `lms_quizzes`, `lms_quiz_questions`, `lms_enrollments`, `lms_lesson_progress`, `lms_quiz_attempts`, `lms_tasks`, `lms_task_submissions`, `lms_task_reviews`, `lms_learning_paths`, `lms_learning_path_courses`, `lms_assignment_rules`, `lms_certificates`, `lms_course_feedback`, `lms_course_announcements`, `lms_community_posts`, `lms_community_comments`, `lms_community_reactions`, `lms_community_post_reads`.
+
+### LMS Security
+Every LMS table has RLS enabled. Policies enforce tenant isolation through `org_id`, allow Admin/HR_Admin management, apply scoped Training_Manager checks, and allow assigned instructors through `lms_course_instructors` permission columns. Learners can only access assigned/published course content and mutate their own progress, attempts, submissions, feedback, and community records.
+
+### LMS Storage
+Bucket `lms-content` is private. Object policies are service-role only so browser clients cannot bypass LMS access checks. The server generates signed URLs only after validating tenant, role, and learner/instructor/course access.
+
+Required LMS object paths are org-prefixed:
+- `orgs/{org_id}/lms/courses/{course_id}/lessons/{lesson_id}/{filename}`
+- `orgs/{org_id}/lms/courses/{course_id}/tasks/{task_id}/{filename}`
+- `orgs/{org_id}/lms/courses/{course_id}/submissions/{submission_id}/{filename}`
+- `orgs/{org_id}/lms/courses/{course_id}/community/{post_id}/{filename}`
+
+Run `npm run verify:lms` after applying the migration to check required tables, RLS, feature flag column, notification enum value, private storage bucket, policies, and indexes.
 
 ## Tenant Platform Tables
 
