@@ -20,6 +20,7 @@ import {
   createSignedLmsUrl,
   getCertificate,
   getEnrollmentDetail,
+  getInstructorDashboard,
   getLearnerDashboard,
   getLmsCourse,
   getLmsReports,
@@ -143,6 +144,7 @@ const getHandler: Handler = async (request, auth, routeContext) => {
     const search = request.nextUrl.searchParams;
 
     if (!a) return response(await getLearnerDashboard(auth));
+    if (a === "instructor") return response(await getInstructorDashboard(auth));
     if (a === "categories") return response(await listLmsCategories(auth));
     if (a === "courses" && !b) return response(await listLmsCourses(auth, search.get("mode") || "manage"));
     if (a === "courses" && b && !c) return response(await getLmsCourse(auth, b, { learner: search.get("view") === "learner" }));

@@ -923,6 +923,148 @@ export async function listTaskSubmissions(auth: LmsAuth, taskId: string) {
   return result.data ?? [];
 }
 
+export async function getInstructorDashboard(auth: LmsAuth) {
+  const courses = asRows(await listLmsCourses(auth, "manage"));
+  const courseIds = courses.map((course) => text(course.id)).filter(Boolean);
+  if (courseIds.length === 0) {
+    return {
+      summary: {
+        courses: 0,
+        learners: 0,
+        completed: 0,
+        pendingSubmissions: 0,
+        communityQuestions: 0,
+        averageProgress: 0,
+      },
+      courses: [],
+      pendingSubmissions: [],
+      recentPosts: [],
+    };
+  }
+
+  const employeeId = await getEmployeeId(auth);
+  const [
+    enrollments,
+    tasks,
+    submissions,
+    posts,
+    announcements,
+    certificates,
+  ] = await Promise.all([
+    db(auth)
+      .from("lms_enrollments")
+      .select("*, employee:employee_id(id, full_name, employee_code, email, job_title), course:course_id(id, title, status)")
+      .eq("org_id", auth.orgId)
+      .in("course_id", courseIds)
+      .neq("status", "cancelled")
+      .order("assigned_at", { ascending: false }),
+    db(auth)
+      .from("lms_tasks")
+      .select("*")
+      .eq("org_id", auth.orgId)
+      .in("course_id", courseIds)
+      .order("created_at", { ascending: false }),
+    db(auth)
+      .from("lms_task_submissions")
+      .select("*, employee:employee_id(id, full_name, employee_code, email), task:task_id(id, title, pass_score, max_score), reviews:lms_task_reviews(*)")
+      .eq("org_id", auth.orgId)
+      .in("course_id", courseIds)
+      .order("submitted_at", { ascending: false }),
+    db(auth)
+      .from("lms_community_posts")
+      .select("*, employee:employee_id(id, full_name), comments:lms_community_comments(*, employee:employee_id(id, full_name)), reactions:lms_community_reactions(*)")
+      .eq("org_id", auth.orgId)
+      .in("course_id", courseIds)
+      .eq("is_hidden", false)
+      .order("created_at", { ascending: false }),
+    db(auth)
+      .from("lms_course_announcements")
+      .select("*")
+      .eq("org_id", auth.orgId)
+      .in("course_id", courseIds)
+      .order("published_at", { ascending: false }),
+    db(auth)
+      .from("lms_certificates")
+      .select("*")
+      .eq("org_id", auth.orgId)
+      .in("course_id", courseIds),
+  ]);
+
+  for (const item of [enrollments, tasks, submissions, posts, announcements, certificates]) {
+    if (item.error) throw new Error(item.error.message);
+  }
+
+  const enrollmentRows = asRows(enrollments.data);
+  const taskRows = asRows(tasks.data);
+  const submissionRows = asRows(submissions.data);
+  const postRows = asRows(posts.data);
+  const announcementRows = asRows(announcements.data);
+  const certificateRows = asRows(certificates.data);
+  const pendingStatuses = new Set(["submitted", "late", "needs_revision"]);
+  const questionRows = postRows.filter((post) => text(post.post_type) === "question");
+  const pendingRows = submissionRows.filter((submission) => pendingStatuses.has(text(submission.status)));
+
+  const progressTotal = enrollmentRows.reduce((sum, enrollment) => sum + numberValue(enrollment.progress_percent, 0), 0);
+  const averageProgress = enrollmentRows.length ? Math.round(progressTotal / enrollmentRows.length) : 0;
+
+  const courseDashboards = courses.map((course) => {
+    const courseId = text(course.id);
+    const courseEnrollments = enrollmentRows.filter((enrollment) => text(enrollment.course_id) === courseId);
+    const courseTasks = taskRows.filter((task) => text(task.course_id) === courseId);
+    const courseSubmissions = submissionRows.filter((submission) => text(submission.course_id) === courseId);
+    const coursePosts = postRows.filter((post) => text(post.course_id) === courseId);
+    const courseAnnouncements = announcementRows.filter((announcement) => text(announcement.course_id) === courseId);
+    const courseCertificates = certificateRows.filter((certificate) => text(certificate.course_id) === courseId);
+    const instructor = asRows(course.instructors).find((row) => text(row.employee_id) === employeeId);
+    const elevatedForCourse = isElevated(auth);
+    const completed = courseEnrollments.filter((enrollment) => text(enrollment.status) === "completed").length;
+    const courseProgressTotal = courseEnrollments.reduce((sum, enrollment) => sum + numberValue(enrollment.progress_percent, 0), 0);
+
+    return {
+      ...course,
+      instructor_permissions: {
+        can_edit_content: elevatedForCourse || boolValue(instructor?.can_edit_content),
+        can_review_tasks: elevatedForCourse || boolValue(instructor?.can_review_tasks),
+        can_moderate_community: elevatedForCourse || boolValue(instructor?.can_moderate_community),
+      },
+      metrics: {
+        learners: courseEnrollments.length,
+        completed,
+        inProgress: courseEnrollments.filter((enrollment) => text(enrollment.status) === "in_progress").length,
+        overdue: courseEnrollments.filter((enrollment) => text(enrollment.status) === "overdue").length,
+        averageProgress: courseEnrollments.length ? Math.round(courseProgressTotal / courseEnrollments.length) : 0,
+        pendingSubmissions: courseSubmissions.filter((submission) => pendingStatuses.has(text(submission.status))).length,
+        tasks: courseTasks.length,
+        questions: coursePosts.filter((post) => text(post.post_type) === "question").length,
+        certificates: courseCertificates.length,
+      },
+      learners: courseEnrollments,
+      tasks: courseTasks,
+      submissions: courseSubmissions,
+      posts: coursePosts,
+      announcements: courseAnnouncements,
+    };
+  });
+
+  return {
+    summary: {
+      courses: courseDashboards.length,
+      learners: enrollmentRows.length,
+      completed: enrollmentRows.filter((enrollment) => text(enrollment.status) === "completed").length,
+      pendingSubmissions: pendingRows.length,
+      communityQuestions: questionRows.length,
+      averageProgress,
+    },
+    courses: courseDashboards,
+    pendingSubmissions: pendingRows.slice(0, 12),
+    recentPosts: postRows.slice(0, 12),
+  };
+}
+
+function boolValue(value: unknown) {
+  return value === true;
+}
+
 export async function getSubmission(auth: LmsAuth, submissionId: string) {
   const result = await db(auth)
     .from("lms_task_submissions")
