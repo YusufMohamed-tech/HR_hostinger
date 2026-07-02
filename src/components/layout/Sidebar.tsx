@@ -20,6 +20,7 @@ import {
   Landmark,
   Layers,
   LayoutDashboard,
+  GraduationCap,
   MapPin,
   MessageCircle,
   Network,
@@ -78,7 +79,7 @@ export function SidebarContent() {
       : [{ name: "الإجازات", href: "/leave", icon: ClipboardList }];
 
     const lmsLearnerOps: NavLink[] = [
-      { name: "\u0627\u0644\u062a\u0639\u0644\u0645", href: "/lms", icon: BookOpen },
+      { name: "\u0642\u0627\u0639\u0629 \u0627\u0644\u062a\u0639\u0644\u0645", href: "/learn", icon: GraduationCap },
       { name: "\u062a\u0639\u0644\u0645\u064a", href: "/lms/my", icon: BookOpen, indent: true },
       { name: "\u0643\u062a\u0627\u0644\u0648\u062c \u0627\u0644\u062f\u0648\u0631\u0627\u062a", href: "/lms/catalog", icon: BookOpen, indent: true },
     ];

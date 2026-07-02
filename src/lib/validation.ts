@@ -263,6 +263,115 @@ export const lmsLearningPathSchema = z.object({
   status: z.enum(["draft", "published", "archived"]).optional(),
 });
 
+// --- LMS v44 (classroom + studio) ---
+
+const optionalStringList = z.union([z.array(z.string()), z.string()]).optional();
+
+export const lmsNoteSchema = z.object({
+  lesson_id: optionalUuid,
+  task_id: optionalUuid,
+  quiz_id: optionalUuid,
+  title: optionalTrimmedString,
+  body: z.string().trim().min(1, "Note body is required.").max(4000),
+  is_private: optionalBoolean,
+});
+
+export const lmsBookmarkSchema = z.object({
+  lesson_id: optionalUuid,
+  task_id: optionalUuid,
+  quiz_id: optionalUuid,
+  bookmark_type: z.enum(["lesson", "task", "quiz", "resource"]).optional(),
+  label: optionalTrimmedString,
+});
+
+export const lmsWorkspaceStateSchema = z.object({
+  last_lesson_id: optionalUuid,
+  last_quiz_id: optionalUuid,
+  last_task_id: optionalUuid,
+  last_route: optionalTrimmedString,
+  current_tab: optionalTrimmedString,
+  state_json: z.unknown().optional(),
+});
+
+export const lmsActivityEventSchema = z.object({
+  event_type: z.string().trim().min(1, "Event type is required.").max(80),
+  source_type: optionalTrimmedString,
+  source_id: optionalUuid,
+  metadata_json: z.unknown().optional(),
+});
+
+export const lmsRubricSchema = z.object({
+  title: optionalTrimmedString,
+  description: optionalLongString,
+  pass_points: z.preprocess(emptyToUndefined, z.coerce.number().min(0).max(100000).optional()),
+  items: z.array(z.object({
+    id: optionalUuid,
+    title: z.string().trim().min(1, "Rubric item title is required.").max(220),
+    description: optionalLongString,
+    passing_criteria: optionalLongString,
+    points: z.coerce.number().min(0).max(100000).optional(),
+    sort_order: z.coerce.number().int().min(0).optional(),
+  })).optional(),
+});
+
+export const lmsRubricReviewSchema = z.object({
+  score: z.preprocess(emptyToUndefined, z.coerce.number().min(0).max(100000).optional()),
+  feedback: optionalLongString,
+  review_status: z.enum(["accepted", "rejected", "needs_revision"]).optional(),
+  rubric_items: z.array(z.object({
+    rubric_item_id: z.string().uuid("Select a valid rubric item."),
+    score: z.coerce.number().min(0).max(100000).optional(),
+    passed: optionalBoolean,
+    feedback: optionalLongString,
+  })).optional(),
+});
+
+export const lmsResourceSchema = z.object({
+  lesson_id: optionalUuid,
+  task_id: optionalUuid,
+  title: z.string().trim().min(1, "Resource title is required.").max(220),
+  description: optionalLongString,
+  resource_type: z.enum(["document", "video", "image", "spreadsheet", "template", "external_link", "file"]).optional(),
+  storage_path: optionalLongString,
+  external_url: optionalUrl,
+  mime_type: optionalTrimmedString,
+  size_bytes: z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).optional()),
+  sort_order: optionalPositiveInteger,
+  is_active: optionalBoolean,
+});
+
+export const lmsWorkspaceConfigSchema = z.object({
+  task_id: optionalUuid,
+  workspace_type: z.enum(["none", "external_link", "instructions_only"]).optional(),
+  external_url: optionalUrl,
+  instructions: optionalLongString,
+});
+
+export const lmsBuilderOverviewSchema = z.object({
+  title: z.preprocess(emptyToUndefined, z.string().trim().min(2).max(220).optional()),
+  subtitle: optionalTrimmedString,
+  description: optionalLongString,
+  category_id: optionalUuid,
+  difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+  estimated_minutes: optionalPositiveInteger,
+  thumbnail_path: optionalLongString,
+  visibility: z.enum(["assigned_only", "catalog"]).optional(),
+  experience_type: z.enum(["course", "program"]).optional(),
+  target_audience: optionalLongString,
+  prerequisites: optionalLongString,
+  language: optionalTrimmedString,
+  learning_outcomes: optionalStringList,
+  skills_gained: optionalStringList,
+  tags: optionalStringList,
+  passing_score: optionalScore,
+  requires_quiz_pass: optionalBoolean,
+  requires_task_pass: optionalBoolean,
+  certificate_enabled: optionalBoolean,
+  certificate_title: optionalTrimmedString,
+  certificate_description: optionalLongString,
+  certificate_signatory: optionalTrimmedString,
+});
+
 export function getValidationMessage(error: z.ZodError) {
   return error.issues[0]?.message ?? "Please check the form and try again.";
 }
