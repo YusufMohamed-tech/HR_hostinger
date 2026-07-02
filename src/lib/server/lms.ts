@@ -11,8 +11,8 @@ type Db = {
 type LmsAuth = TenantAuthContext;
 type RecordMap = Record<string, unknown>;
 
-const managementRoles = new Set(["admin", "hr_admin"]);
-const elevatedRoles = new Set(["admin", "hr_admin", "training_manager"]);
+const managementRoles = new Set(["admin", "hr_admin", "super_admin", "superadmin"]);
+const elevatedRoles = new Set(["admin", "hr_admin", "training_manager", "super_admin", "superadmin"]);
 const allowedLmsMimeTypes = new Set([
   "image/jpeg",
   "image/png",
@@ -57,12 +57,20 @@ function numberValue(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function roleKey(auth: LmsAuth) {
+  return String(auth.role || "").trim().toLowerCase();
+}
+
 function isManagement(auth: LmsAuth) {
-  return managementRoles.has(auth.role);
+  return managementRoles.has(roleKey(auth));
 }
 
 function isElevated(auth: LmsAuth) {
-  return elevatedRoles.has(auth.role);
+  return elevatedRoles.has(roleKey(auth));
+}
+
+function isTrainingManager(auth: LmsAuth) {
+  return roleKey(auth) === "training_manager";
 }
 
 function safeFilename(name: string) {
@@ -121,7 +129,7 @@ async function getEmployeeUserId(auth: LmsAuth, employeeId: string) {
 
 async function isTrainingManagerForEmployee(auth: LmsAuth, employeeId: string) {
   if (isManagement(auth)) return true;
-  if (auth.role !== "training_manager") return false;
+  if (!isTrainingManager(auth)) return false;
   const managerEmployeeId = await getEmployeeId(auth);
   if (!managerEmployeeId) return false;
   const result = await db(auth)
@@ -162,7 +170,7 @@ async function canManageCourse(auth: LmsAuth, courseId: string, permission: "can
     if (permission === "any") return true;
     if (instructor[permission] === true) return true;
   }
-  if (auth.role !== "training_manager") return false;
+  if (!isTrainingManager(auth)) return false;
   const result = await db(auth)
     .from("lms_courses")
     .select("id, created_by")
@@ -300,7 +308,7 @@ export async function listLmsCourses(auth: LmsAuth, mode = "manage") {
       .neq("status", "cancelled")
       .order("assigned_at", { ascending: false });
     if (result.error) throw new Error(result.error.message);
-    return result.data ?? [];
+    return asRows(result.data).filter((row) => text(asRecord(row.course).status) === "published");
   }
 
   let query = db(auth)
@@ -309,14 +317,14 @@ export async function listLmsCourses(auth: LmsAuth, mode = "manage") {
     .eq("org_id", auth.orgId)
     .order("updated_at", { ascending: false });
 
-  if (!isManagement(auth) && auth.role === "training_manager") {
+  if (!isManagement(auth) && isTrainingManager(auth)) {
     query = query.or(`created_by.eq.${auth.user.id}`);
   }
 
   const result = await query;
   if (result.error) throw new Error(result.error.message);
 
-  if (!isManagement(auth) && auth.role !== "training_manager") {
+  if (!isManagement(auth) && !isTrainingManager(auth)) {
     const ownInstructor = await db(auth)
       .from("lms_course_instructors")
       .select("course_id")
@@ -425,7 +433,7 @@ export async function listCourseInstructors(auth: LmsAuth, courseId: string) {
 export async function upsertCourseInstructor(auth: LmsAuth, courseId: string, values: RecordMap, instructorId?: string) {
   await assertElevated(auth);
   const employeeId = text(values.employee_id);
-  if (auth.role === "training_manager" && !(await isTrainingManagerForEmployee(auth, employeeId))) {
+  if (isTrainingManager(auth) && !(await isTrainingManagerForEmployee(auth, employeeId))) {
     throw new Error("You can assign instructors only within your scope.");
   }
   const employee = await getEmployeeUserId(auth, employeeId);
@@ -644,7 +652,7 @@ async function loadAssignmentTargets(auth: LmsAuth, values: RecordMap) {
   const result = await query;
   if (result.error) throw new Error(result.error.message);
   let employees = asRows(result.data);
-  if (auth.role === "training_manager") {
+  if (isTrainingManager(auth)) {
     const scoped: RecordMap[] = [];
     for (const employee of employees) {
       if (await isTrainingManagerForEmployee(auth, text(employee.id))) scoped.push(employee);
@@ -1155,7 +1163,7 @@ export async function listCertificates(auth: LmsAuth) {
   if (result.error) throw new Error(result.error.message);
   let certificateRows = asRows(result.data);
   if (isManagement(auth)) return certificateRows;
-  if (auth.role === "training_manager") {
+  if (isTrainingManager(auth)) {
     const scoped: RecordMap[] = [];
     for (const certificate of certificateRows) {
       if (await isTrainingManagerForEmployee(auth, text(certificate.employee_id))) scoped.push(certificate);
@@ -1180,7 +1188,7 @@ export async function getCertificate(auth: LmsAuth, certificateId: string) {
   const canView =
     isManagement(auth)
     || text(certificate.employee_id) === employeeId
-    || (auth.role === "training_manager" && await isTrainingManagerForEmployee(auth, text(certificate.employee_id)))
+    || (isTrainingManager(auth) && await isTrainingManagerForEmployee(auth, text(certificate.employee_id)))
     || await canManageCourse(auth, text(certificate.course_id), "any");
   if (!canView) {
     throw new Error("Forbidden");
@@ -1285,7 +1293,7 @@ export async function getLmsReports(auth: LmsAuth) {
   let postRows = asRows(posts.data);
   let feedbackRows = asRows(feedback.data);
 
-  if (auth.role === "training_manager") {
+  if (isTrainingManager(auth)) {
     const scoped: RecordMap[] = [];
     for (const enrollment of enrollmentRows) {
       if (await isTrainingManagerForEmployee(auth, text(enrollment.employee_id))) scoped.push(enrollment);
@@ -1298,7 +1306,7 @@ export async function getLmsReports(auth: LmsAuth) {
 
   const scopedEnrollmentIds = new Set(enrollmentRows.map((row) => text(row.id)).filter(Boolean));
   const scopedCourseIds = new Set(enrollmentRows.map((row) => text(row.course_id)).filter(Boolean));
-  const shouldScopeReportRows = auth.role === "training_manager" || !isElevated(auth);
+  const shouldScopeReportRows = isTrainingManager(auth) || !isElevated(auth);
 
   if (shouldScopeReportRows) {
     attemptRows = attemptRows.filter((row) => scopedEnrollmentIds.has(text(row.enrollment_id)));
