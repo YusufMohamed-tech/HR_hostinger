@@ -61,15 +61,15 @@ function roleKey(auth: LmsAuth) {
   return String(auth.role || "").trim().toLowerCase();
 }
 
-function isManagement(auth: LmsAuth) {
+export function isManagement(auth: LmsAuth) {
   return managementRoles.has(roleKey(auth));
 }
 
-function isElevated(auth: LmsAuth) {
+export function isElevated(auth: LmsAuth) {
   return elevatedRoles.has(roleKey(auth));
 }
 
-function isTrainingManager(auth: LmsAuth) {
+export function isTrainingManager(auth: LmsAuth) {
   return roleKey(auth) === "training_manager";
 }
 
@@ -104,7 +104,7 @@ function stripQuizAnswers(course: RecordMap | null) {
   return course;
 }
 
-async function getEmployeeId(auth: LmsAuth) {
+export async function getEmployeeId(auth: LmsAuth) {
   if (auth.employeeId) return auth.employeeId;
   const result = await db(auth)
     .from("employees")
@@ -163,7 +163,7 @@ async function getInstructor(auth: LmsAuth, courseId: string) {
   return result.data ? asRecord(result.data) : null;
 }
 
-async function canManageCourse(auth: LmsAuth, courseId: string, permission: "can_edit_content" | "can_review_tasks" | "can_moderate_community" | "any" = "can_edit_content") {
+export async function canManageCourse(auth: LmsAuth, courseId: string, permission: "can_edit_content" | "can_review_tasks" | "can_moderate_community" | "any" = "can_edit_content") {
   if (isManagement(auth)) return true;
   const instructor = await getInstructor(auth, courseId);
   if (instructor) {
@@ -781,7 +781,7 @@ export async function getEnrollmentDetail(auth: LmsAuth, enrollmentId: string) {
   };
 }
 
-async function getEnrollmentForLearner(auth: LmsAuth, enrollmentId: string) {
+export async function getEnrollmentForLearner(auth: LmsAuth, enrollmentId: string) {
   const employeeId = await getEmployeeId(auth);
   const result = await db(auth)
     .from("lms_enrollments")
@@ -1413,7 +1413,7 @@ export async function createSignedLmsUrl(auth: LmsAuth, path: string) {
   if (area === "submissions") {
     const submission = await getSubmission(auth, targetId);
     if (text(submission.course_id) !== courseId) throw new Error("Forbidden");
-  } else if (area === "lessons") {
+  } else if (area === "lessons" || area === "resources") {
     const course = await getLmsCourse(auth, courseId, { learner: true });
     if (!course) throw new Error("Forbidden");
   } else if (area === "tasks" || area === "community") {

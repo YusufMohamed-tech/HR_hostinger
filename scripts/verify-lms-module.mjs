@@ -37,6 +37,16 @@ const requiredTables = [
   "lms_community_comments",
   "lms_community_reactions",
   "lms_community_post_reads",
+  "lms_project_rubrics",
+  "lms_project_rubric_items",
+  "lms_project_review_items",
+  "lms_learner_workspace_state",
+  "lms_learner_notes",
+  "lms_learner_bookmarks",
+  "lms_learning_deadlines",
+  "lms_learner_activity_events",
+  "lms_workspace_configs",
+  "lms_course_resources",
 ];
 
 const requiredIndexes = [
@@ -46,6 +56,9 @@ const requiredIndexes = [
   "idx_lms_submissions_task_employee",
   "idx_lms_posts_course_created",
   "uq_lms_active_enrollment",
+  "idx_lms_rubric_items_rubric_sort",
+  "idx_lms_notes_enrollment",
+  "idx_lms_course_resources_course",
 ];
 
 const requiredPolicies = [
@@ -59,6 +72,10 @@ const requiredPolicies = [
   "lms_posts_update",
   "lms_comments_insert",
   "lms_comments_update",
+  "lms_rubrics_write",
+  "lms_learner_notes_rw",
+  "lms_review_items_write",
+  "lms_course_resources_write",
 ];
 
 const requiredStoragePolicies = [
