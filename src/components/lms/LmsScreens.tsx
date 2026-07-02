@@ -581,42 +581,40 @@ export function LmsCoursesScreen() {
                 className="max-w-sm"
               />
             </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>الدورة</TableHead>
-                  <TableHead>الحالة</TableHead>
-                  <TableHead>الظهور</TableHead>
-                  <TableHead>المدة</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {courses.map((course) => {
-                  const row = asRow(course);
-                  const id = str(row, "id");
-                  return (
-                    <TableRow key={id}>
-                      <TableCell>
-                        <div className="font-medium">{str(row, "title", "دورة تدريبية")}</div>
-                        <div className="mt-1 text-xs text-slate-500">{difficultyLabels[str(row, "difficulty")]}</div>
-                      </TableCell>
-                      <TableCell><StatusBadge value={row.status} /></TableCell>
-                      <TableCell>{str(row, "visibility") === "catalog" ? "كتالوج" : "مخصصة"}</TableCell>
-                      <TableCell>{num(row, "estimated_minutes")} دقيقة</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-2">
-                          <Button asChild size="sm"><Link href={`/lms/courses/${id}/studio`}>الاستوديو</Link></Button>
-                          <Button asChild size="sm" variant="outline"><Link href={`/lms/courses/${id}/instructors`}>المدربون</Link></Button>
-                          <Button size="sm" variant="outline" onClick={() => void publish(id)}>نشر</Button>
-                          <Button size="sm" variant="destructive" onClick={() => void archive(id)}>أرشفة</Button>
+            <div className="space-y-3">
+              {courses.map((course) => {
+                const row = asRow(course);
+                const id = str(row, "id");
+                return (
+                  <div key={id} className="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="break-words text-base font-semibold text-slate-950">{str(row, "title", "دورة تدريبية")}</h3>
+                          <StatusBadge value={row.status} />
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                          <span className="rounded-full bg-slate-50 px-2 py-1">{difficultyLabels[str(row, "difficulty")]}</span>
+                          <span className="rounded-full bg-slate-50 px-2 py-1">{str(row, "visibility") === "catalog" ? "كتالوج" : "مخصصة"}</span>
+                          <span className="rounded-full bg-slate-50 px-2 py-1">{num(row, "estimated_minutes")} دقيقة</span>
+                        </div>
+                        {str(row, "description") ? <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">{str(row, "description")}</p> : null}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end xl:max-w-[360px]">
+                        <Button asChild size="sm" className="min-w-24">
+                          <Link href={`/lms/courses/${id}/studio`}>الاستوديو</Link>
+                        </Button>
+                        <Button asChild size="sm" variant="outline" className="min-w-24">
+                          <Link href={`/lms/courses/${id}/instructors`}>المدربون</Link>
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => void publish(id)} className="min-w-24">نشر</Button>
+                        <Button size="sm" variant="destructive" onClick={() => void archive(id)} className="min-w-24">أرشفة</Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
             {courses.length === 0 ? <EmptyState title="لا توجد دورات بعد" action={<Button asChild><Link href="/lms/courses/new">إنشاء دورة</Link></Button>} /> : null}
           </CardContent>
         </Card>
