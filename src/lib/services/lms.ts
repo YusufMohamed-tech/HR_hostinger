@@ -96,8 +96,16 @@ export function createLmsQuiz(courseId: string, values: Record<string, unknown>)
   return apiFetch<LmsRecord>(`/api/lms/courses/${courseId}/quizzes`, jsonInit("POST", values));
 }
 
+export function updateLmsQuiz(quizId: string, values: Record<string, unknown>) {
+  return apiFetch<LmsRecord>(`/api/lms/quizzes/${quizId}`, jsonInit("PATCH", values));
+}
+
 export function createLmsTask(courseId: string, values: Record<string, unknown>) {
   return apiFetch<LmsRecord>(`/api/lms/courses/${courseId}/tasks`, jsonInit("POST", values));
+}
+
+export function updateLmsTask(taskId: string, values: Record<string, unknown>) {
+  return apiFetch<LmsRecord>(`/api/lms/tasks/${taskId}`, jsonInit("PATCH", values));
 }
 
 export function createLmsInstructor(courseId: string, values: Record<string, unknown>) {
