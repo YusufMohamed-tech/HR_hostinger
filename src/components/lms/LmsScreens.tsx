@@ -1,16 +1,31 @@
 "use client";
 
-import React, { FormEvent, useCallback, useEffect, useState } from "react";
+import React, { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
   Award,
   BookOpen,
+  Bold,
   CheckCircle2,
   ClipboardCheck,
+  Eraser,
   FileText,
   GraduationCap,
+  Heading1,
+  Heading2,
+  Italic,
+  List,
+  ListOrdered,
   Plus,
+  Quote,
+  Redo2,
   Send,
+  Type,
+  Underline,
+  Undo2,
   UploadCloud,
   Users,
 } from "lucide-react";
@@ -27,6 +42,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageSkeleton } from "@/components/Skeletons";
 import {
   archiveLmsCategory,
@@ -51,7 +67,9 @@ import {
   getLmsDashboard,
   getLmsEnrollment,
   getLmsInstructors,
+  getLmsOrgDepartments,
   getLmsOrgEmployees,
+  getLmsOrgLocations,
   getLmsTaskSubmissions,
   getSignedLmsUrl,
   publishLmsCourse,
@@ -782,6 +800,222 @@ function QuizQuestionBuilder({ quiz, onDelete, onQuestionAdded }: { quiz: Row; o
   );
 }
 
+const allowedRichTextTags = new Set([
+  "a",
+  "b",
+  "blockquote",
+  "br",
+  "div",
+  "em",
+  "font",
+  "h1",
+  "h2",
+  "h3",
+  "i",
+  "li",
+  "ol",
+  "p",
+  "span",
+  "strong",
+  "u",
+  "ul",
+]);
+
+function stripUnsafeRichText(html: string) {
+  return html
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+    .replace(/\son\w+=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/\s(href|src)=(["'])\s*javascript:[\s\S]*?\2/gi, ' $1="#"')
+    .replace(/\sstyle=(["'])[^"']*(expression|javascript:|url\()[^"']*\1/gi, "");
+}
+
+function cleanRichTextStyle(value: string) {
+  const allowed = new Set(["color", "font-size", "font-style", "font-weight", "text-align", "text-decoration"]);
+  return value
+    .split(";")
+    .map((rule) => rule.trim())
+    .filter((rule) => {
+      const [property, ...rest] = rule.split(":");
+      const cssValue = rest.join(":").trim().toLowerCase();
+      return allowed.has(property.trim().toLowerCase()) && !/(expression|javascript:|url\()/i.test(cssValue);
+    })
+    .join("; ");
+}
+
+function sanitizeRichTextHtml(html: string) {
+  if (!html) return "";
+  const stripped = stripUnsafeRichText(html);
+  if (typeof document === "undefined" || typeof Node === "undefined") return stripped;
+
+  const template = document.createElement("template");
+  template.innerHTML = stripped;
+
+  function walk(node: ParentNode) {
+    Array.from(node.childNodes).forEach((child) => {
+      if (child.nodeType === Node.COMMENT_NODE) {
+        child.parentNode?.removeChild(child);
+        return;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) return;
+
+      const element = child as HTMLElement;
+      const tag = element.tagName.toLowerCase();
+      if (!allowedRichTextTags.has(tag)) {
+        const parent = element.parentNode;
+        while (element.firstChild) parent?.insertBefore(element.firstChild, element);
+        parent?.removeChild(element);
+        return;
+      }
+
+      Array.from(element.attributes).forEach((attribute) => {
+        const name = attribute.name.toLowerCase();
+        const value = attribute.value;
+        if (name === "style") {
+          const cleaned = cleanRichTextStyle(value);
+          if (cleaned) element.setAttribute("style", cleaned);
+          else element.removeAttribute("style");
+          return;
+        }
+        if (tag === "a" && name === "href" && /^(https?:|mailto:|tel:|#|\/)/i.test(value)) return;
+        if (tag === "font" && name === "size" && /^[1-7]$/.test(value)) return;
+        if (name === "dir" && /^(rtl|ltr|auto)$/i.test(value)) return;
+        element.removeAttribute(attribute.name);
+      });
+
+      if (tag === "a") {
+        element.setAttribute("target", "_blank");
+        element.setAttribute("rel", "noreferrer");
+      }
+
+      walk(element);
+    });
+  }
+
+  walk(template.content);
+  return template.innerHTML;
+}
+
+const richTextSurfaceClassName =
+  "leading-7 text-slate-700 [&_a]:text-brand [&_a]:underline [&_blockquote]:border-r-4 [&_blockquote]:border-brand/40 [&_blockquote]:bg-slate-50 [&_blockquote]:px-4 [&_blockquote]:py-2 [&_blockquote]:text-slate-600 [&_h1]:text-2xl [&_h1]:font-bold [&_h1]:text-slate-950 [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:text-slate-950 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:my-1 [&_ol]:list-decimal [&_ol]:pr-6 [&_p]:my-2 [&_ul]:list-disc [&_ul]:pr-6";
+
+function RichTextToolButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      title={label}
+      aria-label={label}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}
+
+function RichTextLessonEditor({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const plainText = value.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+
+  useEffect(() => {
+    if (!editorRef.current) return;
+    if (editorRef.current.innerHTML !== value) editorRef.current.innerHTML = value || "";
+  }, [value]);
+
+  const syncValue = useCallback(() => {
+    if (!editorRef.current) return;
+    onChange(sanitizeRichTextHtml(editorRef.current.innerHTML));
+  }, [onChange]);
+
+  const applyCommand = useCallback((command: string, commandValue?: string) => {
+    editorRef.current?.focus();
+    document.execCommand(command, false, commandValue);
+    syncValue();
+  }, [syncValue]);
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center gap-1 border-b border-slate-100 bg-slate-50/80 p-2">
+        <select
+          className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+          defaultValue="P"
+          title="نمط النص"
+          onMouseDown={(event) => event.preventDefault()}
+          onChange={(event) => {
+            applyCommand("formatBlock", event.target.value);
+            event.currentTarget.value = "P";
+          }}
+        >
+          <option value="P">فقرة</option>
+          <option value="H1">عنوان كبير</option>
+          <option value="H2">عنوان متوسط</option>
+          <option value="H3">عنوان صغير</option>
+        </select>
+        <div className="mx-1 h-5 w-px bg-slate-200" />
+        <RichTextToolButton label="عريض" onClick={() => applyCommand("bold")}><Bold className="h-4 w-4" /></RichTextToolButton>
+        <RichTextToolButton label="مائل" onClick={() => applyCommand("italic")}><Italic className="h-4 w-4" /></RichTextToolButton>
+        <RichTextToolButton label="تحته خط" onClick={() => applyCommand("underline")}><Underline className="h-4 w-4" /></RichTextToolButton>
+        <div className="mx-1 h-5 w-px bg-slate-200" />
+        <RichTextToolButton label="نص كبير" onClick={() => applyCommand("fontSize", "5")}><Heading1 className="h-4 w-4" /></RichTextToolButton>
+        <RichTextToolButton label="نص متوسط" onClick={() => applyCommand("fontSize", "3")}><Type className="h-4 w-4" /></RichTextToolButton>
+        <RichTextToolButton label="نص صغير" onClick={() => applyCommand("fontSize", "2")}><Heading2 className="h-4 w-4" /></RichTextToolButton>
+        <div className="mx-1 h-5 w-px bg-slate-200" />
+        <RichTextToolButton label="قائمة نقطية" onClick={() => applyCommand("insertUnorderedList")}><List className="h-4 w-4" /></RichTextToolButton>
+        <RichTextToolButton label="قائمة مرقمة" onClick={() => applyCommand("insertOrderedList")}><ListOrdered className="h-4 w-4" /></RichTextToolButton>
+        <RichTextToolButton label="اقتباس" onClick={() => applyCommand("formatBlock", "BLOCKQUOTE")}><Quote className="h-4 w-4" /></RichTextToolButton>
+        <div className="mx-1 h-5 w-px bg-slate-200" />
+        <RichTextToolButton label="محاذاة يمين" onClick={() => applyCommand("justifyRight")}><AlignRight className="h-4 w-4" /></RichTextToolButton>
+        <RichTextToolButton label="محاذاة وسط" onClick={() => applyCommand("justifyCenter")}><AlignCenter className="h-4 w-4" /></RichTextToolButton>
+        <RichTextToolButton label="محاذاة يسار" onClick={() => applyCommand("justifyLeft")}><AlignLeft className="h-4 w-4" /></RichTextToolButton>
+        <div className="mx-1 h-5 w-px bg-slate-200" />
+        <RichTextToolButton label="تراجع" onClick={() => applyCommand("undo")}><Undo2 className="h-4 w-4" /></RichTextToolButton>
+        <RichTextToolButton label="إعادة" onClick={() => applyCommand("redo")}><Redo2 className="h-4 w-4" /></RichTextToolButton>
+        <RichTextToolButton label="إزالة التنسيق" onClick={() => applyCommand("removeFormat")}><Eraser className="h-4 w-4" /></RichTextToolButton>
+      </div>
+      <div className="relative">
+        {!plainText ? <span className="pointer-events-none absolute right-4 top-4 text-sm text-slate-400">اكتب محتوى الدرس هنا مثل مستند عمل منسق...</span> : null}
+        <div
+          ref={editorRef}
+          contentEditable
+          dir="rtl"
+          suppressContentEditableWarning
+          className={cn("min-h-[260px] w-full bg-white px-4 py-4 text-sm outline-none focus:ring-2 focus:ring-brand/20", richTextSurfaceClassName)}
+          onInput={syncValue}
+          onBlur={syncValue}
+          onPaste={(event) => {
+            event.preventDefault();
+            const html = event.clipboardData.getData("text/html");
+            const text = event.clipboardData.getData("text/plain");
+            const pasted = html ? sanitizeRichTextHtml(html) : text.replace(/\n/g, "<br />");
+            document.execCommand("insertHTML", false, pasted);
+            syncValue();
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function RichLessonContent({ html, fallbackUrl }: { html: string; fallbackUrl?: string }) {
+  const safeHtml = sanitizeRichTextHtml(html);
+  if (!safeHtml && fallbackUrl) {
+    return (
+      <a className="mt-3 inline-flex text-sm font-medium text-brand underline-offset-4 hover:underline" href={fallbackUrl} target="_blank" rel="noreferrer">
+        فتح رابط الدرس
+      </a>
+    );
+  }
+  if (!safeHtml) return null;
+  return (
+    <div
+      className={cn("mt-3 rounded-lg border border-slate-100 bg-white px-4 py-3 text-sm", richTextSurfaceClassName)}
+      dangerouslySetInnerHTML={{ __html: safeHtml }}
+    />
+  );
+}
+
 export function LmsCourseEditorScreen({ courseId }: { courseId?: string }) {
   const editing = Boolean(courseId);
   const [course, setCourse] = useState<Row | null>(null);
@@ -868,6 +1102,7 @@ export function LmsCourseEditorScreen({ courseId }: { courseId?: string }) {
     if (!id || !lesson.title.trim()) return;
     const payload: Row = {
       ...lesson,
+      content: sanitizeRichTextHtml(lesson.content),
       duration_minutes: Number(lesson.duration_minutes || 0),
       is_required: true,
       is_active: true,
@@ -1876,27 +2111,123 @@ export function LmsCertificatesScreen() {
 
 export function LmsAssignmentsScreen() {
   const [courses, setCourses] = useState<Row[]>([]);
+  const [employees, setEmployees] = useState<Row[]>([]);
+  const [departments, setDepartments] = useState<Row[]>([]);
+  const [locations, setLocations] = useState<Row[]>([]);
   const [form, setForm] = useState({ course_id: "", assignment_type: "employee", target_id: "", due_date: "" });
   const [status, setStatus] = useState<StatusMessage>(null);
-  const { data: assignments, loading: assignmentsLoading, refetch: refetchAssignments } = useLmsAssignments();
+  const { data: assignments, loading: assignmentsLoading, error: assignmentsError, refetch: refetchAssignments } = useLmsAssignments();
 
   const assignmentTypeLabels: Record<string, string> = {
     employee: "موظف", department: "قسم", location: "موقع", role: "دور", all: "الكل", team: "فريق",
   };
 
+  // Load courses + all picker data on mount in parallel
   useEffect(() => {
-    void getLmsCourses().then((result) => {
-      const loaded = rows(result.data);
+    void Promise.all([
+      getLmsCourses(),
+      getLmsOrgEmployees(),
+      getLmsOrgDepartments(),
+      getLmsOrgLocations(),
+    ]).then(([coursesRes, empRes, deptRes, locRes]) => {
+      const loaded = rows(coursesRes.data);
       setCourses(loaded);
+      setEmployees(rows(empRes.data));
+      setDepartments(rows(deptRes.data));
+      setLocations(rows(locRes.data));
       setForm((current) => ({ ...current, course_id: str(loaded[0] || {}, "id") }));
     });
   }, []);
 
+  // Reset target_id when assignment type changes
+  function handleTypeChange(newType: string) {
+    setForm((current) => ({ ...current, assignment_type: newType, target_id: "" }));
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const result = await assignLmsCourse({ ...form, target_id: form.assignment_type === "all" ? null : form.target_id });
-    setStatus(result.error ? { type: "error", message: result.error.message } : { type: "success", message: "تم إنشاء التكليف" });
+    if (form.assignment_type !== "all" && !form.target_id) {
+      setStatus({ type: "error", message: "يرجى تحديد الهدف المستهدف." });
+      return;
+    }
+    const result = await assignLmsCourse({
+      ...form,
+      target_id: form.assignment_type === "all" ? null : form.target_id,
+    });
+    setStatus(result.error
+      ? { type: "error", message: result.error.message }
+      : { type: "success", message: "تم إنشاء التكليف وتسجيل الموظفين في الدورة." }
+    );
     if (!result.error) void refetchAssignments();
+  }
+
+  function renderTargetPicker() {
+    if (form.assignment_type === "all") {
+      return (
+        <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+          سيتم تكليف جميع الموظفين النشطين في المؤسسة.
+        </div>
+      );
+    }
+    if (form.assignment_type === "employee") {
+      return (
+        <select
+          className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+          value={form.target_id}
+          onChange={(e) => setForm({ ...form, target_id: e.target.value })}
+          required
+        >
+          <option value="">اختر موظفاً...</option>
+          {employees.map((emp) => (
+            <option key={str(emp, "id")} value={str(emp, "id")}>
+              {str(emp, "full_name")}
+              {str(emp, "employee_code") ? ` (${str(emp, "employee_code")})` : ""}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    if (form.assignment_type === "department") {
+      return (
+        <select
+          className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+          value={form.target_id}
+          onChange={(e) => setForm({ ...form, target_id: e.target.value })}
+          required
+        >
+          <option value="">اختر قسماً...</option>
+          {departments.map((dept) => (
+            <option key={str(dept, "id")} value={str(dept, "id")}>{str(dept, "name")}</option>
+          ))}
+        </select>
+      );
+    }
+    if (form.assignment_type === "location" || form.assignment_type === "team") {
+      return (
+        <select
+          className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+          value={form.target_id}
+          onChange={(e) => setForm({ ...form, target_id: e.target.value })}
+          required
+        >
+          <option value="">اختر موقعاً...</option>
+          {locations.map((loc) => (
+            <option key={str(loc, "id")} value={str(loc, "id")}>{str(loc, "name")}</option>
+          ))}
+        </select>
+      );
+    }
+    if (form.assignment_type === "role") {
+      return (
+        <Input
+          value={form.target_id}
+          onChange={(e) => setForm({ ...form, target_id: e.target.value })}
+          placeholder="المسمى الوظيفي (مثال: مندوب مبيعات)"
+          required
+        />
+      );
+    }
+    return null;
   }
 
   return (
@@ -1909,35 +2240,60 @@ export function LmsAssignmentsScreen() {
           <form className="grid gap-4 md:grid-cols-2" onSubmit={submit}>
             <div className="space-y-2">
               <Label>الدورة</Label>
-              <select className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm" value={form.course_id} onChange={(event) => setForm({ ...form, course_id: event.target.value })}>
-                {courses.map((course) => <option key={str(course, "id")} value={str(course, "id")}>{str(course, "title")}</option>)}
+              <select
+                className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+                value={form.course_id}
+                onChange={(event) => setForm({ ...form, course_id: event.target.value })}
+                required
+              >
+                <option value="">اختر دورة...</option>
+                {courses.map((course) => (
+                  <option key={str(course, "id")} value={str(course, "id")}>{str(course, "title")}</option>
+                ))}
               </select>
             </div>
             <div className="space-y-2">
-              <Label>النوع</Label>
-              <select className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm" value={form.assignment_type} onChange={(event) => setForm({ ...form, assignment_type: event.target.value })}>
-                <option value="employee">موظف</option>
-                <option value="department">قسم</option>
-                <option value="location">موقع</option>
-                <option value="role">دور</option>
-                <option value="all">الكل</option>
+              <Label>نوع التكليف</Label>
+              <select
+                className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+                value={form.assignment_type}
+                onChange={(event) => handleTypeChange(event.target.value)}
+              >
+                <option value="employee">موظف محدد</option>
+                <option value="department">قسم كامل</option>
+                <option value="location">موقع كامل</option>
+                <option value="role">مسمى وظيفي</option>
+                <option value="all">جميع الموظفين</option>
               </select>
             </div>
             <div className="space-y-2">
-              <Label>المعرف المستهدف</Label>
-              <Input value={form.target_id} onChange={(event) => setForm({ ...form, target_id: event.target.value })} disabled={form.assignment_type === "all"} placeholder={form.assignment_type === "all" ? "لا يلزم" : "UUID أو الاسم..."} />
+              <Label>
+                {form.assignment_type === "employee" && "الموظف"}
+                {form.assignment_type === "department" && "القسم"}
+                {(form.assignment_type === "location" || form.assignment_type === "team") && "الموقع"}
+                {form.assignment_type === "role" && "المسمى الوظيفي"}
+                {form.assignment_type === "all" && "الهدف"}
+              </Label>
+              {renderTargetPicker()}
             </div>
             <div className="space-y-2">
               <Label>تاريخ الاستحقاق</Label>
               <Input type="date" value={form.due_date} onChange={(event) => setForm({ ...form, due_date: event.target.value })} />
             </div>
-            <div className="md:col-span-2"><Button type="submit">إنشاء التكليف</Button></div>
+            <div className="md:col-span-2">
+              <Button type="submit">إنشاء التكليف</Button>
+            </div>
           </form>
         </CardContent>
       </Card>
       <Card>
         <CardHeader><CardTitle>التكليفات المنشأة</CardTitle></CardHeader>
         <CardContent>
+          {assignmentsError && (
+            <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {assignmentsError}
+            </div>
+          )}
           {assignmentsLoading ? <PageSkeleton /> : (
             <Table>
               <TableHeader>
@@ -1956,7 +2312,7 @@ export function LmsAssignmentsScreen() {
                     <TableRow key={str(item, "id")}>
                       <TableCell className="font-medium">{str(course, "title") || str(item, "course_id")}</TableCell>
                       <TableCell>{assignmentTypeLabels[str(item, "assignment_type")] || str(item, "assignment_type")}</TableCell>
-                      <TableCell>{str(item, "target_id") || "—"}</TableCell>
+                      <TableCell>{str(item, "target_id") || "جميع الموظفين"}</TableCell>
                       <TableCell>{dateText(item.due_date)}</TableCell>
                       <TableCell>{dateText(item.created_at)}</TableCell>
                     </TableRow>
@@ -1965,7 +2321,7 @@ export function LmsAssignmentsScreen() {
               </TableBody>
             </Table>
           )}
-          {!assignmentsLoading && assignments.length === 0 && <EmptyState title="لا توجد تكليفات بعد" />}
+          {!assignmentsLoading && assignments.length === 0 && !assignmentsError && <EmptyState title="لا توجد تكليفات بعد" />}
         </CardContent>
       </Card>
     </div>

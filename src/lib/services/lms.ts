@@ -203,3 +203,11 @@ export function deleteLmsQuizQuestion(questionId: string) {
 export function getLmsOrgEmployees() {
   return apiFetch<LmsRecord[]>("/api/lms/employees");
 }
+
+export function getLmsOrgDepartments() {
+  return apiFetch<LmsRecord[]>("/api/lms/departments");
+}
+
+export function getLmsOrgLocations() {
+  return apiFetch<LmsRecord[]>("/api/lms/locations");
+}
