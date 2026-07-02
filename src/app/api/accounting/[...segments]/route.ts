@@ -1294,13 +1294,32 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return json(result, 201);
     }
 
-    // Phase 5: EOSB Settlement
+    // Phase 5: EOSB Settlement (also triggers Phase 6 leave encashment)
     if (parts[0] === "eosb" && parts[1] === "settle") {
       const employeeId = requireText(body.employee_id);
       if (!employeeId) return message("معرف الموظف مطلوب.", 400);
-      const { settleEmployeeEOSB } = await import("@/lib/accounting/auto-posting");
-      const result = await settleEmployeeEOSB(admin, auth.orgId, auth.user.id, employeeId);
-      if (!result.success) return message(result.error || "فشل تسوية مكافأة نهاية الخدمة.", 500);
+      const { settleEmployeeEOSB, calculateAndPostLeaveEncashment } = await import("@/lib/accounting/auto-posting");
+      const eosb = await settleEmployeeEOSB(admin, auth.orgId, auth.user.id, employeeId);
+      if (!eosb.success) return message(eosb.error || "فشل تسوية مكافأة نهاية الخدمة.", 500);
+
+      // Phase 6: attempt leave encashment in same termination flow (non-blocking)
+      let leaveEncashment: { success: boolean; journalEntryId?: string; encashmentAmount: number; error?: string } = { success: true, encashmentAmount: 0 };
+      try {
+        leaveEncashment = await calculateAndPostLeaveEncashment(admin, auth.orgId, auth.user.id, employeeId);
+      } catch {
+        // Leave encashment failure must not block EOSB settlement response
+      }
+
+      return json({ eosb, leaveEncashment }, 201);
+    }
+
+    // Phase 6: Leave Encashment (standalone endpoint)
+    if (parts[0] === "leave-encashment" && parts[1] === "post") {
+      const employeeId = requireText(body.employee_id);
+      if (!employeeId) return message("معرف الموظف مطلوب.", 400);
+      const { calculateAndPostLeaveEncashment } = await import("@/lib/accounting/auto-posting");
+      const result = await calculateAndPostLeaveEncashment(admin, auth.orgId, auth.user.id, employeeId);
+      if (!result.success) return message(result.error || "فشل ترحيل تعويض الإجازات.", 500);
       return json(result, 201);
     }
 
