@@ -77,11 +77,26 @@ export function SidebarContent() {
         ]
       : [{ name: "الإجازات", href: "/leave", icon: ClipboardList }];
 
+    const lmsLearnerOps: NavLink[] = [
+      { name: "\u0627\u0644\u062a\u0639\u0644\u0645", href: "/lms", icon: BookOpen },
+      { name: "\u062a\u0639\u0644\u0645\u064a", href: "/lms/my", icon: BookOpen, indent: true },
+      { name: "\u0643\u062a\u0627\u0644\u0648\u062c \u0627\u0644\u062f\u0648\u0631\u0627\u062a", href: "/lms/catalog", icon: BookOpen, indent: true },
+    ];
+
+    const lmsManagementOps: NavLink[] = [
+      { name: "\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u062a\u0639\u0644\u0645", href: "/lms/courses", icon: BookOpen },
+      { name: "\u0625\u0646\u0634\u0627\u0621 \u062f\u0648\u0631\u0629", href: "/lms/courses/new", icon: BookOpen, indent: true },
+      { name: "\u0627\u0644\u062a\u0643\u0644\u064a\u0641\u0627\u062a", href: "/lms/assignments", icon: ClipboardList, indent: true },
+      { name: "\u0627\u0644\u062a\u0642\u0627\u0631\u064a\u0631", href: "/lms/reports", icon: ClipboardList, indent: true },
+      { name: "\u0627\u0644\u0634\u0647\u0627\u062f\u0627\u062a", href: "/lms/certificates", icon: FileText, indent: true },
+    ];
+
     const core: NavLink[] = [
       { name: "لوحة التحكم", href: "/", icon: LayoutDashboard },
       { name: "الحضور", href: "/attendance", icon: Clock },
       ...taskLinks,
       ...leaveLinks,
+      ...lmsLearnerOps,
       { name: "الجداول", href: "/schedule", icon: CalendarDays },
       { name: "المواقع", href: "/locations", icon: MapPin },
       { name: "الشات", href: "/chat", icon: MessageCircle },
@@ -90,6 +105,7 @@ export function SidebarContent() {
     const financeCore: NavLink[] = [
       { name: "لوحة التحكم", href: "/", icon: LayoutDashboard },
       ...taskLinks,
+      ...lmsLearnerOps,
       { name: "الشات", href: "/chat", icon: MessageCircle },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
@@ -151,7 +167,7 @@ export function SidebarContent() {
 
     if (role === "HR_Recruitment") {
       return [
-        { title: "التوظيف", links: recruitmentOps },
+        { title: "التوظيف", links: [...recruitmentOps, ...lmsLearnerOps] },
         { title: "النظام", links: system },
       ];
     }
@@ -167,6 +183,7 @@ export function SidebarContent() {
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
             { name: "سجل المبيعات", href: "/sales/history", icon: ClipboardList },
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
+            ...lmsLearnerOps,
             { name: "الشات", href: "/chat", icon: MessageCircle },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],
@@ -186,6 +203,7 @@ export function SidebarContent() {
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
             { name: "سجل مبيعاتي", href: "/sales/history", icon: ClipboardList },
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
+            ...lmsLearnerOps,
             { name: "الشات", href: "/chat", icon: MessageCircle },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],
@@ -196,7 +214,18 @@ export function SidebarContent() {
 
     return [
       { title: "الأساسي", links: isFinance ? financeCore : core },
-      { title: "الإدارة", links: isAdmin ? fullAdminOps : isHRAdmin ? hrAdminOps : role === "Employee" ? employeeSelfOps : [] },
+      {
+        title: "الإدارة",
+        links: isAdmin
+          ? [...fullAdminOps, ...lmsManagementOps]
+          : isHRAdmin
+            ? [...hrAdminOps, ...lmsManagementOps]
+            : role === "Training_Manager"
+              ? lmsManagementOps
+              : role === "Employee"
+                ? employeeSelfOps
+                : [],
+      },
       { title: "المبيعات", links: isAdmin || isHRAdmin ? salesManagementOps : [] },
       { title: "المالية والمحاسبة", links: canSeeFullAccounting ? accountingOps : canSeeFinanceTeam ? accountingTeamOps : [] },
       { title: "النظام", links: system },
