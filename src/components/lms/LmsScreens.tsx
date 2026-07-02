@@ -2231,9 +2231,15 @@ export function LmsAssignmentsScreen() {
     const payload: Record<string, unknown> = { ...form };
     if (form.assignment_type === "all") delete payload.target_id;
     const result = await assignLmsCourse(payload);
+    const createdCount = rows(asRow(result.data).enrollments).length;
     setStatus(result.error
       ? { type: "error", message: result.error.message }
-      : { type: "success", message: "تم إنشاء التكليف وتسجيل الموظفين في الدورة." }
+      : {
+          type: "success",
+          message: createdCount > 0
+            ? `تم إنشاء التكليف وتسجيل ${createdCount} موظف في الدورة.`
+            : "تم إنشاء التكليف. جميع الموظفين المستهدفين لديهم التكليف مسبقاً.",
+        }
     );
     if (!result.error) void refetchAssignments();
   }
