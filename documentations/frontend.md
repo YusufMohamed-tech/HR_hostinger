@@ -6,6 +6,38 @@ The frontend is built with **Next.js 14 App Router**, **React 18**, and **Tailwi
 
 ---
 
+## LMS v43 Frontend
+
+The LMS frontend is implemented under `src/app/(app)/lms` with shared client screens in `src/components/lms/LmsScreens.tsx`. The app layout already runs RTL, and LMS labels are Arabic.
+
+### Learner routes
+- `/lms`
+- `/lms/my`
+- `/lms/catalog`
+- `/lms/player/[enrollmentId]`
+- `/lms/certificates`
+- `/lms/community`
+
+### Management routes
+- `/lms/courses`
+- `/lms/courses/new`
+- `/lms/courses/[courseId]/edit`
+- `/lms/courses/[courseId]/instructors`
+- `/lms/courses/[courseId]/tasks`
+- `/lms/courses/[courseId]/submissions`
+- `/lms/courses/[courseId]/community`
+- `/lms/assignments`
+- `/lms/reports`
+- `/lms/certificates`
+
+### Navigation and gates
+`src/components/layout/Sidebar.tsx` adds learner LMS links for workspace roles and management LMS links for Admin, HR_Admin, and Training_Manager. LMS route access is allowed in `src/lib/rbac.ts` and feature-gated in middleware.
+
+### UX coverage
+The first LMS UI pass includes dashboard stats, learner course table, catalog cards, course management table, category management, course builder, instructor assignment, task management, submission review, learner player, quiz/task submission, community feed, reports, assignments, and printable certificates.
+
+---
+
 ## Technology Stack
 
 | Layer | Technology |

@@ -8,6 +8,29 @@ All services follow the `{ data, error }` return pattern from Supabase.
 
 ---
 
+## LMS v43 Services
+
+Server LMS business logic is centralized in `src/lib/server/lms.ts`. Route handlers in `src/app/api/lms/[[...segments]]/route.ts` stay thin and call this service layer after tenant context and Zod validation.
+
+### Server capabilities
+- Category/course create, update, publish, archive.
+- Course instructor assignment and permission checks.
+- Section, lesson, quiz, question, and task creation.
+- Private LMS upload pathing and signed URL generation.
+- Learner dashboard and enrollment/player data.
+- Lesson completion and progress recalculation.
+- Quiz attempt max-attempt enforcement, scoring, and pass/fail.
+- Task submission, instructor review, score, feedback, revision, acceptance/rejection.
+- Assignment rules and enrollment creation.
+- Course completion and single certificate issuance.
+- Announcements, community posts/comments/reactions/read tracking.
+- LMS notifications for assignments, announcements, reviews, completions, certificates, and community replies where supported.
+- Reports scoped for Admin, HR_Admin, Training_Manager, and assigned instructors.
+
+Client wrappers live in `src/lib/services/lms.ts`, and hooks live in `src/hooks/use-data.ts` as `useLmsDashboard`, `useLmsCatalog`, `useLmsCourses`, and `useLmsReports`.
+
+---
+
 ## Server Tenant Helpers
 
 ### `src/lib/server/tenant-context.ts`

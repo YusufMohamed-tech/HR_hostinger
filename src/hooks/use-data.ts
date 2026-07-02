@@ -12,6 +12,8 @@ import { getTasks } from "@/lib/services/tasks";
 import { getLeaveRequests, getLeaveBalances } from "@/lib/services/leaves";
 import { getNotifications } from "@/lib/services/notifications";
 import { getOrganizations } from "@/lib/services/organizations";
+import { getLmsCatalog, getLmsCourses, getLmsDashboard, getLmsReports, getLmsAssignments } from "@/lib/services/lms";
+import type { LmsLearnerDashboard } from "@/types/lms";
 
 type Fetcher<T> = (orgId: string) => Promise<{ data: T | null; error: unknown }>;
 
@@ -209,6 +211,131 @@ export function useOrganizations() {
       setData([]);
     } else if (result.data) {
       setData(result.data);
+      setError(null);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  return { data, loading, error, refetch };
+}
+
+export function useLmsDashboard() {
+  const [data, setData] = useState<LmsLearnerDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    const result = await getLmsDashboard();
+    if (result.error) {
+      setError(result.error.message);
+      setData(null);
+    } else {
+      setData(result.data);
+      setError(null);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  return { data, loading, error, refetch };
+}
+
+export function useLmsCatalog() {
+  const [data, setData] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    const result = await getLmsCatalog();
+    if (result.error) {
+      setError(result.error.message);
+      setData([]);
+    } else {
+      setData(result.data || []);
+      setError(null);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  return { data, loading, error, refetch };
+}
+
+export function useLmsCourses() {
+  const [data, setData] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    const result = await getLmsCourses();
+    if (result.error) {
+      setError(result.error.message);
+      setData([]);
+    } else {
+      setData(result.data || []);
+      setError(null);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  return { data, loading, error, refetch };
+}
+
+export function useLmsReports() {
+  const [data, setData] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    const result = await getLmsReports();
+    if (result.error) {
+      setError(result.error.message);
+      setData(null);
+    } else {
+      setData(result.data || null);
+      setError(null);
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
+
+  return { data, loading, error, refetch };
+}
+
+export function useLmsAssignments() {
+  const [data, setData] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    const result = await getLmsAssignments();
+    if (result.error) {
+      setError(result.error.message);
+      setData([]);
+    } else {
+      setData((result.data as Record<string, unknown>[]) || []);
       setError(null);
     }
     setLoading(false);

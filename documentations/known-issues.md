@@ -1,5 +1,19 @@
 # Known Issues & Assumptions
 
+## LMS v43 Limitations
+
+- SCORM and xAPI are intentionally deferred.
+- Video transcoding is intentionally deferred; v1 stores videos privately and serves signed URLs.
+- Certificates are printable HTML/CSS only; PDF generation is intentionally deferred.
+- Course instructors are internal HRMS employees only; external instructors are intentionally deferred.
+- Public academy, public registration, paid courses, and payment integrations are intentionally deferred.
+- Learning paths are basic ordered course structures in v1; advanced automation is deferred.
+- Manual QA still needs to be run against a reachable Supabase database for cross-org access, signed URLs, and role-specific workflows.
+
+## LMS v43 Verification Note
+
+`npm run apply:migration -- db/schema_v43_lms_module.sql` and `npm run verify:lms` require the configured Supabase database host to resolve. If DNS fails for the Supabase host, local lint/build can still pass, but database verification remains blocked until network/DNS access is restored.
+
 ## Critical Issues
 
 | # | Area | Description | Impact |
