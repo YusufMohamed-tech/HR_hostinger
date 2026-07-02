@@ -70,7 +70,7 @@ export default function CashFlowPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis />
-                  <Tooltip formatter={(v: number) => v.toLocaleString("ar-SA")} />
+                  <Tooltip formatter={(v: unknown) => typeof v === "number" ? v.toLocaleString("ar-SA") : String(v ?? "")} />
                   <Bar dataKey="value" fill="#10b981" />
                 </BarChart>
               </ResponsiveContainer>

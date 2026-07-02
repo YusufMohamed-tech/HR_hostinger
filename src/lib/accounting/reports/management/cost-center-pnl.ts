@@ -71,7 +71,7 @@ export async function getCostCenterPnL(
   const rows: CostCenterPnLRow[] = [];
   let unassigned = { revenue: 0, expenses: 0, net_profit: 0 };
 
-  for (const [ccId, values] of grouped) {
+  for (const [ccId, values] of Array.from(grouped)) {
     const netProfit = roundMoney(values.revenue - values.expenses);
     if (ccId === "unassigned") {
       unassigned = { ...values, net_profit: netProfit };

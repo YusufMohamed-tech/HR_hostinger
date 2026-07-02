@@ -99,7 +99,7 @@ export function computeVarianceMap(
 ): Record<string, VarianceItem> {
   const result: Record<string, VarianceItem> = {};
   const allKeys = new Set([...Object.keys(currentData), ...Object.keys(priorData)]);
-  for (const key of allKeys) {
+  for (const key of Array.from(allKeys)) {
     result[key] = computeVariance(currentData[key] || 0, priorData[key] || 0);
   }
   return result;
