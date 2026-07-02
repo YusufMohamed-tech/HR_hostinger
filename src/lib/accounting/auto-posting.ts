@@ -11,7 +11,7 @@ interface SalesLogData {
   id: string;
   log_date: string;
   grand_total: number;
-  vat_amount?: number;
+  subtotal?: number;
   company_id?: string;
   items?: Array<{ product_name?: string; line_total?: number }>;
 }
@@ -26,24 +26,53 @@ export async function autoPostSalesLog(
     const settings = (await getAccountingSettings(admin, orgId)) as AccountingSettings | null;
     if (!settings?.auto_post_sales) return { success: true };
 
+    // Canonical customer lookup: sales_companies.accounting_customer_id first,
+    // then fall back to accounting_customers.sales_company_id
     let customerName: string | undefined;
     if (salesLog.company_id) {
-      const { data: link } = await (admin as any)
-        .from("accounting_customers")
-        .select("name_ar, name_en")
+      const { data: company } = await (admin as any)
+        .from("sales_companies")
+        .select("accounting_customer_id, name")
         .eq("organization_id", orgId)
-        .eq("sales_company_id", salesLog.company_id)
+        .eq("id", salesLog.company_id)
         .maybeSingle();
-      if (link) {
-        customerName = String(link.name_ar || link.name_en || "");
+
+      let customerId: string | undefined = company?.accounting_customer_id;
+      if (!customerId) {
+        const { data: customerRow } = await (admin as any)
+          .from("accounting_customers")
+          .select("id, name_ar, name_en")
+          .eq("organization_id", orgId)
+          .eq("sales_company_id", salesLog.company_id)
+          .maybeSingle();
+        customerId = customerRow?.id;
+        if (customerRow) {
+          customerName = String(customerRow.name_ar || customerRow.name_en || "");
+        }
+      }
+      if (customerId && !customerName) {
+        const { data: custRow } = await (admin as any)
+          .from("accounting_customers")
+          .select("name_ar, name_en")
+          .eq("organization_id", orgId)
+          .eq("id", customerId)
+          .maybeSingle();
+        customerName = custRow ? String(custRow.name_ar || custRow.name_en || "") : company?.name;
       }
     }
+
+    // Compute VAT from org tax rate (default 15%)
+    const subtotal = salesLog.subtotal ?? salesLog.grand_total;
+    const taxRate = Number((settings as any).default_tax_rate ?? 15) / 100;
+    const vatAmount = roundMoney(subtotal * taxRate);
+    // AR debit = subtotal + VAT
+    const arTotal = roundMoney(subtotal + vatAmount);
 
     const result = await postTransaction(admin, orgId, userId, "sales_revenue", {
       id: salesLog.id,
       log_date: salesLog.log_date,
-      grand_total: salesLog.grand_total,
-      vat_amount: salesLog.vat_amount || 0,
+      grand_total: arTotal,
+      vat_amount: vatAmount,
       customer_name: customerName,
     }, {
       entryDate: salesLog.log_date,
@@ -117,20 +146,27 @@ export async function autoPostPayrollMonth(
 
       const details = Array.isArray(slip.deductions_details) ? slip.deductions_details : [];
       for (const d of details as Record<string, unknown>[]) {
-        if (String(d.type || "").toLowerCase().includes("advance") || String(d.type || "").toLowerCase().includes("سلف")) {
+        const label = String(d.label || d.type || "").toLowerCase();
+        if (label.includes("advance") || label.includes("سلف")) {
           advanceDeductions += Number(d.amount || 0);
         }
       }
     }
 
-    const sourceId = `payroll-${month}`;
+    // Use a stable sourceId that does NOT conflict with the manual create-draft-entry path
+    // (which uses a deterministic UUID). We use a distinct prefix to avoid collision.
+    const sourceId = `auto-payroll-${month}`;
     const result = await postTransaction(admin, orgId, userId, "payroll_accrual", {
       id: sourceId,
       month,
+      total_base_salary: roundMoney(totalBaseSalary),
+      total_allowances: roundMoney(totalAllowances),
       total_net: roundMoney(totalNet),
       advance_deductions: roundMoney(advanceDeductions),
+      total_employer_gosi: roundMoney(totalEmployerGosi),
+      total_employee_gosi: roundMoney(totalEmployeeGosi),
     }, {
-      entryDate: `${month}-28`,
+      entryDate: lastDayOfMonth(month),
       status: "posted",
       sourceId,
     });
@@ -138,7 +174,7 @@ export async function autoPostPayrollMonth(
     return { success: true, journalEntryId: result.journalEntryId };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Payroll auto-posting failed";
-    await logAutoPostFailure(admin, orgId, "payroll", `payroll-${month}`, message);
+    await logAutoPostFailure(admin, orgId, "payroll", `auto-payroll-${month}`, message);
     return { success: false, error: message };
   }
 }
@@ -274,9 +310,10 @@ export async function runMonthlyDepreciation(
       throw new Error("حسابات الإهلاك غير محددة.");
     }
 
+    // Fetch assets with depreciation columns; skip those already depreciated this month
     const { data: assets, error } = await (admin as any)
       .from("employee_assets")
-      .select("id, asset_name, purchase_price, useful_life_months, salvage_value, last_depreciation_date")
+      .select("id, asset_name, purchase_price, useful_life_months, salvage_value, last_depreciation_date, months_depreciated")
       .eq("org_id", orgId)
       .gt("purchase_price", 0)
       .neq("status", "returned");
@@ -287,13 +324,22 @@ export async function runMonthlyDepreciation(
     const { createJournalEntry } = await import("@/lib/accounting/posting");
     const lines: Array<{ account_id: string; debit: number; credit: number; description: string }> = [];
     let assetsProcessed = 0;
-    const monthEnd = `${month}-28`;
+    const monthEnd = lastDayOfMonth(month);
 
     for (const asset of assets as Record<string, unknown>[]) {
       const purchasePrice = Number(asset.purchase_price || 0);
       const salvageValue = Number(asset.salvage_value || 0);
       const usefulLifeMonths = Number(asset.useful_life_months || 60);
+      const monthsDepreciated = Number(asset.months_depreciated || 0);
+
       if (purchasePrice <= salvageValue) continue;
+
+      // Skip if already fully depreciated
+      if (monthsDepreciated >= usefulLifeMonths) continue;
+
+      // Skip if already depreciated this month (last_depreciation_date in same month)
+      const lastDepDate = String(asset.last_depreciation_date || "");
+      if (lastDepDate.startsWith(month)) continue;
 
       const monthlyDep = roundMoney((purchasePrice - salvageValue) / usefulLifeMonths);
       if (monthlyDep <= 0) continue;
@@ -315,7 +361,10 @@ export async function runMonthlyDepreciation(
 
       await (admin as any)
         .from("employee_assets")
-        .update({ last_depreciation_date: monthEnd })
+        .update({
+          last_depreciation_date: monthEnd,
+          months_depreciated: monthsDepreciated + 1,
+        })
         .eq("org_id", orgId)
         .eq("id", String(asset.id));
 
@@ -408,11 +457,11 @@ export async function runMonthlyEOSBAccrual(
       const yearsOfService = (monthDate.getTime() - hireDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
       if (yearsOfService < 0) continue;
 
+      // Smooth monthly accrual: use daily rate × (15 or 30 days) / 12
+      // This avoids the lumpy delta-of-totals approach.
       const dailyRate = roundMoney(baseSalary / 30);
-      const currentMonthEOSB = calculateEOSB(baseSalary, yearsOfService, "termination");
-      const prevMonthYears = Math.max(0, yearsOfService - (1 / 12));
-      const prevMonthEOSB = calculateEOSB(baseSalary, prevMonthYears, "termination");
-      const monthlyAccrual = roundMoney(currentMonthEOSB - prevMonthEOSB);
+      const daysPerYear = yearsOfService > 5 ? 30 : 15;
+      const monthlyAccrual = roundMoney(dailyRate * daysPerYear / 12);
 
       if (monthlyAccrual <= 0) continue;
 
@@ -425,6 +474,19 @@ export async function runMonthlyEOSBAccrual(
         .maybeSingle();
 
       if (existing) continue;
+
+      // Cumulative: sum of all prior accruals + this month
+      const { data: priorRows } = await (admin as any)
+        .from("eosb_accruals")
+        .select("monthly_accrual")
+        .eq("organization_id", orgId)
+        .eq("employee_id", String(emp.id));
+      const priorTotal = roundMoney(
+        ((priorRows as Record<string, unknown>[] | null) || []).reduce(
+          (sum, r) => sum + Number(r.monthly_accrual || 0), 0
+        )
+      );
+      const cumulativeAccrual = roundMoney(priorTotal + monthlyAccrual);
 
       lines.push(
         {
@@ -450,7 +512,7 @@ export async function runMonthlyEOSBAccrual(
         years_of_service: roundMoney(yearsOfService),
         daily_rate: dailyRate,
         monthly_accrual: monthlyAccrual,
-        cumulative_accrual: currentMonthEOSB,
+        cumulative_accrual: cumulativeAccrual,
       });
 
       employeesProcessed++;
@@ -462,7 +524,7 @@ export async function runMonthlyEOSBAccrual(
     const entry = await createJournalEntry(admin, {
       orgId,
       userId,
-      entryDate: `${month}-28`,
+      entryDate: lastDayOfMonth(month),
       description: `مخصص مكافأة نهاية الخدمة - ${month}`,
       sourceModule: "eosb",
       sourceId,
@@ -536,9 +598,10 @@ export async function settleEmployeeEOSB(
     const lines: Array<{ account_id: string; debit: number; credit: number; description: string; employee_id?: string }> = [];
 
     if (accruedAmount > 0) {
+      // Debit provision for the full accrued amount (clear it entirely)
       lines.push({
         account_id: settings.default_eosb_provision_id,
-        debit: Math.min(accruedAmount, settlementAmount),
+        debit: accruedAmount,
         credit: 0,
         description: `تسوية مخصص نهاية خدمة ${emp.full_name}`,
         employee_id: employeeId,
@@ -546,6 +609,7 @@ export async function settleEmployeeEOSB(
     }
 
     if (difference > 0) {
+      // Settlement exceeds accrued: expense the shortfall
       lines.push({
         account_id: settings.default_eosb_expense_id,
         debit: difference,
@@ -553,8 +617,18 @@ export async function settleEmployeeEOSB(
         description: `فرق مكافأة نهاية خدمة ${emp.full_name}`,
         employee_id: employeeId,
       });
+    } else if (difference < 0) {
+      // Over-accrued: credit back the surplus to EOSB expense
+      lines.push({
+        account_id: settings.default_eosb_expense_id,
+        debit: 0,
+        credit: roundMoney(Math.abs(difference)),
+        description: `إعادة فائض مخصص نهاية خدمة ${emp.full_name}`,
+        employee_id: employeeId,
+      });
     }
 
+    // CR: Bank — the actual cash paid out
     lines.push({
       account_id: bankAccount,
       debit: 0,
@@ -596,8 +670,9 @@ export async function calculateAndPostLeaveEncashment(
     const settings = (await getAccountingSettings(admin, orgId)) as (AccountingSettings & { default_leave_encashment_id?: string }) | null;
     if (!settings) throw new Error("إعدادات المحاسبة غير موجودة.");
 
-    const leaveEncashmentAccount = settings.default_leave_encashment_id || settings.default_salary_expense_id;
-    if (!leaveEncashmentAccount) throw new Error("حساب تعويض الإجازات غير محدد.");
+    // Use dedicated leave encashment account; no silent fallback to salary expense
+    const leaveEncashmentAccount = settings.default_leave_encashment_id;
+    if (!leaveEncashmentAccount) throw new Error("حساب تعويض الإجازات (5040) غير محدد في إعدادات المحاسبة.");
     if (!settings.default_salary_payable_id) throw new Error("حساب الرواتب المستحقة غير محدد.");
 
     const [empResult, leaveResult] = await Promise.all([
@@ -717,6 +792,16 @@ export async function recordGOSIPayment(
 }
 
 // =============================================================================
+// Utility: compute last calendar day of a YYYY-MM month
+// =============================================================================
+
+function lastDayOfMonth(month: string): string {
+  const [year, mon] = month.split("-").map(Number);
+  const lastDay = new Date(year, mon, 0).getDate(); // day 0 of next month = last day of this month
+  return `${month}-${String(lastDay).padStart(2, "0")}`;
+}
+
+// =============================================================================
 // Utility: Log Auto-Post Failure (non-blocking)
 // =============================================================================
 
@@ -734,6 +819,7 @@ async function logAutoPostFailure(
       source_id: sourceId,
       journal_entry_id: null,
       status: "failed",
+      error_message: errorMessage,
     }, { onConflict: "organization_id,source_module,source_id" });
   } catch {
     // Silently ignore logging failures to not block the main flow

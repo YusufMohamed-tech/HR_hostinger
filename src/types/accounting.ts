@@ -211,6 +211,22 @@ export interface AccountingSettings {
   default_asset_account_id: string | null;
   default_depreciation_expense_id: string | null;
   default_accumulated_depreciation_id: string | null;
+  // Phase 7: GOSI
+  default_gosi_payable_id: string | null;
+  default_gosi_expense_id: string | null;
+  // Phase 5: EOSB
+  default_eosb_expense_id: string | null;
+  default_eosb_provision_id: string | null;
+  // Phase 6: Leave encashment
+  default_leave_encashment_id: string | null;
+  // Phase 2: Allowances
+  default_allowances_expense_id: string | null;
+  // Auto-posting toggles (schema_v44)
+  auto_post_sales: boolean;
+  auto_post_payroll: boolean;
+  auto_post_advances: boolean;
+  auto_post_assets: boolean;
+  auto_post_eosb: boolean;
   fiscal_year_start_month: number;
   invoice_prefix: string;
   expense_prefix: string;

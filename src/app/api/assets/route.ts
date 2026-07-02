@@ -89,6 +89,24 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (error) return NextResponse.json({ message: error.message }, { status: 500 });
+
+    // Phase 4: Auto-capitalize if purchase_price provided (non-blocking)
+    const purchasePrice = Number((body as Record<string, unknown>).purchase_price || 0);
+    const paidImmediately = Boolean((body as Record<string, unknown>).paid_immediately);
+    if (purchasePrice > 0) {
+      try {
+        const { autoCapitalizeAsset } = await import("@/lib/accounting/auto-posting");
+        await autoCapitalizeAsset(admin, auth.orgId, auth.user.id, {
+          id: String((data as Record<string, unknown>).id),
+          asset_name: assetName,
+          purchase_price: purchasePrice,
+          paid_immediately: paidImmediately,
+        });
+      } catch {
+        // Capitalization failure must not block asset creation
+      }
+    }
+
     return NextResponse.json({ data });
   }
 

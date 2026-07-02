@@ -4,6 +4,7 @@ import { roundMoney, type JournalLineInput } from "@/lib/accounting/validation";
 import { invoiceTemplate } from "@/lib/accounting/templates/invoice";
 import { expenseTemplate } from "@/lib/accounting/templates/expense";
 import { payrollTemplate } from "@/lib/accounting/templates/payroll";
+// PayrollSource shape changed — see templates/payroll.ts
 import { paymentTemplate } from "@/lib/accounting/templates/payment";
 import { advanceTemplate } from "@/lib/accounting/templates/advance";
 import { salesTemplate } from "@/lib/accounting/templates/sales";
