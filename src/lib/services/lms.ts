@@ -28,6 +28,10 @@ export function getLmsDashboard() {
   return apiFetch<LmsLearnerDashboard>("/api/lms/my");
 }
 
+export function getLmsInstructorDashboard() {
+  return apiFetch<LmsRecord>("/api/lms/instructor");
+}
+
 export function getLmsCatalog() {
   return apiFetch<LmsRecord[]>("/api/lms/courses?mode=catalog");
 }
