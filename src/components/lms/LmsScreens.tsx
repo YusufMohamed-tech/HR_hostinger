@@ -354,7 +354,7 @@ function CourseCard({
           {manager && courseId ? (
             <>
               <Button asChild variant="outline">
-                <Link href={`/lms/courses/${courseId}/edit`}>تحرير</Link>
+                <Link href={`/lms/courses/${courseId}/studio`}>الاستوديو</Link>
               </Button>
               <Button asChild variant="outline">
                 <Link href={`/lms/courses/${courseId}/tasks`}>المهام</Link>
@@ -607,7 +607,6 @@ export function LmsCoursesScreen() {
                       <TableCell>
                         <div className="flex flex-wrap gap-2">
                           <Button asChild size="sm"><Link href={`/lms/courses/${id}/studio`}>الاستوديو</Link></Button>
-                          <Button asChild size="sm" variant="outline"><Link href={`/lms/courses/${id}/edit`}>تحرير</Link></Button>
                           <Button asChild size="sm" variant="outline"><Link href={`/lms/courses/${id}/instructors`}>المدربون</Link></Button>
                           <Button size="sm" variant="outline" onClick={() => void publish(id)}>نشر</Button>
                           <Button size="sm" variant="destructive" onClick={() => void archive(id)}>أرشفة</Button>

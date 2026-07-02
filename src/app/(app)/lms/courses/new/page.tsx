@@ -1,5 +1,5 @@
-import { LmsCourseEditorScreen } from "@/components/lms/LmsScreens";
+import { CourseStudioCreate } from "@/components/lms/builder/CourseStudioCreate";
 
 export default function NewLmsCoursePage() {
-  return <LmsCourseEditorScreen />;
+  return <CourseStudioCreate />;
 }

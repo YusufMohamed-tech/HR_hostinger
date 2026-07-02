@@ -1,5 +1,5 @@
-import { LmsCourseEditorScreen } from "@/components/lms/LmsScreens";
+import { redirect } from "next/navigation";
 
 export default function EditLmsCoursePage({ params }: { params: { courseId: string } }) {
-  return <LmsCourseEditorScreen courseId={params.courseId} />;
+  redirect(`/lms/courses/${params.courseId}/studio`);
 }
