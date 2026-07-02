@@ -1493,3 +1493,25 @@ export async function listOrgEmployees(auth: LmsAuth) {
   if (result.error) throw new Error(result.error.message);
   return result.data ?? [];
 }
+
+export async function listOrgDepartments(auth: LmsAuth) {
+  await assertElevated(auth);
+  const result = await db(auth)
+    .from("departments")
+    .select("id, name")
+    .eq("org_id", auth.orgId)
+    .order("name", { ascending: true });
+  if (result.error) throw new Error(result.error.message);
+  return result.data ?? [];
+}
+
+export async function listOrgLocations(auth: LmsAuth) {
+  await assertElevated(auth);
+  const result = await db(auth)
+    .from("locations")
+    .select("id, name, type")
+    .eq("org_id", auth.orgId)
+    .order("name", { ascending: true });
+  if (result.error) throw new Error(result.error.message);
+  return result.data ?? [];
+}
