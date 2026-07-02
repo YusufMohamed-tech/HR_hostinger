@@ -14,6 +14,21 @@ import {
   getTrialBalance,
   getVatReport,
 } from "@/lib/accounting/reports";
+import {
+  getCashFlowStatement,
+  getComparativeProfitLoss,
+  getComparativeBalanceSheet,
+  getKPIDashboard,
+  getCostCenterPnL,
+  getBudgetVariance,
+  getCashPosition,
+  getRevenueAnalysis,
+  getExpenseAnalysis,
+  getPayrollSummary,
+  getARAgingReport,
+  getAPAgingReport,
+} from "@/lib/accounting/reports/index";
+import { reportToCSV } from "@/lib/accounting/reports/export/csv";
 import { parseDate, requireText, roundMoney, type JournalLineInput } from "@/lib/accounting/validation";
 import { writeAuditLog } from "@/lib/utils/audit";
 
@@ -93,6 +108,10 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "sales" && method === "GET") return "sales";
   if (parts[0] === "reports" && method === "GET") return "reports";
   if (parts[0] === "payroll" && parts[1] === "record-payment") return "post";
+  if (parts[0] === "payroll" && parts[1] === "auto-post") return "post";
+  if (parts[0] === "assets" && (parts[1] === "capitalize" || parts[1] === "run-depreciation")) return "post";
+  if (parts[0] === "eosb" && (parts[1] === "run-accrual" || parts[1] === "settle")) return "post";
+  if (parts[0] === "gosi" && parts[1] === "record-payment") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
@@ -492,6 +511,23 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (error) throw new Error(error.message);
       return json({ sales_log_id: logId, status: data ? "invoice_created" : "not_generated", invoice: data || null });
     }
+    if (parts[0] === "budgets") {
+      if (parts[1]) {
+        const budget = await getRecord(admin, "accounting_budgets", auth.orgId, parts[1]);
+        const { data: lines, error: linesError } = await db(admin)
+          .from("accounting_budget_lines")
+          .select("*, account:account_id(id, code, name_ar), cost_center:cost_center_id(id, code, name_ar)")
+          .eq("budget_id", parts[1])
+          .order("month", { ascending: true });
+        if (linesError) throw new Error(linesError.message);
+        return json({ ...budget, lines: lines || [] });
+      }
+      return json(await listTable(admin, "accounting_budgets", auth.orgId, request));
+    }
+    if (parts[0] === "periods") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_periods", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_periods", auth.orgId, request, "start_date"));
+    }
     if (parts[0] === "settings") {
       const settings = await getAccountingSettings(admin, auth.orgId);
       return json(settings);
@@ -553,6 +589,50 @@ export async function GET(request: NextRequest, context: RouteContext) {
           .order("invoice_date", { ascending: false });
         if (error) throw new Error(error.message);
         return json(data || []);
+      }
+      if (parts[1] === "cash-flow") {
+        return json(await getCashFlowStatement(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31"));
+      }
+      if (parts[1] === "kpi-dashboard") {
+        return json(await getKPIDashboard(admin, auth.orgId, dateFrom || new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10), dateTo || new Date().toISOString().slice(0, 10)));
+      }
+      if (parts[1] === "cost-center-pnl") {
+        const costCenterId = request.nextUrl.searchParams.get("cost_center_id") || undefined;
+        return json(await getCostCenterPnL(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31", costCenterId));
+      }
+      if (parts[1] === "revenue-analysis") {
+        const groupBy = (request.nextUrl.searchParams.get("group_by") || "customer") as "customer" | "product" | "channel" | "month";
+        return json(await getRevenueAnalysis(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31", groupBy));
+      }
+      if (parts[1] === "expense-analysis") {
+        const groupBy = (request.nextUrl.searchParams.get("group_by") || "category") as "category" | "vendor" | "cost_center" | "month";
+        return json(await getExpenseAnalysis(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31", groupBy));
+      }
+      if (parts[1] === "payroll-analysis") {
+        const groupBy = (request.nextUrl.searchParams.get("group_by") || "month") as "department" | "employee" | "month";
+        return json(await getPayrollSummary(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31", groupBy));
+      }
+      if (parts[1] === "budget-variance") {
+        const budgetId = request.nextUrl.searchParams.get("budget_id");
+        if (!budgetId) return message("budget_id is required.", 400);
+        return json(await getBudgetVariance(admin, auth.orgId, budgetId, dateFrom || "1900-01-01", dateTo || "2999-12-31"));
+      }
+      if (parts[1] === "cash-position") {
+        return json(await getCashPosition(admin, auth.orgId, dateFrom || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10), dateTo || new Date().toISOString().slice(0, 10)));
+      }
+      if (parts[1] === "comparative") {
+        const report = request.nextUrl.searchParams.get("report") || "profit-loss";
+        const compare = (request.nextUrl.searchParams.get("compare") || "prior_period") as "prior_period" | "prior_year";
+        if (report === "balance-sheet") {
+          return json(await getComparativeBalanceSheet(admin, auth.orgId, asOf || dateTo || new Date().toISOString().slice(0, 10), compare));
+        }
+        return json(await getComparativeProfitLoss(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31", compare));
+      }
+      if (parts[1] === "ar-aging-enhanced") {
+        return json(await getARAgingReport(admin, auth.orgId, asOf || undefined));
+      }
+      if (parts[1] === "ap-aging-enhanced") {
+        return json(await getAPAgingReport(admin, auth.orgId, asOf || undefined));
       }
     }
     return message("مسار محاسبي غير مدعوم.", 404);
@@ -976,6 +1056,83 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return json({ payment: next, journal, status: await getPayrollAccountingStatus(admin, auth.orgId, month) }, 201);
     }
 
+    if (parts[0] === "budgets" && parts[1] && parts[2] === "approve") {
+      const budget = await getRecord(admin, "accounting_budgets", auth.orgId, parts[1]);
+      if (budget.status !== "draft") return message("يمكن اعتماد الموازنات المسودة فقط.", 400);
+      const next = await updateRecord(admin, "accounting_budgets", auth.orgId, parts[1], {
+        status: "approved",
+        approved_by: auth.user.id,
+        approved_at: new Date().toISOString(),
+      });
+      await audit(admin, auth.orgId, auth.user.id, "accounting.budget_approved", "accounting_budgets", parts[1], next);
+      return json(next);
+    }
+    if (parts[0] === "budgets") {
+      const values = {
+        organization_id: auth.orgId,
+        name: requireText(body.name),
+        fiscal_year: Number(body.fiscal_year || new Date().getFullYear()),
+        created_by: auth.user.id,
+      };
+      if (!values.name) return message("اسم الموازنة مطلوب.", 400);
+      const result = await db(admin).from("accounting_budgets").insert(values).select("*").single();
+      if (result.error) throw new Error(result.error.message);
+
+      if (Array.isArray(body.lines) && body.lines.length > 0) {
+        const lineRows = (body.lines as Record<string, unknown>[]).map((line) => ({
+          organization_id: auth.orgId,
+          budget_id: result.data.id,
+          account_id: requireText(line.account_id),
+          cost_center_id: line.cost_center_id || null,
+          month: Number(line.month || 1),
+          amount: roundMoney(line.amount),
+          notes: requireText(line.notes) || null,
+        }));
+        const linesResult = await db(admin).from("accounting_budget_lines").insert(lineRows);
+        if (linesResult.error) throw new Error(linesResult.error.message);
+      }
+
+      await audit(admin, auth.orgId, auth.user.id, "accounting.budget_created", "accounting_budgets", result.data.id, values);
+      return json(result.data, 201);
+    }
+
+    if (parts[0] === "periods" && parts[1] && parts[2] === "close") {
+      const period = await getRecord(admin, "accounting_periods", auth.orgId, parts[1]);
+      if (period.status !== "open") return message("يمكن إغلاق الفترات المفتوحة فقط.", 400);
+      const next = await updateRecord(admin, "accounting_periods", auth.orgId, parts[1], {
+        status: "closed",
+        closed_by: auth.user.id,
+        closed_at: new Date().toISOString(),
+      });
+      await audit(admin, auth.orgId, auth.user.id, "accounting.period_closed", "accounting_periods", parts[1], next);
+      await notifyFinance(admin, auth.orgId, "تم إغلاق فترة محاسبية", String(period.name), "/accounting/settings");
+      return json(next);
+    }
+
+    if (parts[0] === "reports" && parts[1] === "export") {
+      const reportName = requireText(body.report);
+      const format = requireText(body.format, "csv");
+      if (!reportName) return message("report name is required.", 400);
+      const { dateFrom, dateTo } = getQueryDates(request);
+      let reportData: unknown;
+      if (reportName === "trial-balance") reportData = await getTrialBalance(admin, auth.orgId, dateFrom, dateTo);
+      else if (reportName === "profit-loss") reportData = await getProfitLoss(admin, auth.orgId, dateFrom, dateTo);
+      else if (reportName === "balance-sheet") reportData = await getBalanceSheet(admin, auth.orgId, dateTo);
+      else return message("Report not supported for export.", 400);
+
+      if (format === "csv") {
+        const csv = reportToCSV(reportData as Record<string, unknown>);
+        return new NextResponse(csv, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/csv; charset=utf-8",
+            "Content-Disposition": `attachment; filename="${reportName}.csv"`,
+          },
+        });
+      }
+      return json(reportData);
+    }
+
     if (parts[0] === "sales" && parts[1] === "link-company-customer") {
       const companyId = requireText(body.company_id);
       const customerId = requireText(body.customer_id);
@@ -1089,6 +1246,95 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return json(await getRecord(admin, "accounting_invoices", auth.orgId, invoiceResult.data.id, "*, lines:accounting_invoice_lines(*)"), 201);
     }
 
+    // Phase 2: Payroll Auto-Post endpoint
+    if (parts[0] === "payroll" && parts[1] === "auto-post") {
+      const month = requireText(body.month);
+      if (!/^\d{4}-\d{2}$/.test(month)) return message("الشهر مطلوب بصيغة YYYY-MM.", 400);
+      const { autoPostPayrollMonth } = await import("@/lib/accounting/auto-posting");
+      const result = await autoPostPayrollMonth(admin, auth.orgId, auth.user.id, month);
+      if (!result.success) return message(result.error || "فشل ترحيل الرواتب تلقائيا.", 500);
+      await notifyFinance(admin, auth.orgId, "تم ترحيل قيد رواتب تلقائي", `تم ترحيل رواتب ${month} تلقائيا.`, `/accounting/journal-entries/${result.journalEntryId}`);
+      return json({ ...result, month }, 201);
+    }
+
+    // Phase 4: Asset Capitalization
+    if (parts[0] === "assets" && parts[1] === "capitalize") {
+      const assetId = requireText(body.asset_id);
+      const assetName = requireText(body.asset_name);
+      const purchasePrice = roundMoney(body.purchase_price);
+      if (!assetId || purchasePrice <= 0) return message("معرف الأصل وسعر الشراء مطلوبان.", 400);
+      const { autoCapitalizeAsset } = await import("@/lib/accounting/auto-posting");
+      const result = await autoCapitalizeAsset(admin, auth.orgId, auth.user.id, {
+        id: assetId,
+        asset_name: assetName || "أصل",
+        purchase_price: purchasePrice,
+        paid_immediately: Boolean(body.paid_immediately),
+      });
+      if (!result.success) return message(result.error || "فشل رسملة الأصل.", 500);
+      return json(result, 201);
+    }
+
+    // Phase 4: Monthly Depreciation Batch
+    if (parts[0] === "assets" && parts[1] === "run-depreciation") {
+      const month = requireText(body.month);
+      if (!/^\d{4}-\d{2}$/.test(month)) return message("الشهر مطلوب بصيغة YYYY-MM.", 400);
+      const { runMonthlyDepreciation } = await import("@/lib/accounting/auto-posting");
+      const result = await runMonthlyDepreciation(admin, auth.orgId, auth.user.id, month);
+      if (!result.success) return message(result.error || "فشل تشغيل الإهلاك.", 500);
+      return json(result, 201);
+    }
+
+    // Phase 5: Monthly EOSB Accrual
+    if (parts[0] === "eosb" && parts[1] === "run-accrual") {
+      const month = requireText(body.month);
+      if (!/^\d{4}-\d{2}$/.test(month)) return message("الشهر مطلوب بصيغة YYYY-MM.", 400);
+      const { runMonthlyEOSBAccrual } = await import("@/lib/accounting/auto-posting");
+      const result = await runMonthlyEOSBAccrual(admin, auth.orgId, auth.user.id, month);
+      if (!result.success) return message(result.error || "فشل احتساب مخصص نهاية الخدمة.", 500);
+      return json(result, 201);
+    }
+
+    // Phase 5: EOSB Settlement (also triggers Phase 6 leave encashment)
+    if (parts[0] === "eosb" && parts[1] === "settle") {
+      const employeeId = requireText(body.employee_id);
+      if (!employeeId) return message("معرف الموظف مطلوب.", 400);
+      const { settleEmployeeEOSB, calculateAndPostLeaveEncashment } = await import("@/lib/accounting/auto-posting");
+      const eosb = await settleEmployeeEOSB(admin, auth.orgId, auth.user.id, employeeId);
+      if (!eosb.success) return message(eosb.error || "فشل تسوية مكافأة نهاية الخدمة.", 500);
+
+      // Phase 6: attempt leave encashment in same termination flow (non-blocking)
+      let leaveEncashment: { success: boolean; journalEntryId?: string; encashmentAmount: number; error?: string } = { success: true, encashmentAmount: 0 };
+      try {
+        leaveEncashment = await calculateAndPostLeaveEncashment(admin, auth.orgId, auth.user.id, employeeId);
+      } catch {
+        // Leave encashment failure must not block EOSB settlement response
+      }
+
+      return json({ eosb, leaveEncashment }, 201);
+    }
+
+    // Phase 6: Leave Encashment (standalone endpoint)
+    if (parts[0] === "leave-encashment" && parts[1] === "post") {
+      const employeeId = requireText(body.employee_id);
+      if (!employeeId) return message("معرف الموظف مطلوب.", 400);
+      const { calculateAndPostLeaveEncashment } = await import("@/lib/accounting/auto-posting");
+      const result = await calculateAndPostLeaveEncashment(admin, auth.orgId, auth.user.id, employeeId);
+      if (!result.success) return message(result.error || "فشل ترحيل تعويض الإجازات.", 500);
+      return json(result, 201);
+    }
+
+    // Phase 7: GOSI Payment Recording
+    if (parts[0] === "gosi" && parts[1] === "record-payment") {
+      const month = requireText(body.month);
+      const totalAmount = roundMoney(body.amount);
+      if (!/^\d{4}-\d{2}$/.test(month)) return message("الشهر مطلوب بصيغة YYYY-MM.", 400);
+      if (totalAmount <= 0) return message("مبلغ التأمينات يجب أن يكون أكبر من صفر.", 400);
+      const { recordGOSIPayment } = await import("@/lib/accounting/auto-posting");
+      const result = await recordGOSIPayment(admin, auth.orgId, auth.user.id, month, totalAmount);
+      if (!result.success) return message(result.error || "فشل تسجيل سداد التأمينات.", 500);
+      return json(result, 201);
+    }
+
     return message("مسار محاسبي غير مدعوم.", 404);
   } catch (error) {
     return message(error);
@@ -1144,6 +1390,38 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       });
       await notifyFinance(admin, auth.orgId, "قيد محاسبي بانتظار الاعتماد", String(current.description || ""), `/accounting/journal-entries/${id}`);
       return json(await getRecord(admin, "accounting_journal_entries", auth.orgId, id, "*, lines:accounting_journal_lines(*, account:account_id(*), cost_center:cost_center_id(*))"));
+    }
+
+    if (parts[0] === "budgets" && parts[1]) {
+      const budget = await getRecord(admin, "accounting_budgets", auth.orgId, parts[1]);
+      if (budget.status === "closed") return message("لا يمكن تعديل موازنة مغلقة.", 400);
+      if (body.name || body.fiscal_year) {
+        await updateRecord(admin, "accounting_budgets", auth.orgId, parts[1], {
+          ...(body.name ? { name: requireText(body.name) } : {}),
+          ...(body.fiscal_year ? { fiscal_year: Number(body.fiscal_year) } : {}),
+          updated_at: new Date().toISOString(),
+        });
+      }
+      if (Array.isArray(body.lines)) {
+        await db(admin).from("accounting_budget_lines").delete().eq("budget_id", parts[1]);
+        if (body.lines.length > 0) {
+          const lineRows = (body.lines as Record<string, unknown>[]).map((line) => ({
+            organization_id: auth.orgId,
+            budget_id: parts[1],
+            account_id: requireText(line.account_id),
+            cost_center_id: line.cost_center_id || null,
+            month: Number(line.month || 1),
+            amount: roundMoney(line.amount),
+            notes: requireText(line.notes) || null,
+          }));
+          const linesResult = await db(admin).from("accounting_budget_lines").insert(lineRows);
+          if (linesResult.error) throw new Error(linesResult.error.message);
+        }
+      }
+      await audit(admin, auth.orgId, auth.user.id, "accounting.budget_updated", "accounting_budgets", parts[1], body);
+      const updated = await getRecord(admin, "accounting_budgets", auth.orgId, parts[1]);
+      const { data: lines } = await db(admin).from("accounting_budget_lines").select("*").eq("budget_id", parts[1]);
+      return json({ ...updated, lines: lines || [] });
     }
 
     const map: Record<string, string> = {

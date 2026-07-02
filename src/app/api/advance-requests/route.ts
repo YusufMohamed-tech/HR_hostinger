@@ -150,6 +150,20 @@ export async function PATCH(request: NextRequest) {
       status: "unpaid",
       description: `Approved advance request ${id}`,
     } as never);
+
+    // Phase 3: Auto-post advance disbursement to GL (non-blocking)
+    try {
+      const { autoPostAdvanceDisbursement } = await import("@/lib/accounting/auto-posting");
+      const employeeName = String(employee?.full_name || "موظف");
+      await autoPostAdvanceDisbursement(auth.admin, auth.orgId, auth.user.id, {
+        id,
+        employee_id: String(row.employee_id),
+        employee_name: employeeName,
+        approved_amount: finalAmount,
+      });
+    } catch {
+      // Auto-posting failure must not block advance approval
+    }
   }
 
   const employeeUserId = String(employee?.user_id || "");

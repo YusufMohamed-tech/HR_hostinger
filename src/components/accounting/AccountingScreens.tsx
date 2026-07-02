@@ -6,17 +6,22 @@ import { useRouter } from "next/navigation";
 import {
   ArrowRightLeft,
   Banknote,
+  BarChart3,
   BookOpen,
   CheckCircle,
   FilePlus2,
   Landmark,
+  LineChart,
   Pencil,
+  PieChart,
   Plus,
   Power,
   Receipt,
   RotateCcw,
   Save,
   Settings,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -988,10 +993,17 @@ function PaymentsPage() {
 
 function ReportsIndexPage() {
   const reports = [
+    ["dashboard", "لوحة المؤشرات المالية", BarChart3],
     ["trial-balance", "ميزان المراجعة", BookOpen],
     ["general-ledger", "دفتر الأستاذ العام", Landmark],
     ["profit-loss", "قائمة الدخل", Receipt],
     ["balance-sheet", "الميزانية العمومية", Banknote],
+    ["comparative", "التقارير المقارنة", TrendingUp],
+    ["cash-flow", "قائمة التدفقات النقدية", Wallet],
+    ["cost-center", "ربحية مراكز التكلفة", PieChart],
+    ["revenue", "تحليل الإيرادات", LineChart],
+    ["expense-analysis", "تحليل المصروفات", PieChart],
+    ["payroll-analysis", "تحليل الرواتب", BarChart3],
     ["vat", "تقرير ضريبة القيمة المضافة", Receipt],
     ["payroll-cost", "تكلفة الرواتب", Banknote],
     ["employee-advances", "سلف الموظفين", ArrowRightLeft],
@@ -1023,6 +1035,13 @@ function reportTitle(report: string) {
     "ap-aging": "أعمار الذمم الدائنة",
     expenses: "تقرير المصروفات",
     "sales-revenue": "تقرير إيرادات المبيعات",
+    dashboard: "لوحة المؤشرات المالية",
+    "cash-flow": "قائمة التدفقات النقدية",
+    comparative: "التقارير المقارنة",
+    "cost-center": "ربحية مراكز التكلفة",
+    revenue: "تحليل الإيرادات",
+    "expense-analysis": "تحليل المصروفات",
+    "payroll-analysis": "تحليل الرواتب",
   };
   return labels[report] || "تقرير مالي";
 }
