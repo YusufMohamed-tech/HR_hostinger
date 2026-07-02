@@ -80,6 +80,7 @@ export function SidebarContent() {
 
     const lmsLearnerOps: NavLink[] = [
       { name: "\u0642\u0627\u0639\u0629 \u0627\u0644\u062a\u0639\u0644\u0645", href: "/learn", icon: GraduationCap },
+      { name: "\u0644\u0648\u062d\u0629 \u0627\u0644\u0645\u062f\u0631\u0628", href: "/lms/instructor", icon: Users, indent: true },
       { name: "\u062a\u0639\u0644\u0645\u064a", href: "/lms/my", icon: BookOpen, indent: true },
       { name: "\u0643\u062a\u0627\u0644\u0648\u062c \u0627\u0644\u062f\u0648\u0631\u0627\u062a", href: "/lms/catalog", icon: BookOpen, indent: true },
     ];
