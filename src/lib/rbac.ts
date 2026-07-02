@@ -108,6 +108,8 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return (
       normalizedPath.startsWith("/accounting") ||
       normalizedPath.startsWith("/api/accounting") ||
+      normalizedPath.startsWith("/lms") ||
+      normalizedPath.startsWith("/api/lms") ||
       normalizedPath.startsWith("/payroll") ||
       normalizedPath.startsWith("/notifications") ||
       normalizedPath.startsWith("/settings")
@@ -132,6 +134,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
 
   if (normalizedPath.startsWith("/api/accounting")) {
     return ["Admin", "HR_Admin", "Sales_Manager", "Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+  }
+
+  if (normalizedPath.startsWith("/api/lms")) {
+    return ALL_ROLES.includes(role);
   }
 
   // /api/candidate/* — authenticated candidates (no role) go through middleware
@@ -166,6 +172,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
 
   if (normalizedPath.startsWith("/accounting")) {
     return ["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+  }
+
+  if (normalizedPath.startsWith("/lms")) {
+    return ALL_ROLES.includes(role);
   }
 
   if (normalizedPath.startsWith("/attendance") || normalizedPath.startsWith("/api/attendance")) {

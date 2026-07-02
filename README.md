@@ -8,7 +8,7 @@ AI-driven HR and workforce management platform for deskless teams. This repo inc
 - Shift scheduling with conflict placeholders
 - Event stream tracking (check-in, movement, sales)
 - KPI analytics and payroll previews
-- LMS onboarding pipeline
+- Professional LMS module for internal corporate learning
 - AI insights and audit logs (mocked)
 
 ## Local Setup
@@ -62,9 +62,29 @@ Demo users are optional for local/staging only:
 npm run seed:demo
 ```
 
+## LMS Module v43
+The LMS module is implemented as a private, multi-tenant HRMS module for employee learning. It includes course categories, courses, sections, text/video/document/link lessons, quizzes, tasks, submissions, instructor review, course community, announcements, learner progress, assignments, certificates, reports, and private `lms-content` storage.
+
+Apply the additive LMS migration:
+```bash
+npm run apply:migration -- db/schema_v43_lms_module.sql
+```
+
+If the direct database host `db.<project-ref>.supabase.co` fails on a network without working IPv6/direct DB access, use the Supabase Management API fallback:
+```bash
+npm run apply:supabase-sql -- db/schema_v43_lms_module.sql
+```
+
+Keep `SUPABASE_ACCESS_TOKEN` only in local/secure environment configuration. Do not print it in logs or commit it. Prefer a Supabase pooler URL if direct PostgreSQL connectivity is required.
+
+Verify LMS database objects after the migration is reachable:
+```bash
+npm run verify:lms
+```
+
 ## Deployment (Vercel)
 - Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in Vercel.
 - Deploy from GitHub.
 
 ## Documentation
-See the [docs](docs) directory for architecture, database, backend, frontend, and presentation details.
+See the [documentations](documentations) directory for architecture, database, backend, frontend, and presentation details.

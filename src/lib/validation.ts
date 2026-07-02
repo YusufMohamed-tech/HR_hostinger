@@ -102,6 +102,167 @@ export const locationFormSchema = z.object({
   manager_employee_id: optionalUuid,
 });
 
+const optionalUrl = z.preprocess(
+  emptyToUndefined,
+  z.string().url("Use a valid URL.").max(1000).optional()
+);
+
+const optionalPositiveInteger = z.preprocess(
+  emptyToUndefined,
+  z.coerce.number().int().min(0).max(100000).optional()
+);
+
+const optionalScore = z.preprocess(
+  emptyToUndefined,
+  z.coerce.number().min(0).max(100).optional()
+);
+
+const optionalBoolean = z.preprocess((value) => {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return value;
+}, z.boolean().optional());
+
+export const lmsCategorySchema = z.object({
+  name: z.string().trim().min(2, "Category name is required.").max(160),
+  description: optionalLongString,
+  color: z.preprocess(
+    emptyToUndefined,
+    z.string().regex(/^#[0-9a-f]{6}$/i, "Use a valid hex color.").optional()
+  ),
+  is_active: optionalBoolean,
+});
+
+export const lmsCourseSchema = z.object({
+  category_id: optionalUuid,
+  title: z.string().trim().min(2, "Course title is required.").max(220),
+  description: optionalLongString,
+  thumbnail_path: optionalLongString,
+  status: z.enum(["draft", "published", "archived"]).optional(),
+  visibility: z.enum(["assigned_only", "catalog"]).optional(),
+  difficulty: z.enum(["beginner", "intermediate", "advanced"]).optional(),
+  estimated_minutes: optionalPositiveInteger,
+  passing_score: optionalScore,
+  requires_quiz_pass: optionalBoolean,
+  requires_task_pass: optionalBoolean,
+});
+
+export const lmsInstructorSchema = z.object({
+  employee_id: z.string().uuid("Select a valid instructor."),
+  instructor_type: z.enum(["primary_instructor", "assistant_instructor", "reviewer"]).optional(),
+  can_edit_content: optionalBoolean,
+  can_review_tasks: optionalBoolean,
+  can_moderate_community: optionalBoolean,
+});
+
+export const lmsSectionSchema = z.object({
+  title: z.string().trim().min(2, "Section title is required.").max(220),
+  description: optionalLongString,
+  sort_order: optionalPositiveInteger,
+});
+
+export const lmsLessonSchema = z.object({
+  section_id: optionalUuid,
+  title: z.string().trim().min(2, "Lesson title is required.").max(220),
+  description: optionalLongString,
+  lesson_type: z.enum(["text", "video", "file", "document", "link"]),
+  content: optionalLongString,
+  content_url: optionalUrl,
+  storage_path: optionalLongString,
+  duration_minutes: optionalPositiveInteger,
+  sort_order: optionalPositiveInteger,
+  is_required: optionalBoolean,
+  is_preview: optionalBoolean,
+  is_active: optionalBoolean,
+});
+
+export const lmsQuizSchema = z.object({
+  lesson_id: optionalUuid,
+  title: z.string().trim().min(2, "Quiz title is required.").max(220),
+  description: optionalLongString,
+  passing_score: optionalScore,
+  max_attempts: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(20).optional()),
+  time_limit_minutes: z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).max(600).optional()),
+  is_required: optionalBoolean,
+  is_active: optionalBoolean,
+  questions: z.array(z.object({
+    id: optionalUuid,
+    question_text: z.string().trim().min(2).max(1000),
+    question_type: z.enum(["single_choice", "multiple_choice", "true_false", "short_answer"]),
+    options_json: z.unknown().optional(),
+    correct_answer_json: z.unknown().optional(),
+    points: z.coerce.number().min(0).max(1000).optional(),
+    sort_order: z.coerce.number().int().min(0).optional(),
+  })).optional(),
+});
+
+export const lmsTaskSchema = z.object({
+  lesson_id: optionalUuid,
+  title: z.string().trim().min(2, "Task title is required.").max(220),
+  description: optionalLongString,
+  task_type: z.enum(["text_response", "file_upload", "link_submission", "mixed"]).optional(),
+  instructions: optionalLongString,
+  due_date: optionalDate,
+  max_score: z.preprocess(emptyToUndefined, z.coerce.number().min(1).max(10000).optional()),
+  pass_score: z.preprocess(emptyToUndefined, z.coerce.number().min(0).max(10000).optional()),
+  is_required: optionalBoolean,
+  allow_resubmission: optionalBoolean,
+  late_submission_allowed: optionalBoolean,
+  status: z.enum(["draft", "published", "archived"]).optional(),
+});
+
+export const lmsAssignmentSchema = z.object({
+  course_id: optionalUuid,
+  learning_path_id: optionalUuid,
+  assignment_type: z.enum(["employee", "department", "team", "location", "role", "all"]),
+  target_id: optionalTrimmedString,
+  due_date: optionalDate,
+}).refine((value) => Boolean(value.course_id || value.learning_path_id), {
+  message: "Select a course or learning path.",
+  path: ["course_id"],
+});
+
+export const lmsTaskSubmissionSchema = z.object({
+  submission_text: optionalLongString,
+  submission_url: optionalUrl,
+  storage_path: optionalLongString,
+}).refine((value) => Boolean(value.submission_text || value.submission_url || value.storage_path), {
+  message: "Add text, a link, or a file before submitting.",
+});
+
+export const lmsTaskReviewSchema = z.object({
+  score: z.coerce.number().min(0).max(10000),
+  feedback: optionalLongString,
+  review_status: z.enum(["accepted", "rejected", "needs_revision"]),
+});
+
+export const lmsAnnouncementSchema = z.object({
+  title: z.string().trim().min(2, "Announcement title is required.").max(220),
+  body: z.string().trim().min(2, "Announcement body is required.").max(4000),
+  pinned: optionalBoolean,
+});
+
+export const lmsCommunityPostSchema = z.object({
+  post_type: z.enum(["discussion", "question", "announcement"]).optional(),
+  title: optionalTrimmedString,
+  body: z.string().trim().min(2, "Post body is required.").max(4000),
+});
+
+export const lmsCommunityCommentSchema = z.object({
+  body: z.string().trim().min(2, "Comment body is required.").max(2000),
+});
+
+export const lmsFeedbackSchema = z.object({
+  rating: z.coerce.number().int().min(1).max(5),
+  comment: optionalLongString,
+});
+
+export const lmsLearningPathSchema = z.object({
+  title: z.string().trim().min(2, "Learning path title is required.").max(220),
+  description: optionalLongString,
+  status: z.enum(["draft", "published", "archived"]).optional(),
+});
+
 export function getValidationMessage(error: z.ZodError) {
   return error.issues[0]?.message ?? "Please check the form and try again.";
 }
