@@ -11,6 +11,7 @@ interface SalesLogData {
   id: string;
   log_date: string;
   grand_total: number;
+  vat_amount?: number;
   subtotal?: number;
   company_id?: string;
   items?: Array<{ product_name?: string; line_total?: number }>;
