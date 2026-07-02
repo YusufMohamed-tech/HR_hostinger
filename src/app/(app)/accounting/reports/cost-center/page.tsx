@@ -61,7 +61,7 @@ export default function CostCenterPnLPage() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="cost_center_name" />
                   <YAxis />
-                  <Tooltip formatter={(v: number) => v.toLocaleString("ar-SA")} />
+                  <Tooltip formatter={(v: unknown) => typeof v === "number" ? v.toLocaleString("ar-SA") : String(v ?? "")} />
                   <Legend />
                   <Bar dataKey="revenue" name="الإيرادات" fill="#3b82f6" />
                   <Bar dataKey="expenses" name="المصروفات" fill="#ef4444" />

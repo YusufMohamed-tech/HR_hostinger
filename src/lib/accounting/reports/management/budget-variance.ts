@@ -79,10 +79,10 @@ export async function getBudgetVariance(
   const actualByAccount = new Map(actuals.map((a) => [a.account_id, a.balance]));
 
   // Build rows
-  const allAccountIds = new Set([...budgetByAccount.keys(), ...actualByAccount.keys()]);
+  const allAccountIds = new Set([...Array.from(budgetByAccount.keys()), ...Array.from(actualByAccount.keys())]);
   const rows: BudgetVarianceRow[] = [];
 
-  for (const accountId of allAccountIds) {
+  for (const accountId of Array.from(allAccountIds)) {
     const budgetInfo = budgetByAccount.get(accountId);
     const actual = actualByAccount.get(accountId) || 0;
     const budgetAmount = budgetInfo?.amount || 0;

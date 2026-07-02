@@ -41,7 +41,7 @@ function toComparativeRows(current: AccountBalance[], prior: AccountBalance[]): 
   const allIds = new Set([...current.map((c) => c.account_id), ...prior.map((p) => p.account_id)]);
 
   const rows: ComparativeRow[] = [];
-  for (const id of allIds) {
+  for (const id of Array.from(allIds)) {
     const c = current.find((x) => x.account_id === id);
     const p = priorMap.get(id);
     rows.push({
