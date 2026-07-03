@@ -1,7 +1,8 @@
 import { z } from "zod";
 
 export const createAgentSchema = z.object({
-  user_id: z.string().uuid(),
+  email: z.string().trim().email(),
+  password: z.string().min(8),
   full_name: z.string().trim().min(2).max(160),
   phone: z.string().trim().min(8).max(40),
   national_id: z.string().trim().min(5).max(40),
