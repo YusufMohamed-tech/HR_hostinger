@@ -1,0 +1,941 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { ArrowRight, Check, Plus, RefreshCcw, Send, Wallet, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  assignSims,
+  collectCash,
+  createFieldAgent,
+  getCashCollections,
+  getCommissions,
+  getFieldAgent,
+  getFieldAgents,
+  getSimRequests,
+  getSimTransfers,
+  getSimUnits,
+  getStockOverview,
+  importSims,
+  markCommissionPaid,
+  reviewSimRequest,
+  updateFieldAgent,
+} from "@/lib/services/field-agents";
+import type {
+  AgentCashCollection,
+  AgentCommission,
+  AgentSimRequest,
+  FieldAgent,
+  SimTransfer,
+  SimUnit,
+  StockOverview,
+} from "@/types/field-agents";
+
+type Message = { tone: "success" | "error"; text: string } | null;
+
+function rows<T>(value: T[] | null | undefined) {
+  return Array.isArray(value) ? value : [];
+}
+
+function formatMoney(value: unknown) {
+  const number = Number(value || 0);
+  return `${Number.isFinite(number) ? Math.round(number).toLocaleString("ar-SA") : "0"} ر.س`;
+}
+
+const simStatusLabels: Record<string, string> = {
+  in_stock: "في المخزون",
+  with_agent: "مع المندوب",
+  sold: "مباعة",
+  returned: "مرتجعة",
+};
+
+function MessageBanner({ message }: { message: Message }) {
+  if (!message) return null;
+  return (
+    <div
+      className={`rounded-lg border px-4 py-3 text-sm ${
+        message.tone === "success"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border-red-200 bg-red-50 text-red-700"
+      }`}
+    >
+      {message.text}
+    </div>
+  );
+}
+
+function PageTitle({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-950">{title}</h1>
+        {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
+      </div>
+      {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+    </div>
+  );
+}
+
+function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <Card className="border border-slate-200 shadow-sm">
+      <CardContent className="p-4">
+        <p className="text-sm text-slate-500">{label}</p>
+        <p className="mt-1 text-2xl font-bold text-slate-950">{value}</p>
+        {hint ? <p className="mt-1 text-xs text-slate-400">{hint}</p> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function statusBadge(status: string, labels: Record<string, string>) {
+  const tone =
+    status === "sold" || status === "approved" || status === "delivered"
+      ? "bg-emerald-100 text-emerald-700"
+      : status === "rejected" || status === "returned"
+        ? "bg-red-100 text-red-700"
+        : status === "with_agent" || status === "pending"
+          ? "bg-amber-100 text-amber-700"
+          : "bg-slate-100 text-slate-600";
+  return <Badge className={`border-0 ${tone}`}>{labels[status] || status}</Badge>;
+}
+
+// ---------------------------------------------------------------------------
+// Create agent dialog
+// ---------------------------------------------------------------------------
+function CreateAgentDialog({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    user_id: "",
+    full_name: "",
+    phone: "",
+    national_id: "",
+    region: "",
+    commission_rate: "0",
+    max_sim_capacity: "",
+  });
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    const payload: Record<string, unknown> = {
+      user_id: form.user_id.trim(),
+      full_name: form.full_name.trim(),
+      phone: form.phone.trim(),
+      national_id: form.national_id.trim(),
+      commission_rate: Number(form.commission_rate || 0),
+    };
+    if (form.region.trim()) payload.region = form.region.trim();
+    if (form.max_sim_capacity.trim()) payload.max_sim_capacity = Number(form.max_sim_capacity);
+    const result = await createFieldAgent(payload);
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    setForm({ user_id: "", full_name: "", phone: "", national_id: "", region: "", commission_rate: "0", max_sim_capacity: "" });
+    onCreated();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button />}>
+        <Plus className="ml-2 h-4 w-4" />
+        مندوب جديد
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>إضافة مندوب ميداني</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2 md:col-span-2">
+            <Label>معرف المستخدم (User ID)</Label>
+            <Input dir="ltr" value={form.user_id} onChange={(e) => set("user_id", e.target.value)} placeholder="UUID" />
+          </div>
+          <div className="space-y-2">
+            <Label>الاسم الكامل</Label>
+            <Input value={form.full_name} onChange={(e) => set("full_name", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>الجوال</Label>
+            <Input dir="ltr" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>رقم الهوية</Label>
+            <Input dir="ltr" value={form.national_id} onChange={(e) => set("national_id", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>المنطقة</Label>
+            <Input value={form.region} onChange={(e) => set("region", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>نسبة العمولة %</Label>
+            <Input type="number" value={form.commission_rate} onChange={(e) => set("commission_rate", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>الحد الأقصى للشرائح</Label>
+            <Input type="number" value={form.max_sim_capacity} onChange={(e) => set("max_sim_capacity", e.target.value)} />
+          </div>
+        </div>
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            إلغاء
+          </Button>
+          <Button onClick={submit} disabled={submitting}>
+            حفظ
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Agent list
+// ---------------------------------------------------------------------------
+export function AgentListScreen() {
+  const [agents, setAgents] = useState<FieldAgent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<Message>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getFieldAgents().then((result) => {
+      setLoading(false);
+      if (result.error) {
+        setMessage({ tone: "error", text: result.error.message });
+        return;
+      }
+      setAgents(rows(result.data));
+    });
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <div className="space-y-6" dir="rtl">
+      <PageTitle
+        title="المندوبون الميدانيون"
+        subtitle="إدارة مندوبي توزيع الشرائح ومتابعة أدائهم."
+        actions={
+          <>
+            <Button variant="outline" onClick={load}>
+              <RefreshCcw className="ml-2 h-4 w-4" />
+              تحديث
+            </Button>
+            <CreateAgentDialog onCreated={load} />
+          </>
+        }
+      />
+      <MessageBanner message={message} />
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base">قائمة المندوبين</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>الاسم</TableHead>
+                <TableHead>الجوال</TableHead>
+                <TableHead>المنطقة</TableHead>
+                <TableHead>العمولة</TableHead>
+                <TableHead>الحالة</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-slate-400">
+                    جارِ التحميل...
+                  </TableCell>
+                </TableRow>
+              ) : agents.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-slate-400">
+                    لا يوجد مندوبون بعد.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                agents.map((agent) => (
+                  <TableRow key={agent.id}>
+                    <TableCell className="font-medium">{agent.full_name}</TableCell>
+                    <TableCell dir="ltr">{agent.phone}</TableCell>
+                    <TableCell>{agent.region || "—"}</TableCell>
+                    <TableCell>{agent.commission_rate}%</TableCell>
+                    <TableCell>
+                      {agent.status === "active" ? (
+                        <Badge className="border-0 bg-emerald-100 text-emerald-700">نشط</Badge>
+                      ) : (
+                        <Badge className="border-0 bg-red-100 text-red-700">موقوف</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/sales/agents/${agent.id}`}>
+                          التفاصيل
+                          <ArrowRight className="mr-2 h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Collect cash dialog
+// ---------------------------------------------------------------------------
+function CollectCashDialog({ agentId, onDone }: { agentId: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    amount: "",
+    payment_method: "cash",
+    collection_date: new Date().toISOString().slice(0, 10),
+    notes: "",
+  });
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    const result = await collectCash({
+      agent_id: agentId,
+      amount: Number(form.amount || 0),
+      payment_method: form.payment_method,
+      collection_date: form.collection_date,
+      notes: form.notes.trim() || undefined,
+    });
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    setForm({ amount: "", payment_method: "cash", collection_date: new Date().toISOString().slice(0, 10), notes: "" });
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" />}>
+        <Wallet className="ml-2 h-4 w-4" />
+        تحصيل نقدية
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>تسجيل تحصيل نقدي</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>المبلغ</Label>
+            <Input type="number" value={form.amount} onChange={(e) => set("amount", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>طريقة الدفع</Label>
+            <Select value={form.payment_method} onValueChange={(v) => set("payment_method", v ?? "cash")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cash">نقدي</SelectItem>
+                <SelectItem value="bank_transfer">تحويل بنكي</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>التاريخ</Label>
+            <Input type="date" value={form.collection_date} onChange={(e) => set("collection_date", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>ملاحظات</Label>
+            <Input value={form.notes} onChange={(e) => set("notes", e.target.value)} />
+          </div>
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={submit} disabled={submitting}>
+              حفظ
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Agent detail
+// ---------------------------------------------------------------------------
+export function AgentDetailScreen({ agentId }: { agentId: string }) {
+  const [agent, setAgent] = useState<FieldAgent | null>(null);
+  const [sims, setSims] = useState<SimUnit[]>([]);
+  const [collections, setCollections] = useState<AgentCashCollection[]>([]);
+  const [commissions, setCommissions] = useState<AgentCommission[]>([]);
+  const [message, setMessage] = useState<Message>(null);
+
+  const load = useCallback(() => {
+    Promise.all([
+      getFieldAgent(agentId),
+      getSimUnits({ agent_id: agentId }),
+      getCashCollections(agentId),
+      getCommissions({ agent_id: agentId }),
+    ]).then(([agentResult, simResult, collectionResult, commissionResult]) => {
+      if (agentResult.error) setMessage({ tone: "error", text: agentResult.error.message });
+      setAgent(agentResult.data);
+      setSims(rows(simResult.data));
+      setCollections(rows(collectionResult.data));
+      setCommissions(rows(commissionResult.data));
+    });
+  }, [agentId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const soldValue = useMemo(
+    () => sims.filter((s) => s.status === "sold").reduce((sum, s) => sum + Number(s.sold_price || 0), 0),
+    [sims]
+  );
+  const collected = useMemo(() => collections.reduce((sum, c) => sum + Number(c.amount || 0), 0), [collections]);
+  const inHand = useMemo(() => sims.filter((s) => s.status === "with_agent").length, [sims]);
+
+  const toggleStatus = async () => {
+    if (!agent) return;
+    const result = await updateFieldAgent(agent.id, {
+      status: agent.status === "active" ? "suspended" : "active",
+    });
+    if (result.error) {
+      setMessage({ tone: "error", text: result.error.message });
+      return;
+    }
+    load();
+  };
+
+  if (!agent) {
+    return (
+      <div className="space-y-6" dir="rtl">
+        <MessageBanner message={message} />
+        <p className="text-slate-400">جارِ التحميل...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6" dir="rtl">
+      <PageTitle
+        title={agent.full_name}
+        subtitle={`${agent.region || "بدون منطقة"} · عمولة ${agent.commission_rate}%`}
+        actions={
+          <>
+            <Button asChild variant="outline">
+              <Link href="/sales/agents">
+                <ArrowRight className="ml-2 h-4 w-4" />
+                رجوع
+              </Link>
+            </Button>
+            <CollectCashDialog agentId={agent.id} onDone={load} />
+            <Button variant={agent.status === "active" ? "destructive" : "default"} onClick={toggleStatus}>
+              {agent.status === "active" ? "إيقاف" : "تفعيل"}
+            </Button>
+          </>
+        }
+      />
+      <MessageBanner message={message} />
+      <div className="grid gap-4 md:grid-cols-4">
+        <StatCard label="شرائح في اليد" value={String(inHand)} />
+        <StatCard label="قيمة المبيعات" value={formatMoney(soldValue)} />
+        <StatCard label="إجمالي المحصّل" value={formatMoney(collected)} />
+        <StatCard label="المتبقي" value={formatMoney(soldValue - collected)} />
+      </div>
+
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base">الشرائح</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ICCID</TableHead>
+                <TableHead>النوع</TableHead>
+                <TableHead>الحالة</TableHead>
+                <TableHead>سعر البيع</TableHead>
+                <TableHead>العميل</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sims.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-slate-400">
+                    لا توجد شرائح.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                sims.map((sim) => (
+                  <TableRow key={sim.id}>
+                    <TableCell dir="ltr">{sim.iccid}</TableCell>
+                    <TableCell>{sim.sim_type}</TableCell>
+                    <TableCell>{statusBadge(sim.status, simStatusLabels)}</TableCell>
+                    <TableCell>{sim.sold_price ? formatMoney(sim.sold_price) : "—"}</TableCell>
+                    <TableCell>{sim.customer_name || "—"}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="border border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base">التحصيلات النقدية</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {collections.length === 0 ? (
+              <p className="text-sm text-slate-400">لا توجد تحصيلات.</p>
+            ) : (
+              collections.map((c) => (
+                <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
+                  <span>{c.collection_date}</span>
+                  <span className="font-semibold">{formatMoney(c.amount)}</span>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+        <Card className="border border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base">العمولات</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {commissions.length === 0 ? (
+              <p className="text-sm text-slate-400">لا توجد عمولات.</p>
+            ) : (
+              commissions.map((c) => (
+                <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
+                  <span>{formatMoney(c.commission_amount)}</span>
+                  {c.is_paid ? (
+                    <Badge className="border-0 bg-emerald-100 text-emerald-700">مدفوعة</Badge>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        const result = await markCommissionPaid(c.id);
+                        if (result.error) setMessage({ tone: "error", text: result.error.message });
+                        else load();
+                      }}
+                    >
+                      تعليم كمدفوعة
+                    </Button>
+                  )}
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Import SIMs dialog
+// ---------------------------------------------------------------------------
+function ImportSimsDialog({ onDone }: { onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  const [simType, setSimType] = useState("prepaid");
+  const [price, setPrice] = useState("0");
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    const iccids = text
+      .split(/\r?\n|,/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (iccids.length === 0) {
+      setError("أدخل رقم ICCID واحد على الأقل.");
+      setSubmitting(false);
+      return;
+    }
+    const result = await importSims({
+      sims: iccids.map((iccid) => ({ iccid, sim_type: simType, price: Number(price || 0) })),
+    });
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    setText("");
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button />}>
+        <Plus className="ml-2 h-4 w-4" />
+        استيراد شرائح
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>استيراد شرائح للمخزون</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>أرقام ICCID (سطر لكل رقم)</Label>
+            <textarea
+              dir="ltr"
+              className="min-h-32 w-full rounded-md border border-slate-200 p-2 text-sm"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>النوع</Label>
+              <Select value={simType} onValueChange={(v) => setSimType(v ?? "prepaid")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="prepaid">مدفوعة مسبقًا</SelectItem>
+                  <SelectItem value="postpaid">فوترة</SelectItem>
+                  <SelectItem value="data">بيانات</SelectItem>
+                  <SelectItem value="corporate">شركات</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>السعر</Label>
+              <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
+            </div>
+          </div>
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={submit} disabled={submitting}>
+              استيراد
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Assign SIMs dialog
+// ---------------------------------------------------------------------------
+function AssignSimsDialog({
+  agents,
+  stockSims,
+  onDone,
+}: {
+  agents: FieldAgent[];
+  stockSims: SimUnit[];
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [agentId, setAgentId] = useState("");
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+
+  const toggle = (id: string) => setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
+  const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    if (!agentId || selectedIds.length === 0) {
+      setError("اختر مندوبًا وشريحة واحدة على الأقل.");
+      setSubmitting(false);
+      return;
+    }
+    const result = await assignSims({ agent_id: agentId, sim_ids: selectedIds });
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    setSelected({});
+    setAgentId("");
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" />}>
+        <Send className="ml-2 h-4 w-4" />
+        تسليم للمندوب
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>تسليم شرائح لمندوب</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>المندوب</Label>
+            <Select value={agentId} onValueChange={(v) => setAgentId(v ?? "")}>
+              <SelectTrigger>
+                <SelectValue placeholder="اختر المندوب" />
+              </SelectTrigger>
+              <SelectContent>
+                {agents
+                  .filter((a) => a.status === "active")
+                  .map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.full_name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
+            {stockSims.length === 0 ? (
+              <p className="p-2 text-sm text-slate-400">لا توجد شرائح في المخزون.</p>
+            ) : (
+              stockSims.map((sim) => (
+                <label key={sim.id} className="flex items-center gap-2 rounded-md p-2 text-sm hover:bg-slate-50">
+                  <input type="checkbox" checked={!!selected[sim.id]} onChange={() => toggle(sim.id)} />
+                  <span dir="ltr" className="flex-1">
+                    {sim.iccid}
+                  </span>
+                  <span className="text-slate-400">{sim.sim_type}</span>
+                </label>
+              ))
+            )}
+          </div>
+          <p className="text-sm text-slate-500">تم اختيار {selectedIds.length} شريحة.</p>
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={submit} disabled={submitting}>
+              تسليم
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Stock management
+// ---------------------------------------------------------------------------
+export function StockManagementScreen() {
+  const [overview, setOverview] = useState<StockOverview | null>(null);
+  const [sims, setSims] = useState<SimUnit[]>([]);
+  const [agents, setAgents] = useState<FieldAgent[]>([]);
+  const [requests, setRequests] = useState<AgentSimRequest[]>([]);
+  const [transfers, setTransfers] = useState<SimTransfer[]>([]);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [message, setMessage] = useState<Message>(null);
+
+  const load = useCallback(() => {
+    Promise.all([
+      getStockOverview(),
+      getSimUnits(),
+      getFieldAgents(),
+      getSimRequests({ status: "pending" }),
+      getSimTransfers(),
+    ]).then(([overviewResult, simResult, agentResult, requestResult, transferResult]) => {
+      if (overviewResult.error) setMessage({ tone: "error", text: overviewResult.error.message });
+      setOverview(overviewResult.data);
+      setSims(rows(simResult.data));
+      setAgents(rows(agentResult.data));
+      setRequests(rows(requestResult.data));
+      setTransfers(rows(transferResult.data).slice(0, 20));
+    });
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const stockSims = useMemo(() => sims.filter((s) => s.status === "in_stock"), [sims]);
+  const filteredSims = useMemo(
+    () => (statusFilter === "all" ? sims : sims.filter((s) => s.status === statusFilter)),
+    [sims, statusFilter]
+  );
+
+  const review = async (id: string, status: "approved" | "rejected") => {
+    const result = await reviewSimRequest(id, { status });
+    if (result.error) setMessage({ tone: "error", text: result.error.message });
+    else load();
+  };
+
+  return (
+    <div className="space-y-6" dir="rtl">
+      <PageTitle
+        title="إدارة المخزون"
+        subtitle="مخزون الشرائح والتسليم للمندوبين ومتابعة الطلبات."
+        actions={
+          <>
+            <ImportSimsDialog onDone={load} />
+            <AssignSimsDialog agents={agents} stockSims={stockSims} onDone={load} />
+          </>
+        }
+      />
+      <MessageBanner message={message} />
+      <div className="grid gap-4 md:grid-cols-4">
+        <StatCard label="في المخزون" value={String(overview?.in_stock ?? 0)} hint={formatMoney(overview?.total_value_in_stock)} />
+        <StatCard label="مع المندوبين" value={String(overview?.with_agents ?? 0)} />
+        <StatCard label="مباعة" value={String(overview?.sold ?? 0)} />
+        <StatCard label="مرتجعة" value={String(overview?.returned ?? 0)} />
+      </div>
+
+      {requests.length > 0 ? (
+        <Card className="border border-amber-200 bg-amber-50/40 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base">طلبات شرائح قيد المراجعة</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {requests.map((req) => {
+              const agent = agents.find((a) => a.id === req.agent_id);
+              return (
+                <div key={req.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                  <div>
+                    <span className="font-medium">{agent?.full_name || "مندوب"}</span>
+                    <span className="mr-2 text-slate-500">
+                      {req.quantity} شريحة {req.sim_type ? `· ${req.sim_type}` : ""}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => review(req.id, "approved")}>
+                      <Check className="ml-1 h-4 w-4" />
+                      اعتماد
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => review(req.id, "rejected")}>
+                      <X className="ml-1 h-4 w-4" />
+                      رفض
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardTitle className="text-base">الشرائح</CardTitle>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? "all")}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">الكل</SelectItem>
+              <SelectItem value="in_stock">في المخزون</SelectItem>
+              <SelectItem value="with_agent">مع المندوب</SelectItem>
+              <SelectItem value="sold">مباعة</SelectItem>
+              <SelectItem value="returned">مرتجعة</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ICCID</TableHead>
+                <TableHead>النوع</TableHead>
+                <TableHead>السعر</TableHead>
+                <TableHead>الحالة</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredSims.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center text-slate-400">
+                    لا توجد شرائح.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredSims.slice(0, 100).map((sim) => (
+                  <TableRow key={sim.id}>
+                    <TableCell dir="ltr">{sim.iccid}</TableCell>
+                    <TableCell>{sim.sim_type}</TableCell>
+                    <TableCell>{formatMoney(sim.price)}</TableCell>
+                    <TableCell>{statusBadge(sim.status, simStatusLabels)}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base">آخر الحركات</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {transfers.length === 0 ? (
+            <p className="text-sm text-slate-400">لا توجد حركات.</p>
+          ) : (
+            transfers.map((t) => (
+              <div key={t.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
+                <span>{transferTypeLabel(t.transfer_type)}</span>
+                <span className="text-slate-400">{new Date(t.transfer_date).toLocaleDateString("ar-SA")}</span>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function transferTypeLabel(type: string) {
+  const labels: Record<string, string> = {
+    assign_to_agent: "تسليم لمندوب",
+    return_to_stock: "إرجاع للمخزون",
+    sold: "بيع",
+    initial_import: "استيراد",
+  };
+  return labels[type] || type;
+}
