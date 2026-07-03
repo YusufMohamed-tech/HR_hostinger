@@ -6,6 +6,7 @@ const allowedRoles = new Set([
   "admin",
   "hr_admin",
   "hr_recruitment",
+  "promoter",
   "finance_manager",
   "accountant",
   "finance_viewer",
@@ -16,6 +17,7 @@ function titleForRole(role: string) {
   if (role === "admin") return "Organization Admin";
   if (role === "hr_admin") return "HR Admin";
   if (role === "hr_recruitment") return "HR Recruiter";
+  if (role === "promoter") return "Promoter";
   if (role === "finance_manager") return "Finance Manager";
   if (role === "accountant") return "Accountant";
   if (role === "finance_viewer") return "Finance Viewer";
@@ -97,7 +99,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "Full name is required." }, { status: 400 });
   }
   if (!allowedRoles.has(role)) {
-    return NextResponse.json({ message: "Only Admin, HR, and Finance roles can be created here." }, { status: 400 });
+    return NextResponse.json({ message: "Only Admin, HR, Sales Promoter, and Finance roles can be created here." }, { status: 400 });
   }
   if (!targetOrgId) {
     return NextResponse.json({ message: "Target organization is required." }, { status: 400 });

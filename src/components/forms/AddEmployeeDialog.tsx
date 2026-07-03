@@ -51,6 +51,7 @@ const todayString = () => new Date().toISOString().split("T")[0];
 const accountRoleOptions: Array<{ value: EmployeeAccountRole; label: string }> = [
   { value: "employee", label: "موظف" },
   { value: "training_manager", label: "مدير تدريب / موقع" },
+  { value: "promoter", label: "مروج مبيعات" },
   { value: "finance_manager", label: "مدير المالية" },
   { value: "accountant", label: "محاسب" },
   { value: "finance_viewer", label: "مشاهد المالية" },

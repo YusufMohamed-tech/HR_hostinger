@@ -65,6 +65,7 @@ function labelRole(role: string) {
     training_manager: "Training Manager",
     sales: "Sales",
     sales_manager: "Sales Manager",
+    promoter: "Promoter",
     employee: "Employee",
   };
   return labels[role] || role || "غير محدد";

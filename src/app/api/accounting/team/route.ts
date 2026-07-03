@@ -6,7 +6,7 @@ import { writeAuditLog } from "@/lib/utils/audit";
 const financeRoles = new Set(["finance_manager", "accountant", "finance_viewer"]);
 const financeTeamViewRoles = new Set(["admin", "hr_admin", "finance_manager"]);
 const financeTeamManageRoles = new Set(["admin", "hr_admin"]);
-const protectedExistingRoles = new Set(["admin", "hr_admin", "hr_recruitment", "sales", "sales_manager"]);
+const protectedExistingRoles = new Set(["admin", "hr_admin", "hr_recruitment", "sales", "sales_manager", "promoter"]);
 
 type FinanceTeamAction = "view" | "manage";
 

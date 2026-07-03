@@ -95,6 +95,7 @@ export async function replaceEmployeeLocations(
 export type EmployeeAccountRole =
   | "employee"
   | "training_manager"
+  | "promoter"
   | "finance_manager"
   | "accountant"
   | "finance_viewer";

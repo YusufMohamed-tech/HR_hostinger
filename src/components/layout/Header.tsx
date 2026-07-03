@@ -30,6 +30,9 @@ const ALL_SEARCH_ITEMS = [
   { label: "التوظيف", href: "/recruitment", icon: Briefcase, keywords: ["recruitment", "jobs", "candidates", "توظيف", "وظائف", "مرشحين"] },
   { label: "الإشعارات", href: "/notifications", icon: Bell, keywords: ["alerts", "updates", "تنبيه"] },
   { label: "المالية والمحاسبة", href: "/accounting", icon: Calculator, keywords: ["finance", "accounting", "ledger", "invoice", "journal", "محاسبة", "مالية", "قيود", "فواتير"] },
+  { label: "كشك الترويج", href: "/promoter", icon: Users, keywords: ["promoter", "kiosk", "lead", "عميل", "ترويج"] },
+  { label: "عملاء الترويج", href: "/sales/leads", icon: Users, keywords: ["leads", "promoter", "sales", "عملاء", "ترويج"] },
+  { label: "إدارة الترويج", href: "/sales/promoter", icon: Users, keywords: ["offers", "campaigns", "promoter", "عروض", "حملات"] },
   { label: "الإعدادات", href: "/settings", icon: Settings, keywords: ["profile", "preferences", "config", "إعدادات"] },
 ];
 
@@ -39,6 +42,9 @@ const RECRUITER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
 const HR_ADMIN_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) => item.href !== "/recruitment");
 const FINANCE_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
   item.href.startsWith("/accounting") || item.href === "/notifications" || item.href === "/settings"
+);
+const PROMOTER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
+  ["/promoter", "/sales/leads", "/attendance", "/notifications", "/settings"].includes(item.href)
 );
 
 const ROLE_LABELS: Record<string, string> = {
@@ -52,6 +58,7 @@ const ROLE_LABELS: Record<string, string> = {
   Finance_Viewer: "مطلع مالي",
   Sales: "المبيعات",
   Sales_Manager: "مدير المبيعات",
+  Promoter: "مروج مبيعات",
   Employee: "موظف",
 };
 
@@ -66,6 +73,7 @@ export function Header() {
     if (currentUser?.role === "HR_Recruitment") return RECRUITER_SEARCH_ITEMS;
     if (currentUser?.role === "HR_Admin") return HR_ADMIN_SEARCH_ITEMS;
     if (["Finance_Manager", "Accountant", "Finance_Viewer"].includes(currentUser?.role || "")) return FINANCE_SEARCH_ITEMS;
+    if (currentUser?.role === "Promoter") return PROMOTER_SEARCH_ITEMS;
     if (currentUser?.role === "Employee") {
       return ALL_SEARCH_ITEMS.map((item) =>
         item.href === "/tasks" ? { ...item, label: "مهامي", href: "/tasks/mine" } : item

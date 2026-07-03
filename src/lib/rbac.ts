@@ -9,6 +9,7 @@ export type OrgRole =
   | "training_manager"
   | "sales"
   | "sales_manager"
+  | "promoter"
   | "finance_manager"
   | "accountant"
   | "finance_viewer";
@@ -21,6 +22,7 @@ export const ALL_ROLES: Role[] = [
   "Training_Manager",
   "Sales",
   "Sales_Manager",
+  "Promoter",
   "Finance_Manager",
   "Accountant",
   "Finance_Viewer",
@@ -35,6 +37,7 @@ export function roleFromOrgRole(role: string | null | undefined): Role | null {
   if (role === "training_manager") return "Training_Manager";
   if (role === "sales") return "Sales";
   if (role === "sales_manager") return "Sales_Manager";
+  if (role === "promoter") return "Promoter";
   if (role === "finance_manager") return "Finance_Manager";
   if (role === "accountant") return "Accountant";
   if (role === "finance_viewer") return "Finance_Viewer";
@@ -47,6 +50,7 @@ export function getDefaultPathForRole(role: Role): string {
   if (role === "HR_Recruitment") return "/recruitment";
   if (role === "Sales") return "/sales/dashboard";
   if (role === "Sales_Manager") return "/sales/dashboard";
+  if (role === "Promoter") return "/promoter";
   if (["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role)) return "/accounting";
   return "/";
 }
@@ -85,7 +89,19 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath === "/") {
-    return !["HR_Recruitment", "Sales", "Sales_Manager", "Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+    return !["HR_Recruitment", "Sales", "Sales_Manager", "Promoter", "Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+  }
+
+  if (role === "Promoter") {
+    return (
+      normalizedPath.startsWith("/promoter") ||
+      normalizedPath.startsWith("/attendance") ||
+      normalizedPath.startsWith("/api/attendance") ||
+      normalizedPath.startsWith("/sales/leads") ||
+      normalizedPath.startsWith("/api/sales/promoter") ||
+      normalizedPath.startsWith("/notifications") ||
+      normalizedPath.startsWith("/settings")
+    );
   }
 
   if (["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role)) {
@@ -131,6 +147,9 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath.startsWith("/api/sales")) {
+    if (normalizedPath.startsWith("/api/sales/promoter") || normalizedPath.startsWith("/api/sales/leads")) {
+      return ["Admin", "HR_Admin", "Sales", "Sales_Manager", "Promoter"].includes(role);
+    }
     return ["Admin", "HR_Admin", "Sales", "Sales_Manager"].includes(role);
   }
 
@@ -165,6 +184,12 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath.startsWith("/sales")) {
+    if (normalizedPath.startsWith("/sales/leads")) {
+      return ["Promoter", "Sales", "Sales_Manager", "Admin", "HR_Admin"].includes(role);
+    }
+    if (normalizedPath.startsWith("/sales/promoter")) {
+      return ["Sales_Manager", "Admin", "HR_Admin"].includes(role);
+    }
     return ["Sales_Manager", "Admin", "HR_Admin"].includes(role);
   }
 
