@@ -140,6 +140,8 @@ export function SidebarContent() {
       { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
       { name: "عملاء الترويج", href: "/sales/leads", icon: Users },
       { name: "إدارة الترويج", href: "/sales/promoter", icon: Megaphone },
+      { name: "المندوبون", href: "/sales/agents", icon: Users },
+      { name: "إدارة المخزون", href: "/sales/stock", icon: Boxes },
       { name: "التقارير", href: "/sales/reports", icon: ClipboardList },
       { name: "المنتجات", href: "/sales/products", icon: Boxes },
       { name: "فريق المبيعات", href: "/sales/team", icon: Users },
@@ -225,6 +227,25 @@ export function SidebarContent() {
           links: [
             { name: "كشك العملاء", href: "/promoter", icon: Smartphone },
             { name: "عملائي", href: "/sales/leads", icon: Users },
+            { name: "الحضور", href: "/attendance", icon: Clock },
+            { name: "الإشعارات", href: "/notifications", icon: Bell },
+          ],
+        },
+        { title: "النظام", links: system },
+      ];
+    }
+
+    if (role === "Field_Agent") {
+      return [
+        {
+          title: "المندوب",
+          links: [
+            { name: "الرئيسية", href: "/agent", icon: LayoutDashboard },
+            { name: "شرائحي", href: "/agent/sims", icon: Smartphone },
+            { name: "تسجيل مبيعة", href: "/agent/sell", icon: ShoppingCart },
+            { name: "طلب شرائح", href: "/agent/requests", icon: Package },
+            { name: "رصيدي", href: "/agent/balance", icon: WalletCards },
+            { name: "عمولاتي", href: "/agent/commissions", icon: Receipt },
             { name: "الحضور", href: "/attendance", icon: Clock },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],

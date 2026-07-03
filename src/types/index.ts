@@ -8,6 +8,7 @@ export type Role =
   | "Sales"
   | "Sales_Manager"
   | "Promoter"
+  | "Field_Agent"
   | "Finance_Manager"
   | "Accountant"
   | "Finance_Viewer";
@@ -23,6 +24,7 @@ export type OrgMembershipRole =
   | "sales"
   | "sales_manager"
   | "promoter"
+  | "field_agent"
   | "finance_manager"
   | "accountant"
   | "finance_viewer"
