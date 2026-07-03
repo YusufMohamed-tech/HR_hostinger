@@ -50,22 +50,6 @@ AS $$
     );
 $$;
 
--- Returns the field_agents.id row that belongs to the current auth user in the
--- current org (or NULL). Used by agent-scoped SELECT policies.
-CREATE OR REPLACE FUNCTION public.current_field_agent_id()
-RETURNS uuid
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT id
-  FROM public.field_agents
-  WHERE user_id = auth.uid()
-    AND organization_id = public.current_org_id()
-  LIMIT 1;
-$$;
-
 -- ---------------------------------------------------------------------------
 -- 1. field_agents
 -- ---------------------------------------------------------------------------
@@ -86,6 +70,22 @@ CREATE TABLE IF NOT EXISTS public.field_agents (
   updated_at          timestamptz NOT NULL DEFAULT now(),
   UNIQUE (organization_id, user_id)
 );
+
+-- Returns the field_agents.id row that belongs to the current auth user in the
+-- current org (or NULL). Defined after field_agents so the SQL body validates.
+CREATE OR REPLACE FUNCTION public.current_field_agent_id()
+RETURNS uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT id
+  FROM public.field_agents
+  WHERE user_id = auth.uid()
+    AND organization_id = public.current_org_id()
+  LIMIT 1;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- 2. sim_units  (core inventory)
