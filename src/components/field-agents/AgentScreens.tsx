@@ -2,10 +2,11 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   BadgePercent,
   LayoutDashboard,
+  LogOut,
   Package,
   RefreshCcw,
   ShoppingCart,
@@ -19,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useRoleContext } from "@/providers/RoleProvider";
 import {
   createSimRequest,
   getAgentDashboard,
@@ -78,13 +80,27 @@ const navItems = [
 
 function AgentShell({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { logout } = useRoleContext();
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace("/login");
+  };
+
   return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8" dir="rtl">
       <div className="mx-auto max-w-4xl space-y-6">
-        <div>
-          <p className="text-sm font-semibold text-brand">كشك المندوب</p>
-          <h1 className="text-3xl font-bold text-slate-950">{title}</h1>
-          {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-brand">كشك المندوب</p>
+            <h1 className="text-3xl font-bold text-slate-950">{title}</h1>
+            {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
+          </div>
+          <Button variant="outline" onClick={handleLogout}>
+            <LogOut className="ml-2 h-4 w-4" />
+            تسجيل الخروج
+          </Button>
         </div>
         <nav className="flex flex-wrap gap-2">
           {navItems.map((item) => {
