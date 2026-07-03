@@ -13,6 +13,7 @@ function requiredFeatureForPath(pathname: string) {
   const normalized = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
   if (normalized.startsWith("/promoter")) return "sales";
   if (normalized.startsWith("/agent")) return "sales";
+  if (normalized.startsWith("/merchant")) return "sales";
   if (normalized.startsWith("/sales") || normalized.startsWith("/api/sales")) return "sales";
   if (normalized.startsWith("/recruitment") || normalized.startsWith("/api/recruitment")) return "recruitment";
   if (normalized.startsWith("/accounting") || normalized.startsWith("/api/accounting")) return "accounting";
