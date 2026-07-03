@@ -24,6 +24,7 @@
     "seed:demo-tasks": "node scripts/seed-demo-tasks.mjs",
     "seed:demo-schedules-leaves": "node scripts/seed-demo-schedules-leaves.mjs",
     "seed:recruitment-mock": "node scripts/seed-recruitment-mock.mjs",
+    "seed:lms-studio-course": "node scripts/seed-lms-studio-course.mjs",
     "cleanup:test-accounts": "node scripts/cleanup-test-accounts.mjs"
   },
   "dependencies": {
