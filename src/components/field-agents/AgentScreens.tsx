@@ -5,17 +5,29 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BadgePercent,
+  Check,
   LayoutDashboard,
   LogOut,
   Package,
+  Plus,
   RefreshCcw,
+  Send,
   ShoppingCart,
   Smartphone,
+  Store,
   Wallet,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -29,12 +41,22 @@ import {
   getSimUnits,
   recordSale,
 } from "@/lib/services/field-agents";
+import {
+  assignSimsToMerchant,
+  collectMerchantCash,
+  createMerchant,
+  getMerchantRequests,
+  getMerchants,
+  getResellerRanking,
+  reviewMerchantRequest,
+} from "@/lib/services/merchants";
 import type {
   AgentCommission,
   AgentDashboardData,
   AgentSimRequest,
   SimUnit,
 } from "@/types/field-agents";
+import type { Merchant, MerchantSimRequest, ResellerRanking } from "@/types/merchants";
 
 type Message = { tone: "success" | "error"; text: string } | null;
 
@@ -69,10 +91,28 @@ function MessageBanner({ message }: { message: Message }) {
   );
 }
 
+import {
+  assignSimsToMerchant,
+  collectMerchantCash,
+  createMerchant,
+  getMerchantRequests,
+  getMerchants,
+  getResellerRanking,
+  reviewMerchantRequest,
+} from "@/lib/services/merchants";
+import type {
+  AgentCommission,
+  AgentDashboardData,
+  AgentSimRequest,
+  SimUnit,
+} from "@/types/field-agents";
+import type { Merchant, MerchantSimRequest, ResellerRanking } from "@/types/merchants";
+
 const navItems = [
   { name: "الرئيسية", href: "/agent", icon: LayoutDashboard },
   { name: "شرائحي", href: "/agent/sims", icon: Smartphone },
   { name: "تسجيل مبيعة", href: "/agent/sell", icon: ShoppingCart },
+  { name: "التجار", href: "/agent/merchants", icon: Store },
   { name: "طلب شرائح", href: "/agent/requests", icon: Package },
   { name: "رصيدي", href: "/agent/balance", icon: Wallet },
   { name: "عمولاتي", href: "/agent/commissions", icon: BadgePercent },
@@ -531,6 +571,419 @@ export function AgentCommissionsScreen() {
                 ) : (
                   <Badge className="border-0 bg-amber-100 text-amber-700">معلقة</Badge>
                 )}
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+    </AgentShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Merchants management (agent side)
+// ---------------------------------------------------------------------------
+function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    email: "",
+    password: "",
+    business_name: "",
+    owner_name: "",
+    phone: "",
+    location: "",
+    sim_price: "0",
+    commission_rate: "0",
+  });
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    if (form.password.length < 8) {
+      setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل.");
+      setSubmitting(false);
+      return;
+    }
+    const payload: Record<string, unknown> = {
+      email: form.email.trim(),
+      password: form.password,
+      business_name: form.business_name.trim(),
+      sim_price: Number(form.sim_price || 0),
+      commission_rate: Number(form.commission_rate || 0),
+    };
+    if (form.owner_name.trim()) payload.owner_name = form.owner_name.trim();
+    if (form.phone.trim()) payload.phone = form.phone.trim();
+    if (form.location.trim()) payload.location = form.location.trim();
+    const result = await createMerchant(payload);
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    setForm({ email: "", password: "", business_name: "", owner_name: "", phone: "", location: "", sim_price: "0", commission_rate: "0" });
+    onCreated();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button />}>
+        <Plus className="ml-2 h-4 w-4" />
+        تاجر جديد
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>إضافة تاجر (محل صغير)</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>البريد الإلكتروني (دخول)</Label>
+            <Input dir="ltr" type="email" value={form.email} onChange={(e) => set("email", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>كلمة المرور</Label>
+            <Input dir="ltr" type="text" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder="8 أحرف على الأقل" />
+          </div>
+          <div className="space-y-2">
+            <Label>اسم المحل</Label>
+            <Input value={form.business_name} onChange={(e) => set("business_name", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>اسم المالك</Label>
+            <Input value={form.owner_name} onChange={(e) => set("owner_name", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>الجوال</Label>
+            <Input dir="ltr" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>الموقع</Label>
+            <Input value={form.location} onChange={(e) => set("location", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>سعر الشريحة (يدفعه لك)</Label>
+            <Input type="number" value={form.sim_price} onChange={(e) => set("sim_price", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>نسبة عمولته %</Label>
+            <Input type="number" value={form.commission_rate} onChange={(e) => set("commission_rate", e.target.value)} />
+          </div>
+        </div>
+        <p className="text-xs text-slate-400">سيُنشأ حساب دخول للتاجر بدور merchant تلقائيًا.</p>
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            إلغاء
+          </Button>
+          <Button onClick={submit} disabled={submitting}>
+            حفظ
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AssignToMerchantDialog({
+  merchants,
+  stockSims,
+  onDone,
+}: {
+  merchants: Merchant[];
+  stockSims: SimUnit[];
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [merchantId, setMerchantId] = useState("");
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+
+  const toggle = (id: string) => setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
+  const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    if (!merchantId || selectedIds.length === 0) {
+      setError("اختر تاجرًا وشريحة واحدة على الأقل.");
+      setSubmitting(false);
+      return;
+    }
+    const result = await assignSimsToMerchant({ merchant_id: merchantId, sim_ids: selectedIds });
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    setSelected({});
+    setMerchantId("");
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" />}>
+        <Send className="ml-2 h-4 w-4" />
+        تسليم شرائح لتاجر
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>تسليم شرائح لتاجر</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>التاجر</Label>
+            <Select value={merchantId} onValueChange={(v) => setMerchantId(v ?? "")}>
+              <SelectTrigger>
+                <SelectValue placeholder="اختر التاجر" />
+              </SelectTrigger>
+              <SelectContent>
+                {merchants
+                  .filter((m) => m.status === "active")
+                  .map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.business_name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
+            {stockSims.length === 0 ? (
+              <p className="p-2 text-sm text-slate-400">لا توجد شرائح في يدك.</p>
+            ) : (
+              stockSims.map((sim) => (
+                <label key={sim.id} className="flex items-center gap-2 rounded-md p-2 text-sm hover:bg-slate-50">
+                  <input type="checkbox" checked={!!selected[sim.id]} onChange={() => toggle(sim.id)} />
+                  <span dir="ltr" className="flex-1">
+                    {sim.iccid}
+                  </span>
+                  <span className="text-slate-400">{sim.sim_type}</span>
+                </label>
+              ))
+            )}
+          </div>
+          <p className="text-sm text-slate-500">تم اختيار {selectedIds.length} شريحة.</p>
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={submit} disabled={submitting}>
+              تسليم
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CollectFromMerchantDialog({ merchantId, onDone }: { merchantId: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    amount: "",
+    payment_method: "cash",
+    collection_date: new Date().toISOString().slice(0, 10),
+    notes: "",
+  });
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    const result = await collectMerchantCash({
+      merchant_id: merchantId,
+      amount: Number(form.amount || 0),
+      payment_method: form.payment_method,
+      collection_date: form.collection_date,
+      notes: form.notes.trim() || undefined,
+    });
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    setForm({ amount: "", payment_method: "cash", collection_date: new Date().toISOString().slice(0, 10), notes: "" });
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+        <Wallet className="ml-2 h-4 w-4" />
+        تحصيل
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>تحصيل نقدية من التاجر</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>المبلغ</Label>
+            <Input type="number" value={form.amount} onChange={(e) => set("amount", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>طريقة الدفع</Label>
+            <Select value={form.payment_method} onValueChange={(v) => set("payment_method", v ?? "cash")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cash">نقدي</SelectItem>
+                <SelectItem value="bank_transfer">تحويل بنكي</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>التاريخ</Label>
+            <Input type="date" value={form.collection_date} onChange={(e) => set("collection_date", e.target.value)} />
+          </div>
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={submit} disabled={submitting}>
+              حفظ
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function AgentMerchantsScreen() {
+  const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [stockSims, setStockSims] = useState<SimUnit[]>([]);
+  const [requests, setRequests] = useState<MerchantSimRequest[]>([]);
+  const [ranking, setRanking] = useState<ResellerRanking[]>([]);
+  const [message, setMessage] = useState<Message>(null);
+
+  const load = useCallback(() => {
+    Promise.all([
+      getMerchants(),
+      getSimUnits({ status: "with_agent" }),
+      getMerchantRequests({ status: "pending" }),
+      getResellerRanking(),
+    ]).then(([merchantResult, simResult, requestResult, rankingResult]) => {
+      if (merchantResult.error) setMessage({ tone: "error", text: merchantResult.error.message });
+      setMerchants(rows(merchantResult.data));
+      setStockSims(rows(simResult.data));
+      setRequests(rows(requestResult.data));
+      setRanking(rows(rankingResult.data));
+    });
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const review = async (id: string, status: "approved" | "rejected") => {
+    const result = await reviewMerchantRequest(id, { status });
+    if (result.error) setMessage({ tone: "error", text: result.error.message });
+    else load();
+  };
+
+  const merchantName = (id: string) => merchants.find((m) => m.id === id)?.business_name || "تاجر";
+
+  return (
+    <AgentShell title="التجار" subtitle="محلاتك الصغيرة: إنشاء، تسليم شرائح، وتحصيل.">
+      <MessageBanner message={message} />
+      <div className="flex flex-wrap gap-2">
+        <CreateMerchantDialog onCreated={load} />
+        <AssignToMerchantDialog merchants={merchants} stockSims={stockSims} onDone={load} />
+        <Button variant="outline" onClick={load}>
+          <RefreshCcw className="ml-2 h-4 w-4" />
+          تحديث
+        </Button>
+      </div>
+
+      {requests.length > 0 ? (
+        <Card className="border border-amber-200 bg-amber-50/40 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base">طلبات شرائح من التجار</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {requests.map((req) => (
+              <div key={req.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                <div>
+                  <span className="font-medium">{merchantName(req.merchant_id)}</span>
+                  <span className="mr-2 text-slate-500">
+                    {req.quantity} شريحة {req.sim_type ? `· ${req.sim_type}` : ""}
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => review(req.id, "approved")}>
+                    <Check className="ml-1 h-4 w-4" />
+                    اعتماد
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={() => review(req.id, "rejected")}>
+                    <X className="ml-1 h-4 w-4" />
+                    رفض
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base">التجار ({merchants.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {merchants.length === 0 ? (
+            <p className="text-sm text-slate-400">لا يوجد تجار بعد.</p>
+          ) : (
+            merchants.map((m) => (
+              <div key={m.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
+                <div>
+                  <span className="font-medium">{m.business_name}</span>
+                  <span className="mr-2 text-slate-400">
+                    سعر {formatMoney(m.sim_price)} · عمولة {m.commission_rate}%
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {m.status === "active" ? (
+                    <Badge className="border-0 bg-emerald-100 text-emerald-700">نشط</Badge>
+                  ) : (
+                    <Badge className="border-0 bg-red-100 text-red-700">موقوف</Badge>
+                  )}
+                  <CollectFromMerchantDialog merchantId={m.id} onDone={load} />
+                </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-base">أفضل التجار مبيعًا</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {ranking.length === 0 ? (
+            <p className="text-sm text-slate-400">لا توجد بيانات بعد.</p>
+          ) : (
+            ranking.slice(0, 10).map((r, i) => (
+              <div key={r.merchant_id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
+                <span className="font-medium">
+                  {i + 1}. {r.business_name}
+                </span>
+                <span className="text-slate-500">
+                  {r.sold_total} مبيعة · {formatMoney(r.sold_value)}
+                </span>
               </div>
             ))
           )}

@@ -1,5 +1,11 @@
-export type SimStatus = "in_stock" | "with_agent" | "sold" | "returned";
-export type SimTransferType = "assign_to_agent" | "return_to_stock" | "sold" | "initial_import";
+export type SimStatus = "in_stock" | "with_agent" | "with_merchant" | "sold" | "returned";
+export type SimTransferType =
+  | "assign_to_agent"
+  | "return_to_stock"
+  | "assign_to_merchant"
+  | "return_from_merchant"
+  | "sold"
+  | "initial_import";
 export type SimRequestStatus = "pending" | "approved" | "rejected" | "delivered";
 export type PaymentMethod = "cash" | "bank_transfer";
 export type AgentStatus = "active" | "suspended";
@@ -13,6 +19,7 @@ export interface FieldAgent {
   national_id: string;
   region: string | null;
   commission_rate: number;
+  sim_price: number;
   max_sim_capacity: number | null;
   status: AgentStatus;
   joined_at: string;
@@ -34,6 +41,9 @@ export interface SimUnit {
   sold_by_agent_id: string | null;
   sold_price: number | null;
   customer_name: string | null;
+  current_merchant_id: string | null;
+  sold_by_merchant_id: string | null;
+  merchant_assigned_at: string | null;
   added_by: string | null;
   created_at: string;
   updated_at: string;
