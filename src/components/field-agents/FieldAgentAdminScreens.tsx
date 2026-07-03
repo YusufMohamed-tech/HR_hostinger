@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, Plus, RefreshCcw, Send, Wallet, X } from "lucide-react";
+import { ArrowRight, Check, FileDown, Plus, RefreshCcw, Send, Wallet, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -589,28 +589,108 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
 // ---------------------------------------------------------------------------
 // Import SIMs dialog
 // ---------------------------------------------------------------------------
+type ParsedSim = { iccid: string; price: number; sim_type: string };
+
+function normalizeHeader(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
+function pickColumn(headers: string[], candidates: string[]) {
+  return headers.find((header) => candidates.some((candidate) => header.includes(candidate)));
+}
+
 function ImportSimsDialog({ onDone }: { onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [text, setText] = useState("");
-  const [simType, setSimType] = useState("prepaid");
-  const [price, setPrice] = useState("0");
+  const [parsed, setParsed] = useState<ParsedSim[]>([]);
+  const [fileName, setFileName] = useState("");
+  const [defaultType, setDefaultType] = useState("prepaid");
+
+  const reset = () => {
+    setParsed([]);
+    setFileName("");
+    setError(null);
+  };
+
+  const handleFile = async (file: File | null) => {
+    if (!file) return;
+    setError(null);
+    setFileName(file.name);
+    try {
+      const XLSX = await import("xlsx");
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      if (!sheet) {
+        setError("الملف لا يحتوي على أوراق عمل.");
+        return;
+      }
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+      if (rows.length === 0) {
+        setError("الملف فارغ.");
+        return;
+      }
+
+      const headerMap = new Map<string, string>();
+      Object.keys(rows[0]).forEach((key) => headerMap.set(normalizeHeader(key), key));
+      const headers = Array.from(headerMap.keys());
+
+      const iccidKey = headerMap.get(pickColumn(headers, ["iccid", "رقم", "الشريحة", "sim", "serial"]) || "");
+      const priceKey = headerMap.get(pickColumn(headers, ["price", "سعر", "قيمة"]) || "");
+      const typeKey = headerMap.get(pickColumn(headers, ["type", "نوع"]) || "");
+      const rawKeys = Object.keys(rows[0]);
+
+      const result: ParsedSim[] = [];
+      for (const rowData of rows) {
+        // Fall back to positional columns (A=iccid, B=price) if headers are unlabeled.
+        const iccidRaw = iccidKey ? rowData[iccidKey] : rowData[rawKeys[0]];
+        const priceRaw = priceKey ? rowData[priceKey] : rowData[rawKeys[1]];
+        const typeRaw = typeKey ? rowData[typeKey] : "";
+        const iccid = String(iccidRaw ?? "").trim();
+        if (!iccid) continue;
+        result.push({
+          iccid,
+          price: Number(priceRaw) || 0,
+          sim_type: String(typeRaw ?? "").trim() || defaultType,
+        });
+      }
+
+      if (result.length === 0) {
+        setError("لم يتم العثور على أرقام ICCID في الملف. تأكد من عمود ICCID.");
+        return;
+      }
+      setParsed(result);
+    } catch {
+      setError("تعذر قراءة الملف. تأكد من أنه ملف Excel أو CSV صالح.");
+    }
+  };
+
+  const downloadTemplate = async () => {
+    const XLSX = await import("xlsx");
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ["ICCID", "price", "type"],
+      ["8996000000000000001", 25, "prepaid"],
+      ["8996000000000000002", 25, "prepaid"],
+    ]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "SIMs");
+    XLSX.writeFile(workbook, "sim-import-template.xlsx");
+  };
 
   const submit = async () => {
     setSubmitting(true);
     setError(null);
-    const iccids = text
-      .split(/\r?\n|,/)
-      .map((item) => item.trim())
-      .filter(Boolean);
-    if (iccids.length === 0) {
-      setError("أدخل رقم ICCID واحد على الأقل.");
+    if (parsed.length === 0) {
+      setError("ارفع ملف Excel يحتوي على الشرائح أولًا.");
       setSubmitting(false);
       return;
     }
     const result = await importSims({
-      sims: iccids.map((iccid) => ({ iccid, sim_type: simType, price: Number(price || 0) })),
+      sims: parsed.map((sim) => ({ iccid: sim.iccid, sim_type: sim.sim_type, price: sim.price })),
     });
     setSubmitting(false);
     if (result.error) {
@@ -618,34 +698,48 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
       return;
     }
     setOpen(false);
-    setText("");
+    reset();
     onDone();
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
       <DialogTrigger render={<Button />}>
         <Plus className="ml-2 h-4 w-4" />
         استيراد شرائح
       </DialogTrigger>
-      <DialogContent dir="rtl" className="max-w-md">
+      <DialogContent dir="rtl" className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>استيراد شرائح للمخزون</DialogTitle>
+          <DialogTitle>استيراد شرائح من Excel</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>أرقام ICCID (سطر لكل رقم)</Label>
-            <textarea
-              dir="ltr"
-              className="min-h-32 w-full rounded-md border border-slate-200 p-2 text-sm"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-            />
+          <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 text-sm text-slate-700">
+            <p className="mb-2 font-semibold text-slate-900">تعليمات الملف:</p>
+            <ul className="list-disc space-y-1 pr-5 text-xs leading-6">
+              <li>
+                استخدم أعمدة بالعناوين: <span className="font-mono">ICCID</span> ،{" "}
+                <span className="font-mono">price</span> ، و<span className="font-mono">type</span> (اختياري).
+              </li>
+              <li>عمود ICCID إلزامي — يحتوي رقم الشريحة (18-22 رقمًا).</li>
+              <li>عمود price يحتوي السعر بالأرقام؛ إذا تُرك فارغًا يُعتبر 0.</li>
+              <li>إذا لم يوجد عمود type يُستخدم النوع الافتراضي المحدد أدناه.</li>
+            </ul>
+            <Button variant="outline" size="sm" className="mt-3" onClick={downloadTemplate}>
+              <FileDown className="ml-2 h-4 w-4" />
+              تنزيل نموذج Excel
+            </Button>
           </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>النوع</Label>
-              <Select value={simType} onValueChange={(v) => setSimType(v ?? "prepaid")}>
+              <Label>النوع الافتراضي</Label>
+              <Select value={defaultType} onValueChange={(v) => setDefaultType(v ?? "prepaid")}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -658,17 +752,38 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>السعر</Label>
-              <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
+              <Label>ملف Excel / CSV</Label>
+              <Input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
+              />
             </div>
           </div>
+
+          {parsed.length > 0 ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+              تم التعرف على <span className="font-bold">{parsed.length}</span> شريحة من{" "}
+              <span className="font-mono">{fileName}</span>.
+              <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
+                {parsed.slice(0, 5).map((sim, i) => (
+                  <div key={i} className="flex justify-between text-xs text-slate-600" dir="ltr">
+                    <span>{sim.iccid}</span>
+                    <span>{formatMoney(sim.price)}</span>
+                  </div>
+                ))}
+                {parsed.length > 5 ? <p className="text-xs text-slate-400">…والمزيد</p> : null}
+              </div>
+            </div>
+          ) : null}
+
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpen(false)}>
               إلغاء
             </Button>
-            <Button onClick={submit} disabled={submitting}>
-              استيراد
+            <Button onClick={submit} disabled={submitting || parsed.length === 0}>
+              استيراد {parsed.length > 0 ? `(${parsed.length})` : ""}
             </Button>
           </div>
         </div>
