@@ -105,8 +105,6 @@ export function SidebarContent() {
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
     const financeCore: NavLink[] = [
-      { name: "لوحة التحكم", href: "/", icon: LayoutDashboard },
-      ...taskLinks,
       ...lmsLearnerOps,
       { name: "الشات", href: "/chat", icon: MessageCircle },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
