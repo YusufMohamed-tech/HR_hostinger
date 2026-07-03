@@ -21,6 +21,7 @@ function roleLabel(role: string) {
     employee: "Employee",
     sales: "Sales",
     sales_manager: "Sales Manager",
+    promoter: "Promoter",
   };
   return labels[role] || role;
 }

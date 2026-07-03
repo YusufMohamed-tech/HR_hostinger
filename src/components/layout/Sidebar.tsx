@@ -22,11 +22,13 @@ import {
   LayoutDashboard,
   GraduationCap,
   MapPin,
+  Megaphone,
   MessageCircle,
   Network,
   Package,
   Receipt,
   Settings,
+  Smartphone,
   ShoppingCart,
   Users,
   WalletCards,
@@ -136,6 +138,8 @@ export function SidebarContent() {
 
     const salesManagementOps: NavLink[] = [
       { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
+      { name: "عملاء الترويج", href: "/sales/leads", icon: Users },
+      { name: "إدارة الترويج", href: "/sales/promoter", icon: Megaphone },
       { name: "التقارير", href: "/sales/reports", icon: ClipboardList },
       { name: "المنتجات", href: "/sales/products", icon: Boxes },
       { name: "فريق المبيعات", href: "/sales/team", icon: Users },
@@ -182,6 +186,7 @@ export function SidebarContent() {
             { name: "ورديتي", href: "/schedule", icon: CalendarDays },
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
             { name: "سجل المبيعات", href: "/sales/history", icon: ClipboardList },
+            { name: "عملاء الترويج", href: "/sales/leads", icon: Users },
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
             ...lmsLearnerOps,
             { name: "الشات", href: "/chat", icon: MessageCircle },
@@ -202,9 +207,25 @@ export function SidebarContent() {
             { name: "الجداول", href: "/schedule", icon: CalendarDays },
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
             { name: "سجل مبيعاتي", href: "/sales/history", icon: ClipboardList },
+            { name: "عملاء الترويج", href: "/sales/leads", icon: Users },
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
             ...lmsLearnerOps,
             { name: "الشات", href: "/chat", icon: MessageCircle },
+            { name: "الإشعارات", href: "/notifications", icon: Bell },
+          ],
+        },
+        { title: "النظام", links: system },
+      ];
+    }
+
+    if (role === "Promoter") {
+      return [
+        {
+          title: "الترويج",
+          links: [
+            { name: "كشك العملاء", href: "/promoter", icon: Smartphone },
+            { name: "عملائي", href: "/sales/leads", icon: Users },
+            { name: "الحضور", href: "/attendance", icon: Clock },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],
         },

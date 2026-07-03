@@ -11,6 +11,7 @@ export type OrgRole =
   | "training_manager"
   | "sales"
   | "sales_manager"
+  | "promoter"
   | "finance_manager"
   | "accountant"
   | "finance_viewer";

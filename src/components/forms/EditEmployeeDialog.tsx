@@ -47,6 +47,7 @@ const threeColumnGridClass = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols
 const accountRoleOptions: Array<{ value: EmployeeAccountRole; label: string }> = [
   { value: "employee", label: "موظف" },
   { value: "training_manager", label: "مدير تدريب / موقع" },
+  { value: "promoter", label: "مروج مبيعات" },
   { value: "finance_manager", label: "مدير المالية" },
   { value: "accountant", label: "محاسب" },
   { value: "finance_viewer", label: "مشاهد المالية" },

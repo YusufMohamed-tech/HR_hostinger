@@ -2,6 +2,7 @@ export type ManagedOrgRole =
   | "admin"
   | "hr_admin"
   | "hr_recruitment"
+  | "promoter"
   | "finance_manager"
   | "accountant"
   | "finance_viewer";
