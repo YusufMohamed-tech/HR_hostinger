@@ -44,6 +44,21 @@ type UntypedSupabase = {
   from: (table: string) => QueryBuilder;
 };
 
+type AdminAuthClient = {
+  auth: {
+    admin: {
+      createUser: (attrs: Record<string, unknown>) => Promise<{
+        data: { user: { id: string } | null };
+        error: { message?: string } | null;
+      }>;
+      listUsers: (params: { page: number; perPage: number }) => Promise<{
+        data: { users: Array<{ id: string; email?: string | null }> };
+        error: { message?: string } | null;
+      }>;
+    };
+  };
+};
+
 type AuthContext = {
   user: User;
   orgId: string;
@@ -60,6 +75,27 @@ type RouteContext = {
 
 function database(admin: unknown) {
   return admin as UntypedSupabase;
+}
+
+function adminAuth(admin: unknown) {
+  return admin as AdminAuthClient;
+}
+
+// Returns the auth user id for an email, or null if none exists.
+async function findAuthUserIdByEmail(auth: AuthContext, email: string): Promise<string | null> {
+  const target = email.toLowerCase();
+  let page = 1;
+  const perPage = 100;
+  // Bounded scan; orgs here are small enough that a few pages suffice.
+  for (let i = 0; i < 50; i += 1) {
+    const { data, error } = await adminAuth(auth.admin).auth.admin.listUsers({ page, perPage });
+    if (error) throw new Error(error.message || "Unable to look up users.");
+    const found = data.users.find((candidate) => (candidate.email || "").toLowerCase() === target);
+    if (found) return found.id;
+    if (data.users.length < perPage) return null;
+    page += 1;
+  }
+  return null;
 }
 
 function json(data: unknown, status = 200) {
@@ -164,15 +200,69 @@ async function handleAgents(request: NextRequest, auth: AuthContext, segments: s
       const parsed = createAgentSchema.safeParse(body);
       if (!parsed.success) return message(parseError(parsed.error), 400);
 
-      const result = await db
-        .from("field_agents")
-        .insert({
-          ...parsed.data,
-          organization_id: auth.orgId,
-          created_by: auth.user.id,
-        })
-        .select("*")
-        .single();
+      const email = parsed.data.email.toLowerCase();
+
+      // Reject if the email is already in use to avoid altering an existing account.
+      const existingUserId = await findAuthUserIdByEmail(auth, email);
+      if (existingUserId) {
+        return message("البريد الإلكتروني مستخدم بالفعل.", 400);
+      }
+
+      // 1. Create the auth account.
+      const created = await adminAuth(auth.admin).auth.admin.createUser({
+        email,
+        password: parsed.data.password,
+        email_confirm: true,
+        user_metadata: { full_name: parsed.data.full_name },
+      });
+      if (created.error || !created.data.user) {
+        return message(created.error?.message || "تعذر إنشاء الحساب.", 500);
+      }
+      const userId = created.data.user.id;
+
+      // 2. Profile.
+      const profileResult = await db
+        .from("profiles")
+        .upsert(
+          {
+            user_id: userId,
+            org_id: auth.orgId,
+            full_name: parsed.data.full_name,
+            email,
+            title: "مندوب ميداني",
+            account_status: "active",
+          },
+          { onConflict: "user_id" }
+        );
+      if (profileResult.error) return message(profileResult.error.message, 500);
+
+      // 3. Org membership with the field_agent role.
+      const memberResult = await db
+        .from("org_members")
+        .upsert(
+          {
+            org_id: auth.orgId,
+            user_id: userId,
+            role: "field_agent",
+          },
+          { onConflict: "org_id,user_id" }
+        );
+      if (memberResult.error) return message(memberResult.error.message, 500);
+
+      // 4. Field agent profile.
+      const insertPayload: Record<string, unknown> = {
+        organization_id: auth.orgId,
+        user_id: userId,
+        full_name: parsed.data.full_name,
+        phone: parsed.data.phone,
+        national_id: parsed.data.national_id,
+        commission_rate: parsed.data.commission_rate,
+        created_by: auth.user.id,
+      };
+      if (parsed.data.region) insertPayload.region = parsed.data.region;
+      if (parsed.data.max_sim_capacity !== undefined) insertPayload.max_sim_capacity = parsed.data.max_sim_capacity;
+
+      const result = await db.from("field_agents").insert(insertPayload).select("*").single();
       if (result.error) return message(result.error.message, 500);
       return json(row(result.data), 201);
     }

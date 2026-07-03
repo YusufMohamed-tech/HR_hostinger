@@ -17,8 +17,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useRoleContext } from "@/providers/RoleProvider";
-import { getOrgMembers } from "@/lib/services/members";
 import {
   assignSims,
   collectCash,
@@ -118,22 +116,13 @@ function statusBadge(status: string, labels: Record<string, string>) {
 // ---------------------------------------------------------------------------
 // Create agent dialog
 // ---------------------------------------------------------------------------
-type MemberOption = { user_id: string; name: string; role: string };
-
-function CreateAgentDialog({
-  existingUserIds,
-  onCreated,
-}: {
-  existingUserIds: string[];
-  onCreated: () => void;
-}) {
-  const { currentUser } = useRoleContext();
+function CreateAgentDialog({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
-  const [members, setMembers] = useState<MemberOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
-    user_id: "",
+    email: "",
+    password: "",
     full_name: "",
     phone: "",
     national_id: "",
@@ -143,45 +132,17 @@ function CreateAgentDialog({
   });
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
-  useEffect(() => {
-    if (!open || !currentUser?.orgId) return;
-    getOrgMembers(currentUser.orgId).then((result) => {
-      const list = Array.isArray(result.data) ? result.data : [];
-      const options = list
-        .map((item) => {
-          const rec = item as Record<string, unknown>;
-          const profile = (rec.profiles || {}) as Record<string, unknown>;
-          const uid = String(rec.user_id || "");
-          return {
-            user_id: uid,
-            name: String(profile.full_name || profile.email || uid),
-            role: String(rec.role || ""),
-          };
-        })
-        .filter((option) => option.user_id && !existingUserIds.includes(option.user_id));
-      setMembers(options);
-    });
-  }, [open, currentUser?.orgId, existingUserIds]);
-
-  const pickMember = (userId: string) => {
-    const member = members.find((m) => m.user_id === userId);
-    setForm((prev) => ({
-      ...prev,
-      user_id: userId,
-      full_name: prev.full_name || member?.name || "",
-    }));
-  };
-
   const submit = async () => {
     setSubmitting(true);
     setError(null);
-    if (!form.user_id) {
-      setError("اختر المستخدم المرتبط بالمندوب.");
+    if (form.password.length < 8) {
+      setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل.");
       setSubmitting(false);
       return;
     }
     const payload: Record<string, unknown> = {
-      user_id: form.user_id,
+      email: form.email.trim(),
+      password: form.password,
       full_name: form.full_name.trim(),
       phone: form.phone.trim(),
       national_id: form.national_id.trim(),
@@ -196,7 +157,7 @@ function CreateAgentDialog({
       return;
     }
     setOpen(false);
-    setForm({ user_id: "", full_name: "", phone: "", national_id: "", region: "", commission_rate: "0", max_sim_capacity: "" });
+    setForm({ email: "", password: "", full_name: "", phone: "", national_id: "", region: "", commission_rate: "0", max_sim_capacity: "" });
     onCreated();
   };
 
@@ -211,30 +172,13 @@ function CreateAgentDialog({
           <DialogTitle>إضافة مندوب ميداني</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2 md:col-span-2">
-            <Label>المستخدم (حساب النظام)</Label>
-            <Select value={form.user_id} onValueChange={(v) => pickMember(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="اختر المستخدم" />
-              </SelectTrigger>
-              <SelectContent>
-                {members.length === 0 ? (
-                  <SelectItem value="none" disabled>
-                    لا يوجد مستخدمون متاحون
-                  </SelectItem>
-                ) : (
-                  members.map((member) => (
-                    <SelectItem key={member.user_id} value={member.user_id}>
-                      {member.name}
-                      {member.role ? ` — ${member.role}` : ""}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-slate-400">
-              يجب أن يكون للمندوب حساب في النظام بدور field_agent لاستخدام الكشك.
-            </p>
+          <div className="space-y-2">
+            <Label>البريد الإلكتروني (تسجيل الدخول)</Label>
+            <Input dir="ltr" type="email" value={form.email} onChange={(e) => set("email", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>كلمة المرور</Label>
+            <Input dir="ltr" type="text" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder="8 أحرف على الأقل" />
           </div>
           <div className="space-y-2">
             <Label>الاسم الكامل</Label>
@@ -261,6 +205,9 @@ function CreateAgentDialog({
             <Input type="number" value={form.max_sim_capacity} onChange={(e) => set("max_sim_capacity", e.target.value)} />
           </div>
         </div>
+        <p className="text-xs text-slate-400">
+          سيتم إنشاء حساب دخول جديد للمندوب بدور field_agent تلقائيًا.
+        </p>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -310,7 +257,7 @@ export function AgentListScreen() {
               <RefreshCcw className="ml-2 h-4 w-4" />
               تحديث
             </Button>
-            <CreateAgentDialog existingUserIds={agents.map((a) => a.user_id)} onCreated={load} />
+            <CreateAgentDialog onCreated={load} />
           </>
         }
       />
