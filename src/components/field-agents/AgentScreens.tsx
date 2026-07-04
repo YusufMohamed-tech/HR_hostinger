@@ -36,6 +36,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { LocationMapPicker } from "@/components/locations/LocationMapPicker";
 import { cn } from "@/lib/utils";
 import { useRoleContext } from "@/providers/RoleProvider";
 import {
@@ -673,6 +674,7 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [radiusMeters, setRadiusMeters] = useState("100");
   const [form, setForm] = useState({
     email: "",
     password: "",
@@ -687,6 +689,9 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
   });
   const [placePhoto, setPlacePhoto] = useState<File | null>(null);
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+  const setMapCoordinates = useCallback((latitude: string, longitude: string) => {
+    setForm((prev) => ({ ...prev, latitude, longitude }));
+  }, []);
 
   const submit = async () => {
     setSubmitting(true);
@@ -718,6 +723,7 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
     }
     setOpen(false);
     setForm({ email: "", password: "", business_name: "", owner_name: "", city: "", region: "", phone: "", location: "", latitude: "", longitude: "" });
+    setRadiusMeters("100");
     setPlacePhoto(null);
     onCreated();
   };
@@ -728,7 +734,7 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
         <Plus className="ml-2 h-4 w-4" />
         تاجر جديد
       </DialogTrigger>
-      <DialogContent dir="rtl" className="max-w-2xl">
+      <DialogContent dir="rtl" className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>إضافة تاجر (محل صغير)</DialogTitle>
         </DialogHeader>
@@ -762,8 +768,12 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
             <Input dir="ltr" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>الموقع على الخريطة</Label>
+            <Label>العنوان / وصف الموقع</Label>
             <Input value={form.location} onChange={(e) => set("location", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>النطاق (متر)</Label>
+            <Input dir="ltr" type="number" min="10" value={radiusMeters} onChange={(e) => setRadiusMeters(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>خط العرض</Label>
@@ -772,6 +782,18 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
           <div className="space-y-2">
             <Label>خط الطول</Label>
             <Input dir="ltr" type="number" value={form.longitude} onChange={(e) => set("longitude", e.target.value)} />
+          </div>
+          <div className="space-y-3 md:col-span-2">
+            <Label className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-emerald-600" />
+              حدد موقع التاجر على الخريطة
+            </Label>
+            <LocationMapPicker
+              latitude={form.latitude}
+              longitude={form.longitude}
+              radiusMeters={radiusMeters}
+              onChange={setMapCoordinates}
+            />
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>صورة المكان</Label>
