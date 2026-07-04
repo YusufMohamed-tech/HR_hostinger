@@ -110,7 +110,7 @@ export interface AgentCommission {
 // Derived / aggregated shapes used by UI
 
 export interface AgentBalance {
-  total_sold_value: number; // HR-set sim_price × sold SIMs by agent/merchant chain
+  total_sold_value: number; // manager-set sim_price × sold SIMs by agent/merchant chain
   total_collected: number; // sum of all cash collections
   outstanding: number; // total_sold_value - total_collected
 }

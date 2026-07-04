@@ -1,5 +1,5 @@
 -- Merchant (small business / sub-dealer) tier for the field-agent SIM chain.
--- Additive only. Chain: stock (HR) -> field_agent -> merchant -> customer.
+-- Additive only. Chain: stock -> field_agent -> merchant -> customer.
 -- Conventions match schema_v47_field_agents.sql.
 --   NOTE: new enum values are compared via ::text in policies to stay safe
 --   inside the same transaction they are added in.
@@ -10,7 +10,7 @@ ALTER TYPE public.sim_transfer_type ADD VALUE IF NOT EXISTS 'assign_to_merchant'
 ALTER TYPE public.sim_transfer_type ADD VALUE IF NOT EXISTS 'return_from_merchant';
 
 -- ---------------------------------------------------------------------------
--- Per-agent accountability price (what the agent owes HR per SIM). HR-set.
+-- Per-agent accountability price (what the agent owes the organization per SIM).
 -- ---------------------------------------------------------------------------
 ALTER TABLE public.field_agents
   ADD COLUMN IF NOT EXISTS sim_price numeric NOT NULL DEFAULT 0 CHECK (sim_price >= 0);

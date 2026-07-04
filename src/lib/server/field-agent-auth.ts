@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireTenantContext } from "@/lib/server/tenant-context";
 
-const fieldAgentManagerRoles = new Set(["admin", "hr_admin", "sales_manager"]);
-const fieldAgentAllRoles = new Set(["field_agent", "admin", "hr_admin", "sales_manager"]);
+const fieldAgentManagerRoles = new Set(["admin", "sales_manager", "onground_agent_manager"]);
+const fieldAgentAllRoles = new Set(["field_agent", "admin", "sales_manager", "onground_agent_manager"]);
 
 export async function requireFieldAgentAccess(options?: { managerOnly?: boolean }) {
   const auth = await requireTenantContext({ feature: "sales" });

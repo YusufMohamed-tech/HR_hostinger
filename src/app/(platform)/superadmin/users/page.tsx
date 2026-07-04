@@ -26,6 +26,7 @@ const roleLabels: Record<string, string> = {
   admin: "مسؤول منظمة",
   hr_admin: "مدير الموارد البشرية",
   hr_recruitment: "مسؤول التوظيف",
+  onground_agent_manager: "مدير المندوبين الميدانيين",
   promoter: "مروج مبيعات",
   finance_manager: "مدير المالية",
   accountant: "محاسب",
