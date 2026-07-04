@@ -33,6 +33,7 @@ const ALL_SEARCH_ITEMS = [
   { label: "كشك الترويج", href: "/promoter", icon: Users, keywords: ["promoter", "kiosk", "lead", "عميل", "ترويج"] },
   { label: "عملاء الترويج", href: "/sales/leads", icon: Users, keywords: ["leads", "promoter", "sales", "عملاء", "ترويج"] },
   { label: "إدارة الترويج", href: "/sales/promoter", icon: Users, keywords: ["offers", "campaigns", "promoter", "عروض", "حملات"] },
+  { label: "فريق المبيعات", href: "/sales/team", icon: Users, keywords: ["sales team", "sales agents", "مندوب مبيعات", "فريق المبيعات"] },
   { label: "المندوبون الميدانيون", href: "/sales/agents", icon: Users, keywords: ["field agents", "onground", "sim", "مندوب", "شرائح"] },
   { label: "مخزون الشرائح", href: "/sales/stock", icon: Network, keywords: ["stock", "inventory", "sim", "مخزون", "شرائح"] },
   { label: "الإعدادات", href: "/settings", icon: Settings, keywords: ["profile", "preferences", "config", "إعدادات"] },
@@ -41,7 +42,9 @@ const ALL_SEARCH_ITEMS = [
 const RECRUITER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
   ["/recruitment", "/notifications", "/settings"].includes(item.href)
 );
-const HR_ADMIN_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) => item.href !== "/recruitment");
+const HR_ADMIN_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter(
+  (item) => !["/recruitment", "/sales/agents", "/sales/stock"].includes(item.href)
+);
 const FINANCE_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
   item.href.startsWith("/accounting") || item.href === "/notifications" || item.href === "/settings"
 );
