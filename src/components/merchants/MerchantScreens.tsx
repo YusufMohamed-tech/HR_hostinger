@@ -3,7 +3,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, LogOut, Package, RefreshCcw, ShoppingCart, Smartphone, Wallet } from "lucide-react";
+import {
+  CreditCard,
+  LayoutDashboard,
+  LogOut,
+  Package,
+  ReceiptText,
+  RefreshCcw,
+  ShoppingCart,
+  Smartphone,
+  Upload,
+  Wallet,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,14 +24,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@/lib/utils";
 import { useRoleContext } from "@/providers/RoleProvider";
 import {
+  collectMerchantCash,
   createMerchantRequest,
   getMerchantDashboard,
+  getMerchantCollections,
   getMerchantRequests,
   getMerchantSims,
+  getSimPackages,
   merchantRecordSale,
 } from "@/lib/services/merchants";
-import type { MerchantDashboardData, MerchantSimRequest } from "@/types/merchants";
-import type { SimUnit } from "@/types/field-agents";
+import type { MerchantCashCollection, MerchantDashboardData, MerchantSimRequest } from "@/types/merchants";
+import type { SimPackage, SimUnit } from "@/types/field-agents";
 
 type Message = { tone: "success" | "error"; text: string } | null;
 
@@ -29,8 +43,29 @@ function rows<T>(value: T[] | null | undefined) {
 }
 function formatMoney(value: unknown) {
   const n = Number(value || 0);
-  return `${Number.isFinite(n) ? Math.round(n).toLocaleString("ar-SA") : "0"} ر.س`;
+  return `${Number.isFinite(n) ? n.toLocaleString("ar-SA", { maximumFractionDigits: 2 }) : "0"} ر.س`;
 }
+
+function commissionPreview(pkg: SimPackage | null, tier: "agent" | "merchant") {
+  if (!pkg) return "";
+  const type = tier === "agent" ? pkg.agent_commission_type : pkg.merchant_commission_type;
+  const value = tier === "agent" ? pkg.agent_commission_value : pkg.merchant_commission_value;
+  const amount = type === "flat" ? value : (Number(pkg.sale_price || 0) * value) / 100;
+  return formatMoney(amount);
+}
+
+const paymentMethodLabels: Record<string, string> = {
+  cash: "نقدي",
+  bank_transfer: "تحويل بنكي",
+  visa: "فيزا",
+  electronic: "دفع إلكتروني",
+};
+
+const paymentStatusLabels: Record<string, string> = {
+  pending: "قيد التأكيد",
+  confirmed: "مؤكد",
+  rejected: "مرفوض",
+};
 
 const requestStatusLabels: Record<string, string> = {
   pending: "قيد المراجعة",
@@ -206,7 +241,7 @@ export function MerchantSimListScreen() {
                 <span dir="ltr" className="font-medium">
                   {sim.iccid}
                 </span>
-                <span className="text-slate-500">{sim.sim_type}</span>
+                <span className="text-slate-500">{sim.provider || "virgin"} · {sim.sim_type}</span>
               </div>
             ))
           )}
@@ -218,22 +253,38 @@ export function MerchantSimListScreen() {
 
 export function MerchantSellScreen() {
   const [sims, setSims] = useState<SimUnit[]>([]);
+  const [packages, setPackages] = useState<SimPackage[]>([]);
   const [simId, setSimId] = useState("");
-  const [price, setPrice] = useState("");
+  const [packageId, setPackageId] = useState("");
   const [customer, setCustomer] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<Message>(null);
 
   const load = useCallback(() => {
-    getMerchantSims({ status: "with_merchant" }).then((result) => {
-      if (result.error) setMessage({ tone: "error", text: result.error.message });
-      else setSims(rows(result.data));
+    Promise.all([
+      getMerchantSims({ status: "with_merchant" }),
+      getSimPackages({ status: "active" }),
+    ]).then(([simResult, packageResult]) => {
+      if (simResult.error) setMessage({ tone: "error", text: simResult.error.message });
+      else setSims(rows(simResult.data));
+      if (packageResult.error) setMessage({ tone: "error", text: packageResult.error.message });
+      else setPackages(rows(packageResult.data));
     });
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const selectedSim = useMemo(() => sims.find((sim) => sim.id === simId) || null, [sims, simId]);
+  const availablePackages = useMemo(() => {
+    const provider = selectedSim?.provider || "virgin";
+    return packages.filter((pkg) => pkg.provider === provider && pkg.status === "active");
+  }, [packages, selectedSim]);
+  const selectedPackage = useMemo(
+    () => availablePackages.find((pkg) => pkg.id === packageId) || null,
+    [availablePackages, packageId]
+  );
 
   const submit = async () => {
     setSubmitting(true);
@@ -243,9 +294,14 @@ export function MerchantSellScreen() {
       setSubmitting(false);
       return;
     }
+    if (!packageId) {
+      setMessage({ tone: "error", text: "اختر الباقة." });
+      setSubmitting(false);
+      return;
+    }
     const result = await merchantRecordSale({
       sim_unit_id: simId,
-      sold_price: Number(price || 0),
+      package_id: packageId,
       customer_name: customer.trim() || undefined,
     });
     setSubmitting(false);
@@ -255,13 +311,13 @@ export function MerchantSellScreen() {
     }
     setMessage({ tone: "success", text: "تم تسجيل البيع بنجاح." });
     setSimId("");
-    setPrice("");
+    setPackageId("");
     setCustomer("");
     load();
   };
 
   return (
-    <MerchantShell title="تسجيل بيع" subtitle="سجّل بيع شريحة لعميل.">
+    <MerchantShell title="تسجيل بيع" subtitle="اختر الشريحة ثم الباقة التي باعها المحل للعميل.">
       <MessageBanner message={message} />
       <Card className="border border-slate-200 shadow-sm">
         <CardHeader>
@@ -270,27 +326,77 @@ export function MerchantSellScreen() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label>الشريحة</Label>
-            <Select value={simId} onValueChange={(v) => setSimId(v ?? "")}>
+            <Select
+              value={simId}
+              onValueChange={(v) => {
+                setSimId(v ?? "");
+                setPackageId("");
+              }}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="اختر شريحة" />
               </SelectTrigger>
               <SelectContent>
                 {sims.map((sim) => (
                   <SelectItem key={sim.id} value={sim.id}>
-                    {sim.iccid} · {sim.sim_type}
+                    {sim.iccid} · {sim.provider || "virgin"} · {sim.sim_type}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>سعر البيع</Label>
-            <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
+            <Label>الباقة</Label>
+            {!selectedSim ? (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                اختر الشريحة أولا حتى تظهر الباقات المتاحة لنفس المزود.
+              </p>
+            ) : availablePackages.length === 0 ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                لا توجد باقات فعالة لهذا المزود.
+              </p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {availablePackages.map((pkg) => {
+                  const active = packageId === pkg.id;
+                  return (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      onClick={() => setPackageId(pkg.id)}
+                      className={cn(
+                        "rounded-lg border p-3 text-right transition",
+                        active ? "border-brand bg-brand/5 ring-2 ring-brand/20" : "border-slate-200 bg-white hover:border-brand/40"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-950">{pkg.package_name}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {pkg.internet_allowance || "-"} إنترنت · {pkg.minutes_allowance || "-"} مكالمات
+                          </p>
+                        </div>
+                        <Badge className="border-0 bg-red-100 text-red-700">{pkg.provider}</Badge>
+                      </div>
+                      <div className="mt-3 flex items-end justify-between gap-3">
+                        <span className="text-xl font-bold text-brand">{formatMoney(pkg.sale_price)}</span>
+                        <span className="text-xs text-slate-500">عمولتك {commissionPreview(pkg, "merchant")}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <Label>اسم العميل (اختياري)</Label>
             <Input value={customer} onChange={(e) => setCustomer(e.target.value)} />
           </div>
+          {selectedPackage ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+              سيتم تسجيل البيع بسعر {formatMoney(selectedPackage.sale_price)} واحتساب عمولة التاجر {commissionPreview(selectedPackage, "merchant")}.
+            </div>
+          ) : null}
           <Button onClick={submit} disabled={submitting} className="w-full">
             تأكيد البيع
           </Button>
@@ -402,26 +508,76 @@ export function MerchantRequestScreen() {
 
 export function MerchantBalanceScreen() {
   const [data, setData] = useState<MerchantDashboardData | null>(null);
+  const [collections, setCollections] = useState<MerchantCashCollection[]>([]);
+  const [amount, setAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [notes, setNotes] = useState("");
+  const [proof, setProof] = useState<File | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<Message>(null);
 
-  useEffect(() => {
-    getMerchantDashboard().then((result) => {
+  const load = useCallback(() => {
+    getMerchantDashboard().then(async (result) => {
       if (result.error) setMessage({ tone: "error", text: result.error.message });
-      else setData(result.data);
+      else {
+        setData(result.data);
+        if (result.data?.merchant.id) {
+          const collectionResult = await getMerchantCollections(result.data.merchant.id);
+          if (collectionResult.error) setMessage({ tone: "error", text: collectionResult.error.message });
+          else setCollections(rows(collectionResult.data));
+        }
+      }
     });
   }, []);
 
-  const priceHint = useMemo(() => (data ? formatMoney(data.merchant.sim_price) : "-"), [data]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const needsProof = paymentMethod === "visa" || paymentMethod === "electronic" || paymentMethod === "bank_transfer";
+
+  const submitPayment = async () => {
+    setSubmitting(true);
+    setMessage(null);
+    if (!data?.merchant.id) {
+      setMessage({ tone: "error", text: "تعذر تحديد حساب التاجر." });
+      setSubmitting(false);
+      return;
+    }
+    if (needsProof && !proof) {
+      setMessage({ tone: "error", text: "ارفع صورة إثبات الدفع." });
+      setSubmitting(false);
+      return;
+    }
+    const body = new FormData();
+    body.set("merchant_id", data.merchant.id);
+    body.set("amount", String(Number(amount || 0)));
+    body.set("payment_method", paymentMethod);
+    body.set("collection_date", new Date().toISOString().slice(0, 10));
+    if (notes.trim()) body.set("notes", notes.trim());
+    if (proof) body.set("payment_proof", proof);
+    const result = await collectMerchantCash(body);
+    setSubmitting(false);
+    if (result.error) {
+      setMessage({ tone: "error", text: result.error.message });
+      return;
+    }
+    setMessage({ tone: "success", text: "تم إرسال الدفع للمراجعة." });
+    setAmount("");
+    setNotes("");
+    setProof(null);
+    load();
+  };
 
   return (
-    <MerchantShell title="حسابي" subtitle="المستحقات والعمولات.">
+    <MerchantShell title="حسابي" subtitle="المستحقات والمدفوعات والعمولات.">
       <MessageBanner message={message} />
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-4">
         <Card className="border border-slate-200 shadow-sm">
           <CardContent className="p-4">
             <p className="text-sm text-slate-500">إجمالي المستحق</p>
             <p className="mt-1 text-2xl font-bold text-slate-950">{formatMoney(data?.balance.total_owed)}</p>
-            <p className="mt-1 text-xs text-slate-400">سعر الشريحة {priceHint}</p>
+            <p className="mt-1 text-xs text-slate-400">من أسعار الباقات المباعة</p>
           </CardContent>
         </Card>
         <Card className="border border-slate-200 shadow-sm">
@@ -432,11 +588,113 @@ export function MerchantBalanceScreen() {
         </Card>
         <Card className="border border-slate-200 shadow-sm">
           <CardContent className="p-4">
+            <p className="text-sm text-slate-500">دفعات قيد التأكيد</p>
+            <p className="mt-1 text-2xl font-bold text-blue-600">{formatMoney(data?.balance.pending_payments)}</p>
+          </CardContent>
+        </Card>
+        <Card className="border border-slate-200 shadow-sm">
+          <CardContent className="p-4">
             <p className="text-sm text-slate-500">المتبقي عليك</p>
             <p className="mt-1 text-2xl font-bold text-amber-600">{formatMoney(data?.balance.outstanding)}</p>
           </CardContent>
         </Card>
       </div>
+
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CreditCard className="h-4 w-4" />
+            تسجيل دفع للمندوب
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>المبلغ</Label>
+              <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>طريقة الدفع</Label>
+              <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v ?? "cash")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">نقدي</SelectItem>
+                  <SelectItem value="visa">فيزا</SelectItem>
+                  <SelectItem value="electronic">دفع إلكتروني</SelectItem>
+                  <SelectItem value="bank_transfer">تحويل بنكي</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label>ملاحظات (اختياري)</Label>
+            <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+          </div>
+          {needsProof ? (
+            <div className="space-y-2">
+              <Label>صورة إثبات الدفع</Label>
+              <label className="flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+                <span>{proof ? proof.name : "ارفع صورة التحويل أو الدفع"}</span>
+                <Upload className="h-4 w-4" />
+                <Input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => setProof(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            </div>
+          ) : null}
+          <Button onClick={submitPayment} disabled={submitting} className="w-full">
+            إرسال الدفع
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ReceiptText className="h-4 w-4" />
+            سجل المدفوعات
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {collections.length === 0 ? (
+            <p className="text-sm text-slate-400">لا توجد مدفوعات بعد.</p>
+          ) : (
+            collections.map((item) => (
+              <div key={item.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold text-slate-950">{formatMoney(item.amount)}</p>
+                  <p className="text-xs text-slate-500">
+                    {paymentMethodLabels[item.payment_method] || item.payment_method} · {new Date(item.collection_date).toLocaleDateString("ar-SA")}
+                  </p>
+                  {item.payment_proof_url ? (
+                    <a href={item.payment_proof_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-medium text-brand">
+                      عرض إثبات الدفع
+                    </a>
+                  ) : null}
+                  {item.rejection_reason ? <p className="mt-1 text-xs text-red-600">{item.rejection_reason}</p> : null}
+                </div>
+                <Badge
+                  className={cn(
+                    "w-fit border-0",
+                    item.status === "confirmed"
+                      ? "bg-emerald-100 text-emerald-700"
+                      : item.status === "rejected"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-blue-100 text-blue-700"
+                  )}
+                >
+                  {paymentStatusLabels[item.status] || item.status}
+                </Badge>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
     </MerchantShell>
   );
 }

@@ -7,8 +7,31 @@ export type SimTransferType =
   | "sold"
   | "initial_import";
 export type SimRequestStatus = "pending" | "approved" | "rejected" | "delivered";
-export type PaymentMethod = "cash" | "bank_transfer";
+export type PaymentMethod = "cash" | "bank_transfer" | "visa" | "electronic";
+export type PaymentStatus = "pending" | "confirmed" | "rejected";
 export type AgentStatus = "active" | "suspended";
+export type PackageCommissionType = "percentage" | "flat";
+
+export interface SimPackage {
+  id: string;
+  organization_id: string;
+  provider: string;
+  package_name: string;
+  internet_allowance: string | null;
+  minutes_allowance: string | null;
+  validity: string | null;
+  base_price: number;
+  sale_price: number;
+  tax_included: boolean;
+  agent_commission_type: PackageCommissionType;
+  agent_commission_value: number;
+  merchant_commission_type: PackageCommissionType;
+  merchant_commission_value: number;
+  status: "active" | "inactive";
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface FieldAgent {
   id: string;
@@ -32,6 +55,7 @@ export interface SimUnit {
   id: string;
   organization_id: string;
   iccid: string;
+  provider: string;
   sim_type: string;
   price: number;
   status: SimStatus;
@@ -40,6 +64,8 @@ export interface SimUnit {
   sold_at: string | null;
   sold_by_agent_id: string | null;
   sold_price: number | null;
+  sold_package_id: string | null;
+  sold_package_name: string | null;
   customer_name: string | null;
   current_merchant_id: string | null;
   sold_by_merchant_id: string | null;
@@ -97,7 +123,9 @@ export interface AgentCommission {
   organization_id: string;
   agent_id: string;
   sim_unit_id: string;
+  sim_package_id: string | null;
   sale_price: number;
+  commission_type: PackageCommissionType;
   commission_rate: number;
   commission_amount: number;
   is_paid: boolean;

@@ -138,6 +138,11 @@ function asNumber(value: unknown) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function calculateCommission(type: string, value: number, salePrice: number) {
+  if (type === "flat") return Math.round(value * 100) / 100;
+  return Math.round(salePrice * (value / 100) * 100) / 100;
+}
+
 async function readBody(request: NextRequest) {
   return request.json().catch(() => ({}));
 }
@@ -358,6 +363,7 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
     const payload = parsed.data.sims.map((sim) => ({
       organization_id: auth.orgId,
       iccid: sim.iccid,
+      provider: sim.provider,
       sim_type: sim.sim_type,
       price: sim.price,
       status: "in_stock",
@@ -482,15 +488,23 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       }
     }
 
-    const agentResult = await db
-      .from("field_agents")
-      .select("commission_rate")
+    const packageResult = await db
+      .from("sim_packages")
+      .select("*")
       .eq("organization_id", auth.orgId)
-      .eq("id", sellingAgentId)
+      .eq("id", parsed.data.package_id)
+      .eq("status", "active")
       .maybeSingle();
-    if (agentResult.error) return message(agentResult.error.message, 500);
-    const commissionRate = asNumber(row(agentResult.data).commission_rate);
-    const commissionAmount = Math.round(parsed.data.sold_price * (commissionRate / 100) * 100) / 100;
+    if (packageResult.error) return message(packageResult.error.message, 500);
+    if (!packageResult.data) return message("Package not found.", 404);
+    const simPackage = row(packageResult.data);
+    if (asString(sim.provider || "virgin") !== asString(simPackage.provider || "virgin")) {
+      return message("Package provider must match the SIM provider.", 400);
+    }
+    const salePrice = asNumber(simPackage.sale_price);
+    const commissionType = asString(simPackage.agent_commission_type) || "percentage";
+    const commissionValue = asNumber(simPackage.agent_commission_value);
+    const commissionAmount = calculateCommission(commissionType, commissionValue, salePrice);
 
     const update = await db
       .from("sim_units")
@@ -498,7 +512,9 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
         status: "sold",
         sold_at: new Date().toISOString(),
         sold_by_agent_id: sellingAgentId,
-        sold_price: parsed.data.sold_price,
+        sold_price: salePrice,
+        sold_package_id: parsed.data.package_id,
+        sold_package_name: asString(simPackage.package_name),
         customer_name: parsed.data.customer_name ?? null,
       })
       .eq("organization_id", auth.orgId)
@@ -517,9 +533,26 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       organization_id: auth.orgId,
       agent_id: sellingAgentId,
       sim_unit_id: parsed.data.sim_unit_id,
-      sale_price: parsed.data.sold_price,
-      commission_rate: commissionRate,
+      sim_package_id: parsed.data.package_id,
+      sale_price: salePrice,
+      commission_type: commissionType,
+      commission_rate: commissionValue,
       commission_amount: commissionAmount,
+    });
+
+    await db.from("sim_sales").insert({
+      organization_id: auth.orgId,
+      sim_unit_id: parsed.data.sim_unit_id,
+      package_id: parsed.data.package_id,
+      seller_type: "agent",
+      agent_id: sellingAgentId,
+      merchant_id: null,
+      sale_price: salePrice,
+      customer_name: parsed.data.customer_name ?? null,
+      agent_commission_type: commissionType,
+      agent_commission_value: commissionValue,
+      agent_commission_amount: commissionAmount,
+      created_by: auth.user.id,
     });
 
     return json(row(update.data));
@@ -810,7 +843,7 @@ async function handleMe(request: NextRequest, auth: AuthContext, segments: strin
 
   const agent = row(agentResult.data);
   const soldRows = rows(simsResult.data).filter((sim) => asString(sim.status) === "sold");
-  const totalSoldValue = soldRows.length * asNumber(agent.sim_price);
+  const totalSoldValue = soldRows.reduce((sum, sim) => sum + asNumber(sim.sold_price), 0);
   const held = rows(heldResult.data);
   const totalCollected = rows(collectionsResult.data).reduce((sum, item) => sum + asNumber(item.amount), 0);
   const unpaidCommission = rows(commissionsResult.data).reduce(

@@ -28,6 +28,7 @@ export const importSimsSchema = z.object({
     .array(
       z.object({
         iccid: z.string().trim().min(18).max(22),
+        provider: z.string().trim().min(1).max(40).default("virgin"),
         sim_type: z.string().trim().min(1).max(40).default("prepaid"),
         price: z.coerce.number().min(0),
       })
@@ -43,7 +44,7 @@ export const assignSimsSchema = z.object({
 
 export const recordSaleSchema = z.object({
   sim_unit_id: z.string().uuid(),
-  sold_price: z.coerce.number().min(0),
+  package_id: z.string().uuid(),
   customer_name: z.string().trim().max(160).optional(),
 });
 
