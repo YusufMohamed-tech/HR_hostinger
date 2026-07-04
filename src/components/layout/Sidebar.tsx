@@ -154,6 +154,7 @@ export function SidebarContent() {
     const ongroundAgentOps: NavLink[] = [
       { name: "المندوبون الميدانيون", href: "/sales/agents", icon: Users },
       { name: "مخزون الشرائح", href: "/sales/stock", icon: Boxes },
+      { name: "التجار", href: "/sales/traders", icon: Store },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 

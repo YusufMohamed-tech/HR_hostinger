@@ -108,6 +108,7 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return (
       normalizedPath.startsWith("/sales/agents") ||
       normalizedPath.startsWith("/sales/stock") ||
+      normalizedPath.startsWith("/sales/traders") ||
       normalizedPath.startsWith("/api/sales/agents") ||
       normalizedPath.startsWith("/api/sales/merchants") ||
       normalizedPath.startsWith("/notifications") ||
@@ -234,7 +235,11 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath.startsWith("/sales")) {
-    if (normalizedPath.startsWith("/sales/agents") || normalizedPath.startsWith("/sales/stock")) {
+    if (
+      normalizedPath.startsWith("/sales/agents") ||
+      normalizedPath.startsWith("/sales/stock") ||
+      normalizedPath.startsWith("/sales/traders")
+    ) {
       return ["Sales_Manager", "Admin", "Onground_Agent_Manager"].includes(role);
     }
     if (normalizedPath.startsWith("/sales/leads")) {
