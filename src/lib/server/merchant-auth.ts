@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { requireTenantContext } from "@/lib/server/tenant-context";
 
-const managerRoles = new Set(["admin", "hr_admin", "sales_manager"]);
+const managerRoles = new Set(["admin", "sales_manager", "onground_agent_manager"]);
 const agentRoles = new Set(["field_agent"]);
 const merchantRoles = new Set(["merchant"]);
-const allRoles = new Set(["admin", "hr_admin", "sales_manager", "field_agent", "merchant"]);
+const allRoles = new Set(["admin", "sales_manager", "onground_agent_manager", "field_agent", "merchant"]);
 
 export async function requireMerchantAccess() {
   const auth = await requireTenantContext({ feature: "sales" });

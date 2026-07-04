@@ -500,7 +500,7 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       commission_amount: merchantCommission,
     });
 
-    // Agent reward (paid by HR).
+    // Agent reward (paid by the organization).
     await db.from("agent_commissions").insert({
       organization_id: auth.orgId,
       agent_id: ownerAgentId,

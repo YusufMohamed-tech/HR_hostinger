@@ -63,6 +63,7 @@ export function SidebarContent() {
     const isOrgAdmin = role === "Admin";
     const isAdmin = isOrgAdmin || isSuperAdmin;
     const isHRAdmin = role === "HR_Admin";
+    const isOngroundAgentManager = role === "Onground_Agent_Manager";
     const isFinance = ["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
     const canSeeFullAccounting = isSuperAdmin || isFinance;
     const canSeeFinanceTeam = isSuperAdmin || isOrgAdmin || isHRAdmin || role === "Finance_Manager";
@@ -146,6 +147,11 @@ export function SidebarContent() {
       { name: "التقارير", href: "/sales/reports", icon: ClipboardList },
       { name: "المنتجات", href: "/sales/products", icon: Boxes },
       { name: "فريق المبيعات", href: "/sales/team", icon: Users },
+    ];
+    const ongroundAgentOps: NavLink[] = [
+      { name: "المندوبون الميدانيون", href: "/sales/agents", icon: Users },
+      { name: "مخزون الشرائح", href: "/sales/stock", icon: Boxes },
+      { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 
     const accountingOps: NavLink[] = [
@@ -236,6 +242,13 @@ export function SidebarContent() {
       ];
     }
 
+    if (isOngroundAgentManager) {
+      return [
+        { title: "إدارة المندوبين", links: ongroundAgentOps },
+        { title: "النظام", links: system },
+      ];
+    }
+
     if (role === "Field_Agent") {
       return [
         {
@@ -287,7 +300,7 @@ export function SidebarContent() {
                 ? employeeSelfOps
                 : [],
       },
-      { title: "المبيعات", links: isAdmin || isHRAdmin ? salesManagementOps : [] },
+      { title: "المبيعات", links: isAdmin ? salesManagementOps : [] },
       { title: "المالية والمحاسبة", links: canSeeFullAccounting ? accountingOps : canSeeFinanceTeam ? accountingTeamOps : [] },
       { title: "النظام", links: system },
     ];

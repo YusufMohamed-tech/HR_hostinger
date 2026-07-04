@@ -65,6 +65,7 @@ function labelRole(role: string) {
     training_manager: "Training Manager",
     sales: "Sales",
     sales_manager: "Sales Manager",
+    onground_agent_manager: "On-ground Agent Manager",
     promoter: "Promoter",
     employee: "Employee",
   };

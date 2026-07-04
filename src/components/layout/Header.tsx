@@ -33,6 +33,8 @@ const ALL_SEARCH_ITEMS = [
   { label: "كشك الترويج", href: "/promoter", icon: Users, keywords: ["promoter", "kiosk", "lead", "عميل", "ترويج"] },
   { label: "عملاء الترويج", href: "/sales/leads", icon: Users, keywords: ["leads", "promoter", "sales", "عملاء", "ترويج"] },
   { label: "إدارة الترويج", href: "/sales/promoter", icon: Users, keywords: ["offers", "campaigns", "promoter", "عروض", "حملات"] },
+  { label: "المندوبون الميدانيون", href: "/sales/agents", icon: Users, keywords: ["field agents", "onground", "sim", "مندوب", "شرائح"] },
+  { label: "مخزون الشرائح", href: "/sales/stock", icon: Network, keywords: ["stock", "inventory", "sim", "مخزون", "شرائح"] },
   { label: "الإعدادات", href: "/settings", icon: Settings, keywords: ["profile", "preferences", "config", "إعدادات"] },
 ];
 
@@ -46,6 +48,9 @@ const FINANCE_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
 const PROMOTER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
   ["/promoter", "/sales/leads", "/attendance", "/notifications", "/settings"].includes(item.href)
 );
+const ONGROUND_AGENT_MANAGER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
+  ["/sales/agents", "/sales/stock", "/notifications", "/settings"].includes(item.href)
+);
 
 const ROLE_LABELS: Record<string, string> = {
   Superadmin: "المشرف العام",
@@ -58,7 +63,10 @@ const ROLE_LABELS: Record<string, string> = {
   Finance_Viewer: "مطلع مالي",
   Sales: "المبيعات",
   Sales_Manager: "مدير المبيعات",
+  Onground_Agent_Manager: "مدير المندوبين الميدانيين",
   Promoter: "مروج مبيعات",
+  Field_Agent: "مندوب ميداني",
+  Merchant: "تاجر",
   Employee: "موظف",
 };
 
@@ -72,6 +80,7 @@ export function Header() {
   const searchItems = useMemo(() => {
     if (currentUser?.role === "HR_Recruitment") return RECRUITER_SEARCH_ITEMS;
     if (currentUser?.role === "HR_Admin") return HR_ADMIN_SEARCH_ITEMS;
+    if (currentUser?.role === "Onground_Agent_Manager") return ONGROUND_AGENT_MANAGER_SEARCH_ITEMS;
     if (["Finance_Manager", "Accountant", "Finance_Viewer"].includes(currentUser?.role || "")) return FINANCE_SEARCH_ITEMS;
     if (currentUser?.role === "Promoter") return PROMOTER_SEARCH_ITEMS;
     if (currentUser?.role === "Employee") {
