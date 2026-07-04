@@ -30,6 +30,7 @@ import {
   Settings,
   Smartphone,
   ShoppingCart,
+  Store,
   Users,
   WalletCards,
 } from "lucide-react";
@@ -243,10 +244,28 @@ export function SidebarContent() {
             { name: "الرئيسية", href: "/agent", icon: LayoutDashboard },
             { name: "شرائحي", href: "/agent/sims", icon: Smartphone },
             { name: "تسجيل مبيعة", href: "/agent/sell", icon: ShoppingCart },
+            { name: "التجار", href: "/agent/merchants", icon: Store },
             { name: "طلب شرائح", href: "/agent/requests", icon: Package },
             { name: "رصيدي", href: "/agent/balance", icon: WalletCards },
             { name: "عمولاتي", href: "/agent/commissions", icon: Receipt },
             { name: "الحضور", href: "/attendance", icon: Clock },
+            { name: "الإشعارات", href: "/notifications", icon: Bell },
+          ],
+        },
+        { title: "النظام", links: system },
+      ];
+    }
+
+    if (role === "Merchant") {
+      return [
+        {
+          title: "التاجر",
+          links: [
+            { name: "الرئيسية", href: "/merchant", icon: LayoutDashboard },
+            { name: "شرائحي", href: "/merchant/sims", icon: Smartphone },
+            { name: "تسجيل بيع", href: "/merchant/sell", icon: ShoppingCart },
+            { name: "طلب شرائح", href: "/merchant/requests", icon: Package },
+            { name: "حسابي", href: "/merchant/balance", icon: WalletCards },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],
         },

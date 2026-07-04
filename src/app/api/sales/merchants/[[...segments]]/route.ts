@@ -445,12 +445,15 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
 
     const merchantResult = await db
       .from("merchants")
-      .select("agent_id, commission_rate")
+      .select("agent_id, commission_rate, status")
       .eq("organization_id", auth.orgId)
       .eq("id", sellingMerchantId)
       .maybeSingle();
     if (merchantResult.error) return message(merchantResult.error.message, 500);
     const merchant = row(merchantResult.data);
+    if (asString(merchant.status) === "suspended") {
+      return message("Cannot record sales for a suspended merchant.", 400);
+    }
     const ownerAgentId = asString(merchant.agent_id);
     const merchantRate = asNumber(merchant.commission_rate);
     const merchantCommission = Math.round(parsed.data.sold_price * (merchantRate / 100) * 100) / 100;
@@ -780,8 +783,7 @@ async function handleMerchantMe(request: NextRequest, auth: AuthContext, segment
 
   const held = rows(heldResult.data);
   const sold = rows(soldResult.data);
-  const totalHanded = held.length + sold.length; // SIMs received and not returned
-  const totalOwed = totalHanded * simPrice;
+  const totalOwed = sold.length * simPrice;
   const totalCollected = rows(collectionsResult.data).reduce((s, r) => s + asNumber(r.amount), 0);
   const unpaidCommission = rows(commissionsResult.data).reduce((s, r) => s + asNumber(r.commission_amount), 0);
 
@@ -795,7 +797,7 @@ async function handleMerchantMe(request: NextRequest, auth: AuthContext, segment
     stock: {
       in_hand: held.length,
       sold_total: sold.length,
-      in_hand_value: held.reduce((s, r) => s + asNumber(r.price), 0),
+      in_hand_value: held.length * simPrice,
     },
     pending_requests: rows(requestsResult.data).length,
     unpaid_commission: unpaidCommission,

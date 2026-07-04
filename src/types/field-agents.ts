@@ -56,6 +56,8 @@ export interface SimTransfer {
   transfer_type: SimTransferType;
   from_agent_id: string | null;
   to_agent_id: string | null;
+  from_merchant_id: string | null;
+  to_merchant_id: string | null;
   performed_by: string;
   notes: string | null;
   transfer_date: string;
@@ -108,7 +110,7 @@ export interface AgentCommission {
 // Derived / aggregated shapes used by UI
 
 export interface AgentBalance {
-  total_sold_value: number; // sum of sold_price for all sold SIMs by agent
+  total_sold_value: number; // HR-set sim_price × sold SIMs by agent/merchant chain
   total_collected: number; // sum of all cash collections
   outstanding: number; // total_sold_value - total_collected
 }
@@ -130,6 +132,7 @@ export interface AgentDashboardData {
 export interface StockOverview {
   in_stock: number;
   with_agents: number;
+  with_merchants: number;
   sold: number;
   returned: number;
   total_value_in_stock: number;

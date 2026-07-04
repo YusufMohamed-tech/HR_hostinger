@@ -8,6 +8,7 @@ export const createAgentSchema = z.object({
   national_id: z.string().trim().min(5).max(40),
   region: z.string().trim().max(120).optional(),
   commission_rate: z.coerce.number().min(0).max(100),
+  sim_price: z.coerce.number().min(0),
   max_sim_capacity: z.coerce.number().int().min(0).optional(),
 });
 
@@ -17,6 +18,7 @@ export const updateAgentSchema = z.object({
   national_id: z.string().trim().min(5).max(40).optional(),
   region: z.string().trim().max(120).nullable().optional(),
   commission_rate: z.coerce.number().min(0).max(100).optional(),
+  sim_price: z.coerce.number().min(0).optional(),
   max_sim_capacity: z.coerce.number().int().min(0).nullable().optional(),
   status: z.enum(["active", "suspended"]).optional(),
 });

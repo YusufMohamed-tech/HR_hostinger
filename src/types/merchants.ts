@@ -66,7 +66,7 @@ export interface MerchantCommission {
 // Derived shapes
 
 export interface MerchantBalance {
-  total_owed: number; // Σ(merchant.sim_price × SIMs handed over)
+  total_owed: number; // merchant.sim_price × sold SIMs
   total_collected: number; // cash paid to the agent
   outstanding: number; // total_owed - total_collected
 }

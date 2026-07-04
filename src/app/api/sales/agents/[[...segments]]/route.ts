@@ -257,6 +257,7 @@ async function handleAgents(request: NextRequest, auth: AuthContext, segments: s
         phone: parsed.data.phone,
         national_id: parsed.data.national_id,
         commission_rate: parsed.data.commission_rate,
+        sim_price: parsed.data.sim_price,
         created_by: auth.user.id,
       };
       if (parsed.data.region) insertPayload.region = parsed.data.region;
@@ -807,8 +808,9 @@ async function handleMe(request: NextRequest, auth: AuthContext, segments: strin
     .eq("agent_id", myAgentId)
     .eq("is_paid", false);
 
+  const agent = row(agentResult.data);
   const soldRows = rows(simsResult.data).filter((sim) => asString(sim.status) === "sold");
-  const totalSoldValue = soldRows.reduce((sum, sim) => sum + asNumber(sim.sold_price), 0);
+  const totalSoldValue = soldRows.length * asNumber(agent.sim_price);
   const held = rows(heldResult.data);
   const totalCollected = rows(collectionsResult.data).reduce((sum, item) => sum + asNumber(item.amount), 0);
   const unpaidCommission = rows(commissionsResult.data).reduce(
@@ -817,7 +819,7 @@ async function handleMe(request: NextRequest, auth: AuthContext, segments: strin
   );
 
   return json({
-    agent: row(agentResult.data),
+    agent,
     balance: {
       total_sold_value: totalSoldValue,
       total_collected: totalCollected,
@@ -858,7 +860,7 @@ async function handleStock(request: NextRequest, auth: AuthContext, segments: st
     agentNames.set(asString(agent.id), asString(agent.full_name));
   }
 
-  const counts = { in_stock: 0, with_agent: 0, sold: 0, returned: 0 };
+  const counts = { in_stock: 0, with_agent: 0, with_merchant: 0, sold: 0, returned: 0 };
   let totalValueInStock = 0;
   const byAgent = new Map<string, number>();
 
@@ -871,6 +873,10 @@ async function handleStock(request: NextRequest, auth: AuthContext, segments: st
       counts.with_agent += 1;
       const agentId = asString(sim.current_agent_id);
       if (agentId) byAgent.set(agentId, (byAgent.get(agentId) || 0) + 1);
+    } else if (status === "with_merchant") {
+      counts.with_merchant += 1;
+      const agentId = asString(sim.current_agent_id);
+      if (agentId) byAgent.set(agentId, (byAgent.get(agentId) || 0) + 1);
     } else if (status === "sold") {
       counts.sold += 1;
     } else if (status === "returned") {
@@ -881,6 +887,7 @@ async function handleStock(request: NextRequest, auth: AuthContext, segments: st
   return json({
     in_stock: counts.in_stock,
     with_agents: counts.with_agent,
+    with_merchants: counts.with_merchant,
     sold: counts.sold,
     returned: counts.returned,
     total_value_in_stock: totalValueInStock,

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, FileDown, Plus, RefreshCcw, Send, Wallet, X } from "lucide-react";
+import { ArrowRight, Check, FileDown, Plus, RefreshCcw, Send, SlidersHorizontal, Wallet, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,6 +58,7 @@ function formatMoney(value: unknown) {
 const simStatusLabels: Record<string, string> = {
   in_stock: "في المخزون",
   with_agent: "مع المندوب",
+  with_merchant: "مع التاجر",
   sold: "مباعة",
   returned: "مرتجعة",
 };
@@ -107,7 +108,7 @@ function statusBadge(status: string, labels: Record<string, string>) {
       ? "bg-emerald-100 text-emerald-700"
       : status === "rejected" || status === "returned"
         ? "bg-red-100 text-red-700"
-        : status === "with_agent" || status === "pending"
+        : status === "with_agent" || status === "with_merchant" || status === "pending"
           ? "bg-amber-100 text-amber-700"
           : "bg-slate-100 text-slate-600";
   return <Badge className={`border-0 ${tone}`}>{labels[status] || status}</Badge>;
@@ -128,6 +129,7 @@ function CreateAgentDialog({ onCreated }: { onCreated: () => void }) {
     national_id: "",
     region: "",
     commission_rate: "0",
+    sim_price: "0",
     max_sim_capacity: "",
   });
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
@@ -147,6 +149,7 @@ function CreateAgentDialog({ onCreated }: { onCreated: () => void }) {
       phone: form.phone.trim(),
       national_id: form.national_id.trim(),
       commission_rate: Number(form.commission_rate || 0),
+      sim_price: Number(form.sim_price || 0),
     };
     if (form.region.trim()) payload.region = form.region.trim();
     if (form.max_sim_capacity.trim()) payload.max_sim_capacity = Number(form.max_sim_capacity);
@@ -157,7 +160,7 @@ function CreateAgentDialog({ onCreated }: { onCreated: () => void }) {
       return;
     }
     setOpen(false);
-    setForm({ email: "", password: "", full_name: "", phone: "", national_id: "", region: "", commission_rate: "0", max_sim_capacity: "" });
+    setForm({ email: "", password: "", full_name: "", phone: "", national_id: "", region: "", commission_rate: "0", sim_price: "0", max_sim_capacity: "" });
     onCreated();
   };
 
@@ -199,6 +202,10 @@ function CreateAgentDialog({ onCreated }: { onCreated: () => void }) {
           <div className="space-y-2">
             <Label>نسبة العمولة %</Label>
             <Input type="number" value={form.commission_rate} onChange={(e) => set("commission_rate", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>سعر الشريحة على المندوب</Label>
+            <Input type="number" value={form.sim_price} onChange={(e) => set("sim_price", e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label>الحد الأقصى للشرائح</Label>
@@ -273,6 +280,7 @@ export function AgentListScreen() {
                 <TableHead>الاسم</TableHead>
                 <TableHead>الجوال</TableHead>
                 <TableHead>المنطقة</TableHead>
+                <TableHead>سعر الشريحة</TableHead>
                 <TableHead>العمولة</TableHead>
                 <TableHead>الحالة</TableHead>
                 <TableHead></TableHead>
@@ -281,13 +289,13 @@ export function AgentListScreen() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-slate-400">
+                  <TableCell colSpan={7} className="text-center text-slate-400">
                     جارِ التحميل...
                   </TableCell>
                 </TableRow>
               ) : agents.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-slate-400">
+                  <TableCell colSpan={7} className="text-center text-slate-400">
                     لا يوجد مندوبون بعد.
                   </TableCell>
                 </TableRow>
@@ -297,6 +305,7 @@ export function AgentListScreen() {
                     <TableCell className="font-medium">{agent.full_name}</TableCell>
                     <TableCell dir="ltr">{agent.phone}</TableCell>
                     <TableCell>{agent.region || "—"}</TableCell>
+                    <TableCell>{formatMoney(agent.sim_price)}</TableCell>
                     <TableCell>{agent.commission_rate}%</TableCell>
                     <TableCell>
                       {agent.status === "active" ? (
@@ -409,6 +418,83 @@ function CollectCashDialog({ agentId, onDone }: { agentId: string; onDone: () =>
   );
 }
 
+function EditAgentTermsDialog({ agent, onDone }: { agent: FieldAgent; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    sim_price: String(agent.sim_price ?? 0),
+    commission_rate: String(agent.commission_rate ?? 0),
+    max_sim_capacity: agent.max_sim_capacity == null ? "" : String(agent.max_sim_capacity),
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      sim_price: String(agent.sim_price ?? 0),
+      commission_rate: String(agent.commission_rate ?? 0),
+      max_sim_capacity: agent.max_sim_capacity == null ? "" : String(agent.max_sim_capacity),
+    });
+    setError(null);
+  }, [agent, open]);
+
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    const result = await updateFieldAgent(agent.id, {
+      sim_price: Number(form.sim_price || 0),
+      commission_rate: Number(form.commission_rate || 0),
+      max_sim_capacity: form.max_sim_capacity.trim() ? Number(form.max_sim_capacity) : null,
+    });
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" />}>
+        <SlidersHorizontal className="ml-2 h-4 w-4" />
+        شروط المندوب
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>تعديل شروط المندوب</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>سعر الشريحة على المندوب</Label>
+            <Input type="number" value={form.sim_price} onChange={(e) => set("sim_price", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>نسبة عمولة المندوب %</Label>
+            <Input type="number" value={form.commission_rate} onChange={(e) => set("commission_rate", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>الحد الأقصى للشرائح</Label>
+            <Input type="number" value={form.max_sim_capacity} onChange={(e) => set("max_sim_capacity", e.target.value)} />
+          </div>
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setOpen(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={submit} disabled={submitting}>
+              حفظ
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Agent detail
 // ---------------------------------------------------------------------------
@@ -438,9 +524,9 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
     load();
   }, [load]);
 
-  const soldValue = useMemo(
-    () => sims.filter((s) => s.status === "sold").reduce((sum, s) => sum + Number(s.sold_price || 0), 0),
-    [sims]
+  const soldDebt = useMemo(
+    () => sims.filter((s) => s.status === "sold").length * Number(agent?.sim_price || 0),
+    [agent?.sim_price, sims]
   );
   const collected = useMemo(() => collections.reduce((sum, c) => sum + Number(c.amount || 0), 0), [collections]);
   const inHand = useMemo(() => sims.filter((s) => s.status === "with_agent").length, [sims]);
@@ -470,7 +556,7 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
     <div className="space-y-6" dir="rtl">
       <PageTitle
         title={agent.full_name}
-        subtitle={`${agent.region || "بدون منطقة"} · عمولة ${agent.commission_rate}%`}
+        subtitle={`${agent.region || "بدون منطقة"} · سعر الشريحة ${formatMoney(agent.sim_price)} · عمولة ${agent.commission_rate}%`}
         actions={
           <>
             <Button asChild variant="outline">
@@ -480,6 +566,7 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
               </Link>
             </Button>
             <CollectCashDialog agentId={agent.id} onDone={load} />
+            <EditAgentTermsDialog agent={agent} onDone={load} />
             <Button variant={agent.status === "active" ? "destructive" : "default"} onClick={toggleStatus}>
               {agent.status === "active" ? "إيقاف" : "تفعيل"}
             </Button>
@@ -489,9 +576,9 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
       <MessageBanner message={message} />
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard label="شرائح في اليد" value={String(inHand)} />
-        <StatCard label="قيمة المبيعات" value={formatMoney(soldValue)} />
+        <StatCard label="المستحق على المندوب" value={formatMoney(soldDebt)} />
         <StatCard label="إجمالي المحصّل" value={formatMoney(collected)} />
-        <StatCard label="المتبقي" value={formatMoney(soldValue - collected)} />
+        <StatCard label="المتبقي" value={formatMoney(soldDebt - collected)} />
       </div>
 
       <Card className="border border-slate-200 shadow-sm">
@@ -950,9 +1037,10 @@ export function StockManagementScreen() {
         }
       />
       <MessageBanner message={message} />
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <StatCard label="في المخزون" value={String(overview?.in_stock ?? 0)} hint={formatMoney(overview?.total_value_in_stock)} />
         <StatCard label="مع المندوبين" value={String(overview?.with_agents ?? 0)} />
+        <StatCard label="مع التجار" value={String(overview?.with_merchants ?? 0)} />
         <StatCard label="مباعة" value={String(overview?.sold ?? 0)} />
         <StatCard label="مرتجعة" value={String(overview?.returned ?? 0)} />
       </div>
@@ -1001,6 +1089,7 @@ export function StockManagementScreen() {
               <SelectItem value="all">الكل</SelectItem>
               <SelectItem value="in_stock">في المخزون</SelectItem>
               <SelectItem value="with_agent">مع المندوب</SelectItem>
+              <SelectItem value="with_merchant">مع التاجر</SelectItem>
               <SelectItem value="sold">مباعة</SelectItem>
               <SelectItem value="returned">مرتجعة</SelectItem>
             </SelectContent>
