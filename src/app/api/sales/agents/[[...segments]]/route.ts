@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { User } from "@supabase/supabase-js";
 import { requireFieldAgentAccess } from "@/lib/server/field-agent-auth";
 import {
+  assignSimsByQuantitySchema,
   assignSimsSchema,
   collectCashSchema,
   createAgentSchema,
@@ -389,15 +390,30 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
     if (!auth.isManager) return message("Field agent manager access is required.", 403);
 
     const body = await readBody(request);
-    const parsed = assignSimsSchema.safeParse(body);
-    if (!parsed.success) return message(parseError(parsed.error), 400);
+    const quantityParsed = assignSimsByQuantitySchema.safeParse(body);
+    const parsed = quantityParsed.success ? null : assignSimsSchema.safeParse(body);
+    if (!quantityParsed.success && !parsed?.success) {
+      return message(parseError(parsed?.error || quantityParsed.error), 400);
+    }
+
+    let agentId = "";
+    let notes: string | null = null;
+    let simIds: string[] = [];
+    if (quantityParsed.success) {
+      agentId = quantityParsed.data.agent_id;
+      notes = quantityParsed.data.notes ?? null;
+    } else if (parsed?.success) {
+      agentId = parsed.data.agent_id;
+      notes = parsed.data.notes ?? null;
+      simIds = parsed.data.sim_ids;
+    }
 
     // Confirm target agent belongs to the org.
     const agentResult = await db
       .from("field_agents")
       .select("id, status, max_sim_capacity")
       .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.agent_id)
+      .eq("id", agentId)
       .maybeSingle();
     if (agentResult.error) return message(agentResult.error.message, 500);
     if (!agentResult.data) return message("Agent not found.", 404);
@@ -405,15 +421,36 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       return message("Cannot assign SIMs to a suspended agent.", 400);
     }
 
+    if (quantityParsed.success) {
+      let availableQuery = db
+        .from("sim_units")
+        .select("id")
+        .eq("organization_id", auth.orgId)
+        .eq("status", "in_stock")
+        .eq("provider", quantityParsed.data.provider)
+        .order("created_at", { ascending: true })
+        .limit(quantityParsed.data.quantity);
+      if (quantityParsed.data.sim_type) {
+        availableQuery = availableQuery.eq("sim_type", quantityParsed.data.sim_type);
+      }
+      const available = await availableQuery;
+      if (available.error) return message(available.error.message, 500);
+      const selected = rows(available.data);
+      if (selected.length < quantityParsed.data.quantity) {
+        return message("Not enough SIMs available in stock for this quantity.", 400);
+      }
+      simIds = selected.map((sim) => asString(sim.id));
+    }
+
     // Confirm all SIMs are in stock and belong to the org.
     const simsResult = await db
       .from("sim_units")
       .select("id, status")
       .eq("organization_id", auth.orgId)
-      .in("id", parsed.data.sim_ids);
+      .in("id", simIds);
     if (simsResult.error) return message(simsResult.error.message, 500);
     const found = rows(simsResult.data);
-    if (found.length !== parsed.data.sim_ids.length) {
+    if (found.length !== simIds.length) {
       return message("Some SIMs were not found.", 400);
     }
     if (found.some((sim) => asString(sim.status) !== "in_stock")) {
@@ -427,10 +464,10 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
         .from("sim_units")
         .select("id")
         .eq("organization_id", auth.orgId)
-        .eq("current_agent_id", parsed.data.agent_id)
+        .eq("current_agent_id", agentId)
         .eq("status", "with_agent");
       const current = rows(inHand.data).length;
-      if (current + parsed.data.sim_ids.length > asNumber(capacity)) {
+      if (current + simIds.length > asNumber(capacity)) {
         return message("Assignment exceeds the agent SIM capacity.", 400);
       }
     }
@@ -439,23 +476,23 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       .from("sim_units")
       .update({
         status: "with_agent",
-        current_agent_id: parsed.data.agent_id,
+        current_agent_id: agentId,
         assigned_at: new Date().toISOString(),
       })
       .eq("organization_id", auth.orgId)
-      .in("id", parsed.data.sim_ids)
+      .in("id", simIds)
       .select("id");
     if (update.error) return message(update.error.message, 500);
 
-    for (const simId of parsed.data.sim_ids) {
+    for (const simId of simIds) {
       await insertTransfer(auth, {
         sim_unit_id: simId,
         transfer_type: "assign_to_agent",
-        to_agent_id: parsed.data.agent_id,
-        notes: parsed.data.notes ?? null,
+        to_agent_id: agentId,
+        notes,
       });
     }
-    return json({ assigned: parsed.data.sim_ids.length });
+    return json({ assigned: simIds.length });
   }
 
   // POST /sims/sell  (agent or manager)

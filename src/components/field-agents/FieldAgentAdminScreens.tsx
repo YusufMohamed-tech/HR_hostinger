@@ -7,6 +7,7 @@ import {
   BadgePercent,
   Check,
   CreditCard,
+  Eye,
   FileDown,
   Plus,
   RefreshCcw,
@@ -1229,29 +1230,51 @@ function AssignSimsDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agentId, setAgentId] = useState("");
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [quantity, setQuantity] = useState("");
+  const [provider, setProvider] = useState("virgin");
+  const [simType, setSimType] = useState("");
 
-  const toggle = (id: string) => setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
-  const selectedIds = Object.keys(selected).filter((id) => selected[id]);
   const selectedAgentName = agents.find((agent) => agent.id === agentId)?.full_name || "";
+  const requestedQuantity = Number(quantity || 0);
+  const previewSims = useMemo(() => {
+    if (!requestedQuantity || requestedQuantity <= 0) return [];
+    return stockSims
+      .filter((sim) => (sim.provider || "virgin") === provider)
+      .filter((sim) => (simType.trim() ? sim.sim_type === simType.trim() : true))
+      .slice()
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+      .slice(0, requestedQuantity);
+  }, [provider, requestedQuantity, simType, stockSims]);
 
   const submit = async () => {
     setSubmitting(true);
     setError(null);
-    if (!agentId || selectedIds.length === 0) {
-      setError("اختر مندوبًا وشريحة واحدة على الأقل.");
+    if (!agentId || requestedQuantity <= 0) {
+      setError("اختر مندوبا واكتب عدد الشرائح.");
       setSubmitting(false);
       return;
     }
-    const result = await assignSims({ agent_id: agentId, sim_ids: selectedIds });
+    if (previewSims.length < requestedQuantity) {
+      setError("لا يوجد عدد كاف من الشرائح في المخزون بهذا الفلتر.");
+      setSubmitting(false);
+      return;
+    }
+    const result = await assignSims({
+      agent_id: agentId,
+      quantity: requestedQuantity,
+      provider,
+      sim_type: simType.trim() || undefined,
+    });
     setSubmitting(false);
     if (result.error) {
       setError(result.error.message);
       return;
     }
     setOpen(false);
-    setSelected({});
     setAgentId("");
+    setQuantity("");
+    setProvider("virgin");
+    setSimType("");
     onDone();
   };
 
@@ -1283,22 +1306,50 @@ function AssignSimsDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
-            {stockSims.length === 0 ? (
-              <p className="p-2 text-sm text-slate-400">لا توجد شرائح في المخزون.</p>
-            ) : (
-              stockSims.map((sim) => (
-                <label key={sim.id} className="flex items-center gap-2 rounded-md p-2 text-sm hover:bg-slate-50">
-                  <input type="checkbox" checked={!!selected[sim.id]} onChange={() => toggle(sim.id)} />
-                  <span dir="ltr" className="flex-1">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label>عدد الشرائح</Label>
+              <Input type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>المزود</Label>
+              <Select value={provider} onValueChange={(v) => setProvider(v ?? "virgin")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="virgin">Virgin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>النوع (اختياري)</Label>
+              <Input value={simType} onChange={(e) => setSimType(e.target.value)} placeholder="prepaid" />
+            </div>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+            <div className="flex items-center justify-between gap-2">
+              <span>المتاح في المخزون: {stockSims.length} شريحة</span>
+              <span className="inline-flex items-center gap-1 font-medium text-slate-900">
+                <Eye className="h-4 w-4" />
+                سيتم اختيار {previewSims.length} شريحة
+              </span>
+            </div>
+          </div>
+          {previewSims.length > 0 ? (
+            <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
+              {previewSims.map((sim) => (
+                <div key={sim.id} className="flex items-center justify-between rounded-md p-2 text-sm">
+                  <span dir="ltr" className="font-medium">
                     {sim.iccid}
                   </span>
-                  <span className="text-slate-400">{sim.sim_type}</span>
-                </label>
-              ))
-            )}
-          </div>
-          <p className="text-sm text-slate-500">تم اختيار {selectedIds.length} شريحة.</p>
+                  <span className="text-slate-400">
+                    {sim.provider || "virgin"} · {sim.sim_type}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpen(false)}>
