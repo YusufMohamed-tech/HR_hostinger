@@ -142,12 +142,15 @@ export function SidebarContent() {
       { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
       { name: "عملاء الترويج", href: "/sales/leads", icon: Users },
       { name: "إدارة الترويج", href: "/sales/promoter", icon: Megaphone },
-      { name: "المندوبون", href: "/sales/agents", icon: Users },
-      { name: "إدارة المخزون", href: "/sales/stock", icon: Boxes },
+      { name: "المندوبون الميدانيون", href: "/sales/agents", icon: Users },
+      { name: "مخزون الشرائح", href: "/sales/stock", icon: Boxes },
       { name: "التقارير", href: "/sales/reports", icon: ClipboardList },
       { name: "المنتجات", href: "/sales/products", icon: Boxes },
       { name: "فريق المبيعات", href: "/sales/team", icon: Users },
     ];
+    const hrSalesManagementOps = salesManagementOps.filter(
+      (link) => !["/sales/agents", "/sales/stock"].includes(link.href)
+    );
     const ongroundAgentOps: NavLink[] = [
       { name: "المندوبون الميدانيون", href: "/sales/agents", icon: Users },
       { name: "مخزون الشرائح", href: "/sales/stock", icon: Boxes },
@@ -300,7 +303,7 @@ export function SidebarContent() {
                 ? employeeSelfOps
                 : [],
       },
-      { title: "المبيعات", links: isAdmin ? salesManagementOps : [] },
+      { title: "المبيعات", links: isAdmin ? salesManagementOps : isHRAdmin ? hrSalesManagementOps : [] },
       { title: "المالية والمحاسبة", links: canSeeFullAccounting ? accountingOps : canSeeFinanceTeam ? accountingTeamOps : [] },
       { title: "النظام", links: system },
     ];
