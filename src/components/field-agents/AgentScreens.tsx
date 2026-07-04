@@ -91,23 +91,6 @@ function MessageBanner({ message }: { message: Message }) {
   );
 }
 
-import {
-  assignSimsToMerchant,
-  collectMerchantCash,
-  createMerchant,
-  getMerchantRequests,
-  getMerchants,
-  getResellerRanking,
-  reviewMerchantRequest,
-} from "@/lib/services/merchants";
-import type {
-  AgentCommission,
-  AgentDashboardData,
-  AgentSimRequest,
-  SimUnit,
-} from "@/types/field-agents";
-import type { Merchant, MerchantSimRequest, ResellerRanking } from "@/types/merchants";
-
 const navItems = [
   { name: "الرئيسية", href: "/agent", icon: LayoutDashboard },
   { name: "شرائحي", href: "/agent/sims", icon: Smartphone },
@@ -196,7 +179,7 @@ export function AgentKioskScreen() {
         </Card>
         <Card className="border border-slate-200 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-sm text-slate-500">إجمالي المبيعات</p>
+            <p className="text-sm text-slate-500">إجمالي الشرائح المباعة</p>
             <p className="mt-1 text-3xl font-bold text-slate-950">{data?.stock.sold_total ?? 0}</p>
           </CardContent>
         </Card>
@@ -494,7 +477,7 @@ export function AgentBalanceScreen() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="border border-slate-200 shadow-sm">
           <CardContent className="p-4">
-            <p className="text-sm text-slate-500">قيمة المبيعات</p>
+            <p className="text-sm text-slate-500">المستحق للشركة</p>
             <p className="mt-1 text-2xl font-bold text-slate-950">{formatMoney(data?.balance.total_sold_value)}</p>
           </CardContent>
         </Card>
