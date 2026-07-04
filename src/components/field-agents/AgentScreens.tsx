@@ -687,6 +687,7 @@ function AssignToMerchantDialog({
 
   const toggle = (id: string) => setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
   const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+  const selectedMerchantName = merchants.find((merchant) => merchant.id === merchantId)?.business_name || "";
 
   const submit = async () => {
     setSubmitting(true);
@@ -723,7 +724,7 @@ function AssignToMerchantDialog({
             <Label>التاجر</Label>
             <Select value={merchantId} onValueChange={(v) => setMerchantId(v ?? "")}>
               <SelectTrigger>
-                <SelectValue placeholder="اختر التاجر" />
+                <SelectValue placeholder="اختر التاجر">{selectedMerchantName || undefined}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {merchants

@@ -899,6 +899,7 @@ function AssignSimsDialog({
 
   const toggle = (id: string) => setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
   const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+  const selectedAgentName = agents.find((agent) => agent.id === agentId)?.full_name || "";
 
   const submit = async () => {
     setSubmitting(true);
@@ -935,7 +936,7 @@ function AssignSimsDialog({
             <Label>المندوب</Label>
             <Select value={agentId} onValueChange={(v) => setAgentId(v ?? "")}>
               <SelectTrigger>
-                <SelectValue placeholder="اختر المندوب" />
+                <SelectValue placeholder="اختر المندوب">{selectedAgentName || undefined}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {agents
