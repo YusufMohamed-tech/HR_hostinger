@@ -46,6 +46,11 @@ function formatMoney(value: unknown) {
   return `${Number.isFinite(n) ? n.toLocaleString("ar-SA", { maximumFractionDigits: 2 }) : "0"} ر.س`;
 }
 
+function formatSimLabel(sim: SimUnit | null | undefined) {
+  if (!sim) return "";
+  return [sim.iccid || "شريحة بدون رقم", sim.provider || "virgin", sim.sim_type].filter(Boolean).join(" · ");
+}
+
 function commissionPreview(pkg: SimPackage | null, tier: "agent" | "merchant") {
   if (!pkg) return "";
   const type = tier === "agent" ? pkg.agent_commission_type : pkg.merchant_commission_type;
@@ -334,12 +339,12 @@ export function MerchantSellScreen() {
               }}
             >
               <SelectTrigger>
-                <SelectValue placeholder="اختر شريحة" />
+                <SelectValue placeholder="اختر شريحة">{formatSimLabel(selectedSim) || undefined}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {sims.map((sim) => (
                   <SelectItem key={sim.id} value={sim.id}>
-                    {sim.iccid} · {sim.provider || "virgin"} · {sim.sim_type}
+                    {formatSimLabel(sim)}
                   </SelectItem>
                 ))}
               </SelectContent>
