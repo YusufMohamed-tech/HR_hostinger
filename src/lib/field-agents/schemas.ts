@@ -42,6 +42,14 @@ export const assignSimsSchema = z.object({
   notes: z.string().trim().max(500).optional(),
 });
 
+export const assignSimsByQuantitySchema = z.object({
+  agent_id: z.string().uuid(),
+  quantity: z.coerce.number().int().positive(),
+  provider: z.string().trim().max(40).default("virgin"),
+  sim_type: z.string().trim().max(40).optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+
 export const recordSaleSchema = z.object({
   sim_unit_id: z.string().uuid(),
   package_id: z.string().uuid(),
