@@ -2,7 +2,19 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, FileDown, Plus, RefreshCcw, Send, SlidersHorizontal, Wallet, X } from "lucide-react";
+import {
+  ArrowRight,
+  BadgePercent,
+  Check,
+  CreditCard,
+  FileDown,
+  Plus,
+  RefreshCcw,
+  Send,
+  SlidersHorizontal,
+  Wallet,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,15 +46,26 @@ import {
   reviewSimRequest,
   updateFieldAgent,
 } from "@/lib/services/field-agents";
+import {
+  confirmMerchantPayment,
+  createSimPackage,
+  getMerchantCollections,
+  getMerchants,
+  getResellerRanking,
+  getSimPackages,
+  updateSimPackage,
+} from "@/lib/services/merchants";
 import type {
   AgentCashCollection,
   AgentCommission,
   AgentSimRequest,
   FieldAgent,
+  SimPackage,
   SimTransfer,
   SimUnit,
   StockOverview,
 } from "@/types/field-agents";
+import type { Merchant, MerchantCashCollection, ResellerRanking } from "@/types/merchants";
 
 type Message = { tone: "success" | "error"; text: string } | null;
 
@@ -52,8 +75,15 @@ function rows<T>(value: T[] | null | undefined) {
 
 function formatMoney(value: unknown) {
   const number = Number(value || 0);
-  return `${Number.isFinite(number) ? Math.round(number).toLocaleString("ar-SA") : "0"} ر.س`;
+  return `${Number.isFinite(number) ? number.toLocaleString("ar-SA", { maximumFractionDigits: 2 }) : "0"} ر.س`;
 }
+
+const paymentMethodLabels: Record<string, string> = {
+  cash: "نقدي",
+  bank_transfer: "تحويل بنكي",
+  visa: "فيزا",
+  electronic: "دفع إلكتروني",
+};
 
 const simStatusLabels: Record<string, string> = {
   in_stock: "في المخزون",
@@ -525,8 +555,8 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
   }, [load]);
 
   const soldDebt = useMemo(
-    () => sims.filter((s) => s.status === "sold").length * Number(agent?.sim_price || 0),
-    [agent?.sim_price, sims]
+    () => sims.filter((s) => s.status === "sold").reduce((sum, sim) => sum + Number(sim.sold_price || 0), 0),
+    [sims]
   );
   const collected = useMemo(() => collections.reduce((sum, c) => sum + Number(c.amount || 0), 0), [collections]);
   const inHand = useMemo(() => sims.filter((s) => s.status === "with_agent").length, [sims]);
@@ -590,8 +620,10 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead>ICCID</TableHead>
+                <TableHead>المزود</TableHead>
                 <TableHead>النوع</TableHead>
                 <TableHead>الحالة</TableHead>
+                <TableHead>الباقة</TableHead>
                 <TableHead>سعر البيع</TableHead>
                 <TableHead>العميل</TableHead>
               </TableRow>
@@ -599,7 +631,7 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
             <TableBody>
               {sims.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-slate-400">
+                  <TableCell colSpan={7} className="text-center text-slate-400">
                     لا توجد شرائح.
                   </TableCell>
                 </TableRow>
@@ -607,8 +639,10 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
                 sims.map((sim) => (
                   <TableRow key={sim.id}>
                     <TableCell dir="ltr">{sim.iccid}</TableCell>
+                    <TableCell>{sim.provider || "virgin"}</TableCell>
                     <TableCell>{sim.sim_type}</TableCell>
                     <TableCell>{statusBadge(sim.status, simStatusLabels)}</TableCell>
+                    <TableCell>{sim.sold_package_name || "—"}</TableCell>
                     <TableCell>{sim.sold_price ? formatMoney(sim.sold_price) : "—"}</TableCell>
                     <TableCell>{sim.customer_name || "—"}</TableCell>
                   </TableRow>
@@ -676,7 +710,7 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
 // ---------------------------------------------------------------------------
 // Import SIMs dialog
 // ---------------------------------------------------------------------------
-type ParsedSim = { iccid: string; price: number; sim_type: string };
+type ParsedSim = { iccid: string; price: number; sim_type: string; provider: string };
 
 function normalizeHeader(value: unknown) {
   return String(value ?? "")
@@ -696,6 +730,7 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
   const [parsed, setParsed] = useState<ParsedSim[]>([]);
   const [fileName, setFileName] = useState("");
   const [defaultType, setDefaultType] = useState("prepaid");
+  const [defaultProvider, setDefaultProvider] = useState("virgin");
 
   const reset = () => {
     setParsed([]);
@@ -729,6 +764,7 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
       const iccidKey = headerMap.get(pickColumn(headers, ["iccid", "رقم", "الشريحة", "sim", "serial"]) || "");
       const priceKey = headerMap.get(pickColumn(headers, ["price", "سعر", "قيمة"]) || "");
       const typeKey = headerMap.get(pickColumn(headers, ["type", "نوع"]) || "");
+      const providerKey = headerMap.get(pickColumn(headers, ["provider", "مزود", "شركة"]) || "");
       const rawKeys = Object.keys(rows[0]);
 
       const result: ParsedSim[] = [];
@@ -737,12 +773,14 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
         const iccidRaw = iccidKey ? rowData[iccidKey] : rowData[rawKeys[0]];
         const priceRaw = priceKey ? rowData[priceKey] : rowData[rawKeys[1]];
         const typeRaw = typeKey ? rowData[typeKey] : "";
+        const providerRaw = providerKey ? rowData[providerKey] : "";
         const iccid = String(iccidRaw ?? "").trim();
         if (!iccid) continue;
         result.push({
           iccid,
           price: Number(priceRaw) || 0,
           sim_type: String(typeRaw ?? "").trim() || defaultType,
+          provider: String(providerRaw ?? "").trim().toLowerCase() || defaultProvider,
         });
       }
 
@@ -759,9 +797,9 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
   const downloadTemplate = async () => {
     const XLSX = await import("xlsx");
     const worksheet = XLSX.utils.aoa_to_sheet([
-      ["ICCID", "price", "type"],
-      ["8996000000000000001", 25, "prepaid"],
-      ["8996000000000000002", 25, "prepaid"],
+      ["ICCID", "provider", "price", "type"],
+      ["8996000000000000001", "virgin", 25, "prepaid"],
+      ["8996000000000000002", "virgin", 25, "prepaid"],
     ]);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "SIMs");
@@ -777,7 +815,7 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
       return;
     }
     const result = await importSims({
-      sims: parsed.map((sim) => ({ iccid: sim.iccid, sim_type: sim.sim_type, price: sim.price })),
+      sims: parsed.map((sim) => ({ iccid: sim.iccid, provider: sim.provider, sim_type: sim.sim_type, price: sim.price })),
     });
     setSubmitting(false);
     if (result.error) {
@@ -811,9 +849,10 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
             <ul className="list-disc space-y-1 pr-5 text-xs leading-6">
               <li>
                 استخدم أعمدة بالعناوين: <span className="font-mono">ICCID</span> ،{" "}
-                <span className="font-mono">price</span> ، و<span className="font-mono">type</span> (اختياري).
+                <span className="font-mono">provider</span> ، <span className="font-mono">price</span> ، و<span className="font-mono">type</span> (اختياري).
               </li>
               <li>عمود ICCID إلزامي — يحتوي رقم الشريحة (18-22 رقمًا).</li>
+              <li>عمود provider يربط الشريحة بمزود الباقات؛ إذا تُرك فارغًا يُستخدم Virgin.</li>
               <li>عمود price يحتوي السعر بالأرقام؛ إذا تُرك فارغًا يُعتبر 0.</li>
               <li>إذا لم يوجد عمود type يُستخدم النوع الافتراضي المحدد أدناه.</li>
             </ul>
@@ -824,6 +863,17 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>المزود الافتراضي</Label>
+              <Select value={defaultProvider} onValueChange={(v) => setDefaultProvider(v ?? "virgin")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="virgin">Virgin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2">
               <Label>النوع الافتراضي</Label>
               <Select value={defaultType} onValueChange={(v) => setDefaultType(v ?? "prepaid")}>
@@ -838,7 +888,7 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2 md:col-span-2">
               <Label>ملف Excel / CSV</Label>
               <Input
                 type="file"
@@ -856,7 +906,7 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
                 {parsed.slice(0, 5).map((sim, i) => (
                   <div key={i} className="flex justify-between text-xs text-slate-600" dir="ltr">
                     <span>{sim.iccid}</span>
-                    <span>{formatMoney(sim.price)}</span>
+                    <span>{sim.provider} · {formatMoney(sim.price)}</span>
                   </div>
                 ))}
                 {parsed.length > 5 ? <p className="text-xs text-slate-400">…والمزيد</p> : null}
@@ -876,6 +926,290 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Package terms
+// ---------------------------------------------------------------------------
+function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    sale_price: String(pkg.sale_price ?? 0),
+    base_price: String(pkg.base_price ?? 0),
+    agent_commission_type: pkg.agent_commission_type || "percentage",
+    agent_commission_value: String(pkg.agent_commission_value ?? 0),
+    merchant_commission_type: pkg.merchant_commission_type || "percentage",
+    merchant_commission_value: String(pkg.merchant_commission_value ?? 0),
+    status: pkg.status || "active",
+  });
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      sale_price: String(pkg.sale_price ?? 0),
+      base_price: String(pkg.base_price ?? 0),
+      agent_commission_type: pkg.agent_commission_type || "percentage",
+      agent_commission_value: String(pkg.agent_commission_value ?? 0),
+      merchant_commission_type: pkg.merchant_commission_type || "percentage",
+      merchant_commission_value: String(pkg.merchant_commission_value ?? 0),
+      status: pkg.status || "active",
+    });
+    setError(null);
+  }, [open, pkg]);
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    const result = await updateSimPackage(pkg.id, {
+      sale_price: Number(form.sale_price || 0),
+      base_price: Number(form.base_price || 0),
+      agent_commission_type: form.agent_commission_type,
+      agent_commission_value: Number(form.agent_commission_value || 0),
+      merchant_commission_type: form.merchant_commission_type,
+      merchant_commission_value: Number(form.merchant_commission_value || 0),
+      status: form.status,
+    });
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>
+        <SlidersHorizontal className="ml-2 h-4 w-4" />
+        تعديل
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>تعديل شروط {pkg.package_name}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label>سعر البيع</Label>
+            <Input type="number" value={form.sale_price} onChange={(e) => set("sale_price", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>السعر المرجعي</Label>
+            <Input type="number" value={form.base_price} onChange={(e) => set("base_price", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>نوع عمولة المندوب</Label>
+            <Select value={form.agent_commission_type} onValueChange={(v) => set("agent_commission_type", v ?? "percentage")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="percentage">نسبة</SelectItem>
+                <SelectItem value="flat">مبلغ ثابت</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>قيمة عمولة المندوب</Label>
+            <Input type="number" value={form.agent_commission_value} onChange={(e) => set("agent_commission_value", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>نوع عمولة التاجر</Label>
+            <Select value={form.merchant_commission_type} onValueChange={(v) => set("merchant_commission_type", v ?? "percentage")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="percentage">نسبة</SelectItem>
+                <SelectItem value="flat">مبلغ ثابت</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>قيمة عمولة التاجر</Label>
+            <Input type="number" value={form.merchant_commission_value} onChange={(e) => set("merchant_commission_value", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>الحالة</Label>
+            <Select value={form.status} onValueChange={(v) => set("status", v ?? "active")}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="active">فعالة</SelectItem>
+                <SelectItem value="inactive">غير فعالة</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            إلغاء
+          </Button>
+          <Button onClick={submit} disabled={submitting}>
+            حفظ
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CreatePackageDialog({ onDone }: { onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    package_name: "",
+    internet_allowance: "",
+    minutes_allowance: "",
+    validity: "",
+    sale_price: "",
+    base_price: "",
+    agent_commission_type: "percentage",
+    agent_commission_value: "0",
+    merchant_commission_type: "percentage",
+    merchant_commission_value: "0",
+  });
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    const result = await createSimPackage({
+      provider: "virgin",
+      package_name: form.package_name.trim(),
+      internet_allowance: form.internet_allowance.trim() || null,
+      minutes_allowance: form.minutes_allowance.trim() || null,
+      validity: form.validity.trim() || null,
+      sale_price: Number(form.sale_price || 0),
+      base_price: Number(form.base_price || 0),
+      tax_included: true,
+      agent_commission_type: form.agent_commission_type,
+      agent_commission_value: Number(form.agent_commission_value || 0),
+      merchant_commission_type: form.merchant_commission_type,
+      merchant_commission_value: Number(form.merchant_commission_value || 0),
+      status: "active",
+    });
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    setForm({
+      package_name: "",
+      internet_allowance: "",
+      minutes_allowance: "",
+      validity: "",
+      sale_price: "",
+      base_price: "",
+      agent_commission_type: "percentage",
+      agent_commission_value: "0",
+      merchant_commission_type: "percentage",
+      merchant_commission_value: "0",
+    });
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" />}>
+        <Plus className="ml-2 h-4 w-4" />
+        باقة جديدة
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>إضافة باقة Virgin</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <Label>اسم الباقة</Label>
+            <Input value={form.package_name} onChange={(e) => set("package_name", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>الإنترنت</Label>
+            <Input value={form.internet_allowance} onChange={(e) => set("internet_allowance", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>المكالمات</Label>
+            <Input value={form.minutes_allowance} onChange={(e) => set("minutes_allowance", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>سعر البيع</Label>
+            <Input type="number" value={form.sale_price} onChange={(e) => set("sale_price", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>السعر المرجعي</Label>
+            <Input type="number" value={form.base_price} onChange={(e) => set("base_price", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>عمولة المندوب</Label>
+            <Input type="number" value={form.agent_commission_value} onChange={(e) => set("agent_commission_value", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>عمولة التاجر</Label>
+            <Input type="number" value={form.merchant_commission_value} onChange={(e) => set("merchant_commission_value", e.target.value)} />
+          </div>
+        </div>
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            إلغاء
+          </Button>
+          <Button onClick={submit} disabled={submitting}>
+            حفظ
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PackageManagementPanel({ packages, onDone }: { packages: SimPackage[]; onDone: () => void }) {
+  return (
+    <Card className="border border-slate-200 shadow-sm">
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <BadgePercent className="h-4 w-4" />
+          الباقات والعمولات
+        </CardTitle>
+        <CreatePackageDialog onDone={onDone} />
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-3">
+        {packages.length === 0 ? (
+          <p className="text-sm text-slate-400 md:col-span-3">لا توجد باقات بعد.</p>
+        ) : (
+          packages.map((pkg) => (
+            <div key={pkg.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-slate-950">{pkg.package_name}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {pkg.internet_allowance || "-"} إنترنت · {pkg.minutes_allowance || "-"} مكالمات
+                  </p>
+                </div>
+                {statusBadge(pkg.status, { active: "فعالة", inactive: "غير فعالة" })}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
+                <span>السعر: {formatMoney(pkg.sale_price)}</span>
+                <span>المزود: {pkg.provider}</span>
+                <span>مندوب: {pkg.agent_commission_value}{pkg.agent_commission_type === "percentage" ? "%" : " ر.س"}</span>
+                <span>تاجر: {pkg.merchant_commission_value}{pkg.merchant_commission_type === "percentage" ? "%" : " ر.س"}</span>
+              </div>
+              <div className="mt-3">
+                <PackageTermsDialog pkg={pkg} onDone={onDone} />
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -989,6 +1323,10 @@ export function StockManagementScreen() {
   const [agents, setAgents] = useState<FieldAgent[]>([]);
   const [requests, setRequests] = useState<AgentSimRequest[]>([]);
   const [transfers, setTransfers] = useState<SimTransfer[]>([]);
+  const [packages, setPackages] = useState<SimPackage[]>([]);
+  const [merchants, setMerchants] = useState<Merchant[]>([]);
+  const [merchantCollections, setMerchantCollections] = useState<MerchantCashCollection[]>([]);
+  const [ranking, setRanking] = useState<ResellerRanking[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [message, setMessage] = useState<Message>(null);
 
@@ -999,13 +1337,22 @@ export function StockManagementScreen() {
       getFieldAgents(),
       getSimRequests({ status: "pending" }),
       getSimTransfers(),
-    ]).then(([overviewResult, simResult, agentResult, requestResult, transferResult]) => {
+      getSimPackages(),
+      getMerchants(),
+      getResellerRanking(),
+    ]).then(async ([overviewResult, simResult, agentResult, requestResult, transferResult, packageResult, merchantResult, rankingResult]) => {
       if (overviewResult.error) setMessage({ tone: "error", text: overviewResult.error.message });
       setOverview(overviewResult.data);
       setSims(rows(simResult.data));
       setAgents(rows(agentResult.data));
       setRequests(rows(requestResult.data));
       setTransfers(rows(transferResult.data).slice(0, 20));
+      setPackages(rows(packageResult.data));
+      const merchantRows = rows(merchantResult.data);
+      setMerchants(merchantRows);
+      setRanking(rows(rankingResult.data));
+      const collectionResults = await Promise.all(merchantRows.map((merchant) => getMerchantCollections(merchant.id)));
+      setMerchantCollections(collectionResults.flatMap((result) => rows(result.data)));
     });
   }, []);
 
@@ -1024,6 +1371,21 @@ export function StockManagementScreen() {
     if (result.error) setMessage({ tone: "error", text: result.error.message });
     else load();
   };
+
+  const updateMerchantPayment = async (id: string, status: "confirmed" | "rejected") => {
+    const result = await confirmMerchantPayment(id, {
+      status,
+      rejection_reason: status === "rejected" ? "رفض من مدير المناديب" : undefined,
+    });
+    if (result.error) setMessage({ tone: "error", text: result.error.message });
+    else load();
+  };
+
+  const merchantName = (id: string) => merchants.find((merchant) => merchant.id === id)?.business_name || "تاجر";
+  const pendingMerchantCollections = useMemo(
+    () => merchantCollections.filter((collection) => collection.status === "pending"),
+    [merchantCollections]
+  );
 
   return (
     <div className="space-y-6" dir="rtl">
@@ -1044,6 +1406,74 @@ export function StockManagementScreen() {
         <StatCard label="مع التجار" value={String(overview?.with_merchants ?? 0)} />
         <StatCard label="مباعة" value={String(overview?.sold ?? 0)} />
         <StatCard label="مرتجعة" value={String(overview?.returned ?? 0)} />
+      </div>
+
+      <PackageManagementPanel packages={packages} onDone={load} />
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="border border-blue-200 bg-blue-50/40 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CreditCard className="h-4 w-4" />
+              مدفوعات التجار قيد التأكيد
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pendingMerchantCollections.length === 0 ? (
+              <p className="text-sm text-slate-400">لا توجد مدفوعات معلقة.</p>
+            ) : (
+              pendingMerchantCollections.map((collection) => (
+                <div key={collection.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium">
+                      {merchantName(collection.merchant_id)} · {formatMoney(collection.amount)}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {paymentMethodLabels[collection.payment_method] || collection.payment_method} · {new Date(collection.collection_date).toLocaleDateString("ar-SA")}
+                    </p>
+                    {collection.payment_proof_url ? (
+                      <a href={collection.payment_proof_url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-medium text-brand">
+                        عرض إثبات الدفع
+                      </a>
+                    ) : null}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => updateMerchantPayment(collection.id, "confirmed")}>
+                      <Check className="ml-1 h-4 w-4" />
+                      تأكيد
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => updateMerchantPayment(collection.id, "rejected")}>
+                      <X className="ml-1 h-4 w-4" />
+                      رفض
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border border-slate-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base">أفضل التجار مبيعا</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {ranking.length === 0 ? (
+              <p className="text-sm text-slate-400">لا توجد مبيعات تجار بعد.</p>
+            ) : (
+              ranking.slice(0, 10).map((row, index) => (
+                <div key={row.merchant_id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
+                  <span className="font-medium">
+                    {index + 1}. {row.business_name}
+                  </span>
+                  <span className="text-slate-500">
+                    {row.sold_total} مبيعة · {formatMoney(row.sold_value)}
+                  </span>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {requests.length > 0 ? (
@@ -1101,15 +1531,17 @@ export function StockManagementScreen() {
             <TableHeader>
               <TableRow>
                 <TableHead>ICCID</TableHead>
+                <TableHead>المزود</TableHead>
                 <TableHead>النوع</TableHead>
                 <TableHead>السعر</TableHead>
+                <TableHead>الباقة المباعة</TableHead>
                 <TableHead>الحالة</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredSims.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-slate-400">
+                  <TableCell colSpan={6} className="text-center text-slate-400">
                     لا توجد شرائح.
                   </TableCell>
                 </TableRow>
@@ -1117,8 +1549,10 @@ export function StockManagementScreen() {
                 filteredSims.slice(0, 100).map((sim) => (
                   <TableRow key={sim.id}>
                     <TableCell dir="ltr">{sim.iccid}</TableCell>
+                    <TableCell>{sim.provider || "virgin"}</TableCell>
                     <TableCell>{sim.sim_type}</TableCell>
                     <TableCell>{formatMoney(sim.price)}</TableCell>
+                    <TableCell>{sim.sold_package_name || "—"}</TableCell>
                     <TableCell>{statusBadge(sim.status, simStatusLabels)}</TableCell>
                   </TableRow>
                 ))

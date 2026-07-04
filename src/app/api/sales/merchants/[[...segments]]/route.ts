@@ -2,14 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import type { User } from "@supabase/supabase-js";
 import { requireMerchantAccess } from "@/lib/server/merchant-auth";
 import {
+  assignSimsToMerchantByQuantitySchema,
   assignSimsToMerchantSchema,
   collectMerchantCashSchema,
+  confirmMerchantPaymentSchema,
   createMerchantSchema,
   merchantRecordSaleSchema,
   merchantReturnSimSchema,
   merchantSimRequestSchema,
   reviewMerchantRequestSchema,
+  simPackageSchema,
   updateMerchantSchema,
+  updateSimPackageSchema,
 } from "@/lib/merchants/schemas";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +58,19 @@ type AdminAuthClient = {
   };
 };
 
+type StorageClient = {
+  storage: {
+    from: (bucket: string) => {
+      upload: (
+        path: string,
+        file: File,
+        options?: { contentType?: string; upsert?: boolean }
+      ) => Promise<{ data: { path: string } | null; error: { message?: string } | null }>;
+      getPublicUrl: (path: string) => { data: { publicUrl: string } };
+    };
+  };
+};
+
 type AuthContext = {
   user: User;
   orgId: string;
@@ -71,6 +88,9 @@ function database(admin: unknown) {
 }
 function adminAuth(admin: unknown) {
   return admin as AdminAuthClient;
+}
+function storage(admin: unknown) {
+  return admin as StorageClient;
 }
 function json(data: unknown, status = 200) {
   return NextResponse.json({ data }, { status });
@@ -106,6 +126,45 @@ function asNumber(value: unknown) {
 }
 async function readBody(request: NextRequest) {
   return request.json().catch(() => ({}));
+}
+
+function safeFilename(name: string) {
+  return name.replace(/[^\w.\-]+/g, "-").replace(/-+/g, "-").slice(0, 120) || "upload";
+}
+
+async function readPayload(request: NextRequest, fileField: string) {
+  const contentType = request.headers.get("content-type") || "";
+  if (!contentType.includes("multipart/form-data")) {
+    return { body: await readBody(request), file: null as File | null };
+  }
+
+  const form = await request.formData();
+  const body: Record<string, unknown> = {};
+  let file: File | null = null;
+  form.forEach((value, key) => {
+    if (key === fileField && value instanceof File && value.size > 0) {
+      file = value;
+    } else if (!(value instanceof File)) {
+      body[key] = value;
+    }
+  });
+  return { body, file };
+}
+
+async function uploadPublicFile(auth: AuthContext, bucket: string, folder: string, file: File | null) {
+  if (!file) return null;
+  const path = `${auth.orgId}/${folder}/${Date.now()}-${safeFilename(file.name)}`;
+  const upload = await storage(auth.admin).storage.from(bucket).upload(path, file, {
+    contentType: file.type || undefined,
+    upsert: false,
+  });
+  if (upload.error || !upload.data) throw new Error(upload.error?.message || "Unable to upload file.");
+  return storage(auth.admin).storage.from(bucket).getPublicUrl(upload.data.path).data.publicUrl;
+}
+
+function calculateCommission(type: string, value: number, salePrice: number) {
+  if (type === "flat") return Math.round(value * 100) / 100;
+  return Math.round(salePrice * (value / 100) * 100) / 100;
 }
 
 async function resolveAgentId(auth: AuthContext): Promise<string | null> {
@@ -185,7 +244,70 @@ async function merchantForCaller(auth: AuthContext, merchantId: string) {
     const agentId = await resolveAgentId(auth);
     return agentId && asString(merchant.agent_id) === agentId ? merchant : null;
   }
+  if (auth.isMerchant) {
+    const merchantSelfId = await resolveMerchantId(auth);
+    return merchantSelfId && asString(merchant.id) === merchantSelfId ? merchant : null;
+  }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Packages
+// ---------------------------------------------------------------------------
+async function handlePackages(request: NextRequest, auth: AuthContext, segments: string[]) {
+  const db = database(auth.admin);
+  const packageId = segments[1] || "";
+
+  if (!packageId) {
+    if (request.method === "GET") {
+      let query = db.from("sim_packages").select("*").eq("organization_id", auth.orgId);
+      const status = asString(request.nextUrl.searchParams.get("status"));
+      const provider = asString(request.nextUrl.searchParams.get("provider")) || "virgin";
+      if (status) query = query.eq("status", status);
+      if (provider) query = query.eq("provider", provider);
+      const result = await query.order("sale_price", { ascending: true });
+      if (result.error) return message(result.error.message, 500);
+      return json(rows(result.data));
+    }
+
+    if (request.method === "POST") {
+      if (!auth.isManager) return message("Only on-ground managers can manage packages.", 403);
+      const body = await readBody(request);
+      const parsed = simPackageSchema.safeParse(body);
+      if (!parsed.success) return message(parseError(parsed.error), 400);
+      const result = await db
+        .from("sim_packages")
+        .insert({
+          ...parsed.data,
+          organization_id: auth.orgId,
+          created_by: auth.user.id,
+        })
+        .select("*")
+        .single();
+      if (result.error) return message(result.error.message, 500);
+      return json(row(result.data), 201);
+    }
+
+    return message("Method not allowed", 405);
+  }
+
+  if (request.method === "PATCH") {
+    if (!auth.isManager) return message("Only on-ground managers can manage packages.", 403);
+    const body = await readBody(request);
+    const parsed = updateSimPackageSchema.safeParse(body);
+    if (!parsed.success) return message(parseError(parsed.error), 400);
+    const result = await db
+      .from("sim_packages")
+      .update(parsed.data)
+      .eq("organization_id", auth.orgId)
+      .eq("id", packageId)
+      .select("*")
+      .single();
+    if (result.error) return message(result.error.message, 500);
+    return json(row(result.data));
+  }
+
+  return message("Method not allowed", 405);
 }
 
 // ---------------------------------------------------------------------------
@@ -217,7 +339,7 @@ async function handleMerchants(request: NextRequest, auth: AuthContext, segments
       if (!auth.isAgent && !auth.isManager) {
         return message("Only agents or managers can create merchants.", 403);
       }
-      const body = await readBody(request);
+      const { body, file } = await readPayload(request, "place_photo");
       const parsed = createMerchantSchema.safeParse(body);
       if (!parsed.success) return message(parseError(parsed.error), 400);
 
@@ -263,6 +385,13 @@ async function handleMerchants(request: NextRequest, auth: AuthContext, segments
       );
       if (memberResult.error) return message(memberResult.error.message, 500);
 
+      let placePhotoUrl: string | null = null;
+      try {
+        placePhotoUrl = await uploadPublicFile(auth, "merchant-place-photos", "places", file);
+      } catch (error) {
+        return message(error, 500);
+      }
+
       const insertPayload: Record<string, unknown> = {
         organization_id: auth.orgId,
         agent_id: agentId,
@@ -275,6 +404,11 @@ async function handleMerchants(request: NextRequest, auth: AuthContext, segments
       if (parsed.data.owner_name) insertPayload.owner_name = parsed.data.owner_name;
       if (parsed.data.phone) insertPayload.phone = parsed.data.phone;
       if (parsed.data.location) insertPayload.location = parsed.data.location;
+      if (parsed.data.city) insertPayload.city = parsed.data.city;
+      if (parsed.data.region) insertPayload.region = parsed.data.region;
+      if (parsed.data.latitude !== undefined) insertPayload.latitude = parsed.data.latitude;
+      if (parsed.data.longitude !== undefined) insertPayload.longitude = parsed.data.longitude;
+      if (placePhotoUrl) insertPayload.place_photo_url = placePhotoUrl;
 
       const result = await db.from("merchants").insert(insertPayload).select("*").single();
       if (result.error) return message(result.error.message, 500);
@@ -333,6 +467,37 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
   const db = database(auth.admin);
   const action = segments[1] || "";
 
+  async function autoSelectMerchantSims(input: {
+    merchant_id: string;
+    quantity: number;
+    provider?: string;
+    sim_type?: string;
+  }) {
+    const merchant = await merchantForCaller(auth, input.merchant_id);
+    if (!merchant) return { error: { message: "Merchant not found.", status: 404 }, merchant: null, sims: [] };
+    if (asString(merchant.status) === "suspended") {
+      return { error: { message: "Cannot assign SIMs to a suspended merchant.", status: 400 }, merchant, sims: [] };
+    }
+    const ownerAgentId = asString(merchant.agent_id);
+    let query = db
+      .from("sim_units")
+      .select("*")
+      .eq("organization_id", auth.orgId)
+      .eq("status", "with_agent")
+      .eq("current_agent_id", ownerAgentId)
+      .eq("provider", input.provider || "virgin");
+    if (input.sim_type) query = query.eq("sim_type", input.sim_type);
+    const simsResult = await query.order("assigned_at", { ascending: true }).limit(input.quantity);
+    if (simsResult.error) {
+      return { error: { message: simsResult.error.message || "Unable to load SIMs.", status: 500 }, merchant, sims: [] };
+    }
+    const sims = rows(simsResult.data);
+    if (sims.length < input.quantity) {
+      return { error: { message: "Not enough available SIMs in the agent stock.", status: 400 }, merchant, sims };
+    }
+    return { error: null, merchant, sims };
+  }
+
   // GET /sims — merchant's own SIMs
   if (!action) {
     if (request.method !== "GET") return message("Method not allowed", 405);
@@ -357,29 +522,61 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
   }
 
   // POST /sims/assign — agent hands SIMs to a merchant
+  if (action === "preview") {
+    if (request.method !== "POST") return message("Method not allowed", 405);
+    if (!auth.isAgent && !auth.isManager) return message("Only agents can assign SIMs to merchants.", 403);
+    const body = await readBody(request);
+    const parsed = assignSimsToMerchantByQuantitySchema.safeParse(body);
+    if (!parsed.success) return message(parseError(parsed.error), 400);
+    const selection = await autoSelectMerchantSims(parsed.data);
+    if (selection.error) return message(selection.error.message, selection.error.status);
+    return json({ sims: selection.sims });
+  }
+
   if (action === "assign") {
     if (request.method !== "POST") return message("Method not allowed", 405);
     if (!auth.isAgent && !auth.isManager) return message("Only agents can assign SIMs to merchants.", 403);
 
     const body = await readBody(request);
-    const parsed = assignSimsToMerchantSchema.safeParse(body);
-    if (!parsed.success) return message(parseError(parsed.error), 400);
+    const quantityParsed = assignSimsToMerchantByQuantitySchema.safeParse(body);
+    const parsed = quantityParsed.success ? null : assignSimsToMerchantSchema.safeParse(body);
+    if (!quantityParsed.success && !parsed?.success) {
+      return message(parseError(parsed?.error || quantityParsed.error), 400);
+    }
 
-    const merchant = await merchantForCaller(auth, parsed.data.merchant_id);
+    let merchantId = "";
+    if (quantityParsed.success) {
+      merchantId = quantityParsed.data.merchant_id;
+    } else if (parsed?.success) {
+      merchantId = parsed.data.merchant_id;
+    }
+    const merchant = await merchantForCaller(auth, merchantId);
     if (!merchant) return message("Merchant not found.", 404);
     if (asString(merchant.status) === "suspended") {
       return message("Cannot assign SIMs to a suspended merchant.", 400);
     }
     const ownerAgentId = asString(merchant.agent_id);
+    let simIds: string[] = [];
+    let notes: string | null = null;
+
+    if (quantityParsed.success) {
+      const selection = await autoSelectMerchantSims(quantityParsed.data);
+      if (selection.error) return message(selection.error.message, selection.error.status);
+      simIds = selection.sims.map((sim) => asString(sim.id)).filter(Boolean);
+      notes = quantityParsed.data.notes ?? null;
+    } else if (parsed?.success) {
+      simIds = parsed.data.sim_ids;
+      notes = parsed.data.notes ?? null;
+    }
 
     const simsResult = await db
       .from("sim_units")
       .select("id, status, current_agent_id")
       .eq("organization_id", auth.orgId)
-      .in("id", parsed.data.sim_ids);
+      .in("id", simIds);
     if (simsResult.error) return message(simsResult.error.message, 500);
     const found = rows(simsResult.data);
-    if (found.length !== parsed.data.sim_ids.length) return message("Some SIMs were not found.", 400);
+    if (found.length !== simIds.length) return message("Some SIMs were not found.", 400);
     if (found.some((sim) => asString(sim.status) !== "with_agent")) {
       return message("All SIMs must be held by the agent to hand over.", 400);
     }
@@ -391,24 +588,24 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       .from("sim_units")
       .update({
         status: "with_merchant",
-        current_merchant_id: parsed.data.merchant_id,
+        current_merchant_id: merchantId,
         merchant_assigned_at: new Date().toISOString(),
       })
       .eq("organization_id", auth.orgId)
-      .in("id", parsed.data.sim_ids)
+      .in("id", simIds)
       .select("id");
     if (update.error) return message(update.error.message, 500);
 
-    for (const simId of parsed.data.sim_ids) {
+    for (const simId of simIds) {
       await insertTransfer(auth, {
         sim_unit_id: simId,
         transfer_type: "assign_to_merchant",
         from_agent_id: ownerAgentId,
-        to_merchant_id: parsed.data.merchant_id,
-        notes: parsed.data.notes ?? null,
+        to_merchant_id: merchantId,
+        notes,
       });
     }
-    return json({ assigned: parsed.data.sim_ids.length });
+    return json({ assigned: simIds.length });
   }
 
   // POST /sims/sell — merchant records a sale
@@ -445,7 +642,7 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
 
     const merchantResult = await db
       .from("merchants")
-      .select("agent_id, commission_rate, status")
+      .select("agent_id, status")
       .eq("organization_id", auth.orgId)
       .eq("id", sellingMerchantId)
       .maybeSingle();
@@ -455,17 +652,26 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       return message("Cannot record sales for a suspended merchant.", 400);
     }
     const ownerAgentId = asString(merchant.agent_id);
-    const merchantRate = asNumber(merchant.commission_rate);
-    const merchantCommission = Math.round(parsed.data.sold_price * (merchantRate / 100) * 100) / 100;
-
-    const agentResult = await db
-      .from("field_agents")
-      .select("commission_rate")
+    const packageResult = await db
+      .from("sim_packages")
+      .select("*")
       .eq("organization_id", auth.orgId)
-      .eq("id", ownerAgentId)
+      .eq("id", parsed.data.package_id)
+      .eq("status", "active")
       .maybeSingle();
-    const agentRate = asNumber(row(agentResult.data).commission_rate);
-    const agentCommission = Math.round(parsed.data.sold_price * (agentRate / 100) * 100) / 100;
+    if (packageResult.error) return message(packageResult.error.message, 500);
+    if (!packageResult.data) return message("Package not found.", 404);
+    const simPackage = row(packageResult.data);
+    if (asString(sim.provider || "virgin") !== asString(simPackage.provider || "virgin")) {
+      return message("Package provider must match the SIM provider.", 400);
+    }
+    const salePrice = asNumber(simPackage.sale_price);
+    const merchantCommissionType = asString(simPackage.merchant_commission_type) || "percentage";
+    const merchantCommissionValue = asNumber(simPackage.merchant_commission_value);
+    const merchantCommission = calculateCommission(merchantCommissionType, merchantCommissionValue, salePrice);
+    const agentCommissionType = asString(simPackage.agent_commission_type) || "percentage";
+    const agentCommissionValue = asNumber(simPackage.agent_commission_value);
+    const agentCommission = calculateCommission(agentCommissionType, agentCommissionValue, salePrice);
 
     const update = await db
       .from("sim_units")
@@ -474,7 +680,9 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
         sold_at: new Date().toISOString(),
         sold_by_merchant_id: sellingMerchantId,
         sold_by_agent_id: ownerAgentId,
-        sold_price: parsed.data.sold_price,
+        sold_price: salePrice,
+        sold_package_id: parsed.data.package_id,
+        sold_package_name: asString(simPackage.package_name),
         customer_name: parsed.data.customer_name ?? null,
       })
       .eq("organization_id", auth.orgId)
@@ -495,8 +703,10 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       merchant_id: sellingMerchantId,
       agent_id: ownerAgentId,
       sim_unit_id: parsed.data.sim_unit_id,
-      sale_price: parsed.data.sold_price,
-      commission_rate: merchantRate,
+      sim_package_id: parsed.data.package_id,
+      sale_price: salePrice,
+      commission_type: merchantCommissionType,
+      commission_rate: merchantCommissionValue,
       commission_amount: merchantCommission,
     });
 
@@ -505,9 +715,29 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       organization_id: auth.orgId,
       agent_id: ownerAgentId,
       sim_unit_id: parsed.data.sim_unit_id,
-      sale_price: parsed.data.sold_price,
-      commission_rate: agentRate,
+      sim_package_id: parsed.data.package_id,
+      sale_price: salePrice,
+      commission_type: agentCommissionType,
+      commission_rate: agentCommissionValue,
       commission_amount: agentCommission,
+    });
+
+    await db.from("sim_sales").insert({
+      organization_id: auth.orgId,
+      sim_unit_id: parsed.data.sim_unit_id,
+      package_id: parsed.data.package_id,
+      seller_type: "merchant",
+      agent_id: ownerAgentId,
+      merchant_id: sellingMerchantId,
+      sale_price: salePrice,
+      customer_name: parsed.data.customer_name ?? null,
+      agent_commission_type: agentCommissionType,
+      agent_commission_value: agentCommissionValue,
+      agent_commission_amount: agentCommission,
+      merchant_commission_type: merchantCommissionType,
+      merchant_commission_value: merchantCommissionValue,
+      merchant_commission_amount: merchantCommission,
+      created_by: auth.user.id,
     });
 
     return json(row(update.data));
@@ -576,31 +806,112 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
 // ---------------------------------------------------------------------------
 async function handleMerchantCollect(request: NextRequest, auth: AuthContext) {
   if (request.method !== "POST") return message("Method not allowed", 405);
-  if (!auth.isAgent && !auth.isManager) return message("Only agents can collect cash.", 403);
+  if (!auth.isAgent && !auth.isManager && !auth.isMerchant) {
+    return message("Only traders, agents, or managers can submit payments.", 403);
+  }
 
-  const body = await readBody(request);
+  const { body, file } = await readPayload(request, "payment_proof");
   const parsed = collectMerchantCashSchema.safeParse(body);
   if (!parsed.success) return message(parseError(parsed.error), 400);
 
-  const merchant = await merchantForCaller(auth, parsed.data.merchant_id);
+  const merchantId = auth.isMerchant ? await resolveMerchantId(auth) : parsed.data.merchant_id;
+  if (!merchantId) return message("No merchant profile found.", 404);
+
+  const merchant = await merchantForCaller(auth, merchantId);
   if (!merchant) return message("Merchant not found.", 404);
+
+  let paymentProofUrl = parsed.data.payment_proof_url ?? null;
+  if (file) {
+    try {
+      paymentProofUrl = await uploadPublicFile(auth, "merchant-payment-proofs", "payments", file);
+    } catch (error) {
+      return message(error, 500);
+    }
+  }
+
+  const submittedByMerchant = auth.isMerchant;
+  const status = submittedByMerchant ? "pending" : "confirmed";
+  const confirmedAt = status === "confirmed" ? new Date().toISOString() : null;
 
   const result = await database(auth.admin)
     .from("merchant_cash_collections")
     .insert({
       organization_id: auth.orgId,
-      merchant_id: parsed.data.merchant_id,
+      merchant_id: merchantId,
       agent_id: asString(merchant.agent_id),
       amount: parsed.data.amount,
       payment_method: parsed.data.payment_method,
-      collection_date: parsed.data.collection_date,
+      collection_date: parsed.data.collection_date || new Date().toISOString().slice(0, 10),
       notes: parsed.data.notes ?? null,
       collected_by: auth.user.id,
+      submitted_by: auth.user.id,
+      submitted_at: new Date().toISOString(),
+      status,
+      payment_proof_url: paymentProofUrl,
+      confirmed_by: status === "confirmed" ? auth.user.id : null,
+      confirmed_at: confirmedAt,
     })
     .select("*")
     .single();
   if (result.error) return message(result.error.message, 500);
   return json(row(result.data), 201);
+}
+
+async function handleMerchantPayments(request: NextRequest, auth: AuthContext, segments: string[]) {
+  const paymentId = segments[1] || "";
+  if (!paymentId || segments[2] !== "confirm") return message("Merchant route was not found.", 404);
+  if (request.method !== "PATCH") return message("Method not allowed", 405);
+  if (!auth.isAgent && !auth.isManager) return message("Only agents or managers can confirm payments.", 403);
+
+  const body = await readBody(request);
+  const parsed = confirmMerchantPaymentSchema.safeParse(body);
+  if (!parsed.success) return message(parseError(parsed.error), 400);
+
+  const db = database(auth.admin);
+  const paymentResult = await db
+    .from("merchant_cash_collections")
+    .select("*")
+    .eq("organization_id", auth.orgId)
+    .eq("id", paymentId)
+    .maybeSingle();
+  if (paymentResult.error) return message(paymentResult.error.message, 500);
+  if (!paymentResult.data) return message("Payment not found.", 404);
+  const payment = row(paymentResult.data);
+
+  const merchant = await merchantForCaller(auth, asString(payment.merchant_id));
+  if (!merchant) return message("Merchant not found.", 404);
+
+  if (asString(payment.payment_method) !== "cash" && !auth.isManager && parsed.data.status === "confirmed") {
+    return message("Electronic payments must be confirmed by the on-ground manager.", 403);
+  }
+
+  const now = new Date().toISOString();
+  const updatePayload =
+    parsed.data.status === "confirmed"
+      ? {
+          status: "confirmed",
+          confirmed_by: auth.user.id,
+          confirmed_at: now,
+          rejected_by: null,
+          rejected_at: null,
+          rejection_reason: null,
+        }
+      : {
+          status: "rejected",
+          rejected_by: auth.user.id,
+          rejected_at: now,
+          rejection_reason: parsed.data.rejection_reason ?? null,
+        };
+
+  const result = await db
+    .from("merchant_cash_collections")
+    .update(updatePayload)
+    .eq("organization_id", auth.orgId)
+    .eq("id", paymentId)
+    .select("*")
+    .single();
+  if (result.error) return message(result.error.message, 500);
+  return json(row(result.data));
 }
 
 // ---------------------------------------------------------------------------
@@ -749,7 +1060,6 @@ async function handleMerchantMe(request: NextRequest, auth: AuthContext, segment
   if (merchantResult.error) return message(merchantResult.error.message, 500);
   if (!merchantResult.data) return message("Merchant not found.", 404);
   const merchant = row(merchantResult.data);
-  const simPrice = asNumber(merchant.sim_price);
 
   const heldResult = await db
     .from("sim_units")
@@ -759,13 +1069,13 @@ async function handleMerchantMe(request: NextRequest, auth: AuthContext, segment
     .eq("status", "with_merchant");
   const soldResult = await db
     .from("sim_units")
-    .select("id")
+    .select("id, sold_price")
     .eq("organization_id", auth.orgId)
     .eq("sold_by_merchant_id", merchantId)
     .eq("status", "sold");
   const collectionsResult = await db
     .from("merchant_cash_collections")
-    .select("amount")
+    .select("amount, status")
     .eq("organization_id", auth.orgId)
     .eq("merchant_id", merchantId);
   const requestsResult = await db
@@ -783,8 +1093,14 @@ async function handleMerchantMe(request: NextRequest, auth: AuthContext, segment
 
   const held = rows(heldResult.data);
   const sold = rows(soldResult.data);
-  const totalOwed = sold.length * simPrice;
-  const totalCollected = rows(collectionsResult.data).reduce((s, r) => s + asNumber(r.amount), 0);
+  const collections = rows(collectionsResult.data);
+  const totalOwed = sold.reduce((s, r) => s + asNumber(r.sold_price), 0);
+  const totalCollected = collections
+    .filter((r) => asString(r.status) === "confirmed")
+    .reduce((s, r) => s + asNumber(r.amount), 0);
+  const pendingPayments = collections
+    .filter((r) => asString(r.status) === "pending")
+    .reduce((s, r) => s + asNumber(r.amount), 0);
   const unpaidCommission = rows(commissionsResult.data).reduce((s, r) => s + asNumber(r.commission_amount), 0);
 
   return json({
@@ -792,12 +1108,13 @@ async function handleMerchantMe(request: NextRequest, auth: AuthContext, segment
     balance: {
       total_owed: totalOwed,
       total_collected: totalCollected,
+      pending_payments: pendingPayments,
       outstanding: totalOwed - totalCollected,
     },
     stock: {
       in_hand: held.length,
       sold_total: sold.length,
-      in_hand_value: held.length * simPrice,
+      in_hand_value: held.reduce((sum, sim) => sum + asNumber(sim.price), 0),
     },
     pending_requests: rows(requestsResult.data).length,
     unpaid_commission: unpaidCommission,
@@ -852,8 +1169,10 @@ async function dispatch(request: NextRequest, auth: AuthContext, context: RouteC
   const segments = segmentsOf(context);
   const resource = segments[0] || "";
 
+  if (resource === "packages") return handlePackages(request, auth, segments);
   if (resource === "sims") return handleMerchantSims(request, auth, segments);
   if (resource === "collect") return handleMerchantCollect(request, auth);
+  if (resource === "payments") return handleMerchantPayments(request, auth, segments);
   if (resource === "requests") return handleMerchantRequests(request, auth, segments);
   if (resource === "commissions") return handleMerchantCommissions(request, auth, segments);
   if (resource === "me") return handleMerchantMe(request, auth, segments);

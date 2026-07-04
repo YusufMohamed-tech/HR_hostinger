@@ -6,15 +6,20 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   BadgePercent,
   Check,
+  CreditCard,
+  Eye,
   LayoutDashboard,
   LogOut,
+  MapPin,
   Package,
   Plus,
   RefreshCcw,
+  ReceiptText,
   Send,
   ShoppingCart,
   Smartphone,
   Store,
+  Upload,
   Wallet,
   X,
 } from "lucide-react";
@@ -44,19 +49,24 @@ import {
 import {
   assignSimsToMerchant,
   collectMerchantCash,
+  confirmMerchantPayment,
   createMerchant,
+  getMerchantCollections,
   getMerchantRequests,
   getMerchants,
   getResellerRanking,
+  getSimPackages,
+  previewSimsForMerchant,
   reviewMerchantRequest,
 } from "@/lib/services/merchants";
 import type {
   AgentCommission,
   AgentDashboardData,
   AgentSimRequest,
+  SimPackage,
   SimUnit,
 } from "@/types/field-agents";
-import type { Merchant, MerchantSimRequest, ResellerRanking } from "@/types/merchants";
+import type { Merchant, MerchantCashCollection, MerchantSimRequest, ResellerRanking } from "@/types/merchants";
 
 type Message = { tone: "success" | "error"; text: string } | null;
 
@@ -66,8 +76,29 @@ function rows<T>(value: T[] | null | undefined) {
 
 function formatMoney(value: unknown) {
   const number = Number(value || 0);
-  return `${Number.isFinite(number) ? Math.round(number).toLocaleString("ar-SA") : "0"} ر.س`;
+  return `${Number.isFinite(number) ? number.toLocaleString("ar-SA", { maximumFractionDigits: 2 }) : "0"} ر.س`;
 }
+
+function commissionPreview(pkg: SimPackage | null, tier: "agent" | "merchant") {
+  if (!pkg) return "";
+  const type = tier === "agent" ? pkg.agent_commission_type : pkg.merchant_commission_type;
+  const value = tier === "agent" ? pkg.agent_commission_value : pkg.merchant_commission_value;
+  const amount = type === "flat" ? value : (Number(pkg.sale_price || 0) * value) / 100;
+  return formatMoney(amount);
+}
+
+const paymentMethodLabels: Record<string, string> = {
+  cash: "نقدي",
+  bank_transfer: "تحويل بنكي",
+  visa: "فيزا",
+  electronic: "دفع إلكتروني",
+};
+
+const paymentStatusLabels: Record<string, string> = {
+  pending: "قيد التأكيد",
+  confirmed: "مؤكد",
+  rejected: "مرفوض",
+};
 
 const requestStatusLabels: Record<string, string> = {
   pending: "قيد المراجعة",
@@ -253,6 +284,7 @@ export function AgentSimListScreen() {
                   {sim.iccid}
                 </span>
                 <div className="flex items-center gap-3">
+                  <span className="text-slate-500">{sim.provider || "virgin"}</span>
                   <span className="text-slate-500">{sim.sim_type}</span>
                   <span className="font-semibold">{formatMoney(sim.price)}</span>
                 </div>
@@ -270,16 +302,22 @@ export function AgentSimListScreen() {
 // ---------------------------------------------------------------------------
 export function AgentSellScreen() {
   const [sims, setSims] = useState<SimUnit[]>([]);
+  const [packages, setPackages] = useState<SimPackage[]>([]);
   const [simId, setSimId] = useState("");
-  const [price, setPrice] = useState("");
+  const [packageId, setPackageId] = useState("");
   const [customer, setCustomer] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<Message>(null);
 
   const load = useCallback(() => {
-    getSimUnits({ status: "with_agent" }).then((result) => {
-      if (result.error) setMessage({ tone: "error", text: result.error.message });
-      else setSims(rows(result.data));
+    Promise.all([
+      getSimUnits({ status: "with_agent" }),
+      getSimPackages({ status: "active" }),
+    ]).then(([simResult, packageResult]) => {
+      if (simResult.error) setMessage({ tone: "error", text: simResult.error.message });
+      else setSims(rows(simResult.data));
+      if (packageResult.error) setMessage({ tone: "error", text: packageResult.error.message });
+      else setPackages(rows(packageResult.data));
     });
   }, []);
 
@@ -288,6 +326,14 @@ export function AgentSellScreen() {
   }, [load]);
 
   const selectedSim = useMemo(() => sims.find((s) => s.id === simId) || null, [sims, simId]);
+  const availablePackages = useMemo(() => {
+    const provider = selectedSim?.provider || "virgin";
+    return packages.filter((pkg) => pkg.provider === provider && pkg.status === "active");
+  }, [packages, selectedSim]);
+  const selectedPackage = useMemo(
+    () => availablePackages.find((pkg) => pkg.id === packageId) || null,
+    [availablePackages, packageId]
+  );
 
   const submit = async () => {
     setSubmitting(true);
@@ -297,9 +343,14 @@ export function AgentSellScreen() {
       setSubmitting(false);
       return;
     }
+    if (!packageId) {
+      setMessage({ tone: "error", text: "اختر الباقة." });
+      setSubmitting(false);
+      return;
+    }
     const result = await recordSale({
       sim_unit_id: simId,
-      sold_price: Number(price || 0),
+      package_id: packageId,
       customer_name: customer.trim() || undefined,
     });
     setSubmitting(false);
@@ -309,13 +360,13 @@ export function AgentSellScreen() {
     }
     setMessage({ tone: "success", text: "تم تسجيل المبيعة بنجاح." });
     setSimId("");
-    setPrice("");
+    setPackageId("");
     setCustomer("");
     load();
   };
 
   return (
-    <AgentShell title="تسجيل مبيعة" subtitle="اختر الشريحة وأدخل بيانات البيع.">
+    <AgentShell title="تسجيل مبيعة" subtitle="اختر الشريحة والباقة، والسعر والعمولة يحسبان من النظام.">
       <MessageBanner message={message} />
       <Card className="border border-slate-200 shadow-sm">
         <CardHeader>
@@ -324,27 +375,77 @@ export function AgentSellScreen() {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label>الشريحة</Label>
-            <Select value={simId} onValueChange={(v) => setSimId(v ?? "")}>
+            <Select
+              value={simId}
+              onValueChange={(v) => {
+                setSimId(v ?? "");
+                setPackageId("");
+              }}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="اختر شريحة" />
               </SelectTrigger>
               <SelectContent>
                 {sims.map((sim) => (
                   <SelectItem key={sim.id} value={sim.id}>
-                    {sim.iccid} · {sim.sim_type}
+                    {sim.iccid} · {sim.provider || "virgin"} · {sim.sim_type}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>سعر البيع {selectedSim ? `(السعر المرجعي ${formatMoney(selectedSim.price)})` : ""}</Label>
-            <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
+            <Label>الباقة</Label>
+            {!selectedSim ? (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500">
+                اختر الشريحة أولا حتى تظهر الباقات المتاحة.
+              </p>
+            ) : availablePackages.length === 0 ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                لا توجد باقات فعالة لهذا المزود.
+              </p>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {availablePackages.map((pkg) => {
+                  const active = packageId === pkg.id;
+                  return (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      onClick={() => setPackageId(pkg.id)}
+                      className={cn(
+                        "rounded-lg border p-3 text-right transition",
+                        active ? "border-brand bg-brand/5 ring-2 ring-brand/20" : "border-slate-200 bg-white hover:border-brand/40"
+                      )}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-950">{pkg.package_name}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {pkg.internet_allowance || "-"} إنترنت · {pkg.minutes_allowance || "-"} مكالمات
+                          </p>
+                        </div>
+                        <Badge className="border-0 bg-red-100 text-red-700">{pkg.provider}</Badge>
+                      </div>
+                      <div className="mt-3 flex items-end justify-between gap-3">
+                        <span className="text-xl font-bold text-brand">{formatMoney(pkg.sale_price)}</span>
+                        <span className="text-xs text-slate-500">عمولتك {commissionPreview(pkg, "agent")}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <Label>اسم العميل (اختياري)</Label>
             <Input value={customer} onChange={(e) => setCustomer(e.target.value)} />
           </div>
+          {selectedPackage ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+              سيتم تسجيل البيع بسعر {formatMoney(selectedPackage.sale_price)} واحتساب عمولتك {commissionPreview(selectedPackage, "agent")}.
+            </div>
+          ) : null}
           <Button onClick={submit} disabled={submitting} className="w-full">
             تأكيد البيع
           </Button>
@@ -547,7 +648,9 @@ export function AgentCommissionsScreen() {
               <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
                 <div>
                   <span className="font-semibold">{formatMoney(c.commission_amount)}</span>
-                  <span className="mr-2 text-slate-400">من {formatMoney(c.sale_price)} ({c.commission_rate}%)</span>
+                  <span className="mr-2 text-slate-400">
+                    من {formatMoney(c.sale_price)} ({c.commission_type === "flat" ? formatMoney(c.commission_rate) : `${c.commission_rate}%`})
+                  </span>
                 </div>
                 {c.is_paid ? (
                   <Badge className="border-0 bg-emerald-100 text-emerald-700">مدفوعة</Badge>
@@ -575,11 +678,14 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
     password: "",
     business_name: "",
     owner_name: "",
+    city: "",
+    region: "",
     phone: "",
     location: "",
-    sim_price: "0",
-    commission_rate: "0",
+    latitude: "",
+    longitude: "",
   });
+  const [placePhoto, setPlacePhoto] = useState<File | null>(null);
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
   const submit = async () => {
@@ -590,16 +696,20 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
       setSubmitting(false);
       return;
     }
-    const payload: Record<string, unknown> = {
-      email: form.email.trim(),
-      password: form.password,
-      business_name: form.business_name.trim(),
-      sim_price: Number(form.sim_price || 0),
-      commission_rate: Number(form.commission_rate || 0),
-    };
-    if (form.owner_name.trim()) payload.owner_name = form.owner_name.trim();
-    if (form.phone.trim()) payload.phone = form.phone.trim();
-    if (form.location.trim()) payload.location = form.location.trim();
+    const payload = new FormData();
+    payload.set("email", form.email.trim());
+    payload.set("password", form.password);
+    payload.set("business_name", form.business_name.trim());
+    payload.set("sim_price", "0");
+    payload.set("commission_rate", "0");
+    if (form.owner_name.trim()) payload.set("owner_name", form.owner_name.trim());
+    if (form.city.trim()) payload.set("city", form.city.trim());
+    if (form.region.trim()) payload.set("region", form.region.trim());
+    if (form.phone.trim()) payload.set("phone", form.phone.trim());
+    if (form.location.trim()) payload.set("location", form.location.trim());
+    if (form.latitude.trim()) payload.set("latitude", form.latitude.trim());
+    if (form.longitude.trim()) payload.set("longitude", form.longitude.trim());
+    if (placePhoto) payload.set("place_photo", placePhoto);
     const result = await createMerchant(payload);
     setSubmitting(false);
     if (result.error) {
@@ -607,7 +717,8 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
       return;
     }
     setOpen(false);
-    setForm({ email: "", password: "", business_name: "", owner_name: "", phone: "", location: "", sim_price: "0", commission_rate: "0" });
+    setForm({ email: "", password: "", business_name: "", owner_name: "", city: "", region: "", phone: "", location: "", latitude: "", longitude: "" });
+    setPlacePhoto(null);
     onCreated();
   };
 
@@ -617,7 +728,7 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
         <Plus className="ml-2 h-4 w-4" />
         تاجر جديد
       </DialogTrigger>
-      <DialogContent dir="rtl" className="max-w-lg">
+      <DialogContent dir="rtl" className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>إضافة تاجر (محل صغير)</DialogTitle>
         </DialogHeader>
@@ -639,23 +750,46 @@ function CreateMerchantDialog({ onCreated }: { onCreated: () => void }) {
             <Input value={form.owner_name} onChange={(e) => set("owner_name", e.target.value)} />
           </div>
           <div className="space-y-2">
+            <Label>المدينة</Label>
+            <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>المنطقة</Label>
+            <Input value={form.region} onChange={(e) => set("region", e.target.value)} />
+          </div>
+          <div className="space-y-2">
             <Label>الجوال</Label>
             <Input dir="ltr" value={form.phone} onChange={(e) => set("phone", e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>الموقع</Label>
+            <Label>الموقع على الخريطة</Label>
             <Input value={form.location} onChange={(e) => set("location", e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>سعر الشريحة (يدفعه لك)</Label>
-            <Input type="number" value={form.sim_price} onChange={(e) => set("sim_price", e.target.value)} />
+            <Label>خط العرض</Label>
+            <Input dir="ltr" type="number" value={form.latitude} onChange={(e) => set("latitude", e.target.value)} />
           </div>
           <div className="space-y-2">
-            <Label>نسبة عمولته %</Label>
-            <Input type="number" value={form.commission_rate} onChange={(e) => set("commission_rate", e.target.value)} />
+            <Label>خط الطول</Label>
+            <Input dir="ltr" type="number" value={form.longitude} onChange={(e) => set("longitude", e.target.value)} />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label>صورة المكان</Label>
+            <label className="flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+              <span>{placePhoto ? placePhoto.name : "ارفع صورة واجهة المحل أو المكان"}</span>
+              <Upload className="h-4 w-4" />
+              <Input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => setPlacePhoto(e.target.files?.[0] ?? null)}
+              />
+            </label>
           </div>
         </div>
-        <p className="text-xs text-slate-400">سيُنشأ حساب دخول للتاجر بدور merchant تلقائيًا.</p>
+        <p className="text-xs text-slate-400">
+          سيُنشأ حساب دخول للتاجر بدور merchant تلقائيًا. أسعار الباقات وعمولات التاجر تدار من حساب مدير المناديب.
+        </p>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={() => setOpen(false)}>
@@ -681,31 +815,64 @@ function AssignToMerchantDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [merchantId, setMerchantId] = useState("");
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [quantity, setQuantity] = useState("");
+  const [provider, setProvider] = useState("virgin");
+  const [simType, setSimType] = useState("");
+  const [preview, setPreview] = useState<SimUnit[]>([]);
 
-  const toggle = (id: string) => setSelected((prev) => ({ ...prev, [id]: !prev[id] }));
-  const selectedIds = Object.keys(selected).filter((id) => selected[id]);
   const selectedMerchantName = merchants.find((merchant) => merchant.id === merchantId)?.business_name || "";
+
+  const loadPreview = async () => {
+    setPreviewing(true);
+    setError(null);
+    setPreview([]);
+    if (!merchantId || Number(quantity || 0) <= 0) {
+      setError("اختر تاجرا وأدخل الكمية.");
+      setPreviewing(false);
+      return;
+    }
+    const result = await previewSimsForMerchant({
+      merchant_id: merchantId,
+      quantity: Number(quantity || 0),
+      provider,
+      sim_type: simType.trim() || undefined,
+    });
+    setPreviewing(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setPreview(rows(result.data?.sims));
+  };
 
   const submit = async () => {
     setSubmitting(true);
     setError(null);
-    if (!merchantId || selectedIds.length === 0) {
-      setError("اختر تاجرًا وشريحة واحدة على الأقل.");
+    if (!merchantId || Number(quantity || 0) <= 0) {
+      setError("اختر تاجرا وأدخل الكمية.");
       setSubmitting(false);
       return;
     }
-    const result = await assignSimsToMerchant({ merchant_id: merchantId, sim_ids: selectedIds });
+    const result = await assignSimsToMerchant({
+      merchant_id: merchantId,
+      quantity: Number(quantity || 0),
+      provider,
+      sim_type: simType.trim() || undefined,
+    });
     setSubmitting(false);
     if (result.error) {
       setError(result.error.message);
       return;
     }
     setOpen(false);
-    setSelected({});
     setMerchantId("");
+    setQuantity("");
+    setProvider("virgin");
+    setSimType("");
+    setPreview([]);
     onDone();
   };
 
@@ -722,7 +889,13 @@ function AssignToMerchantDialog({
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>التاجر</Label>
-            <Select value={merchantId} onValueChange={(v) => setMerchantId(v ?? "")}>
+            <Select
+              value={merchantId}
+              onValueChange={(v) => {
+                setMerchantId(v ?? "");
+                setPreview([]);
+              }}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="اختر التاجر">{selectedMerchantName || undefined}</SelectValue>
               </SelectTrigger>
@@ -737,22 +910,67 @@ function AssignToMerchantDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
-            {stockSims.length === 0 ? (
-              <p className="p-2 text-sm text-slate-400">لا توجد شرائح في يدك.</p>
-            ) : (
-              stockSims.map((sim) => (
-                <label key={sim.id} className="flex items-center gap-2 rounded-md p-2 text-sm hover:bg-slate-50">
-                  <input type="checkbox" checked={!!selected[sim.id]} onChange={() => toggle(sim.id)} />
-                  <span dir="ltr" className="flex-1">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label>الكمية</Label>
+              <Input
+                type="number"
+                value={quantity}
+                onChange={(e) => {
+                  setQuantity(e.target.value);
+                  setPreview([]);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>المزود</Label>
+              <Select
+                value={provider}
+                onValueChange={(v) => {
+                  setProvider(v ?? "virgin");
+                  setPreview([]);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="virgin">Virgin</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>النوع (اختياري)</Label>
+              <Input
+                value={simType}
+                onChange={(e) => {
+                  setSimType(e.target.value);
+                  setPreview([]);
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+            <span className="text-slate-500">المتاح في يدك حاليا: {stockSims.length} شريحة</span>
+            <Button variant="outline" size="sm" onClick={loadPreview} disabled={previewing}>
+              <Eye className="ml-2 h-4 w-4" />
+              معاينة
+            </Button>
+          </div>
+          {preview.length > 0 ? (
+            <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
+              {preview.map((sim) => (
+                <div key={sim.id} className="flex items-center justify-between rounded-md p-2 text-sm">
+                  <span dir="ltr" className="font-medium">
                     {sim.iccid}
                   </span>
-                  <span className="text-slate-400">{sim.sim_type}</span>
-                </label>
-              ))
-            )}
-          </div>
-          <p className="text-sm text-slate-500">تم اختيار {selectedIds.length} شريحة.</p>
+                  <span className="text-slate-400">
+                    {sim.provider || "virgin"} · {sim.sim_type}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpen(false)}>
@@ -850,6 +1068,7 @@ export function AgentMerchantsScreen() {
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [stockSims, setStockSims] = useState<SimUnit[]>([]);
   const [requests, setRequests] = useState<MerchantSimRequest[]>([]);
+  const [collections, setCollections] = useState<MerchantCashCollection[]>([]);
   const [ranking, setRanking] = useState<ResellerRanking[]>([]);
   const [message, setMessage] = useState<Message>(null);
 
@@ -859,12 +1078,15 @@ export function AgentMerchantsScreen() {
       getSimUnits({ status: "with_agent" }),
       getMerchantRequests({ status: "pending" }),
       getResellerRanking(),
-    ]).then(([merchantResult, simResult, requestResult, rankingResult]) => {
+    ]).then(async ([merchantResult, simResult, requestResult, rankingResult]) => {
       if (merchantResult.error) setMessage({ tone: "error", text: merchantResult.error.message });
-      setMerchants(rows(merchantResult.data));
+      const merchantRows = rows(merchantResult.data);
+      setMerchants(merchantRows);
       setStockSims(rows(simResult.data));
       setRequests(rows(requestResult.data));
       setRanking(rows(rankingResult.data));
+      const collectionResults = await Promise.all(merchantRows.map((merchant) => getMerchantCollections(merchant.id)));
+      setCollections(collectionResults.flatMap((result) => rows(result.data)));
     });
   }, []);
 
@@ -878,7 +1100,20 @@ export function AgentMerchantsScreen() {
     else load();
   };
 
+  const updatePayment = async (id: string, status: "confirmed" | "rejected") => {
+    const result = await confirmMerchantPayment(id, {
+      status,
+      rejection_reason: status === "rejected" ? "رفض من المندوب" : undefined,
+    });
+    if (result.error) setMessage({ tone: "error", text: result.error.message });
+    else load();
+  };
+
   const merchantName = (id: string) => merchants.find((m) => m.id === id)?.business_name || "تاجر";
+  const pendingCollections = useMemo(
+    () => collections.filter((collection) => collection.status === "pending"),
+    [collections]
+  );
 
   return (
     <AgentShell title="التجار" subtitle="محلاتك الصغيرة: إنشاء، تسليم شرائح، وتحصيل.">
@@ -891,6 +1126,51 @@ export function AgentMerchantsScreen() {
           تحديث
         </Button>
       </div>
+
+      {pendingCollections.length > 0 ? (
+        <Card className="border border-blue-200 bg-blue-50/40 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CreditCard className="h-4 w-4" />
+              مدفوعات التجار قيد التأكيد
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pendingCollections.map((collection) => {
+              const canConfirmHere = collection.payment_method === "cash";
+              return (
+                <div key={collection.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium">
+                      {merchantName(collection.merchant_id)} · {formatMoney(collection.amount)}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {paymentMethodLabels[collection.payment_method] || collection.payment_method} · {paymentStatusLabels[collection.status]}
+                    </p>
+                    {collection.payment_proof_url ? (
+                      <a href={collection.payment_proof_url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-brand">
+                        <ReceiptText className="h-3 w-3" />
+                        عرض صورة الدفع
+                      </a>
+                    ) : null}
+                    {!canConfirmHere ? <p className="mt-1 text-xs text-blue-700">تأكيد هذا الدفع من مدير المناديب.</p> : null}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => updatePayment(collection.id, "confirmed")} disabled={!canConfirmHere}>
+                      <Check className="ml-1 h-4 w-4" />
+                      تأكيد
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={() => updatePayment(collection.id, "rejected")} disabled={!canConfirmHere}>
+                      <X className="ml-1 h-4 w-4" />
+                      رفض
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {requests.length > 0 ? (
         <Card className="border border-amber-200 bg-amber-50/40 shadow-sm">
@@ -931,12 +1211,30 @@ export function AgentMerchantsScreen() {
             <p className="text-sm text-slate-400">لا يوجد تجار بعد.</p>
           ) : (
             merchants.map((m) => (
-              <div key={m.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
-                <div>
-                  <span className="font-medium">{m.business_name}</span>
-                  <span className="mr-2 text-slate-400">
-                    سعر {formatMoney(m.sim_price)} · عمولة {m.commission_rate}%
-                  </span>
+              <div key={m.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-3">
+                  {m.place_photo_url ? (
+                    <div
+                      className="h-14 w-14 rounded-lg bg-cover bg-center"
+                      style={{ backgroundImage: `url(${m.place_photo_url})` }}
+                    />
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+                      <Store className="h-5 w-5" />
+                    </div>
+                  )}
+                  <div>
+                    <span className="font-medium">{m.business_name}</span>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {m.owner_name || "بدون مالك"} · {m.city || "-"} · {m.region || "-"}
+                    </p>
+                    {m.location ? (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+                        <MapPin className="h-3 w-3" />
+                        {m.location}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {m.status === "active" ? (

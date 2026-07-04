@@ -1,4 +1,4 @@
-import type { AgentStatus, PaymentMethod, SimRequestStatus } from "@/types/field-agents";
+import type { AgentStatus, PaymentMethod, PaymentStatus, SimRequestStatus } from "@/types/field-agents";
 
 export interface Merchant {
   id: string;
@@ -9,6 +9,11 @@ export interface Merchant {
   owner_name: string | null;
   phone: string | null;
   location: string | null;
+  city: string | null;
+  region: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  place_photo_url: string | null;
   sim_price: number;
   commission_rate: number;
   status: AgentStatus;
@@ -40,6 +45,15 @@ export interface MerchantCashCollection {
   agent_id: string;
   amount: number;
   payment_method: PaymentMethod;
+  status: PaymentStatus;
+  payment_proof_url: string | null;
+  submitted_by: string | null;
+  submitted_at: string;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  rejected_by: string | null;
+  rejected_at: string | null;
+  rejection_reason: string | null;
   collected_by: string;
   collection_date: string;
   notes: string | null;
@@ -53,7 +67,9 @@ export interface MerchantCommission {
   merchant_id: string;
   agent_id: string;
   sim_unit_id: string;
+  sim_package_id: string | null;
   sale_price: number;
+  commission_type: "percentage" | "flat";
   commission_rate: number;
   commission_amount: number;
   is_paid: boolean;
@@ -66,8 +82,9 @@ export interface MerchantCommission {
 // Derived shapes
 
 export interface MerchantBalance {
-  total_owed: number; // merchant.sim_price × sold SIMs
-  total_collected: number; // cash paid to the agent
+  total_owed: number; // package sale prices for sold SIMs
+  total_collected: number; // confirmed payments to the agent
+  pending_payments: number;
   outstanding: number; // total_owed - total_collected
 }
 
