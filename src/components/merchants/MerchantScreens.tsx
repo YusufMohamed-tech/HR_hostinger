@@ -430,17 +430,13 @@ export function MerchantSellScreen() {
         </div>
 
         <div className="space-y-4 p-4">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-medium text-slate-700">مكالمات وبيانات</span>
-            <span className="rounded-lg border border-slate-200 bg-white px-3 py-2 font-medium text-slate-700">لا محدود</span>
-            <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 font-medium text-emerald-700">خصومات</span>
+          <div className="flex items-center justify-between gap-2 text-sm">
+            <p className="font-semibold text-slate-700">{activePackages.length} باقة</p>
             <Button variant="outline" size="sm" onClick={load}>
               <RefreshCcw className="ml-2 h-4 w-4" />
               تحديث
             </Button>
           </div>
-
-          <p className="text-sm font-semibold text-slate-700">{activePackages.length} باقة</p>
 
           {activePackages.length === 0 ? (
             <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">لا توجد باقات فعالة.</p>
