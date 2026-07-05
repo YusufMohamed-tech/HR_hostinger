@@ -6,19 +6,32 @@ import {
   Banknote,
   MapPin,
   Phone,
+  Plus,
   RefreshCcw,
   Search,
   Smartphone,
   Store,
   TrendingUp,
   UserRound,
+  Upload,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { LocationMapPicker } from "@/components/locations/LocationMapPicker";
 import { getFieldAgents, getSimUnits } from "@/lib/services/field-agents";
 import {
+  createMerchant,
   getMerchantCollections,
   getMerchantCommissions,
   getMerchants,
@@ -90,6 +103,201 @@ const paymentStatusLabels: Record<string, string> = {
   confirmed: "مؤكد",
   rejected: "مرفوض",
 };
+
+function CreateTraderDialog({ agents, onDone }: { agents: FieldAgent[]; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [radiusMeters, setRadiusMeters] = useState("100");
+  const [placePhoto, setPlacePhoto] = useState<File | null>(null);
+  const [form, setForm] = useState({
+    agent_id: "",
+    email: "",
+    password: "",
+    business_name: "",
+    owner_name: "",
+    city: "",
+    region: "",
+    phone: "",
+    location: "",
+    latitude: "",
+    longitude: "",
+  });
+
+  const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+  const setMapCoordinates = useCallback((latitude: string, longitude: string) => {
+    setForm((prev) => ({ ...prev, latitude, longitude }));
+  }, []);
+  const selectedAgentName = agents.find((agent) => agent.id === form.agent_id)?.full_name || "";
+
+  const reset = () => {
+    setForm({
+      agent_id: "",
+      email: "",
+      password: "",
+      business_name: "",
+      owner_name: "",
+      city: "",
+      region: "",
+      phone: "",
+      location: "",
+      latitude: "",
+      longitude: "",
+    });
+    setRadiusMeters("100");
+    setPlacePhoto(null);
+  };
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    if (!form.agent_id) {
+      setError("اختر المندوب المسؤول عن التاجر.");
+      setSubmitting(false);
+      return;
+    }
+    if (form.password.length < 8) {
+      setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل.");
+      setSubmitting(false);
+      return;
+    }
+
+    const payload = new FormData();
+    payload.set("agent_id", form.agent_id);
+    payload.set("email", form.email.trim());
+    payload.set("password", form.password);
+    payload.set("business_name", form.business_name.trim());
+    payload.set("sim_price", "0");
+    payload.set("commission_rate", "0");
+    if (form.owner_name.trim()) payload.set("owner_name", form.owner_name.trim());
+    if (form.city.trim()) payload.set("city", form.city.trim());
+    if (form.region.trim()) payload.set("region", form.region.trim());
+    if (form.phone.trim()) payload.set("phone", form.phone.trim());
+    if (form.location.trim()) payload.set("location", form.location.trim());
+    if (form.latitude.trim()) payload.set("latitude", form.latitude.trim());
+    if (form.longitude.trim()) payload.set("longitude", form.longitude.trim());
+    if (placePhoto) payload.set("place_photo", placePhoto);
+
+    const result = await createMerchant(payload);
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setOpen(false);
+    reset();
+    onDone();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button />}>
+        <Plus className="ml-2 h-4 w-4" />
+        تاجر جديد
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>إضافة تاجر</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2 md:col-span-2">
+            <Label>المندوب المسؤول</Label>
+            <Select value={form.agent_id} onValueChange={(value) => set("agent_id", value ?? "")}>
+              <SelectTrigger>
+                <SelectValue placeholder="اختر المندوب">{selectedAgentName || undefined}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {agents.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    {agent.full_name} · {agent.region || "بدون منطقة"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>البريد الإلكتروني</Label>
+            <Input dir="ltr" type="email" value={form.email} onChange={(event) => set("email", event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>كلمة المرور</Label>
+            <Input dir="ltr" type="text" value={form.password} onChange={(event) => set("password", event.target.value)} placeholder="8 أحرف على الأقل" />
+          </div>
+          <div className="space-y-2">
+            <Label>اسم التاجر</Label>
+            <Input value={form.business_name} onChange={(event) => set("business_name", event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>اسم المالك</Label>
+            <Input value={form.owner_name} onChange={(event) => set("owner_name", event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>المدينة</Label>
+            <Input value={form.city} onChange={(event) => set("city", event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>المنطقة</Label>
+            <Input value={form.region} onChange={(event) => set("region", event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>رقم الجوال</Label>
+            <Input dir="ltr" value={form.phone} onChange={(event) => set("phone", event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>العنوان / وصف الموقع</Label>
+            <Input value={form.location} onChange={(event) => set("location", event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>خط العرض</Label>
+            <Input dir="ltr" type="number" value={form.latitude} onChange={(event) => set("latitude", event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>خط الطول</Label>
+            <Input dir="ltr" type="number" value={form.longitude} onChange={(event) => set("longitude", event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>النطاق (متر)</Label>
+            <Input dir="ltr" type="number" min="10" value={radiusMeters} onChange={(event) => setRadiusMeters(event.target.value)} />
+          </div>
+          <div className="space-y-3 md:col-span-2">
+            <Label className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-emerald-600" />
+              حدد موقع التاجر على الخريطة
+            </Label>
+            <LocationMapPicker
+              latitude={form.latitude}
+              longitude={form.longitude}
+              radiusMeters={radiusMeters}
+              onChange={setMapCoordinates}
+            />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label>صورة المكان</Label>
+            <label className="flex cursor-pointer items-center justify-between rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+              <span>{placePhoto ? placePhoto.name : "ارفع صورة واجهة المحل أو المكان"}</span>
+              <Upload className="h-4 w-4" />
+              <Input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(event) => setPlacePhoto(event.target.files?.[0] ?? null)}
+              />
+            </label>
+          </div>
+        </div>
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            إلغاء
+          </Button>
+          <Button onClick={submit} disabled={submitting || agents.length === 0}>
+            حفظ
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export function TraderManagementScreen() {
   const [merchants, setMerchants] = useState<Merchant[]>([]);
@@ -204,10 +412,13 @@ export function TraderManagementScreen() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-950">التجار</h1>
           <p className="mt-1 text-sm text-slate-500">كل التجار المرتبطين بمناديب الميدان، مع المبيعات والرصيد والمدفوعات.</p>
         </div>
-        <Button variant="outline" onClick={load}>
-          <RefreshCcw className="ml-2 h-4 w-4" />
-          تحديث
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <CreateTraderDialog agents={agents} onDone={load} />
+          <Button variant="outline" onClick={load}>
+            <RefreshCcw className="ml-2 h-4 w-4" />
+            تحديث
+          </Button>
+        </div>
       </div>
 
       <MessageBanner message={message} />
