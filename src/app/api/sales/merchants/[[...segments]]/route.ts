@@ -178,6 +178,17 @@ async function resolveAgentId(auth: AuthContext): Promise<string | null> {
   return asString(row(result.data).id) || null;
 }
 
+async function resolveManagedAgentId(auth: AuthContext, agentId: string): Promise<string | null> {
+  const result = await database(auth.admin)
+    .from("field_agents")
+    .select("id")
+    .eq("organization_id", auth.orgId)
+    .eq("id", agentId)
+    .maybeSingle();
+  if (result.error || !result.data) return null;
+  return asString(row(result.data).id) || null;
+}
+
 async function resolveMerchantId(auth: AuthContext): Promise<string | null> {
   const result = await database(auth.admin)
     .from("merchants")
@@ -344,10 +355,11 @@ async function handleMerchants(request: NextRequest, auth: AuthContext, segments
       if (!parsed.success) return message(parseError(parsed.error), 400);
 
       let agentId: string | null = null;
-      if (auth.isAgent) {
+      if (auth.isManager) {
+        const requestedAgentId = asString((body as Record<string, unknown>).agent_id);
+        agentId = requestedAgentId ? await resolveManagedAgentId(auth, requestedAgentId) : null;
+      } else if (auth.isAgent) {
         agentId = await resolveAgentId(auth);
-      } else {
-        agentId = asString((body as Record<string, unknown>).agent_id) || null;
       }
       if (!agentId) return message("A valid owning agent is required.", 400);
 
