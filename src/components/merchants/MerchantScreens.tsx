@@ -363,6 +363,10 @@ export function MerchantSellScreen() {
     setSubmitting(true);
     setMessage(null);
     setSaleError("");
+    const normalizedActivation = Object.fromEntries(
+      Object.entries(activationForm).map(([key, value]) => [key, value.trim()])
+    ) as ReturnType<typeof emptySaleActivationForm>;
+
     if (!simId) {
       setSaleError("اختر شريحة.");
       setSubmitting(false);
@@ -387,21 +391,30 @@ export function MerchantSellScreen() {
       ["national_address", "العنوان الوطني"],
       ["supervisor_name", "المشرف"],
     ];
-    const missing = requiredFields.find(([key]) => !activationForm[key].trim());
+    const missing = requiredFields.find(([key]) => !normalizedActivation[key]);
     if (missing) {
       setSaleError(`أكمل حقل ${missing[1]}.`);
       setSubmitting(false);
       return;
     }
+
+    const email = normalizedActivation.customer_email.toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setSaleError("الإيميل غير صحيح. اكتب بريدًا مثل name@example.com");
+      setSubmitting(false);
+      return;
+    }
+
     const result = await merchantRecordSale({
       sim_unit_id: simId,
       package_id: packageId,
-      ...activationForm,
-      marketer_name: activationForm.marketer_name.trim() || undefined,
+      ...normalizedActivation,
+      customer_email: email,
+      marketer_name: normalizedActivation.marketer_name || undefined,
     });
     setSubmitting(false);
     if (result.error) {
-      setMessage({ tone: "error", text: result.error.message });
+      setSaleError(result.error.message);
       return;
     }
     setMessage({ tone: "success", text: "تم تسجيل البيع بنجاح." });
@@ -651,7 +664,7 @@ export function MerchantSellScreen() {
               إلغاء
             </Button>
             <Button onClick={submit} disabled={submitting || !selectedPackage || !selectedSim}>
-              تأكيد البيع
+              {submitting ? "جاري التسجيل..." : "تأكيد البيع"}
             </Button>
           </div>
         </DialogContent>
