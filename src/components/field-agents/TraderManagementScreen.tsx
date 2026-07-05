@@ -5,6 +5,7 @@ import {
   BadgePercent,
   Banknote,
   CreditCard,
+  Eye,
   MapPin,
   Phone,
   Plus,
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -309,6 +310,7 @@ export function TraderManagementScreen() {
   const [commissions, setCommissions] = useState<MerchantCommission[]>([]);
   const [ranking, setRanking] = useState<ResellerRanking[]>([]);
   const [search, setSearch] = useState("");
+  const [selectedTrader, setSelectedTrader] = useState<TraderRow | null>(null);
   const [message, setMessage] = useState<Message>(null);
 
   const load = useCallback(() => {
@@ -459,22 +461,22 @@ export function TraderManagementScreen() {
         ) : (
           filtered.map((row) => (
             <Card key={row.merchant.id} className="border border-slate-200 shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="flex gap-3">
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
                     {row.merchant.place_photo_url ? (
                       <div
-                        className="h-16 w-16 shrink-0 rounded-lg bg-cover bg-center"
+                        className="h-14 w-14 shrink-0 rounded-xl bg-cover bg-center"
                         style={{ backgroundImage: `url(${row.merchant.place_photo_url})` }}
                       />
                     ) : (
-                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                         <Store className="h-6 w-6" />
                       </div>
                     )}
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <CardTitle className="text-base">{row.merchant.business_name}</CardTitle>
+                        <p className="truncate text-base font-semibold text-slate-950">{row.merchant.business_name}</p>
                         {row.merchant.status === "active" ? (
                           <Badge className="border-0 bg-emerald-100 text-emerald-700">نشط</Badge>
                         ) : (
@@ -492,83 +494,21 @@ export function TraderManagementScreen() {
                         </span>
                         <span className="inline-flex items-center gap-1">
                           <MapPin className="h-3.5 w-3.5" />
-                          {[row.merchant.city, row.merchant.region, row.merchant.location].filter(Boolean).join(" · ") || "-"}
+                          <span className="max-w-[520px] truncate">
+                            {[row.merchant.city, row.merchant.region, row.merchant.location].filter(Boolean).join(" · ") || "-"}
+                          </span>
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                    المندوب المسؤول: <span className="font-semibold text-slate-950">{row.agentName}</span>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <p className="flex items-center gap-2 text-xs text-slate-500">
-                      <Smartphone className="h-4 w-4" />
-                      المسلّم / الموجود
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-slate-950">{row.deliveredTotal} / {row.inHand}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <p className="flex items-center gap-2 text-xs text-slate-500">
-                      <Smartphone className="h-4 w-4" />
-                      المباع
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-slate-950">{row.soldTotal} شريحة</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <p className="flex items-center gap-2 text-xs text-slate-500">
-                      <TrendingUp className="h-4 w-4" />
-                      قيمة المبيعات
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-slate-950">{formatMoney(row.soldValue)}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <p className="flex items-center gap-2 text-xs text-slate-500">
-                      <Banknote className="h-4 w-4" />
-                      المدفوع / المتبقي
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-slate-950">{formatMoney(row.confirmedPayments)} / {formatMoney(row.outstanding)}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <p className="flex items-center gap-2 text-xs text-slate-500">
-                      <CreditCard className="h-4 w-4" />
-                      قيد التأكيد
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-blue-700">{formatMoney(row.pendingPayments)}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 p-3">
-                    <p className="flex items-center gap-2 text-xs text-slate-500">
-                      <BadgePercent className="h-4 w-4" />
-                      عمولات غير مدفوعة
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-amber-600">{formatMoney(row.unpaidCommission)}</p>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="rounded-lg border border-slate-200 p-3 text-sm">
-                    <p className="font-semibold text-slate-950">آخر دفع</p>
-                    {row.lastPayment ? (
-                      <p className="mt-1 text-slate-500">
-                        {formatMoney(row.lastPayment.amount)} · {paymentMethodLabels[row.lastPayment.payment_method] || row.lastPayment.payment_method} ·{" "}
-                        {paymentStatusLabels[row.lastPayment.status] || row.lastPayment.status}
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-slate-400">لا يوجد دفع بعد.</p>
-                    )}
-                  </div>
-                  <div className="rounded-lg border border-slate-200 p-3 text-sm">
-                    <p className="font-semibold text-slate-950">إحداثيات الخريطة</p>
-                    {row.merchant.latitude != null && row.merchant.longitude != null ? (
-                      <p className="mt-1 text-slate-500" dir="ltr">
-                        {row.merchant.latitude}, {row.merchant.longitude}
-                      </p>
-                    ) : (
-                      <p className="mt-1 text-slate-400">لم يتم تسجيل الإحداثيات.</p>
-                    )}
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      المندوب المسؤول: <span className="font-semibold text-slate-950">{row.agentName}</span>
+                    </div>
+                    <Button variant="outline" className="shrink-0" onClick={() => setSelectedTrader(row)}>
+                      <Eye className="ml-2 h-4 w-4" />
+                      عرض التفاصيل
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -576,6 +516,133 @@ export function TraderManagementScreen() {
           ))
         )}
       </div>
+
+      <Dialog open={Boolean(selectedTrader)} onOpenChange={(open) => !open && setSelectedTrader(null)}>
+        {selectedTrader ? (
+          <DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>تفاصيل التاجر</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  {selectedTrader.merchant.place_photo_url ? (
+                    <div
+                      className="h-16 w-16 shrink-0 rounded-xl bg-cover bg-center"
+                      style={{ backgroundImage: `url(${selectedTrader.merchant.place_photo_url})` }}
+                    />
+                  ) : (
+                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                      <Store className="h-6 w-6" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="truncate text-lg font-bold text-slate-950">{selectedTrader.merchant.business_name}</p>
+                      {selectedTrader.merchant.status === "active" ? (
+                        <Badge className="border-0 bg-emerald-100 text-emerald-700">نشط</Badge>
+                      ) : (
+                        <Badge className="border-0 bg-red-100 text-red-700">موقوف</Badge>
+                      )}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                      <span className="inline-flex items-center gap-1">
+                        <UserRound className="h-3.5 w-3.5" />
+                        {selectedTrader.merchant.owner_name || "بدون مالك"}
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <Phone className="h-3.5 w-3.5" />
+                        <span dir="ltr">{selectedTrader.merchant.phone || "-"}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5" />
+                        {[selectedTrader.merchant.city, selectedTrader.merchant.region, selectedTrader.merchant.location].filter(Boolean).join(" · ") || "-"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                  المندوب المسؤول: <span className="font-semibold text-slate-950">{selectedTrader.agentName}</span>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="flex items-center gap-2 text-xs text-slate-500">
+                    <Smartphone className="h-4 w-4" />
+                    المسلّم / الموجود
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-slate-950">
+                    {selectedTrader.deliveredTotal} / {selectedTrader.inHand}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="flex items-center gap-2 text-xs text-slate-500">
+                    <Smartphone className="h-4 w-4" />
+                    المباع
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-slate-950">{selectedTrader.soldTotal} شريحة</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="flex items-center gap-2 text-xs text-slate-500">
+                    <TrendingUp className="h-4 w-4" />
+                    قيمة المبيعات
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-slate-950">{formatMoney(selectedTrader.soldValue)}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="flex items-center gap-2 text-xs text-slate-500">
+                    <Banknote className="h-4 w-4" />
+                    المدفوع / المتبقي
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-slate-950">
+                    {formatMoney(selectedTrader.confirmedPayments)} / {formatMoney(selectedTrader.outstanding)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="flex items-center gap-2 text-xs text-slate-500">
+                    <CreditCard className="h-4 w-4" />
+                    قيد التأكيد
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-blue-700">{formatMoney(selectedTrader.pendingPayments)}</p>
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3">
+                  <p className="flex items-center gap-2 text-xs text-slate-500">
+                    <BadgePercent className="h-4 w-4" />
+                    عمولات غير مدفوعة
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-amber-600">{formatMoney(selectedTrader.unpaidCommission)}</p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <p className="font-semibold text-slate-950">آخر دفع</p>
+                  {selectedTrader.lastPayment ? (
+                    <p className="mt-1 text-slate-500">
+                      {formatMoney(selectedTrader.lastPayment.amount)} · {paymentMethodLabels[selectedTrader.lastPayment.payment_method] || selectedTrader.lastPayment.payment_method} ·{" "}
+                      {paymentStatusLabels[selectedTrader.lastPayment.status] || selectedTrader.lastPayment.status}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-slate-400">لا يوجد دفع بعد.</p>
+                  )}
+                </div>
+                <div className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <p className="font-semibold text-slate-950">إحداثيات الخريطة</p>
+                  {selectedTrader.merchant.latitude != null && selectedTrader.merchant.longitude != null ? (
+                    <p className="mt-1 text-slate-500" dir="ltr">
+                      {selectedTrader.merchant.latitude}, {selectedTrader.merchant.longitude}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-slate-400">لم يتم تسجيل الإحداثيات.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
   );
 }
