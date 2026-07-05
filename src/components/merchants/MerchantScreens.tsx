@@ -73,6 +73,24 @@ function discountLabel(pkg: SimPackage) {
   return `%${Math.round(((base - sale) / base) * 100)}`;
 }
 
+function emptySaleActivationForm(packageReference = "") {
+  return {
+    customer_name: "",
+    customer_national_id: "",
+    customer_absher_mobile: "",
+    customer_birth_date_hijri: "",
+    customer_id_expiry_hijri: "",
+    customer_email: "",
+    customer_nationality: "سعودي",
+    package_reference: packageReference,
+    device_serial: "",
+    city_district: "",
+    marketer_name: "",
+    national_address: "",
+    supervisor_name: "",
+  };
+}
+
 const paymentMethodLabels: Record<string, string> = {
   cash: "نقدي",
   bank_transfer: "تحويل بنكي",
@@ -276,8 +294,9 @@ export function MerchantSellScreen() {
   const [simId, setSimId] = useState("");
   const [packageId, setPackageId] = useState("");
   const [simSearch, setSimSearch] = useState("");
-  const [customer, setCustomer] = useState("");
+  const [activationForm, setActivationForm] = useState(() => emptySaleActivationForm());
   const [saleOpen, setSaleOpen] = useState(false);
+  const [saleError, setSaleError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState<Message>(null);
 
@@ -321,7 +340,8 @@ export function MerchantSellScreen() {
     setPackageId(pkg.id);
     setSimId("");
     setSimSearch("");
-    setCustomer("");
+    setSaleError("");
+    setActivationForm(emptySaleActivationForm(pkg.package_name));
     setMessage(null);
     setSaleOpen(true);
   };
@@ -332,25 +352,52 @@ export function MerchantSellScreen() {
     setPackageId("");
     setSimId("");
     setSimSearch("");
+    setSaleError("");
+    setActivationForm(emptySaleActivationForm());
+  };
+  const setActivation = (key: keyof ReturnType<typeof emptySaleActivationForm>, value: string) => {
+    setActivationForm((prev) => ({ ...prev, [key]: value }));
   };
 
   const submit = async () => {
     setSubmitting(true);
     setMessage(null);
+    setSaleError("");
     if (!simId) {
-      setMessage({ tone: "error", text: "اختر شريحة." });
+      setSaleError("اختر شريحة.");
       setSubmitting(false);
       return;
     }
     if (!packageId) {
-      setMessage({ tone: "error", text: "اختر الباقة." });
+      setSaleError("اختر الباقة.");
+      setSubmitting(false);
+      return;
+    }
+    const requiredFields: Array<[keyof ReturnType<typeof emptySaleActivationForm>, string]> = [
+      ["customer_name", "اسم العميل"],
+      ["customer_national_id", "هوية العميل"],
+      ["customer_absher_mobile", "جوال أبشر"],
+      ["customer_birth_date_hijri", "تاريخ الميلاد"],
+      ["customer_id_expiry_hijri", "تاريخ الانتهاء"],
+      ["customer_email", "الإيميل"],
+      ["customer_nationality", "الجنسية"],
+      ["package_reference", "الباقة"],
+      ["device_serial", "سيريال الجهاز"],
+      ["city_district", "المدينة / الحي"],
+      ["national_address", "العنوان الوطني"],
+      ["supervisor_name", "المشرف"],
+    ];
+    const missing = requiredFields.find(([key]) => !activationForm[key].trim());
+    if (missing) {
+      setSaleError(`أكمل حقل ${missing[1]}.`);
       setSubmitting(false);
       return;
     }
     const result = await merchantRecordSale({
       sim_unit_id: simId,
       package_id: packageId,
-      customer_name: customer.trim() || undefined,
+      ...activationForm,
+      marketer_name: activationForm.marketer_name.trim() || undefined,
     });
     setSubmitting(false);
     if (result.error) {
@@ -361,7 +408,7 @@ export function MerchantSellScreen() {
     setSimId("");
     setPackageId("");
     setSimSearch("");
-    setCustomer("");
+    setActivationForm(emptySaleActivationForm());
     setSaleOpen(false);
     load();
   };
@@ -532,9 +579,66 @@ export function MerchantSellScreen() {
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label>اسم العميل (اختياري)</Label>
-            <Input value={customer} onChange={(event) => setCustomer(event.target.value)} />
+          {selectedSim ? (
+            <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+              <p className="text-xs text-slate-500">سيريال الشريحة</p>
+              <p className="mt-1 font-bold text-slate-950" dir="ltr">{selectedSim.iccid}</p>
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>اسم العميل</Label>
+              <Input value={activationForm.customer_name} onChange={(event) => setActivation("customer_name", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>هوية العميل</Label>
+              <Input dir="ltr" value={activationForm.customer_national_id} onChange={(event) => setActivation("customer_national_id", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>جوال أبشر للعميل</Label>
+              <Input dir="ltr" value={activationForm.customer_absher_mobile} onChange={(event) => setActivation("customer_absher_mobile", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>تاريخ الميلاد</Label>
+              <Input dir="ltr" value={activationForm.customer_birth_date_hijri} onChange={(event) => setActivation("customer_birth_date_hijri", event.target.value)} placeholder="1423/3/28" />
+            </div>
+            <div className="space-y-2">
+              <Label>تاريخ الانتهاء</Label>
+              <Input dir="ltr" value={activationForm.customer_id_expiry_hijri} onChange={(event) => setActivation("customer_id_expiry_hijri", event.target.value)} placeholder="1448/3/21" />
+            </div>
+            <div className="space-y-2">
+              <Label>الإيميل</Label>
+              <Input dir="ltr" type="email" value={activationForm.customer_email} onChange={(event) => setActivation("customer_email", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>الجنسية</Label>
+              <Input value={activationForm.customer_nationality} onChange={(event) => setActivation("customer_nationality", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>الباقة</Label>
+              <Input dir="ltr" value={activationForm.package_reference} onChange={(event) => setActivation("package_reference", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>سيريال الجهاز</Label>
+              <Input dir="ltr" value={activationForm.device_serial} onChange={(event) => setActivation("device_serial", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>المدينة / الحي</Label>
+              <Input value={activationForm.city_district} onChange={(event) => setActivation("city_district", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>اسم المسوق (اختياري)</Label>
+              <Input value={activationForm.marketer_name} onChange={(event) => setActivation("marketer_name", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>العنوان الوطني</Label>
+              <Input dir="ltr" value={activationForm.national_address} onChange={(event) => setActivation("national_address", event.target.value)} />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>المشرف</Label>
+              <Input value={activationForm.supervisor_name} onChange={(event) => setActivation("supervisor_name", event.target.value)} />
+            </div>
           </div>
 
           {selectedPackage && selectedSim ? (
@@ -542,6 +646,7 @@ export function MerchantSellScreen() {
               سيتم بيع {formatSimLabel(selectedSim)} على باقة {selectedPackage.package_name} بسعر {formatMoney(selectedPackage.sale_price)}.
             </div>
           ) : null}
+          {saleError ? <p className="text-sm text-red-600">{saleError}</p> : null}
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={closeSale} disabled={submitting}>

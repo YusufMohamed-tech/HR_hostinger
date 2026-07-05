@@ -5,6 +5,7 @@ import type {
   MerchantDashboardData,
   MerchantSimRequest,
   ResellerRanking,
+  TraderSaleRecord,
 } from "@/types/merchants";
 import type { SimPackage, SimUnit } from "@/types/field-agents";
 
@@ -73,6 +74,10 @@ export const merchantRecordSale = (body: Record<string, unknown>) =>
   apiFetch<SimUnit>(`${BASE}/sims/sell`, jsonInit("POST", body));
 export const merchantReturnSim = (body: Record<string, unknown>) =>
   apiFetch<SimUnit>(`${BASE}/sims/return`, jsonInit("POST", body));
+
+// Trader sales
+export const getTraderSales = (p?: QueryParams) =>
+  apiFetch<TraderSaleRecord[]>(`${BASE}/sales` + qs(p));
 
 // Cash collections
 export const getMerchantCollections = (merchantId: string) =>

@@ -759,7 +759,19 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       agent_id: ownerAgentId,
       merchant_id: sellingMerchantId,
       sale_price: salePrice,
-      customer_name: parsed.data.customer_name ?? null,
+      customer_name: parsed.data.customer_name,
+      customer_national_id: parsed.data.customer_national_id,
+      customer_absher_mobile: parsed.data.customer_absher_mobile,
+      customer_birth_date_hijri: parsed.data.customer_birth_date_hijri,
+      customer_id_expiry_hijri: parsed.data.customer_id_expiry_hijri,
+      customer_email: parsed.data.customer_email,
+      customer_nationality: parsed.data.customer_nationality,
+      package_reference: parsed.data.package_reference,
+      device_serial: parsed.data.device_serial,
+      city_district: parsed.data.city_district,
+      marketer_name: parsed.data.marketer_name ?? null,
+      national_address: parsed.data.national_address,
+      supervisor_name: parsed.data.supervisor_name,
       agent_commission_type: agentCommissionType,
       agent_commission_value: agentCommissionValue,
       agent_commission_amount: agentCommission,
@@ -1071,6 +1083,86 @@ async function handleMerchantCommissions(request: NextRequest, auth: AuthContext
 }
 
 // ---------------------------------------------------------------------------
+// Trader sale activation records
+// ---------------------------------------------------------------------------
+async function handleMerchantSales(request: NextRequest, auth: AuthContext) {
+  if (request.method !== "GET") return message("Method not allowed", 405);
+  if (!auth.isManager) return message("Only on-ground managers can view trader sale details.", 403);
+
+  const db = database(auth.admin);
+  const result = await db
+    .from("sim_sales")
+    .select("*")
+    .eq("organization_id", auth.orgId)
+    .eq("seller_type", "merchant")
+    .order("sold_at", { ascending: false });
+  if (result.error) return message(result.error.message, 500);
+
+  const sales = rows(result.data);
+  const unique = (values: string[]) => Array.from(new Set(values.filter(Boolean)));
+  const merchantIds = unique(sales.map((sale) => asString(sale.merchant_id)));
+  const agentIds = unique(sales.map((sale) => asString(sale.agent_id)));
+  const simIds = unique(sales.map((sale) => asString(sale.sim_unit_id)));
+  const packageIds = unique(sales.map((sale) => asString(sale.package_id)));
+
+  const [merchantResult, agentResult, simResult, packageResult] = await Promise.all([
+    merchantIds.length
+      ? db.from("merchants").select("id, business_name, owner_name, phone").eq("organization_id", auth.orgId).in("id", merchantIds)
+      : Promise.resolve({ data: [], error: null }),
+    agentIds.length
+      ? db.from("field_agents").select("id, full_name, phone").eq("organization_id", auth.orgId).in("id", agentIds)
+      : Promise.resolve({ data: [], error: null }),
+    simIds.length
+      ? db.from("sim_units").select("id, iccid, provider, sim_type").eq("organization_id", auth.orgId).in("id", simIds)
+      : Promise.resolve({ data: [], error: null }),
+    packageIds.length
+      ? db.from("sim_packages").select("id, package_name, provider").eq("organization_id", auth.orgId).in("id", packageIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (merchantResult.error) return message(merchantResult.error.message, 500);
+  if (agentResult.error) return message(agentResult.error.message, 500);
+  if (simResult.error) return message(simResult.error.message, 500);
+  if (packageResult.error) return message(packageResult.error.message, 500);
+
+  const byId = (items: unknown[] | null | undefined) => {
+    const map = new Map<string, Record<string, unknown>>();
+    for (const item of rows(items)) {
+      const entry = row(item);
+      const id = asString(entry.id);
+      if (id) map.set(id, entry);
+    }
+    return map;
+  };
+  const merchants = byId(merchantResult.data as unknown[] | null | undefined);
+  const agents = byId(agentResult.data as unknown[] | null | undefined);
+  const sims = byId(simResult.data as unknown[] | null | undefined);
+  const packages = byId(packageResult.data as unknown[] | null | undefined);
+
+  return json(
+    sales.map((sale) => {
+      const merchant = merchants.get(asString(sale.merchant_id));
+      const agent = agents.get(asString(sale.agent_id));
+      const sim = sims.get(asString(sale.sim_unit_id));
+      const simPackage = packages.get(asString(sale.package_id));
+
+      return {
+        ...sale,
+        merchant_name: asString(merchant?.business_name),
+        merchant_owner_name: asString(merchant?.owner_name),
+        merchant_phone: asString(merchant?.phone),
+        agent_name: asString(agent?.full_name),
+        agent_phone: asString(agent?.phone),
+        sim_iccid: asString(sim?.iccid),
+        sim_provider: asString(sim?.provider),
+        sim_type: asString(sim?.sim_type),
+        package_name: asString(simPackage?.package_name),
+        package_provider: asString(simPackage?.provider),
+      };
+    })
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Merchant self dashboard
 // ---------------------------------------------------------------------------
 async function handleMerchantMe(request: NextRequest, auth: AuthContext, segments: string[]) {
@@ -1204,6 +1296,7 @@ async function dispatch(request: NextRequest, auth: AuthContext, context: RouteC
   if (resource === "payments") return handleMerchantPayments(request, auth, segments);
   if (resource === "requests") return handleMerchantRequests(request, auth, segments);
   if (resource === "commissions") return handleMerchantCommissions(request, auth, segments);
+  if (resource === "sales") return handleMerchantSales(request, auth);
   if (resource === "me") return handleMerchantMe(request, auth, segments);
   if (resource === "analytics") return handleMerchantAnalytics(request, auth, segments);
 
