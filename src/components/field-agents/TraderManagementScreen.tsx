@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BadgePercent,
   Banknote,
+  CreditCard,
   MapPin,
   Phone,
   Plus,
@@ -45,6 +46,7 @@ type Message = { tone: "success" | "error"; text: string } | null;
 type TraderRow = {
   merchant: Merchant;
   agentName: string;
+  deliveredTotal: number;
   inHand: number;
   soldTotal: number;
   soldValue: number;
@@ -345,7 +347,10 @@ export function TraderManagementScreen() {
     return merchants.map((merchant) => {
       const merchantCollections = collections.filter((item) => item.merchant_id === merchant.id);
       const merchantCommissions = commissions.filter((item) => item.merchant_id === merchant.id);
-      const soldSims = sims.filter((sim) => sim.sold_by_merchant_id === merchant.id && sim.status === "sold");
+      const simsForMerchant = sims.filter(
+        (sim) => sim.current_merchant_id === merchant.id || sim.sold_by_merchant_id === merchant.id
+      );
+      const soldSims = simsForMerchant.filter((sim) => sim.sold_by_merchant_id === merchant.id && sim.status === "sold");
       const rank = ranking.find((item) => item.merchant_id === merchant.id);
       const soldValue = rank?.sold_value ?? soldSims.reduce((sum, sim) => sum + Number(sim.sold_price || 0), 0);
       const confirmedPayments = merchantCollections
@@ -360,7 +365,8 @@ export function TraderManagementScreen() {
       return {
         merchant,
         agentName: agentName(merchant.agent_id),
-        inHand: sims.filter((sim) => sim.current_merchant_id === merchant.id && sim.status === "with_merchant").length,
+        deliveredTotal: simsForMerchant.length,
+        inHand: simsForMerchant.filter((sim) => sim.status === "with_merchant").length,
         soldTotal: rank?.sold_total ?? soldSims.length,
         soldValue,
         confirmedPayments,
@@ -396,6 +402,7 @@ export function TraderManagementScreen() {
     () => ({
       traders: traderRows.length,
       active: traderRows.filter((row) => row.merchant.status === "active").length,
+      delivered: traderRows.reduce((sum, row) => sum + row.deliveredTotal, 0),
       inHand: traderRows.reduce((sum, row) => sum + row.inHand, 0),
       sold: traderRows.reduce((sum, row) => sum + row.soldTotal, 0),
       soldValue: traderRows.reduce((sum, row) => sum + row.soldValue, 0),
@@ -425,7 +432,7 @@ export function TraderManagementScreen() {
 
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard label="عدد التجار" value={String(totals.traders)} hint={`${totals.active} نشط`} />
-        <StatCard label="شرائح مع التجار" value={String(totals.inHand)} />
+        <StatCard label="شرائح مسلّمة" value={String(totals.delivered)} hint={`${totals.inHand} مع التجار الآن`} />
         <StatCard label="المبيعات" value={String(totals.sold)} hint={formatMoney(totals.soldValue)} />
         <StatCard label="الرصيد المتبقي" value={formatMoney(totals.outstanding)} hint={`قيد التأكيد ${formatMoney(totals.pending)}`} />
       </div>
@@ -496,13 +503,20 @@ export function TraderManagementScreen() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                   <div className="rounded-lg border border-slate-200 p-3">
                     <p className="flex items-center gap-2 text-xs text-slate-500">
                       <Smartphone className="h-4 w-4" />
-                      الشرائح
+                      المسلّم / الموجود
                     </p>
-                    <p className="mt-1 text-lg font-bold text-slate-950">{row.inHand} معه · {row.soldTotal} مباعة</p>
+                    <p className="mt-1 text-lg font-bold text-slate-950">{row.deliveredTotal} / {row.inHand}</p>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="flex items-center gap-2 text-xs text-slate-500">
+                      <Smartphone className="h-4 w-4" />
+                      المباع
+                    </p>
+                    <p className="mt-1 text-lg font-bold text-slate-950">{row.soldTotal} شريحة</p>
                   </div>
                   <div className="rounded-lg border border-slate-200 p-3">
                     <p className="flex items-center gap-2 text-xs text-slate-500">
@@ -517,7 +531,13 @@ export function TraderManagementScreen() {
                       المدفوع / المتبقي
                     </p>
                     <p className="mt-1 text-lg font-bold text-slate-950">{formatMoney(row.confirmedPayments)} / {formatMoney(row.outstanding)}</p>
-                    {row.pendingPayments > 0 ? <p className="mt-1 text-xs text-blue-600">قيد التأكيد {formatMoney(row.pendingPayments)}</p> : null}
+                  </div>
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="flex items-center gap-2 text-xs text-slate-500">
+                      <CreditCard className="h-4 w-4" />
+                      قيد التأكيد
+                    </p>
+                    <p className="mt-1 text-lg font-bold text-blue-700">{formatMoney(row.pendingPayments)}</p>
                   </div>
                   <div className="rounded-lg border border-slate-200 p-3">
                     <p className="flex items-center gap-2 text-xs text-slate-500">
