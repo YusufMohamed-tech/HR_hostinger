@@ -79,6 +79,44 @@ export interface MerchantCommission {
   updated_at: string;
 }
 
+export interface TraderSaleRecord {
+  id: string;
+  organization_id: string;
+  sim_unit_id: string;
+  package_id: string;
+  seller_type: "agent" | "merchant";
+  agent_id: string;
+  merchant_id: string | null;
+  sale_price: number;
+  customer_name: string | null;
+  customer_national_id: string | null;
+  customer_absher_mobile: string | null;
+  customer_birth_date_hijri: string | null;
+  customer_id_expiry_hijri: string | null;
+  customer_email: string | null;
+  customer_nationality: string | null;
+  package_reference: string | null;
+  device_serial: string | null;
+  city_district: string | null;
+  marketer_name: string | null;
+  national_address: string | null;
+  supervisor_name: string | null;
+  agent_commission_amount: number;
+  merchant_commission_amount: number | null;
+  sold_at: string;
+  created_at: string;
+  merchant_name: string;
+  merchant_owner_name: string;
+  merchant_phone: string;
+  agent_name: string;
+  agent_phone: string;
+  sim_iccid: string;
+  sim_provider: string;
+  sim_type: string;
+  package_name: string;
+  package_provider: string;
+}
+
 // Derived shapes
 
 export interface MerchantBalance {

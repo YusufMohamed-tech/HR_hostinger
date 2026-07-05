@@ -155,6 +155,7 @@ export function SidebarContent() {
       { name: "المندوبون الميدانيون", href: "/sales/agents", icon: Users },
       { name: "مخزون الشرائح", href: "/sales/stock", icon: Boxes },
       { name: "التجار", href: "/sales/traders", icon: Store },
+      { name: "مبيعات التجار", href: "/sales/trader-sales", icon: Receipt },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 
