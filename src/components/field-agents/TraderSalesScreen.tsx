@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { BadgePercent, CreditCard, RefreshCcw, Search, Smartphone, Store, UserRound } from "lucide-react";
+import { BadgePercent, CreditCard, Eye, RefreshCcw, Search, Smartphone, Store, UserRound } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { getTraderSales } from "@/lib/services/merchants";
 import type { TraderSaleRecord } from "@/types/merchants";
@@ -49,6 +50,7 @@ function Detail({ label, value, dir }: { label: string; value: unknown; dir?: "r
 export function TraderSalesScreen() {
   const [sales, setSales] = useState<TraderSaleRecord[]>([]);
   const [search, setSearch] = useState("");
+  const [selectedSale, setSelectedSale] = useState<TraderSaleRecord | null>(null);
   const [message, setMessage] = useState<Message>(null);
 
   const load = useCallback(() => {
@@ -161,47 +163,81 @@ export function TraderSalesScreen() {
         ) : (
           filtered.map((sale) => (
             <Card key={sale.id} className="border border-slate-200 shadow-sm">
-              <CardHeader className="pb-3">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <CardTitle className="text-base">{sale.customer_name || "عميل بدون اسم"}</CardTitle>
-                      <Badge className="border-0 bg-emerald-100 text-emerald-700">{formatMoney(sale.sale_price)}</Badge>
+              <CardContent className="p-4">
+                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                  <div className="grid min-w-0 flex-1 gap-3 md:grid-cols-2 xl:grid-cols-[1.1fr_1fr_1fr_1.2fr_auto_auto] xl:items-center">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-950">{sale.customer_name || "عميل بدون اسم"}</p>
+                      <p className="mt-1 truncate text-xs text-slate-500" dir="ltr">{sale.customer_national_id || "-"}</p>
                     </div>
-                    <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                      <span className="inline-flex items-center gap-1"><Store className="h-3.5 w-3.5" />{sale.merchant_name || "-"}</span>
-                      <span className="inline-flex items-center gap-1"><UserRound className="h-3.5 w-3.5" />{sale.agent_name || "-"}</span>
-                      <span dir="ltr">{new Date(sale.sold_at).toLocaleString("ar-SA")}</span>
-                    </p>
+                    <div className="min-w-0 text-sm text-slate-600">
+                      <span className="inline-flex max-w-full items-center gap-1">
+                        <Store className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{sale.merchant_name || "-"}</span>
+                      </span>
+                    </div>
+                    <div className="min-w-0 text-sm text-slate-600">
+                      <span className="inline-flex max-w-full items-center gap-1">
+                        <UserRound className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{sale.agent_name || "-"}</span>
+                      </span>
+                    </div>
+                    <div className="min-w-0 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      <span className="truncate">{sale.package_name || sale.package_reference || "باقة"}</span>
+                      <span className="mx-2 text-slate-300">|</span>
+                      <span dir="ltr">{sale.sim_iccid || "-"}</span>
+                    </div>
+                    <Badge className="w-fit border-0 bg-emerald-100 text-emerald-700">{formatMoney(sale.sale_price)}</Badge>
+                    <p className="text-xs text-slate-500" dir="ltr">{new Date(sale.sold_at).toLocaleString("ar-SA")}</p>
                   </div>
-                  <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                    {sale.package_name || sale.package_reference || "باقة"} · <span dir="ltr">{sale.sim_iccid || "-"}</span>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 md:grid-cols-3">
-                  <Detail label="هوية العميل" value={sale.customer_national_id} dir="ltr" />
-                  <Detail label="جوال أبشر" value={sale.customer_absher_mobile} dir="ltr" />
-                  <Detail label="الإيميل" value={sale.customer_email} dir="ltr" />
-                  <Detail label="تاريخ الميلاد" value={sale.customer_birth_date_hijri} dir="ltr" />
-                  <Detail label="تاريخ انتهاء الهوية" value={sale.customer_id_expiry_hijri} dir="ltr" />
-                  <Detail label="الجنسية" value={sale.customer_nationality} />
-                  <Detail label="الباقة / المرجع" value={sale.package_reference || sale.package_name} />
-                  <Detail label="سيريال الشريحة" value={sale.sim_iccid} dir="ltr" />
-                  <Detail label="سيريال الجهاز" value={sale.device_serial} dir="ltr" />
-                  <Detail label="المدينة / الحي" value={sale.city_district} />
-                  <Detail label="العنوان الوطني" value={sale.national_address} dir="ltr" />
-                  <Detail label="المشرف" value={sale.supervisor_name} />
-                  <Detail label="اسم المسوق" value={sale.marketer_name} />
-                  <Detail label="عمولة التاجر" value={formatMoney(sale.merchant_commission_amount)} />
-                  <Detail label="عمولة المندوب" value={formatMoney(sale.agent_commission_amount)} />
+                  <Button variant="outline" className="shrink-0" onClick={() => setSelectedSale(sale)}>
+                    <Eye className="ml-2 h-4 w-4" />
+                    عرض التفاصيل
+                  </Button>
                 </div>
               </CardContent>
             </Card>
           ))
         )}
       </div>
+
+      <Dialog open={Boolean(selectedSale)} onOpenChange={(open) => !open && setSelectedSale(null)}>
+        {selectedSale ? (
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-4xl" dir="rtl">
+            <DialogHeader>
+              <DialogTitle>تفاصيل بيع {selectedSale.customer_name || "عميل بدون اسم"}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">{selectedSale.package_name || selectedSale.package_reference || "باقة"}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {selectedSale.merchant_name || "-"} · {selectedSale.agent_name || "-"}
+                  </p>
+                </div>
+                <Badge className="w-fit border-0 bg-emerald-100 text-emerald-700">{formatMoney(selectedSale.sale_price)}</Badge>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <Detail label="هوية العميل" value={selectedSale.customer_national_id} dir="ltr" />
+                <Detail label="جوال أبشر" value={selectedSale.customer_absher_mobile} dir="ltr" />
+                <Detail label="الإيميل" value={selectedSale.customer_email} dir="ltr" />
+                <Detail label="تاريخ الميلاد" value={selectedSale.customer_birth_date_hijri} dir="ltr" />
+                <Detail label="تاريخ انتهاء الهوية" value={selectedSale.customer_id_expiry_hijri} dir="ltr" />
+                <Detail label="الجنسية" value={selectedSale.customer_nationality} />
+                <Detail label="الباقة / المرجع" value={selectedSale.package_reference || selectedSale.package_name} />
+                <Detail label="سيريال الشريحة" value={selectedSale.sim_iccid} dir="ltr" />
+                <Detail label="سيريال الجهاز" value={selectedSale.device_serial} dir="ltr" />
+                <Detail label="المدينة / الحي" value={selectedSale.city_district} />
+                <Detail label="العنوان الوطني" value={selectedSale.national_address} dir="ltr" />
+                <Detail label="المشرف" value={selectedSale.supervisor_name} />
+                <Detail label="اسم المسوق" value={selectedSale.marketer_name} />
+                <Detail label="عمولة التاجر" value={formatMoney(selectedSale.merchant_commission_amount)} />
+                <Detail label="عمولة المندوب" value={formatMoney(selectedSale.agent_commission_amount)} />
+              </div>
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
   );
 }
