@@ -711,7 +711,7 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
 // ---------------------------------------------------------------------------
 // Import SIMs dialog
 // ---------------------------------------------------------------------------
-type ParsedSim = { iccid: string; price: number; sim_type: string; provider: string };
+type ParsedSim = { iccid: string; sim_type: string; provider: string };
 
 function normalizeHeader(value: unknown) {
   return String(value ?? "")
@@ -763,23 +763,20 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
       const headers = Array.from(headerMap.keys());
 
       const iccidKey = headerMap.get(pickColumn(headers, ["iccid", "رقم", "الشريحة", "sim", "serial"]) || "");
-      const priceKey = headerMap.get(pickColumn(headers, ["price", "سعر", "قيمة"]) || "");
       const typeKey = headerMap.get(pickColumn(headers, ["type", "نوع"]) || "");
       const providerKey = headerMap.get(pickColumn(headers, ["provider", "مزود", "شركة"]) || "");
       const rawKeys = Object.keys(rows[0]);
 
       const result: ParsedSim[] = [];
       for (const rowData of rows) {
-        // Fall back to positional columns (A=iccid, B=price) if headers are unlabeled.
+        // Fall back to positional column A when headers are unlabeled.
         const iccidRaw = iccidKey ? rowData[iccidKey] : rowData[rawKeys[0]];
-        const priceRaw = priceKey ? rowData[priceKey] : rowData[rawKeys[1]];
         const typeRaw = typeKey ? rowData[typeKey] : "";
         const providerRaw = providerKey ? rowData[providerKey] : "";
         const iccid = String(iccidRaw ?? "").trim();
         if (!iccid) continue;
         result.push({
           iccid,
-          price: Number(priceRaw) || 0,
           sim_type: String(typeRaw ?? "").trim() || defaultType,
           provider: String(providerRaw ?? "").trim().toLowerCase() || defaultProvider,
         });
@@ -798,9 +795,9 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
   const downloadTemplate = async () => {
     const XLSX = await import("xlsx");
     const worksheet = XLSX.utils.aoa_to_sheet([
-      ["ICCID", "provider", "price", "type"],
-      ["8996000000000000001", "virgin", 25, "prepaid"],
-      ["8996000000000000002", "virgin", 25, "prepaid"],
+      ["ICCID", "provider", "type"],
+      ["8996000000000000001", "virgin", "prepaid"],
+      ["8996000000000000002", "virgin", "prepaid"],
     ]);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "SIMs");
@@ -816,7 +813,7 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
       return;
     }
     const result = await importSims({
-      sims: parsed.map((sim) => ({ iccid: sim.iccid, provider: sim.provider, sim_type: sim.sim_type, price: sim.price })),
+      sims: parsed.map((sim) => ({ iccid: sim.iccid, provider: sim.provider, sim_type: sim.sim_type, price: 0 })),
     });
     setSubmitting(false);
     if (result.error) {
@@ -850,12 +847,12 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
             <ul className="list-disc space-y-1 pr-5 text-xs leading-6">
               <li>
                 استخدم أعمدة بالعناوين: <span className="font-mono">ICCID</span> ،{" "}
-                <span className="font-mono">provider</span> ، <span className="font-mono">price</span> ، و<span className="font-mono">type</span> (اختياري).
+                <span className="font-mono">provider</span> ، و<span className="font-mono">type</span> (اختياري).
               </li>
               <li>عمود ICCID إلزامي — يحتوي رقم الشريحة (18-22 رقمًا).</li>
               <li>عمود provider يربط الشريحة بمزود الباقات؛ إذا تُرك فارغًا يُستخدم Virgin.</li>
-              <li>عمود price يحتوي السعر بالأرقام؛ إذا تُرك فارغًا يُعتبر 0.</li>
               <li>إذا لم يوجد عمود type يُستخدم النوع الافتراضي المحدد أدناه.</li>
+              <li>السعر لا يُستورد مع الشريحة؛ السعر والعمولات تُحسب من الباقة عند البيع.</li>
             </ul>
             <Button variant="outline" size="sm" className="mt-3" onClick={downloadTemplate}>
               <FileDown className="ml-2 h-4 w-4" />
@@ -907,7 +904,7 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
                 {parsed.slice(0, 5).map((sim, i) => (
                   <div key={i} className="flex justify-between text-xs text-slate-600" dir="ltr">
                     <span>{sim.iccid}</span>
-                    <span>{sim.provider} · {formatMoney(sim.price)}</span>
+                    <span>{sim.provider} · {sim.sim_type}</span>
                   </div>
                 ))}
                 {parsed.length > 5 ? <p className="text-xs text-slate-400">…والمزيد</p> : null}
@@ -1649,7 +1646,6 @@ export function StockManagementScreen() {
                 <TableHead>ICCID</TableHead>
                 <TableHead>المزود</TableHead>
                 <TableHead>النوع</TableHead>
-                <TableHead>السعر</TableHead>
                 <TableHead>الباقة المباعة</TableHead>
                 <TableHead>الحالة</TableHead>
               </TableRow>
@@ -1657,7 +1653,7 @@ export function StockManagementScreen() {
             <TableBody>
               {filteredSims.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-slate-400">
+                  <TableCell colSpan={5} className="text-center text-slate-400">
                     لا توجد شرائح.
                   </TableCell>
                 </TableRow>
@@ -1667,7 +1663,6 @@ export function StockManagementScreen() {
                     <TableCell dir="ltr">{sim.iccid}</TableCell>
                     <TableCell>{sim.provider || "virgin"}</TableCell>
                     <TableCell>{sim.sim_type}</TableCell>
-                    <TableCell>{formatMoney(sim.price)}</TableCell>
                     <TableCell>{sim.sold_package_name || "—"}</TableCell>
                     <TableCell>{statusBadge(sim.status, simStatusLabels)}</TableCell>
                   </TableRow>

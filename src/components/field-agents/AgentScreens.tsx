@@ -294,7 +294,6 @@ export function AgentSimListScreen() {
                 <div className="flex items-center gap-3">
                   <span className="text-slate-500">{sim.provider || "virgin"}</span>
                   <span className="text-slate-500">{sim.sim_type}</span>
-                  <span className="font-semibold">{formatMoney(sim.price)}</span>
                 </div>
               </div>
             ))
