@@ -938,8 +938,14 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({
+    provider: pkg.provider || "virgin",
+    package_name: pkg.package_name || "",
+    internet_allowance: pkg.internet_allowance || "",
+    minutes_allowance: pkg.minutes_allowance || "",
+    validity: pkg.validity || "",
     sale_price: String(pkg.sale_price ?? 0),
     base_price: String(pkg.base_price ?? 0),
+    tax_included: String(pkg.tax_included ?? true),
     agent_commission_type: pkg.agent_commission_type || "percentage",
     agent_commission_value: String(pkg.agent_commission_value ?? 0),
     merchant_commission_type: pkg.merchant_commission_type || "percentage",
@@ -951,8 +957,14 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
   useEffect(() => {
     if (!open) return;
     setForm({
+      provider: pkg.provider || "virgin",
+      package_name: pkg.package_name || "",
+      internet_allowance: pkg.internet_allowance || "",
+      minutes_allowance: pkg.minutes_allowance || "",
+      validity: pkg.validity || "",
       sale_price: String(pkg.sale_price ?? 0),
       base_price: String(pkg.base_price ?? 0),
+      tax_included: String(pkg.tax_included ?? true),
       agent_commission_type: pkg.agent_commission_type || "percentage",
       agent_commission_value: String(pkg.agent_commission_value ?? 0),
       merchant_commission_type: pkg.merchant_commission_type || "percentage",
@@ -965,9 +977,20 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
   const submit = async () => {
     setSubmitting(true);
     setError(null);
+    if (!form.package_name.trim()) {
+      setError("اسم الباقة مطلوب.");
+      setSubmitting(false);
+      return;
+    }
     const result = await updateSimPackage(pkg.id, {
+      provider: form.provider.trim() || "virgin",
+      package_name: form.package_name.trim(),
+      internet_allowance: form.internet_allowance.trim() || null,
+      minutes_allowance: form.minutes_allowance.trim() || null,
+      validity: form.validity.trim() || null,
       sale_price: Number(form.sale_price || 0),
       base_price: Number(form.base_price || 0),
+      tax_included: form.tax_included === "true",
       agent_commission_type: form.agent_commission_type,
       agent_commission_value: Number(form.agent_commission_value || 0),
       merchant_commission_type: form.merchant_commission_type,
@@ -989,11 +1012,35 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
         <SlidersHorizontal className="ml-2 h-4 w-4" />
         تعديل
       </DialogTrigger>
-      <DialogContent dir="rtl" className="max-w-lg">
+      <DialogContent dir="rtl" className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>تعديل شروط {pkg.package_name}</DialogTitle>
+          <DialogTitle>تعديل الباقة</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>المزود</Label>
+              <Input value={form.provider} onChange={(e) => set("provider", e.target.value)} placeholder="virgin" />
+            </div>
+            <div className="space-y-2">
+              <Label>اسم الباقة</Label>
+              <Input value={form.package_name} onChange={(e) => set("package_name", e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>الإنترنت</Label>
+              <Input value={form.internet_allowance} onChange={(e) => set("internet_allowance", e.target.value)} placeholder="مثال: 56 GB" />
+            </div>
+            <div className="space-y-2">
+              <Label>المكالمات</Label>
+              <Input value={form.minutes_allowance} onChange={(e) => set("minutes_allowance", e.target.value)} placeholder="مثال: لا محدود" />
+            </div>
+            <div className="space-y-2 sm:col-span-2">
+              <Label>الصلاحية</Label>
+              <Input value={form.validity} onChange={(e) => set("validity", e.target.value)} placeholder="مثال: 30 يوم" />
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">
             <Label>سعر البيع</Label>
             <Input type="number" value={form.sale_price} onChange={(e) => set("sale_price", e.target.value)} />
@@ -1003,10 +1050,22 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
             <Input type="number" value={form.base_price} onChange={(e) => set("base_price", e.target.value)} />
           </div>
           <div className="space-y-2">
+            <Label>الضريبة</Label>
+            <Select value={form.tax_included} onValueChange={(v) => set("tax_included", v ?? "true")}>
+              <SelectTrigger>
+                <SelectValue>{form.tax_included === "true" ? "شامل الضريبة" : "غير شامل الضريبة"}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="true">شامل الضريبة</SelectItem>
+                <SelectItem value="false">غير شامل الضريبة</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
             <Label>نوع عمولة المندوب</Label>
             <Select value={form.agent_commission_type} onValueChange={(v) => set("agent_commission_type", v ?? "percentage")}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue>{form.agent_commission_type === "flat" ? "مبلغ ثابت" : "نسبة"}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="percentage">نسبة</SelectItem>
@@ -1022,7 +1081,7 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
             <Label>نوع عمولة التاجر</Label>
             <Select value={form.merchant_commission_type} onValueChange={(v) => set("merchant_commission_type", v ?? "percentage")}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue>{form.merchant_commission_type === "flat" ? "مبلغ ثابت" : "نسبة"}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="percentage">نسبة</SelectItem>
@@ -1038,13 +1097,14 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
             <Label>الحالة</Label>
             <Select value={form.status} onValueChange={(v) => set("status", v ?? "active")}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue>{form.status === "active" ? "فعالة" : "غير فعالة"}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="active">فعالة</SelectItem>
                 <SelectItem value="inactive">غير فعالة</SelectItem>
               </SelectContent>
             </Select>
+          </div>
           </div>
         </div>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -1194,12 +1254,17 @@ function PackageManagementPanel({ packages, onDone }: { packages: SimPackage[]; 
                   <p className="mt-1 text-xs text-slate-500">
                     {pkg.internet_allowance || "-"} إنترنت · {pkg.minutes_allowance || "-"} مكالمات
                   </p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    الصلاحية: {pkg.validity || "-"}
+                  </p>
                 </div>
                 {statusBadge(pkg.status, { active: "فعالة", inactive: "غير فعالة" })}
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-600">
                 <span>السعر: {formatMoney(pkg.sale_price)}</span>
+                <span>المرجعي: {formatMoney(pkg.base_price)}</span>
                 <span>المزود: {pkg.provider}</span>
+                <span>{pkg.tax_included ? "شامل الضريبة" : "غير شامل الضريبة"}</span>
                 <span>مندوب: {pkg.agent_commission_value}{pkg.agent_commission_type === "percentage" ? "%" : " ر.س"}</span>
                 <span>تاجر: {pkg.merchant_commission_value}{pkg.merchant_commission_type === "percentage" ? "%" : " ر.س"}</span>
               </div>
