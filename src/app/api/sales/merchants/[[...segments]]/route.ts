@@ -521,16 +521,33 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       const merchant = await merchantForCaller(auth, merchantId);
       if (!merchant) return message("Merchant not found.", 404);
     }
-    let query = db
+    let currentQuery = db
       .from("sim_units")
       .select("*")
       .eq("organization_id", auth.orgId)
       .eq("current_merchant_id", merchantId);
+    let soldQuery = db
+      .from("sim_units")
+      .select("*")
+      .eq("organization_id", auth.orgId)
+      .eq("sold_by_merchant_id", merchantId);
     const status = asString(request.nextUrl.searchParams.get("status"));
-    if (status) query = query.eq("status", status);
-    const result = await query.order("merchant_assigned_at", { ascending: false });
-    if (result.error) return message(result.error.message, 500);
-    return json(rows(result.data));
+    if (status) {
+      currentQuery = currentQuery.eq("status", status);
+      soldQuery = soldQuery.eq("status", status);
+    }
+    const [currentResult, soldResult] = await Promise.all([
+      currentQuery.order("merchant_assigned_at", { ascending: false }),
+      soldQuery.order("sold_at", { ascending: false }),
+    ]);
+    if (currentResult.error) return message(currentResult.error.message, 500);
+    if (soldResult.error) return message(soldResult.error.message, 500);
+    const merged = new Map<string, Record<string, unknown>>();
+    for (const sim of [...rows(currentResult.data), ...rows(soldResult.data)]) {
+      const id = asString(row(sim).id);
+      if (id) merged.set(id, row(sim));
+    }
+    return json(Array.from(merged.values()));
   }
 
   // POST /sims/assign — agent hands SIMs to a merchant

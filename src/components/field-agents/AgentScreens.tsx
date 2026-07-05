@@ -53,7 +53,9 @@ import {
   confirmMerchantPayment,
   createMerchant,
   getMerchantCollections,
+  getMerchantCommissions,
   getMerchantRequests,
+  getMerchantSims,
   getMerchants,
   getResellerRanking,
   getSimPackages,
@@ -67,7 +69,7 @@ import type {
   SimPackage,
   SimUnit,
 } from "@/types/field-agents";
-import type { Merchant, MerchantCashCollection, MerchantSimRequest, ResellerRanking } from "@/types/merchants";
+import type { Merchant, MerchantCashCollection, MerchantCommission, MerchantSimRequest, ResellerRanking } from "@/types/merchants";
 
 type Message = { tone: "success" | "error"; text: string } | null;
 
@@ -1094,8 +1096,10 @@ function CollectFromMerchantDialog({ merchantId, onDone }: { merchantId: string;
 export function AgentMerchantsScreen() {
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [stockSims, setStockSims] = useState<SimUnit[]>([]);
+  const [merchantSims, setMerchantSims] = useState<SimUnit[]>([]);
   const [requests, setRequests] = useState<MerchantSimRequest[]>([]);
   const [collections, setCollections] = useState<MerchantCashCollection[]>([]);
+  const [merchantCommissions, setMerchantCommissions] = useState<MerchantCommission[]>([]);
   const [ranking, setRanking] = useState<ResellerRanking[]>([]);
   const [message, setMessage] = useState<Message>(null);
 
@@ -1112,8 +1116,14 @@ export function AgentMerchantsScreen() {
       setStockSims(rows(simResult.data));
       setRequests(rows(requestResult.data));
       setRanking(rows(rankingResult.data));
-      const collectionResults = await Promise.all(merchantRows.map((merchant) => getMerchantCollections(merchant.id)));
+      const [simResults, collectionResults, commissionResults] = await Promise.all([
+        Promise.all(merchantRows.map((merchant) => getMerchantSims({ merchant_id: merchant.id }))),
+        Promise.all(merchantRows.map((merchant) => getMerchantCollections(merchant.id))),
+        Promise.all(merchantRows.map((merchant) => getMerchantCommissions({ merchant_id: merchant.id }))),
+      ]);
+      setMerchantSims(simResults.flatMap((result) => rows(result.data)));
       setCollections(collectionResults.flatMap((result) => rows(result.data)));
+      setMerchantCommissions(commissionResults.flatMap((result) => rows(result.data)));
     });
   }, []);
 
@@ -1141,6 +1151,41 @@ export function AgentMerchantsScreen() {
     () => collections.filter((collection) => collection.status === "pending"),
     [collections]
   );
+  const merchantRows = useMemo(() => {
+    return merchants.map((merchant) => {
+      const simsForMerchant = merchantSims.filter(
+        (sim) => sim.current_merchant_id === merchant.id || sim.sold_by_merchant_id === merchant.id
+      );
+      const merchantCollections = collections.filter((collection) => collection.merchant_id === merchant.id);
+      const commissionsForMerchant = merchantCommissions.filter((commission) => commission.merchant_id === merchant.id);
+      const rank = ranking.find((item) => item.merchant_id === merchant.id);
+      const inHand = simsForMerchant.filter((sim) => sim.status === "with_merchant").length;
+      const soldSims = simsForMerchant.filter((sim) => sim.status === "sold" || sim.sold_by_merchant_id === merchant.id);
+      const soldTotal = rank?.sold_total ?? soldSims.length;
+      const soldValue = rank?.sold_value ?? soldSims.reduce((sum, sim) => sum + Number(sim.sold_price || 0), 0);
+      const confirmedPayments = merchantCollections
+        .filter((collection) => collection.status === "confirmed")
+        .reduce((sum, collection) => sum + Number(collection.amount || 0), 0);
+      const pendingPayments = merchantCollections
+        .filter((collection) => collection.status === "pending")
+        .reduce((sum, collection) => sum + Number(collection.amount || 0), 0);
+      const unpaidCommission = commissionsForMerchant
+        .filter((commission) => !commission.is_paid)
+        .reduce((sum, commission) => sum + Number(commission.commission_amount || 0), 0);
+
+      return {
+        merchant,
+        deliveredTotal: simsForMerchant.length,
+        inHand,
+        soldTotal,
+        soldValue,
+        confirmedPayments,
+        pendingPayments,
+        outstanding: soldValue - confirmedPayments,
+        unpaidCommission,
+      };
+    });
+  }, [collections, merchantCommissions, merchantSims, merchants, ranking]);
 
   return (
     <AgentShell title="التجار" subtitle="محلاتك الصغيرة: إنشاء، تسليم شرائح، وتحصيل.">
@@ -1233,46 +1278,78 @@ export function AgentMerchantsScreen() {
         <CardHeader>
           <CardTitle className="text-base">التجار ({merchants.length})</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          {merchants.length === 0 ? (
+        <CardContent className="space-y-3">
+          {merchantRows.length === 0 ? (
             <p className="text-sm text-slate-400">لا يوجد تجار بعد.</p>
           ) : (
-            merchants.map((m) => (
-              <div key={m.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                  {m.place_photo_url ? (
-                    <div
-                      className="h-14 w-14 rounded-lg bg-cover bg-center"
-                      style={{ backgroundImage: `url(${m.place_photo_url})` }}
-                    />
-                  ) : (
-                    <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
-                      <Store className="h-5 w-5" />
+            merchantRows.map((row) => {
+              const m = row.merchant;
+              return (
+                <div key={m.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      {m.place_photo_url ? (
+                        <div
+                          className="h-14 w-14 shrink-0 rounded-lg bg-cover bg-center"
+                          style={{ backgroundImage: `url(${m.place_photo_url})` }}
+                        />
+                      ) : (
+                        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
+                          <Store className="h-5 w-5" />
+                        </div>
+                      )}
+                      <div>
+                        <span className="font-medium">{m.business_name}</span>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {m.owner_name || "بدون مالك"} · {m.city || "-"} · {m.region || "-"}
+                        </p>
+                        {m.location ? (
+                          <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+                            <MapPin className="h-3 w-3" />
+                            {m.location}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
-                  )}
-                  <div>
-                    <span className="font-medium">{m.business_name}</span>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {m.owner_name || "بدون مالك"} · {m.city || "-"} · {m.region || "-"}
-                    </p>
-                    {m.location ? (
-                      <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
-                        <MapPin className="h-3 w-3" />
-                        {m.location}
-                      </p>
-                    ) : null}
+                    <div className="flex items-center gap-2">
+                      {m.status === "active" ? (
+                        <Badge className="border-0 bg-emerald-100 text-emerald-700">نشط</Badge>
+                      ) : (
+                        <Badge className="border-0 bg-red-100 text-red-700">موقوف</Badge>
+                      )}
+                      <CollectFromMerchantDialog merchantId={m.id} onDone={load} />
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">المسلّم / الموجود</p>
+                      <p className="mt-1 font-bold text-slate-950">{row.deliveredTotal} / {row.inHand}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">المباع</p>
+                      <p className="mt-1 font-bold text-slate-950">{row.soldTotal} شريحة</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">قيمة المبيعات</p>
+                      <p className="mt-1 font-bold text-slate-950">{formatMoney(row.soldValue)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">المدفوع / المتبقي</p>
+                      <p className="mt-1 font-bold text-slate-950">{formatMoney(row.confirmedPayments)} / {formatMoney(row.outstanding)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 sm:col-span-2 lg:col-span-2">
+                      <p className="text-xs text-slate-500">مدفوعات قيد التأكيد</p>
+                      <p className="mt-1 font-bold text-blue-700">{formatMoney(row.pendingPayments)}</p>
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 sm:col-span-2 lg:col-span-2">
+                      <p className="text-xs text-slate-500">عمولات التاجر غير المدفوعة</p>
+                      <p className="mt-1 font-bold text-amber-600">{formatMoney(row.unpaidCommission)}</p>
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  {m.status === "active" ? (
-                    <Badge className="border-0 bg-emerald-100 text-emerald-700">نشط</Badge>
-                  ) : (
-                    <Badge className="border-0 bg-red-100 text-red-700">موقوف</Badge>
-                  )}
-                  <CollectFromMerchantDialog merchantId={m.id} onDone={load} />
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </CardContent>
       </Card>
