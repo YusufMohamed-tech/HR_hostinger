@@ -445,14 +445,14 @@ export function MerchantSellScreen() {
           {activePackages.length === 0 ? (
             <p className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">لا توجد باقات فعالة.</p>
           ) : (
-            <div className="space-y-3">
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {activePackages.map((pkg) => {
                 const pkgDiscount = discountLabel(pkg);
                 const providerSims = sims.filter((sim) => (sim.provider || "virgin") === (pkg.provider || "virgin"));
                 const canSell = providerSims.length > 0;
 
                 return (
-                  <div key={pkg.id} className="relative rounded-lg border border-slate-100 bg-white p-4 shadow-sm">
+                  <div key={pkg.id} className="relative flex min-h-[300px] flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-teal-200 hover:shadow-md">
                     {pkgDiscount ? (
                       <div className="absolute left-4 top-0 rounded-b-md bg-rose-100 px-2 py-1 text-xs font-bold text-rose-600">
                         {pkgDiscount}
@@ -460,7 +460,7 @@ export function MerchantSellScreen() {
                     ) : null}
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3">
-                        <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-md bg-[#e30613] text-[10px] font-bold leading-tight text-white">
+                        <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-lg bg-[#e30613] text-[10px] font-bold leading-tight text-white">
                           <span>Virgin</span>
                           <span>mobile</span>
                         </div>
@@ -474,44 +474,46 @@ export function MerchantSellScreen() {
                       <Badge className="border-0 bg-slate-100 text-slate-600">{pkg.provider || "virgin"}</Badge>
                     </div>
 
-                    <div className="mt-4 grid grid-cols-3 divide-x divide-slate-100 divide-x-reverse text-center">
-                      <div>
-                        <p className="font-bold text-slate-950">{pkg.internet_allowance || "-"}</p>
+                    <div className="mt-5 grid grid-cols-3 divide-x divide-slate-100 divide-x-reverse rounded-lg border border-slate-100 bg-slate-50/70 text-center">
+                      <div className="p-3">
+                        <p className="min-h-10 text-sm font-bold text-slate-950">{pkg.internet_allowance || "-"}</p>
                         <p className="mt-1 text-xs text-slate-400">إنترنت</p>
                       </div>
-                      <div>
-                        <p className="font-bold text-slate-950">{pkg.minutes_allowance || "-"}</p>
+                      <div className="p-3">
+                        <p className="min-h-10 text-sm font-bold text-slate-950">{pkg.minutes_allowance || "-"}</p>
                         <p className="mt-1 text-xs text-slate-400">مكالمة</p>
                       </div>
-                      <div>
-                        <p className="font-bold text-slate-950">{pkg.validity || "-"}</p>
+                      <div className="p-3">
+                        <p className="min-h-10 text-sm font-bold text-slate-950">{pkg.validity || "-"}</p>
                         <p className="mt-1 text-xs text-slate-400">صلاحية</p>
                       </div>
                     </div>
 
-                    <div className="mt-4 flex items-end justify-between gap-3">
+                    <div className="mt-auto pt-5">
+                      <div className="mb-4 flex items-end justify-between gap-3">
+                        <div>
+                          <div className="flex items-baseline gap-2">
+                            <span className="text-xl font-bold text-teal-600">{formatMoney(pkg.sale_price)}</span>
+                            {Number(pkg.base_price || 0) > Number(pkg.sale_price || 0) ? (
+                              <span className="text-sm text-slate-400 line-through">{formatMoney(pkg.base_price)}</span>
+                            ) : null}
+                          </div>
+                          <p className="mt-1 text-xs text-slate-400">
+                            {pkg.tax_included ? "شامل الضريبة" : "غير شامل الضريبة"}
+                          </p>
+                          <p className="mt-1 text-xs text-emerald-600">عمولتك {commissionPreview(pkg, "merchant")}</p>
+                          {!canSell ? <p className="mt-1 text-xs text-rose-500">لا توجد شرائح متاحة لهذا المزود</p> : null}
+                        </div>
+                      </div>
                       <Button
                         type="button"
                         variant="outline"
-                        className="min-w-28 border-teal-500 text-teal-700 hover:bg-teal-50 hover:text-teal-800"
+                        className="h-11 w-full border-teal-500 text-teal-700 hover:bg-teal-50 hover:text-teal-800"
                         onClick={() => openSale(pkg)}
                         disabled={!canSell}
                       >
                         شراء
                       </Button>
-                      <div className="text-left">
-                        <div className="flex items-baseline justify-end gap-2">
-                          <span className="text-lg font-bold text-teal-600">{formatMoney(pkg.sale_price)}</span>
-                          {Number(pkg.base_price || 0) > Number(pkg.sale_price || 0) ? (
-                            <span className="text-sm text-slate-400 line-through">{formatMoney(pkg.base_price)}</span>
-                          ) : null}
-                        </div>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {pkg.tax_included ? "شامل الضريبة" : "غير شامل الضريبة"}
-                        </p>
-                        <p className="mt-1 text-xs text-emerald-600">عمولتك {commissionPreview(pkg, "merchant")}</p>
-                        {!canSell ? <p className="mt-1 text-xs text-rose-500">لا توجد شرائح متاحة لهذا المزود</p> : null}
-                      </div>
                     </div>
                   </div>
                 );
