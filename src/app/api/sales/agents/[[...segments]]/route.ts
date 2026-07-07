@@ -10,9 +10,11 @@ import {
   recordSaleSchema,
   returnSimSchema,
   reviewRequestSchema,
+  simBoxImportSchema,
   simRequestSchema,
   updateAgentSchema,
 } from "@/lib/field-agents/schemas";
+import { normalizeProvider, validateSimBoxImportInput } from "@/lib/sim-box-import";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +62,18 @@ type AdminAuthClient = {
   };
 };
 
+type StorageClient = {
+  storage: {
+    from: (bucket: string) => {
+      upload: (
+        path: string,
+        body: Buffer,
+        options?: { contentType?: string; upsert?: boolean }
+      ) => Promise<{ data: { path: string } | null; error: { message?: string } | null }>;
+    };
+  };
+};
+
 type AuthContext = {
   user: User;
   orgId: string;
@@ -80,6 +94,10 @@ function database(admin: unknown) {
 
 function adminAuth(admin: unknown) {
   return admin as AdminAuthClient;
+}
+
+function storage(admin: unknown) {
+  return admin as StorageClient;
 }
 
 // Returns the auth user id for an email, or null if none exists.
@@ -139,6 +157,10 @@ function asNumber(value: unknown) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function safeFilename(name: string) {
+  return name.replace(/[^\w.\-]+/g, "-").replace(/-+/g, "-").slice(0, 120) || "upload";
+}
+
 function calculateCommission(type: string, value: number, salePrice: number) {
   if (type === "flat") return Math.round(value * 100) / 100;
   return Math.round(salePrice * (value / 100) * 100) / 100;
@@ -146,6 +168,18 @@ function calculateCommission(type: string, value: number, salePrice: number) {
 
 async function readBody(request: NextRequest) {
   return request.json().catch(() => ({}));
+}
+
+function formString(form: FormData, key: string) {
+  const value = form.get(key);
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function formNumber(form: FormData, key: string) {
+  const value = formString(form, key);
+  if (!value) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 // Resolves the field_agents.id row that belongs to the current auth user.
@@ -179,6 +213,75 @@ async function insertTransfer(
     performed_by: auth.user.id,
     notes: values.notes ?? null,
   });
+}
+
+async function uploadSimBoxImage(auth: AuthContext, file: File, buffer: Buffer) {
+  const path = `orgs/${auth.orgId}/sales/sim-box-imports/temp/${Date.now()}-${safeFilename(file.name)}`;
+  const upload = await storage(auth.admin).storage.from("sim-box-imports").upload(path, buffer, {
+    contentType: file.type || undefined,
+    upsert: false,
+  });
+  if (upload.error || !upload.data) throw new Error(upload.error?.message || "Unable to upload SIM box image.");
+  return upload.data.path;
+}
+
+async function duplicateKitCodes(auth: AuthContext, provider: string, kitCodes: string[]) {
+  if (kitCodes.length === 0) return [];
+  const result = await database(auth.admin)
+    .from("sim_units")
+    .select("kit_code")
+    .eq("organization_id", auth.orgId)
+    .eq("provider", provider)
+    .in("kit_code", kitCodes);
+  if (result.error) throw new Error(result.error.message || "Unable to validate duplicate kit codes.");
+
+  const byKitCode = new Set(rows(result.data).map((item) => asString(item.kit_code)).filter(Boolean));
+
+  // The legacy schema still has UNIQUE(organization_id, iccid). Since OCR imports
+  // mirror kit_code into iccid for compatibility, protect the insert from that
+  // older uniqueness constraint too.
+  const iccidResult = await database(auth.admin)
+    .from("sim_units")
+    .select("iccid")
+    .eq("organization_id", auth.orgId)
+    .in("iccid", kitCodes);
+  if (iccidResult.error) throw new Error(iccidResult.error.message || "Unable to validate duplicate ICCIDs.");
+  for (const item of rows(iccidResult.data)) {
+    const iccid = asString(item.iccid);
+    if (iccid) byKitCode.add(iccid);
+  }
+
+  return kitCodes.filter((kitCode) => byKitCode.has(kitCode));
+}
+
+async function validateAssignedAgent(auth: AuthContext, agentId: string, incomingCount: number) {
+  const db = database(auth.admin);
+  const agentResult = await db
+    .from("field_agents")
+    .select("id, status, max_sim_capacity")
+    .eq("organization_id", auth.orgId)
+    .eq("id", agentId)
+    .maybeSingle();
+  if (agentResult.error) throw new Error(agentResult.error.message || "Unable to validate assigned agent.");
+  if (!agentResult.data) return { error: "Assigned agent was not found." };
+  const agent = row(agentResult.data);
+  if (asString(agent.status) === "suspended") return { error: "Cannot assign imported SIMs to a suspended agent." };
+
+  const capacity = agent.max_sim_capacity;
+  if (capacity !== null && capacity !== undefined) {
+    const inHand = await db
+      .from("sim_units")
+      .select("id")
+      .eq("organization_id", auth.orgId)
+      .eq("current_agent_id", agentId)
+      .eq("status", "with_agent");
+    if (inHand.error) throw new Error(inHand.error.message || "Unable to validate agent capacity.");
+    if (rows(inHand.data).length + incomingCount > asNumber(capacity)) {
+      return { error: "Import exceeds the agent SIM capacity." };
+    }
+  }
+
+  return { error: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -382,6 +485,318 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       });
     }
     return json({ imported: inserted.length }, 201);
+  }
+
+  // POST /sims/box-preview  (manager)
+  if (action === "box-preview") {
+    if (request.method !== "POST") return message("Method not allowed", 405);
+    if (!auth.isManager) return message("Field agent manager access is required.", 403);
+
+    const contentType = request.headers.get("content-type") || "";
+    let imagePath = "";
+    let provider = "";
+    let orderNumber = "";
+    let batchNumber = "";
+    let barcodeText = "";
+    let firstKitcode = "";
+    let lastKitcode = "";
+    let quantity: number | null = null;
+    let dealerBoxNumber: number | null = null;
+    let dealerBoxTotal: number | null = null;
+    let confidence: number | null = null;
+    let rawOcrText = "";
+    let rawNotes: string[] = [];
+
+    if (contentType.includes("multipart/form-data")) {
+      const form = await request.formData().catch(() => null);
+      if (!form) return message("Multipart form data is required.", 400);
+      const file = form.get("image");
+      if (file instanceof File && file.size > 0) {
+        if (!file.type.startsWith("image/")) return message("Only image files are supported.", 400);
+        if (file.size > 10 * 1024 * 1024) return message("Image must be 10MB or smaller.", 400);
+        try {
+          imagePath = await uploadSimBoxImage(auth, file, Buffer.from(await file.arrayBuffer()));
+        } catch (error) {
+          return message(error, 500);
+        }
+      }
+      imagePath = imagePath || formString(form, "image_path");
+      provider = formString(form, "provider");
+      orderNumber = formString(form, "order_number");
+      batchNumber = formString(form, "batch_number");
+      barcodeText = formString(form, "barcode_text");
+      firstKitcode = formString(form, "first_kitcode");
+      lastKitcode = formString(form, "last_kitcode");
+      quantity = formNumber(form, "quantity");
+      dealerBoxNumber = formNumber(form, "dealer_box_number");
+      dealerBoxTotal = formNumber(form, "dealer_box_total");
+      confidence = formNumber(form, "confidence");
+      rawOcrText = formString(form, "raw_ocr_text");
+      const rawNotesText = formString(form, "raw_notes");
+      if (rawNotesText) {
+        try {
+          const parsedNotes = JSON.parse(rawNotesText);
+          rawNotes = Array.isArray(parsedNotes) ? parsedNotes.map(String).filter(Boolean) : [];
+        } catch {
+          rawNotes = [rawNotesText];
+        }
+      }
+    } else {
+      const body = row(await readBody(request));
+      imagePath = asString(body.image_path);
+      provider = asString(body.provider);
+      orderNumber = asString(body.order_number);
+      batchNumber = asString(body.batch_number);
+      barcodeText = asString(body.barcode_text);
+      firstKitcode = asString(body.first_kitcode);
+      lastKitcode = asString(body.last_kitcode);
+      quantity = body.quantity == null || body.quantity === "" ? null : asNumber(body.quantity);
+      dealerBoxNumber = body.dealer_box_number == null || body.dealer_box_number === "" ? null : asNumber(body.dealer_box_number);
+      dealerBoxTotal = body.dealer_box_total == null || body.dealer_box_total === "" ? null : asNumber(body.dealer_box_total);
+      confidence = body.confidence == null || body.confidence === "" ? null : asNumber(body.confidence);
+      rawOcrText = asString(body.raw_ocr_text);
+      rawNotes = Array.isArray(body.raw_notes) ? body.raw_notes.map(String).filter(Boolean) : [];
+    }
+
+    const normalizedProvider = normalizeProvider(provider || "virgin");
+    const validation = validateSimBoxImportInput({
+      provider: normalizedProvider,
+      first_kitcode: firstKitcode,
+      last_kitcode: lastKitcode,
+      quantity: quantity || 0,
+    });
+
+    let duplicateKitCodeList: string[] = [];
+    if (validation.kitCodes.length > 0) {
+      try {
+        duplicateKitCodeList = await duplicateKitCodes(auth, normalizedProvider, validation.kitCodes);
+      } catch (error) {
+        return message(error, 500);
+      }
+    }
+
+    const warnings = [...validation.warnings, ...rawNotes];
+    if (confidence !== null && confidence > 0 && confidence < 65) {
+      warnings.push("OCR confidence is low; review all fields before importing.");
+    }
+    if (duplicateKitCodeList.length > 0) {
+      warnings.push("Some generated kit codes already exist and may block import.");
+    }
+
+    return json({
+      extracted: {
+        provider: normalizedProvider,
+        order_number: orderNumber || null,
+        batch_number: batchNumber || null,
+        barcode_text: barcodeText || null,
+        first_kitcode: firstKitcode || null,
+        last_kitcode: lastKitcode || null,
+        quantity: quantity || null,
+        dealer_box_number: dealerBoxNumber,
+        dealer_box_total: dealerBoxTotal,
+        confidence: confidence ?? undefined,
+        raw_notes: rawNotes,
+        raw_ocr_text: rawOcrText || undefined,
+      },
+      generation: {
+        step: validation.step,
+        generated_count: validation.kitCodes.length,
+        kit_codes: validation.kitCodes,
+      },
+      validation: {
+        is_valid: validation.errors.length === 0 && duplicateKitCodeList.length === 0,
+        errors: validation.errors,
+        warnings,
+        duplicate_kit_codes: duplicateKitCodeList,
+        duplicate_count: duplicateKitCodeList.length,
+      },
+      image_path: imagePath,
+    });
+  }
+
+  // POST /sims/box-import  (manager)
+  if (action === "box-import") {
+    if (request.method !== "POST") return message("Method not allowed", 405);
+    if (!auth.isManager) return message("Field agent manager access is required.", 403);
+
+    const body = await readBody(request);
+    const parsed = simBoxImportSchema.safeParse(body);
+    if (!parsed.success) return message(parseError(parsed.error), 400);
+
+    const normalizedProvider = normalizeProvider(parsed.data.provider);
+    const validation = validateSimBoxImportInput({
+      provider: normalizedProvider,
+      first_kitcode: parsed.data.first_kitcode,
+      last_kitcode: parsed.data.last_kitcode,
+      quantity: parsed.data.quantity,
+      step: parsed.data.step,
+    });
+    if (!validation.isValid) return message(validation.errors.join(" "), 400);
+
+    let duplicates: string[] = [];
+    try {
+      duplicates = await duplicateKitCodes(auth, normalizedProvider, validation.kitCodes);
+    } catch (error) {
+      return message(error, 500);
+    }
+    if (duplicates.length > 0 && parsed.data.import_duplicate_strategy !== "skip") {
+      return NextResponse.json(
+        { message: "Duplicate kit codes found.", duplicates },
+        { status: 409 }
+      );
+    }
+
+    const nonDuplicateKitCodes = validation.kitCodes.filter((kitCode) => !duplicates.includes(kitCode));
+    const assignedAgentId = asString(parsed.data.assigned_agent_id) || null;
+    if (assignedAgentId) {
+      try {
+        const agentCheck = await validateAssignedAgent(auth, assignedAgentId, nonDuplicateKitCodes.length);
+        if (agentCheck.error) return message(agentCheck.error, 400);
+      } catch (error) {
+        return message(error, 500);
+      }
+    }
+
+    const generatedPreview = validation.kitCodes.map((kitCode, index) => ({
+      sequence: index + 1,
+      kit_code: kitCode,
+      is_duplicate: duplicates.includes(kitCode),
+    }));
+
+    const now = new Date().toISOString();
+    const batchResult = await db
+      .from("sim_import_batches")
+      .insert({
+        organization_id: auth.orgId,
+        provider: normalizedProvider,
+        order_number: parsed.data.order_number || null,
+        batch_number: parsed.data.batch_number || null,
+        barcode_text: parsed.data.barcode_text || null,
+        dealer_box_number: parsed.data.dealer_box_number ?? null,
+        dealer_box_total: parsed.data.dealer_box_total ?? null,
+        first_kitcode: validation.firstKitcode,
+        last_kitcode: validation.lastKitcode,
+        quantity: validation.quantity,
+        step: validation.step,
+        image_path: parsed.data.image_path || null,
+        extracted_json: parsed.data.extracted_json || {},
+        generated_preview: generatedPreview,
+        status: "confirmed",
+        imported_count: nonDuplicateKitCodes.length,
+        duplicate_count: duplicates.length,
+        assigned_agent_id: assignedAgentId,
+        created_by: auth.user.id,
+        confirmed_by: auth.user.id,
+        confirmed_at: now,
+      })
+      .select("*")
+      .single();
+    if (batchResult.error) return message(batchResult.error.message, 500);
+
+    const batch = row(batchResult.data);
+    const insertPayload = nonDuplicateKitCodes.map((kitCode) => ({
+      organization_id: auth.orgId,
+      iccid: kitCode,
+      kit_code: kitCode,
+      provider: normalizedProvider,
+      sim_type: "prepaid",
+      price: 0,
+      status: assignedAgentId ? "with_agent" : "in_stock",
+      current_agent_id: assignedAgentId,
+      assigned_at: assignedAgentId ? now : null,
+      current_merchant_id: null,
+      import_batch_id: asString(batch.id),
+      dealer_box_number: parsed.data.dealer_box_number ?? null,
+      box_sequence: validation.kitCodes.indexOf(kitCode) + 1,
+      import_source: "box_ocr",
+      added_by: auth.user.id,
+    }));
+
+    let inserted: Record<string, unknown>[] = [];
+    if (insertPayload.length > 0) {
+      const simResult = await db.from("sim_units").insert(insertPayload).select("id");
+      if (simResult.error) {
+        const status = simResult.error.code === "23505" ? 409 : 500;
+        return message(simResult.error.message, status);
+      }
+      inserted = rows(simResult.data);
+    }
+
+    for (const sim of inserted) {
+      const simId = asString(sim.id);
+      await insertTransfer(auth, {
+        sim_unit_id: simId,
+        transfer_type: "initial_import",
+        notes: `SIM box import ${asString(batch.id)}`,
+      });
+      if (assignedAgentId) {
+        await insertTransfer(auth, {
+          sim_unit_id: simId,
+          transfer_type: "assign_to_agent",
+          to_agent_id: assignedAgentId,
+          notes: `Direct assignment from SIM box import ${asString(batch.id)}`,
+        });
+      }
+    }
+
+    return json({
+      batch,
+      inserted_count: inserted.length,
+      skipped_duplicates: duplicates,
+      assigned_agent_id: assignedAgentId,
+    }, 201);
+  }
+
+  // GET /sims/import-batches and /sims/import-batches/[batchId]
+  if (action === "import-batches") {
+    if (request.method !== "GET") return message("Method not allowed", 405);
+    const batchId = segments[2] || "";
+
+    if (batchId) {
+      const batchResult = await db
+        .from("sim_import_batches")
+        .select("*")
+        .eq("organization_id", auth.orgId)
+        .eq("id", batchId)
+        .maybeSingle();
+      if (batchResult.error) return message(batchResult.error.message, 500);
+      if (!batchResult.data) return message("Import batch not found.", 404);
+      const batch = row(batchResult.data);
+      if (!auth.isManager) {
+        const myAgentId = await resolveAgentId(auth);
+        if (!myAgentId || asString(batch.assigned_agent_id) !== myAgentId) return message("Forbidden", 403);
+      }
+      const simsResult = await db
+        .from("sim_units")
+        .select("*")
+        .eq("organization_id", auth.orgId)
+        .eq("import_batch_id", batchId)
+        .order("box_sequence", { ascending: true });
+      if (simsResult.error) return message(simsResult.error.message, 500);
+      return json({ batch, sims: rows(simsResult.data) });
+    }
+
+    let query = db.from("sim_import_batches").select("*").eq("organization_id", auth.orgId);
+    if (auth.isManager) {
+      const provider = asString(request.nextUrl.searchParams.get("provider"));
+      const batchNumber = asString(request.nextUrl.searchParams.get("batch_number"));
+      const orderNumber = asString(request.nextUrl.searchParams.get("order_number"));
+      const status = asString(request.nextUrl.searchParams.get("status"));
+      const assignedAgentId = asString(request.nextUrl.searchParams.get("assigned_agent_id"));
+      if (provider) query = query.eq("provider", provider);
+      if (batchNumber) query = query.eq("batch_number", batchNumber);
+      if (orderNumber) query = query.eq("order_number", orderNumber);
+      if (status) query = query.eq("status", status);
+      if (assignedAgentId) query = query.eq("assigned_agent_id", assignedAgentId);
+    } else {
+      const myAgentId = await resolveAgentId(auth);
+      if (!myAgentId) return json([]);
+      query = query.eq("assigned_agent_id", myAgentId);
+    }
+
+    const result = await query.order("created_at", { ascending: false }).limit(100);
+    if (result.error) return message(result.error.message, 500);
+    return json(rows(result.data));
   }
 
   // POST /sims/assign  (manager)

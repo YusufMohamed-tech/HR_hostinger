@@ -4,6 +4,9 @@ import type {
   AgentDashboardData,
   AgentSimRequest,
   FieldAgent,
+  SimBoxImportConfirmPayload,
+  SimBoxPreviewResult,
+  SimImportBatch,
   SimTransfer,
   SimUnit,
   StockOverview,
@@ -15,9 +18,10 @@ type QueryParams = Record<string, string | number | boolean | null | undefined>;
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
   try {
+    const isFormData = init?.body instanceof FormData;
     const res = await fetch(path, {
       ...init,
-      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+      headers: isFormData ? init?.headers : { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     });
     const json = await res.json();
     if (!res.ok) return { data: null, error: { message: json.message ?? "خطأ في الطلب" } };
@@ -29,6 +33,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<ApiResult<
 
 function jsonInit(method: string, body: unknown): RequestInit {
   return { method, body: JSON.stringify(body) };
+}
+
+function bodyInit(method: string, body: Record<string, unknown> | FormData): RequestInit {
+  return body instanceof FormData ? { method, body } : jsonInit(method, body);
 }
 
 function qs(p?: QueryParams) {
@@ -57,6 +65,17 @@ export const importSims = (body: Record<string, unknown>) =>
   apiFetch<{ imported: number }>(`${BASE}/sims/import`, jsonInit("POST", body));
 export const assignSims = (body: Record<string, unknown>) =>
   apiFetch<{ assigned: number }>(`${BASE}/sims/assign`, jsonInit("POST", body));
+export const previewSimBoxImport = (body: FormData) =>
+  apiFetch<SimBoxPreviewResult>(`${BASE}/sims/box-preview`, bodyInit("POST", body));
+export const confirmSimBoxImport = (body: SimBoxImportConfirmPayload) =>
+  apiFetch<{ batch: SimImportBatch; inserted_count: number; skipped_duplicates: string[]; assigned_agent_id: string | null }>(
+    `${BASE}/sims/box-import`,
+    jsonInit("POST", body)
+  );
+export const getSimImportBatches = (p?: QueryParams) =>
+  apiFetch<SimImportBatch[]>(`${BASE}/sims/import-batches` + qs(p));
+export const getSimImportBatch = (id: string) =>
+  apiFetch<{ batch: SimImportBatch; sims: SimUnit[] }>(`${BASE}/sims/import-batches/${id}`);
 export const recordSale = (body: Record<string, unknown>) =>
   apiFetch<SimUnit>(`${BASE}/sims/sell`, jsonInit("POST", body));
 export const returnSim = (body: Record<string, unknown>) =>

@@ -10,9 +10,11 @@
 | `@supabase/supabase-js` | ^2.105.1 | Supabase JavaScript client (database, auth, storage) |
 | `@supabase/ssr` | ^0.10.2 | Supabase server-side rendering helpers (cookie auth) |
 | `@base-ui/react` | ^1.4.1 | Unstyled React primitives (used alongside ShadCN) |
+| `@zxing/browser` | ^0.2.0 | Best-effort client-side barcode detection for SIM box images |
 | `class-variance-authority` | ^0.7.1 | Component variant utility (ShadCN pattern) |
 | `clsx` | ^2.1.1 | Conditional className joining |
 | `tailwind-merge` | ^3.5.0 | Merge Tailwind classes without conflicts |
+| `tesseract.js` | ^7.0.0 | Free client-side OCR for SIM box import |
 | `tw-animate-css` | ^1.4.0 | Tailwind animation utilities |
 | `lucide-react` | ^1.14.0 | Icon library (500+ SVG icons) |
 | `date-fns` | ^4.1.0 | Date manipulation and formatting |

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tatwir Talent HRMS uses **Supabase (PostgreSQL)** as its database, with Row Level Security (RLS) enforcing multi-tenant data isolation. The schema consists of 40+ tables across multiple modules, managed through versioned SQL migrations.
+Tatwir Talent HRMS uses **Supabase (PostgreSQL)** as its database, with Row Level Security (RLS) enforcing multi-tenant data isolation. The schema consists of 50+ tables across multiple modules, managed through versioned SQL migrations.
 
 ## Schema Files
 
@@ -13,6 +13,12 @@ Tatwir Talent HRMS uses **Supabase (PostgreSQL)** as its database, with Row Leve
 | `db/schema_v41_multi_tenancy_audit_fixes.sql` | Tenant isolation hardening for employee locations, profiles, chat RLS, audit logs, and task/chat storage |
 | `db/schema_v42_tenant_platform_completion.sql` | Tenant settings, feature flags, plans, subscriptions, usage, workflows, soft delete, quotas, private balance/recruitment storage, and composite indexes |
 | `db/schema_v43_lms_module.sql` | Professional multi-tenant LMS module, feature flag, private LMS storage, RLS policies, LMS notifications, and verification support |
+| `db/schema_v47_field_agents.sql` | Field-agent SIM distribution foundation, SIM inventory, transfers, cash collections, requests, and agent commissions |
+| `db/schema_v48_merchants.sql` | Trader/merchant tier, merchant accounts, merchant SIM ownership, merchant requests, collections, and commissions |
+| `db/schema_v49_onground_agent_manager.sql` | Dedicated on-ground agent manager role and field-agent management authority |
+| `db/schema_v50_sim_packages_trader_payments.sql` | SIM package catalog, package-based sales ledger, trader onboarding details, payment proof buckets, and payment confirmation statuses |
+| `db/schema_v51_trader_sale_activation_details.sql` | Trader sale activation/customer details stored on `sim_sales` |
+| `db/schema_v52_sim_box_ocr_import.sql` | SIM box OCR import batches, generated kit codes, private image storage, and stock import metadata |
 
 ## LMS v43 Additive Migration
 
@@ -36,6 +42,73 @@ Required LMS object paths are org-prefixed:
 - `orgs/{org_id}/lms/courses/{course_id}/community/{post_id}/{filename}`
 
 Run `npm run verify:lms` after applying the migration to check required tables, RLS, feature flag column, notification enum value, private storage bucket, policies, and indexes.
+
+## On-Ground Agent and Trader SIM Chain v47-v52
+
+Migration files: `db/schema_v47_field_agents.sql`, `db/schema_v48_merchants.sql`, `db/schema_v49_onground_agent_manager.sql`, `db/schema_v50_sim_packages_trader_payments.sql`, `db/schema_v51_trader_sale_activation_details.sql`, `db/schema_v52_sim_box_ocr_import.sql`
+
+These migrations implement a multi-tier SIM distribution chain:
+
+```text
+stock -> field_agent -> merchant/trader -> customer
+```
+
+### Core Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `field_agents` | On-ground agent profiles linked to auth users | organization_id, user_id, full_name, phone, national_id, region, sim_price, commission_rate, max_sim_capacity, status |
+| `sim_units` | SIM inventory and current ownership | iccid, kit_code, provider, sim_type, price, status, current_agent_id, current_merchant_id, import_batch_id, dealer_box_number, box_sequence, import_source, sold_by_agent_id, sold_by_merchant_id, sold_package_id |
+| `sim_import_batches` | Reviewed SIM box OCR import batches | provider, order_number, batch_number, barcode_text, first_kitcode, last_kitcode, quantity, step, image_path, extracted_json, generated_preview, imported_count, duplicate_count, assigned_agent_id |
+| `sim_transfers` | Append-only SIM movement audit | sim_unit_id, transfer_type, from_agent_id, to_agent_id, from_merchant_id, to_merchant_id, performed_by |
+| `agent_cash_collections` | Cash collected from agents by the organization | agent_id, amount, payment_method, collected_by, collection_date |
+| `agent_sim_requests` | Field-agent SIM reorder requests | agent_id, quantity, sim_type, status, reviewed_by, reviewed_at |
+| `agent_commissions` | Agent commission ledger | agent_id, sim_unit_id, sim_package_id, sale_price, commission_type, commission_amount, is_paid |
+| `merchants` | Trader/small-business accounts owned by agents | agent_id, user_id, business_name, owner_name, phone, city, region, latitude, longitude, place_photo_url, status |
+| `merchant_sim_requests` | Trader reorder requests to the owning agent | merchant_id, agent_id, quantity, sim_type, status, reviewed_by |
+| `merchant_cash_collections` | Trader payments to agents | merchant_id, agent_id, amount, payment_method, status, payment_proof_url, confirmed_by, rejected_by |
+| `merchant_commissions` | Trader commission ledger | merchant_id, agent_id, sim_unit_id, sim_package_id, commission_type, commission_amount, is_paid |
+| `sim_packages` | Package/baqa catalog | provider, package_name, allowances, base_price, sale_price, tax_included, agent_commission_type/value, merchant_commission_type/value, status |
+| `sim_sales` | Package-based sale ledger for agent and trader sales | sim_unit_id, package_id, seller_type, agent_id, merchant_id, sale_price, customer fields, commission snapshots, sold_at |
+
+### Trader Sale Activation Details
+
+Migration v51 adds activation/customer fields to `sim_sales`. The merchant selling UI requires these before completing a trader sale:
+
+| Column | Meaning |
+|--------|---------|
+| `customer_national_id` | Customer national/resident identity number |
+| `customer_absher_mobile` | Customer Absher-linked mobile number |
+| `customer_birth_date_hijri` | Customer Hijri birth date as entered |
+| `customer_id_expiry_hijri` | Customer ID expiry date in Hijri format |
+| `customer_email` | Customer email address |
+| `customer_nationality` | Customer nationality |
+| `package_reference` | Package reference shown/entered at activation time |
+| `device_serial` | Device serial captured during activation |
+| `city_district` | Customer city/district |
+| `marketer_name` | Optional marketer name |
+| `national_address` | Customer national address |
+| `supervisor_name` | Supervisor name captured for the sale |
+
+Indexes `idx_sim_sales_customer_national_id` and `idx_sim_sales_device_serial` support manager-side lookup by identity number and device serial within an organization.
+
+### SIM Box OCR Import
+
+Migration v52 adds a manager-only import workflow for physical SIM dealer boxes. A manager uploads an image into private bucket `sim-box-imports`, reviews the extracted label fields, and confirms the import. The server regenerates kit codes from `first_kitcode`, `last_kitcode`, and `quantity`; it does not trust a client-submitted generated list.
+
+Confirmed imports create a `sim_import_batches` audit row and insert generated SIMs into `sim_units`. OCR imports set both `kit_code` and legacy `iccid` to the generated kit code for compatibility with the existing `sim_units` unique ICCID constraint. `import_source = 'box_ocr'`, `import_batch_id`, `dealer_box_number`, and `box_sequence` preserve box provenance. Direct assignment to an active field agent is optional; otherwise SIMs remain `in_stock`.
+
+Duplicate protection checks `(organization_id, provider, kit_code)` and legacy `(organization_id, iccid)`. The default strategy blocks the import; the optional skip strategy records duplicate counts on the batch and inserts only non-duplicates.
+
+### Access and RLS
+
+- `can_manage_field_agents()` authorizes Admin, Sales_Manager, and Onground_Agent_Manager for stock and network management.
+- `current_field_agent_id()` and `current_merchant_id()` resolve the auth user's scoped agent/trader profile.
+- Managers can see and manage the chain for the organization.
+- Field agents can see their own SIMs, merchants, requests, commissions, and collections.
+- Field agents can read only SIM import batches assigned directly to them; only managers can create or confirm OCR imports.
+- Merchants can see their own SIMs, requests, payments, commissions, and submitted sale records.
+- `sim_sales` is org-scoped and readable by managers, owning agents, and the selling merchant. The manager-only API exposes enriched trader sale activation records.
 
 ## Tenant Platform Tables
 
@@ -66,7 +139,8 @@ current_employee_id() -- Returns employee.id for the authenticated user
 
 ```sql
 org_role:          'super_admin' | 'admin' | 'employee' | 'hr_admin' | 'hr_recruitment' |
-                   'training_manager' | 'sales' | 'sales_manager' | 'finance_manager' |
+                   'training_manager' | 'sales' | 'sales_manager' | 'onground_agent_manager' |
+                   'promoter' | 'field_agent' | 'merchant' | 'finance_manager' |
                    'accountant' | 'finance_viewer'
 employment_type:   'full_time' | 'part_time' | 'intern' | 'contract'
 attendance_status: 'present' | 'late' | 'absent' | 'on_leave' | 'half_day'
@@ -77,6 +151,9 @@ shift_type:        'morning' | 'night' | 'flexible'
 notification_type: 'attendance' | 'task' | 'leave' | 'system' | 'sales' | 'accounting'
 document_type:     'cv' | 'contract' | 'national_id' | 'certificate' | 'other'
 location_type:     'branch' | 'booth' | 'office' | 'area'
+sim_status:        'in_stock' | 'with_agent' | 'with_merchant' | 'sold' | 'returned'
+sim_transfer_type: 'initial_import' | 'assign_to_agent' | 'return_to_stock' |
+                   'assign_to_merchant' | 'return_from_merchant' | 'sold'
 ```
 
 ## Table Catalog
@@ -154,6 +231,19 @@ location_type:     'branch' | 'booth' | 'office' | 'area'
 | `sales_products` | Product catalog | id, org_id, name, category, price |
 | `sales_dashboard_settings` | Dashboard config | id, org_id, settings(jsonb) |
 | `sales_shift_targets` | Sales targets per shift | id, org_id, shift_id, target_amount |
+| `field_agents` | On-ground SIM agents | id, organization_id, user_id, full_name, phone, national_id, sim_price, commission_rate, status |
+| `sim_units` | SIM stock, ownership, import provenance, and sale status | id, organization_id, iccid, kit_code, provider, sim_type, status, current_agent_id, current_merchant_id, import_batch_id, sold_package_id |
+| `sim_import_batches` | SIM box OCR import audit rows | id, organization_id, provider, order_number, batch_number, first_kitcode, last_kitcode, quantity, image_path, generated_preview, imported_count |
+| `sim_transfers` | SIM movement audit | id, organization_id, sim_unit_id, transfer_type, from/to agent/merchant ids |
+| `agent_sim_requests` | Agent stock requests | id, organization_id, agent_id, quantity, status |
+| `agent_cash_collections` | Agent payment collection records | id, organization_id, agent_id, amount, payment_method, collection_date |
+| `agent_commissions` | Agent commission records | id, organization_id, agent_id, sim_unit_id, sim_package_id, commission_amount, is_paid |
+| `merchants` | Trader/small-business accounts | id, organization_id, agent_id, user_id, business_name, phone, city, region, place_photo_url, status |
+| `merchant_sim_requests` | Trader stock requests | id, organization_id, merchant_id, agent_id, quantity, status |
+| `merchant_cash_collections` | Trader payment records and proofs | id, organization_id, merchant_id, agent_id, amount, payment_method, status, payment_proof_url |
+| `merchant_commissions` | Trader commission records | id, organization_id, merchant_id, agent_id, sim_unit_id, sim_package_id, commission_amount, is_paid |
+| `sim_packages` | SIM package catalog and commission rules | id, organization_id, provider, package_name, base_price, sale_price, agent/merchant commission fields |
+| `sim_sales` | Package-based SIM sales ledger | id, organization_id, sim_unit_id, package_id, seller_type, agent_id, merchant_id, customer activation fields, commission snapshots |
 
 ### Accounting Module
 
@@ -278,6 +368,16 @@ ALLOW_DESTRUCTIVE_SCHEMA_APPLY=true npm run apply:schema
 | v27-v29 | Test accounts, leave balance unification, chat module |
 | v30-v36 | Sales enhancements (telecom, log edits, dashboards, shift targets) |
 | v37-v40 | Full accounting module (journals, invoices, AP/AR, auditing) |
+| v41-v42 | Multi-tenancy hardening and tenant platform completion |
+| v43-v44 | LMS module and classroom experience |
+| v45 | Auto-flow fixes |
+| v46 | Promoter kiosk, telecom offers, campaigns, and leads |
+| v47 | Field-agent SIM distribution foundation |
+| v48 | Trader/merchant tier and merchant SIM workflows |
+| v49 | On-ground agent manager role |
+| v50 | SIM packages, package-based sales ledger, trader onboarding details, and payment proof flow |
+| v51 | Trader sale activation/customer details on `sim_sales` |
+| v52 | SIM box OCR import batches, kit-code generation, private box-image storage, and import provenance |
 
 ## Storage Buckets (Supabase Storage)
 
@@ -285,3 +385,7 @@ ALLOW_DESTRUCTIVE_SCHEMA_APPLY=true npm run apply:schema
 |--------|---------|--------|
 | `attendance-selfies` | Employee check-in photos | Private (RLS) |
 | `employee-documents` | CVs, contracts, IDs, certificates | Private (RLS) |
+| `lms-content` | LMS lesson/task/submission/community files | Private; signed URLs only |
+| `merchant-place-photos` | Trader storefront/place photos | Public URL stored on `merchants.place_photo_url` |
+| `merchant-payment-proofs` | Trader payment proof images/PDFs | Public URL stored on `merchant_cash_collections.payment_proof_url` |
+| `sim-box-imports` | SIM dealer box images used for OCR import review | Private; API stores only the object path on `sim_import_batches.image_path` |

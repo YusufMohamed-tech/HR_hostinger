@@ -79,3 +79,20 @@ export const reviewRequestSchema = z.object({
   status: z.enum(["approved", "rejected", "delivered"]),
   review_note: z.string().trim().max(500).optional(),
 });
+
+export const simBoxImportSchema = z.object({
+  provider: z.string().trim().min(1).max(80),
+  order_number: z.string().trim().max(120).optional(),
+  batch_number: z.string().trim().max(120).optional(),
+  barcode_text: z.string().trim().max(240).optional(),
+  first_kitcode: z.string().trim().min(1).max(80),
+  last_kitcode: z.string().trim().min(1).max(80),
+  quantity: z.coerce.number().int().positive(),
+  dealer_box_number: z.coerce.number().int().positive().nullable().optional(),
+  dealer_box_total: z.coerce.number().int().positive().nullable().optional(),
+  step: z.coerce.number().int().min(0).optional(),
+  image_path: z.string().trim().max(1000).optional(),
+  extracted_json: z.record(z.string(), z.unknown()).optional(),
+  assigned_agent_id: z.string().uuid().nullable().optional(),
+  import_duplicate_strategy: z.enum(["skip", "fail"]).default("fail"),
+});

@@ -34,6 +34,28 @@ After applying the LMS migration, verify it with:
 npm run verify:lms
 ```
 
+## Apply on-ground agent and trader migrations
+
+Apply the on-ground SIM distribution migrations sequentially on databases that already have the base schema:
+
+```bash
+npm run apply:migration -- db/schema_v47_field_agents.sql
+npm run apply:migration -- db/schema_v48_merchants.sql
+npm run apply:migration -- db/schema_v49_onground_agent_manager.sql
+npm run apply:migration -- db/schema_v50_sim_packages_trader_payments.sql
+npm run apply:migration -- db/schema_v51_trader_sale_activation_details.sql
+npm run apply:migration -- db/schema_v52_sim_box_ocr_import.sql
+```
+
+`schema_v52_sim_box_ocr_import.sql` creates the private `sim-box-imports` storage bucket, `sim_import_batches`, and SIM import provenance columns. OCR runs client-side through Tesseract.js and optional ZXing barcode detection, so no server-side OCR key or paid OCR API is required.
+
+Run the focused generation check after code changes that touch kit-code generation:
+
+```bash
+npm run test:sim-box-generation
+npm run test:sim-box-parser
+```
+
 ## Seed the initial production admin
 Set these variables in `.env.local`:
 ```env

@@ -14,6 +14,14 @@
 
 `npm run apply:migration -- db/schema_v43_lms_module.sql` and `npm run verify:lms` require the configured Supabase database host to resolve. If DNS fails for the Supabase host, local lint/build can still pass, but database verification remains blocked until network/DNS access is restored.
 
+## SIM Box OCR Import v52 Notes
+
+- OCR uses free client-side Tesseract.js plus best-effort ZXing barcode detection. It may fail on blurry, tilted, shadowed, or low-resolution box photos.
+- OCR output is intentionally treated as untrusted. Managers must review/edit the extracted provider, first kit code, last kit code, quantity, order/batch fields, dealer box fields, and duplicate status before confirming.
+- Barcode reading is best-effort. If it fails, the manager can still verify and type barcode/label fields manually.
+- `sim-box-imports` is private storage; the database stores object paths, not public URLs.
+- The focused kit-code generation test is `npm run test:sim-box-generation`; parser coverage is `npm run test:sim-box-parser`. These do not replace database/API tests for duplicate handling, RLS, or storage policy behavior.
+
 ## Critical Issues
 
 | # | Area | Description | Impact |
@@ -83,6 +91,7 @@
 - **Assumption:** Supabase Storage buckets exist and are properly configured
 - **Implication:** File uploads will fail silently if buckets don't exist
 - **Buckets needed:** `attendance-selfies`, `employee-documents`, `task-attachments`
+- **On-ground SIM buckets needed:** `merchant-place-photos`, `merchant-payment-proofs`, `sim-box-imports`
 
 ### Browser APIs
 - **Assumption:** Users grant geolocation permission for attendance

@@ -38,6 +38,47 @@ The first LMS UI pass includes dashboard stats, learner course table, catalog ca
 
 ---
 
+## On-Ground Agent / Trader Frontend
+
+The SIM distribution UI spans normal protected sales pages and kiosk route groups.
+
+### Manager sales routes
+- `/sales/agents` for field-agent creation, SIM stock assignment, stock overview, OCR box import access, requests, commissions, and manager controls.
+- `/sales/stock` for stock status views and filtering.
+- `/sales/traders` for trader profiles, location/photo details, trader balances, collections, and commissions.
+- `/sales/trader-sales` for manager-only trader sale activation records and search across customer, SIM, package, trader, agent, device, address, and supervisor fields.
+
+### Field-agent kiosk routes
+- `/agent`
+- `/agent/sims`
+- `/agent/sell`
+- `/agent/merchants`
+- `/agent/requests`
+- `/agent/balance`
+- `/agent/commissions`
+
+### Trader kiosk routes
+- `/merchant`
+- `/merchant/sims`
+- `/merchant/sell`
+- `/merchant/requests`
+- `/merchant/balance`
+
+### Components and UX coverage
+- `src/components/field-agents/FieldAgentAdminScreens.tsx` implements manager stock/package/agent views, including SIM Box OCR Import.
+- `src/components/field-agents/AgentScreens.tsx` implements the field-agent kiosk.
+- `src/components/field-agents/TraderManagementScreen.tsx` implements trader portfolio management.
+- `src/components/field-agents/TraderSalesScreen.tsx` implements the manager trader-sale detail/search screen.
+- `src/components/merchants/MerchantScreens.tsx` implements the trader kiosk and v51 activation form.
+
+The stock manager screen exposes two import paths: the legacy Excel/CSV importer and the v52 SIM Box OCR importer. The OCR dialog accepts an image, runs free local OCR in the browser with Tesseract.js (`eng`), attempts best-effort barcode reading with ZXing, shows raw OCR text in a collapsible details section, keeps provider/order/batch/kit-code fields editable, calls server preview for generated kit-code rows and duplicate status, and offers optional direct field-agent assignment plus confirm/skip-duplicate controls.
+
+Local OCR accuracy depends on image quality. Managers must manually verify first kit code, last kit code, quantity, and dealer box data before pressing confirm.
+
+The trader sell flow is package-first: the trader selects an active package, selects one assigned SIM, fills required activation/customer details, and confirms the sale. The UI lowercases and validates customer email before sending the sale request.
+
+---
+
 ## Technology Stack
 
 | Layer | Technology |
@@ -115,7 +156,8 @@ The first LMS UI pass includes dashboard stats, learner course table, catalog ca
 | Notifications | 1 |
 | Settings | 1 |
 | Recruitment | 4 (list, new, detail, edit) |
-| Sales | 6 (dashboard, log, history, team, products, reports) |
+| Sales | 10+ (dashboard, log, history, team, products, reports, agents, stock, traders, trader-sales, promoter pages) |
+| Agent/Trader Kiosk | 12 (agent and merchant route groups for dashboards, stock, sales, requests, balances, commissions) |
 | Accounting | 12+ (dashboard, CoA, journals, invoices, expenses, payments, customers, vendors, cost centers, team, settings, reports×9) |
 | Superadmin | 5+ (dashboard, orgs, users, audit, approvals, settings) |
 | Candidate Portal | 3 (login, register, applications) |

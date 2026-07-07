@@ -256,6 +256,37 @@ Sales module operations.
 | Reports | Analytics and export data |
 | Shift monitoring | Real-time shift status |
 
+### `field-agents.ts`
+Client wrappers for `/api/sales/agents/*`, used by the on-ground manager and field-agent kiosk.
+
+| Function | Description |
+|----------|-------------|
+| `getFieldAgents`, `createFieldAgent`, `updateFieldAgent` | Manage field-agent accounts and profiles |
+| `getSimUnits`, `importSims`, `assignSims` | List, import, and assign SIM inventory |
+| `previewSimBoxImport`, `confirmSimBoxImport` | Send locally extracted SIM box fields for server validation/duplicate preview and confirm reviewed kit-code imports |
+| `getSimImportBatches`, `getSimImportBatch` | List import batches and inspect a saved batch with its generated SIM rows |
+| `recordSale`, `returnSim` | Record direct agent sales or return SIMs to stock |
+| `getSimTransfers` | List SIM movement audit rows |
+| `getCashCollections`, `collectCash` | Track cash collected from agents |
+| `getSimRequests`, `createSimRequest`, `reviewSimRequest` | Manage field-agent SIM reorder requests |
+| `getCommissions`, `markCommissionPaid` | View and settle agent commissions |
+| `getAgentDashboard`, `getStockOverview` | Agent self dashboard and manager stock overview |
+
+### `merchants.ts`
+Client wrappers for `/api/sales/merchants/*`, used by trader, field-agent, and manager screens.
+
+| Function | Description |
+|----------|-------------|
+| `getMerchants`, `createMerchant`, `updateMerchant` | Manage trader accounts, owner/contact details, location, and place photo |
+| `getSimPackages`, `createSimPackage`, `updateSimPackage` | Manage package catalog and commission rules |
+| `getMerchantSims`, `previewSimsForMerchant`, `assignSimsToMerchant` | List/preview/assign SIMs for traders |
+| `merchantRecordSale`, `merchantReturnSim` | Record trader sales with activation details or return SIMs to the owning agent |
+| `getTraderSales` | Manager-only enriched trader sale activation ledger |
+| `getMerchantCollections`, `collectMerchantCash`, `confirmMerchantPayment` | Trader payment submission and agent/manager confirmation |
+| `getMerchantRequests`, `createMerchantRequest`, `reviewMerchantRequest` | Trader stock reorder workflow |
+| `getMerchantCommissions`, `markMerchantCommissionPaid` | Trader commission tracking and payout marking |
+| `getMerchantDashboard`, `getResellerRanking` | Trader self dashboard and reseller ranking analytics |
+
 ---
 
 ## Accounting Services

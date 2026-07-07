@@ -55,6 +55,7 @@ export interface SimUnit {
   id: string;
   organization_id: string;
   iccid: string;
+  kit_code: string | null;
   provider: string;
   sim_type: string;
   price: number;
@@ -70,6 +71,10 @@ export interface SimUnit {
   current_merchant_id: string | null;
   sold_by_merchant_id: string | null;
   merchant_assigned_at: string | null;
+  import_batch_id: string | null;
+  dealer_box_number: number | null;
+  box_sequence: number | null;
+  import_source: string | null;
   added_by: string | null;
   created_at: string;
   updated_at: string;
@@ -165,6 +170,88 @@ export interface StockOverview {
   returned: number;
   total_value_in_stock: number;
   by_agent: { agent_id: string; full_name: string; count: number }[];
+}
+
+export interface SimImportBatch {
+  id: string;
+  organization_id: string;
+  provider: string;
+  order_number: string | null;
+  batch_number: string | null;
+  barcode_text: string | null;
+  dealer_box_number: number | null;
+  dealer_box_total: number | null;
+  first_kitcode: string;
+  last_kitcode: string;
+  quantity: number;
+  step: number | null;
+  image_path: string | null;
+  extracted_json: Record<string, unknown>;
+  generated_preview: GeneratedKitCodeRow[];
+  status: "draft" | "confirmed" | "cancelled" | "failed";
+  imported_count: number;
+  duplicate_count: number;
+  assigned_agent_id: string | null;
+  created_by: string | null;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SimBoxExtractedLabel extends Record<string, unknown> {
+  provider: string | null;
+  order_number: string | null;
+  batch_number: string | null;
+  barcode_text: string | null;
+  first_kitcode: string | null;
+  last_kitcode: string | null;
+  quantity: number | null;
+  dealer_box_number: number | null;
+  dealer_box_total: number | null;
+  confidence?: number;
+  raw_notes?: string[];
+  raw_ocr_text?: string;
+}
+
+export interface GeneratedKitCodeRow {
+  sequence: number;
+  kit_code: string;
+  is_duplicate?: boolean;
+}
+
+export interface SimBoxPreviewResult {
+  extracted: SimBoxExtractedLabel;
+  generation: {
+    step: number;
+    generated_count: number;
+    kit_codes: string[];
+  };
+  validation: {
+    is_valid: boolean;
+    errors: string[];
+    warnings: string[];
+    duplicate_kit_codes: string[];
+    duplicate_count: number;
+  };
+  image_path: string;
+}
+
+export interface SimBoxImportConfirmPayload {
+  provider: string;
+  order_number?: string;
+  batch_number?: string;
+  barcode_text?: string;
+  first_kitcode: string;
+  last_kitcode: string;
+  quantity: number;
+  dealer_box_number?: number | null;
+  dealer_box_total?: number | null;
+  step?: number;
+  image_path?: string;
+  extracted_json?: Record<string, unknown>;
+  assigned_agent_id?: string | null;
+  import_duplicate_strategy?: "skip" | "fail";
 }
 
 // Row shapes joined for admin tables
