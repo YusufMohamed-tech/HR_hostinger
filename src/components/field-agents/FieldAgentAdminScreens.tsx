@@ -102,6 +102,19 @@ function formatMoney(value: unknown) {
   return `${Number.isFinite(number) ? number.toLocaleString("ar-SA", { maximumFractionDigits: 2 }) : "0"} ر.س`;
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-EG-u-ca-gregory", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
 const paymentMethodLabels: Record<string, string> = {
   cash: "نقدي",
   bank_transfer: "تحويل بنكي",
@@ -682,12 +695,11 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
       </div>
 
       <Tabs defaultValue="sales" className="gap-4">
-        <div className="overflow-x-auto pb-1">
-          <TabsList className="h-auto w-fit max-w-full justify-start gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-none">
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-none">
           <TabsTrigger value="sales" className={agentDetailTabClass}>
             <CreditCard className="h-4 w-4" />
             المبيعات
-            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] text-slate-500 data-active:text-brand">
+            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] text-slate-500">
               {salesSummary?.total_count ?? sales.length}
             </span>
           </TabsTrigger>
@@ -712,8 +724,7 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
               {commissions.length}
             </span>
           </TabsTrigger>
-          </TabsList>
-        </div>
+        </TabsList>
 
         <TabsContent value="sales" className="space-y-4">
           <Card className="border border-slate-200 shadow-sm">
@@ -732,67 +743,72 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
                 />
               </div>
             </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>التاريخ</TableHead>
-                    <TableHead>قناة البيع</TableHead>
-                    <TableHead>العميل</TableHead>
-                    <TableHead>التاجر</TableHead>
-                    <TableHead>الباقة / الشريحة</TableHead>
-                    <TableHead>قيمة البيع</TableHead>
-                    <TableHead>عمولة المندوب</TableHead>
-                    <TableHead></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSales.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center text-slate-400">
-                        لا توجد مبيعات لهذا المندوب.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredSales.map((sale) => (
-                      <TableRow key={sale.id}>
-                        <TableCell className="whitespace-nowrap text-xs text-slate-500" dir="ltr">
-                          {new Date(sale.sold_at).toLocaleString("ar-SA")}
-                        </TableCell>
-                        <TableCell>
-                          {sale.seller_type === "merchant" ? (
-                            <Badge className="border-0 bg-blue-100 text-blue-700">
-                              <Store className="ml-1 h-3.5 w-3.5" />
-                              تاجر
-                            </Badge>
-                          ) : (
-                            <Badge className="border-0 bg-emerald-100 text-emerald-700">
-                              <UserRound className="ml-1 h-3.5 w-3.5" />
-                              مباشر
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>{sale.customer_name || "—"}</TableCell>
-                        <TableCell>{sale.merchant_name || "—"}</TableCell>
-                        <TableCell>
-                          <div className="font-medium">{sale.package_name || sale.package_reference || "—"}</div>
-                          <div className="text-xs text-slate-400" dir="ltr">
-                            {sale.sim_iccid || sale.sim_unit_id}
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-semibold">{formatMoney(sale.sale_price)}</TableCell>
-                        <TableCell>{formatMoney(sale.agent_commission_amount)}</TableCell>
-                        <TableCell>
-                          <Button size="sm" variant="outline" onClick={() => setSelectedSale(sale)}>
-                            <Eye className="ml-2 h-4 w-4" />
-                            تفاصيل
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+            <CardContent className="space-y-3">
+              {filteredSales.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">
+                  لا توجد مبيعات لهذا المندوب.
+                </div>
+              ) : (
+                filteredSales.map((sale) => (
+                  <div key={sale.id} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1.15fr)_auto] lg:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {sale.seller_type === "merchant" ? (
+                          <Badge className="border-0 bg-blue-100 text-blue-700">
+                            <Store className="ml-1 h-3.5 w-3.5" />
+                            تاجر
+                          </Badge>
+                        ) : (
+                          <Badge className="border-0 bg-emerald-100 text-emerald-700">
+                            <UserRound className="ml-1 h-3.5 w-3.5" />
+                            مباشر
+                          </Badge>
+                        )}
+                        <span className="text-xs text-slate-500" dir="ltr">
+                          {formatDateTime(sale.sold_at)}
+                        </span>
+                      </div>
+                      <p className="mt-2 truncate text-sm font-semibold text-slate-950">
+                        {sale.customer_name || "عميل بدون اسم"}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-slate-400" dir="ltr">
+                        {sale.customer_absher_mobile || sale.customer_national_id || "—"}
+                      </p>
+                    </div>
+
+                    <div className="min-w-0 rounded-md bg-slate-50 px-3 py-2">
+                      <p className="text-xs text-slate-500">التاجر</p>
+                      <p className="mt-1 truncate text-sm font-medium text-slate-900">
+                        {sale.merchant_name || (sale.seller_type === "agent" ? "بيع مباشر" : "—")}
+                      </p>
+                    </div>
+
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-900">
+                        {sale.package_name || sale.package_reference || "—"}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-slate-400" dir="ltr">
+                        {sale.sim_iccid || sale.sim_unit_id}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                      <div className="min-w-28 rounded-md bg-emerald-50 px-3 py-2 text-center">
+                        <p className="text-[11px] text-emerald-700">قيمة البيع</p>
+                        <p className="mt-1 text-sm font-bold text-emerald-800">{formatMoney(sale.sale_price)}</p>
+                      </div>
+                      <div className="min-w-28 rounded-md bg-amber-50 px-3 py-2 text-center">
+                        <p className="text-[11px] text-amber-700">عمولته</p>
+                        <p className="mt-1 text-sm font-bold text-amber-800">{formatMoney(sale.agent_commission_amount)}</p>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => setSelectedSale(sale)}>
+                        <Eye className="ml-2 h-4 w-4" />
+                        تفاصيل
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -911,7 +927,7 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
               <div className="grid gap-3 md:grid-cols-4">
                 <DetailTile label="قناة البيع" value={selectedSale.seller_type === "merchant" ? "بيع عبر تاجر" : "بيع مباشر من المندوب"} />
                 <DetailTile label="قيمة البيع" value={formatMoney(selectedSale.sale_price)} />
-                <DetailTile label="التاريخ" value={new Date(selectedSale.sold_at).toLocaleString("ar-SA")} dir="ltr" />
+                <DetailTile label="التاريخ" value={formatDateTime(selectedSale.sold_at)} dir="ltr" />
                 <DetailTile label="الباقة" value={selectedSale.package_name || selectedSale.package_reference} />
                 <DetailTile label="عمولة المندوب" value={formatMoney(selectedSale.agent_commission_amount)} />
                 <DetailTile label="عمولة التاجر" value={formatMoney(selectedSale.merchant_commission_amount)} />
