@@ -193,7 +193,10 @@ function DetailTile({ label, value, dir }: { label: string; value: unknown; dir?
 }
 
 const agentDetailTabClass =
-  "h-9 flex-none gap-2 rounded-md px-3 text-sm data-active:bg-brand data-active:text-white data-active:shadow-sm";
+  "h-12 flex-none gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-base font-semibold text-slate-800 shadow-sm transition-colors data-active:border-[#58ad42] data-active:bg-[#58ad42] data-active:text-white data-active:shadow-sm";
+
+const agentDetailTabCountClass =
+  "inline-flex h-7 min-w-9 items-center justify-center rounded border border-slate-200 bg-slate-50 px-2 text-sm font-semibold text-slate-700";
 
 // ---------------------------------------------------------------------------
 // Create agent dialog
@@ -695,34 +698,34 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
       </div>
 
       <Tabs defaultValue="sales" className="gap-4">
-        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-none">
+        <TabsList className="h-auto w-full flex-wrap justify-end gap-3 rounded-none bg-transparent p-0 shadow-none">
           <TabsTrigger value="sales" className={agentDetailTabClass}>
-            <CreditCard className="h-4 w-4" />
-            المبيعات
-            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] text-slate-500">
+            <span className={agentDetailTabCountClass}>
               {salesSummary?.total_count ?? sales.length}
             </span>
+            المبيعات
+            <CreditCard className="h-4 w-4" />
           </TabsTrigger>
           <TabsTrigger value="sims" className={agentDetailTabClass}>
-            <Smartphone className="h-4 w-4" />
-            الشرائح
-            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] text-slate-500">
+            <span className={agentDetailTabCountClass}>
               {sims.length}
             </span>
+            الشرائح
+            <Smartphone className="h-4 w-4" />
           </TabsTrigger>
           <TabsTrigger value="collections" className={agentDetailTabClass}>
-            <Wallet className="h-4 w-4" />
-            التحصيلات
-            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] text-slate-500">
+            <span className={agentDetailTabCountClass}>
               {collections.length}
             </span>
+            التحصيلات
+            <Wallet className="h-4 w-4" />
           </TabsTrigger>
           <TabsTrigger value="commissions" className={agentDetailTabClass}>
-            <BadgePercent className="h-4 w-4" />
-            العمولات
-            <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] text-slate-500">
+            <span className={agentDetailTabCountClass}>
               {commissions.length}
             </span>
+            العمولات
+            <BadgePercent className="h-4 w-4" />
           </TabsTrigger>
         </TabsList>
 
