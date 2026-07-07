@@ -265,7 +265,7 @@ Client wrappers for `/api/sales/agents/*`, used by the on-ground manager and fie
 | `getSimUnits`, `importSims`, `assignSims` | List, import, and assign SIM inventory |
 | `previewSimBoxImport`, `confirmSimBoxImport` | Send locally extracted SIM box fields for server validation/duplicate preview and confirm reviewed kit-code imports |
 | `getSimImportBatches`, `getSimImportBatch` | List import batches and inspect a saved batch with its generated SIM rows |
-| `recordSale`, `returnSim` | Record direct agent sales or return SIMs to stock |
+| `recordSale`, `returnSim` | Record direct agent sales with package-rule commission snapshots or return SIMs to stock |
 | `getSimTransfers` | List SIM movement audit rows |
 | `getCashCollections`, `collectCash` | Track cash collected from agents |
 | `getSimRequests`, `createSimRequest`, `reviewSimRequest` | Manage field-agent SIM reorder requests |
@@ -278,9 +278,9 @@ Client wrappers for `/api/sales/merchants/*`, used by trader, field-agent, and m
 | Function | Description |
 |----------|-------------|
 | `getMerchants`, `createMerchant`, `updateMerchant` | Manage trader accounts, owner/contact details, location, and place photo |
-| `getSimPackages`, `createSimPackage`, `updateSimPackage` | Manage package catalog and commission rules |
+| `getSimPackages`, `createSimPackage`, `updateSimPackage` | Manage package catalog and editable total/agent-chain/trader/direct-agent commission rules |
 | `getMerchantSims`, `previewSimsForMerchant`, `assignSimsToMerchant` | List/preview/assign SIMs for traders |
-| `merchantRecordSale`, `merchantReturnSim` | Record trader sales with activation details or return SIMs to the owning agent |
+| `merchantRecordSale`, `merchantReturnSim` | Record trader sales with activation details and package-rule commission snapshots or return SIMs to the owning agent |
 | `getTraderSales` | Manager-only enriched trader sale activation ledger |
 | `getMerchantCollections`, `collectMerchantCash`, `confirmMerchantPayment` | Trader payment submission and agent/manager confirmation |
 | `getMerchantRequests`, `createMerchantRequest`, `reviewMerchantRequest` | Trader stock reorder workflow |
@@ -303,6 +303,8 @@ Core accounting operations.
 | Payment records | Payment registry |
 | Vendor/customer CRUD | AP/AR entity management |
 | Cost centers | Cost allocation management |
+| `getSalesCommissions(filters)` | Finance view of unpaid/paid field-agent and trader SIM sales commissions |
+| `settleSalesCommissions(payload)` | Mark selected unpaid commission rows paid with method/reference/notes |
 
 ### `accounting-team.ts`
 Finance team management.
@@ -378,6 +380,7 @@ Platform administration workflows and approvals
 |------|---------|
 | `leave-balances.ts` | Server-side leave balance calculations |
 | `sales-auth.ts` | Sales-specific authorization logic |
+| `sim-commissions.ts` | Shared SIM package commission calculation and sale-time rule snapshot builder |
 | `task-attachments.ts` | File upload handling (validation, path generation) |
 | `task-notifications.ts` | Server-side task notification creation |
 

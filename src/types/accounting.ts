@@ -253,3 +253,71 @@ export interface AccountingSalesCompanyLink {
   accounting_customer_id: string | null;
   accounting_customer?: Pick<AccountingCustomer, "id" | "name_ar"> | null;
 }
+
+export interface SalesCommissionSummary {
+  unpaid_agent_total: number;
+  unpaid_merchant_total: number;
+  paid_total: number;
+  total_commission_expense: number;
+}
+
+export type CommissionPaymentMethod = "cash" | "bank_transfer" | "wallet" | "other";
+
+export interface BaseCommissionFinanceRow {
+  id: string;
+  organization_id: string;
+  beneficiary_type: "agent" | "merchant";
+  sim_unit_id: string;
+  sim_package_id: string | null;
+  sale_id: string | null;
+  sale_price: number;
+  commission_currency: string;
+  commission_type: "percentage" | "flat";
+  commission_rate: number;
+  commission_amount: number;
+  is_paid: boolean;
+  paid_at: string | null;
+  paid_by: string | null;
+  payment_method: CommissionPaymentMethod | null;
+  payment_reference: string | null;
+  finance_notes: string | null;
+  accounting_journal_entry_id: string | null;
+  created_at: string;
+  updated_at: string;
+  beneficiary_name: string;
+  agent_name: string;
+  owner_agent_name?: string;
+  package_name: string;
+  package_provider: string;
+  sim_label: string;
+  sim_iccid: string;
+  sim_kit_code: string;
+  sale_date: string;
+  sale_customer_name: string | null;
+}
+
+export interface AgentCommissionFinanceRow extends BaseCommissionFinanceRow {
+  beneficiary_type: "agent";
+  agent_id: string;
+}
+
+export interface MerchantCommissionFinanceRow extends BaseCommissionFinanceRow {
+  beneficiary_type: "merchant";
+  merchant_id: string;
+  agent_id: string;
+}
+
+export interface SalesCommissionsResponse {
+  summary: SalesCommissionSummary;
+  agent_commissions: AgentCommissionFinanceRow[];
+  merchant_commissions: MerchantCommissionFinanceRow[];
+}
+
+export interface CommissionSettlementPayload {
+  beneficiary_type: "agent" | "merchant";
+  commission_ids: string[];
+  payment_method: CommissionPaymentMethod;
+  payment_reference?: string;
+  finance_notes?: string;
+  create_accounting_entry?: boolean;
+}

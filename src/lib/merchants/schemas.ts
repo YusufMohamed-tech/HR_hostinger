@@ -92,6 +92,8 @@ export const reviewMerchantRequestSchema = z.object({
   review_note: z.string().trim().max(500).optional(),
 });
 
+const commissionTypeSchema = z.enum(["percentage", "flat"]);
+
 export const simPackageSchema = z.object({
   provider: z.string().trim().max(40).default("virgin"),
   package_name: z.string().trim().min(2).max(160),
@@ -101,11 +103,41 @@ export const simPackageSchema = z.object({
   base_price: z.coerce.number().min(0),
   sale_price: z.coerce.number().min(0),
   tax_included: z.coerce.boolean().default(true),
-  agent_commission_type: z.enum(["percentage", "flat"]).default("percentage"),
-  agent_commission_value: z.coerce.number().min(0),
-  merchant_commission_type: z.enum(["percentage", "flat"]).default("percentage"),
-  merchant_commission_value: z.coerce.number().min(0),
+  commission_currency: z.string().trim().min(1).max(10).default("SAR"),
+  total_commission_type: commissionTypeSchema.default("flat"),
+  total_commission_value: z.coerce.number().min(0).default(15),
+  agent_chain_commission_type: commissionTypeSchema.default("flat"),
+  agent_chain_commission_value: z.coerce.number().min(0).default(5),
+  agent_commission_type: commissionTypeSchema.default("flat"),
+  agent_commission_value: z.coerce.number().min(0).default(5),
+  merchant_commission_type: commissionTypeSchema.default("flat"),
+  merchant_commission_value: z.coerce.number().min(0).default(10),
+  direct_agent_commission_type: commissionTypeSchema.default("flat"),
+  direct_agent_commission_value: z.coerce.number().min(0).default(15),
+  commission_notes: z.string().trim().max(1000).nullable().optional(),
   status: z.enum(["active", "inactive"]).default("active"),
 });
 
-export const updateSimPackageSchema = simPackageSchema.partial();
+export const updateSimPackageSchema = z.object({
+  provider: z.string().trim().max(40).optional(),
+  package_name: z.string().trim().min(2).max(160).optional(),
+  internet_allowance: z.string().trim().max(80).nullable().optional(),
+  minutes_allowance: z.string().trim().max(80).nullable().optional(),
+  validity: z.string().trim().max(80).nullable().optional(),
+  base_price: z.coerce.number().min(0).optional(),
+  sale_price: z.coerce.number().min(0).optional(),
+  tax_included: z.coerce.boolean().optional(),
+  commission_currency: z.string().trim().min(1).max(10).optional(),
+  total_commission_type: commissionTypeSchema.optional(),
+  total_commission_value: z.coerce.number().min(0).optional(),
+  agent_chain_commission_type: commissionTypeSchema.optional(),
+  agent_chain_commission_value: z.coerce.number().min(0).optional(),
+  agent_commission_type: commissionTypeSchema.optional(),
+  agent_commission_value: z.coerce.number().min(0).optional(),
+  merchant_commission_type: commissionTypeSchema.optional(),
+  merchant_commission_value: z.coerce.number().min(0).optional(),
+  direct_agent_commission_type: commissionTypeSchema.optional(),
+  direct_agent_commission_value: z.coerce.number().min(0).optional(),
+  commission_notes: z.string().trim().max(1000).nullable().optional(),
+  status: z.enum(["active", "inactive"]).optional(),
+});

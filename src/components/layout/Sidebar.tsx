@@ -168,6 +168,7 @@ export function SidebarContent() {
       { name: "العملاء", href: "/accounting/customers", icon: Users },
       { name: "الفواتير", href: "/accounting/invoices", icon: FileText },
       { name: "المدفوعات", href: "/accounting/payments", icon: WalletCards },
+      { name: "عمولات المبيعات", href: "/accounting/commissions", icon: Receipt },
       { name: "مراكز التكلفة", href: "/accounting/cost-centers", icon: Layers },
       { name: "التقارير", href: "/accounting/reports", icon: ClipboardList },
       { name: "فريق المالية", href: "/accounting/team", icon: Users },

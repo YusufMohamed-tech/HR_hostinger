@@ -19,6 +19,7 @@ Tatwir Talent HRMS uses **Supabase (PostgreSQL)** as its database, with Row Leve
 | `db/schema_v50_sim_packages_trader_payments.sql` | SIM package catalog, package-based sales ledger, trader onboarding details, payment proof buckets, and payment confirmation statuses |
 | `db/schema_v51_trader_sale_activation_details.sql` | Trader sale activation/customer details stored on `sim_sales` |
 | `db/schema_v52_sim_box_ocr_import.sql` | SIM box OCR import batches, generated kit codes, private image storage, and stock import metadata |
+| `db/schema_v53_editable_sim_commission_rules_finance.sql` | Editable package commission rules, sale-time commission snapshots, and Finance settlement metadata |
 
 ## LMS v43 Additive Migration
 
@@ -43,9 +44,9 @@ Required LMS object paths are org-prefixed:
 
 Run `npm run verify:lms` after applying the migration to check required tables, RLS, feature flag column, notification enum value, private storage bucket, policies, and indexes.
 
-## On-Ground Agent and Trader SIM Chain v47-v52
+## On-Ground Agent and Trader SIM Chain v47-v53
 
-Migration files: `db/schema_v47_field_agents.sql`, `db/schema_v48_merchants.sql`, `db/schema_v49_onground_agent_manager.sql`, `db/schema_v50_sim_packages_trader_payments.sql`, `db/schema_v51_trader_sale_activation_details.sql`, `db/schema_v52_sim_box_ocr_import.sql`
+Migration files: `db/schema_v47_field_agents.sql`, `db/schema_v48_merchants.sql`, `db/schema_v49_onground_agent_manager.sql`, `db/schema_v50_sim_packages_trader_payments.sql`, `db/schema_v51_trader_sale_activation_details.sql`, `db/schema_v52_sim_box_ocr_import.sql`, `db/schema_v53_editable_sim_commission_rules_finance.sql`
 
 These migrations implement a multi-tier SIM distribution chain:
 
@@ -63,13 +64,13 @@ stock -> field_agent -> merchant/trader -> customer
 | `sim_transfers` | Append-only SIM movement audit | sim_unit_id, transfer_type, from_agent_id, to_agent_id, from_merchant_id, to_merchant_id, performed_by |
 | `agent_cash_collections` | Cash collected from agents by the organization | agent_id, amount, payment_method, collected_by, collection_date |
 | `agent_sim_requests` | Field-agent SIM reorder requests | agent_id, quantity, sim_type, status, reviewed_by, reviewed_at |
-| `agent_commissions` | Agent commission ledger | agent_id, sim_unit_id, sim_package_id, sale_price, commission_type, commission_amount, is_paid |
+| `agent_commissions` | Agent commission ledger and Finance settlement record | agent_id, sim_unit_id, sim_package_id, sale_id, sale_price, commission_currency, commission_type, commission_amount, is_paid, paid_at, payment_method, payment_reference |
 | `merchants` | Trader/small-business accounts owned by agents | agent_id, user_id, business_name, owner_name, phone, city, region, latitude, longitude, place_photo_url, status |
 | `merchant_sim_requests` | Trader reorder requests to the owning agent | merchant_id, agent_id, quantity, sim_type, status, reviewed_by |
 | `merchant_cash_collections` | Trader payments to agents | merchant_id, agent_id, amount, payment_method, status, payment_proof_url, confirmed_by, rejected_by |
-| `merchant_commissions` | Trader commission ledger | merchant_id, agent_id, sim_unit_id, sim_package_id, commission_type, commission_amount, is_paid |
-| `sim_packages` | Package/baqa catalog | provider, package_name, allowances, base_price, sale_price, tax_included, agent_commission_type/value, merchant_commission_type/value, status |
-| `sim_sales` | Package-based sale ledger for agent and trader sales | sim_unit_id, package_id, seller_type, agent_id, merchant_id, sale_price, customer fields, commission snapshots, sold_at |
+| `merchant_commissions` | Trader commission ledger and Finance settlement record | merchant_id, agent_id, sim_unit_id, sim_package_id, sale_id, commission_currency, commission_type, commission_amount, is_paid, paid_at, payment_method, payment_reference |
+| `sim_packages` | Package/baqa catalog with editable commission rules | provider, package_name, allowances, base_price, sale_price, tax_included, commission_currency, total_commission, agent_chain_commission, merchant_commission, direct_agent_commission, status |
+| `sim_sales` | Package-based sale ledger for agent and trader sales | sim_unit_id, package_id, seller_type, agent_id, merchant_id, sale_price, customer fields, commission amounts, commission_rule_snapshot, sold_at |
 
 ### Trader Sale Activation Details
 
@@ -99,6 +100,21 @@ Migration v52 adds a manager-only import workflow for physical SIM dealer boxes.
 Confirmed imports create a `sim_import_batches` audit row and insert generated SIMs into `sim_units`. OCR imports set both `kit_code` and legacy `iccid` to the generated kit code for compatibility with the existing `sim_units` unique ICCID constraint. `import_source = 'box_ocr'`, `import_batch_id`, `dealer_box_number`, and `box_sequence` preserve box provenance. Direct assignment to an active field agent is optional; otherwise SIMs remain `in_stock`.
 
 Duplicate protection checks `(organization_id, provider, kit_code)` and legacy `(organization_id, iccid)`. The default strategy blocks the import; the optional skip strategy records duplicate counts on the batch and inserts only non-duplicates.
+
+### Editable Commission Rules and Finance Settlements
+
+Migration v53 adds package-level commission rules and Finance settlement metadata without recalculating old sales. Default active rules are:
+
+| Sale path | Field-agent commission | Trader commission | Total |
+|-----------|------------------------|-------------------|-------|
+| Trader/merchant sale | 5 SAR | 10 SAR | 15 SAR |
+| Direct field-agent activation | 15 SAR | 0 SAR | 15 SAR |
+
+`sim_packages` stores `commission_currency`, `total_commission_type/value`, `agent_chain_commission_type/value`, `merchant_commission_type/value`, `direct_agent_commission_type/value`, and optional notes. The legacy `agent_commission_type/value` columns remain as the field-agent chain commission alias for compatibility.
+
+`sim_sales` stores the calculated `total_commission_amount`, `agent_commission_amount`, `merchant_commission_amount`, `direct_agent_commission_amount`, `commission_currency`, and `commission_rule_snapshot` at sale time. Changing package rules later does not mutate old `sim_sales`, `agent_commissions`, or `merchant_commissions`.
+
+`agent_commissions` and `merchant_commissions` include `sale_id`, `commission_currency`, `payment_method`, `payment_reference`, `finance_notes`, `paid_at`, `paid_by`, and optional `accounting_journal_entry_id` when the accounting journal table exists. Finance settlement marks commission rows paid only; the original sale record remains unchanged.
 
 ### Access and RLS
 
@@ -237,13 +253,13 @@ sim_transfer_type: 'initial_import' | 'assign_to_agent' | 'return_to_stock' |
 | `sim_transfers` | SIM movement audit | id, organization_id, sim_unit_id, transfer_type, from/to agent/merchant ids |
 | `agent_sim_requests` | Agent stock requests | id, organization_id, agent_id, quantity, status |
 | `agent_cash_collections` | Agent payment collection records | id, organization_id, agent_id, amount, payment_method, collection_date |
-| `agent_commissions` | Agent commission records | id, organization_id, agent_id, sim_unit_id, sim_package_id, commission_amount, is_paid |
+| `agent_commissions` | Agent commission records | id, organization_id, agent_id, sim_unit_id, sim_package_id, sale_id, commission_amount, is_paid, payment metadata |
 | `merchants` | Trader/small-business accounts | id, organization_id, agent_id, user_id, business_name, phone, city, region, place_photo_url, status |
 | `merchant_sim_requests` | Trader stock requests | id, organization_id, merchant_id, agent_id, quantity, status |
 | `merchant_cash_collections` | Trader payment records and proofs | id, organization_id, merchant_id, agent_id, amount, payment_method, status, payment_proof_url |
-| `merchant_commissions` | Trader commission records | id, organization_id, merchant_id, agent_id, sim_unit_id, sim_package_id, commission_amount, is_paid |
-| `sim_packages` | SIM package catalog and commission rules | id, organization_id, provider, package_name, base_price, sale_price, agent/merchant commission fields |
-| `sim_sales` | Package-based SIM sales ledger | id, organization_id, sim_unit_id, package_id, seller_type, agent_id, merchant_id, customer activation fields, commission snapshots |
+| `merchant_commissions` | Trader commission records | id, organization_id, merchant_id, agent_id, sim_unit_id, sim_package_id, sale_id, commission_amount, is_paid, payment metadata |
+| `sim_packages` | SIM package catalog and commission rules | id, organization_id, provider, package_name, base_price, sale_price, total/agent-chain/trader/direct-agent commission fields |
+| `sim_sales` | Package-based SIM sales ledger | id, organization_id, sim_unit_id, package_id, seller_type, agent_id, merchant_id, customer activation fields, commission snapshots, rule snapshot |
 
 ### Accounting Module
 
@@ -378,6 +394,7 @@ ALLOW_DESTRUCTIVE_SCHEMA_APPLY=true npm run apply:schema
 | v50 | SIM packages, package-based sales ledger, trader onboarding details, and payment proof flow |
 | v51 | Trader sale activation/customer details on `sim_sales` |
 | v52 | SIM box OCR import batches, kit-code generation, private box-image storage, and import provenance |
+| v53 | Editable SIM package commission rules, sale snapshots, and Finance commission settlements |
 
 ## Storage Buckets (Supabase Storage)
 

@@ -15,6 +15,7 @@ import {
   updateAgentSchema,
 } from "@/lib/field-agents/schemas";
 import { normalizeProvider, validateSimBoxImportInput } from "@/lib/sim-box-import";
+import { calculateSimPackageCommission } from "@/lib/server/sim-commissions";
 
 export const dynamic = "force-dynamic";
 
@@ -159,11 +160,6 @@ function asNumber(value: unknown) {
 
 function safeFilename(name: string) {
   return name.replace(/[^\w.\-]+/g, "-").replace(/-+/g, "-").slice(0, 120) || "upload";
-}
-
-function calculateCommission(type: string, value: number, salePrice: number) {
-  if (type === "flat") return Math.round(value * 100) / 100;
-  return Math.round(salePrice * (value / 100) * 100) / 100;
 }
 
 async function readBody(request: NextRequest) {
@@ -954,9 +950,17 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       return message("Package provider must match the SIM provider.", 400);
     }
     const salePrice = asNumber(simPackage.sale_price);
-    const commissionType = asString(simPackage.agent_commission_type) || "percentage";
-    const commissionValue = asNumber(simPackage.agent_commission_value);
-    const commissionAmount = calculateCommission(commissionType, commissionValue, salePrice);
+    let commission;
+    try {
+      commission = calculateSimPackageCommission({
+        saleType: "agent_direct",
+        salePrice,
+        packageRow: simPackage,
+      });
+    } catch (error) {
+      return message(error, 400);
+    }
+    const directAgentRule = commission.ruleSnapshot.rules.directAgent;
 
     const update = await db
       .from("sim_units")
@@ -981,18 +985,7 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       from_agent_id: sellingAgentId,
     });
 
-    await db.from("agent_commissions").insert({
-      organization_id: auth.orgId,
-      agent_id: sellingAgentId,
-      sim_unit_id: parsed.data.sim_unit_id,
-      sim_package_id: parsed.data.package_id,
-      sale_price: salePrice,
-      commission_type: commissionType,
-      commission_rate: commissionValue,
-      commission_amount: commissionAmount,
-    });
-
-    await db.from("sim_sales").insert({
+    const saleInsert = await db.from("sim_sales").insert({
       organization_id: auth.orgId,
       sim_unit_id: parsed.data.sim_unit_id,
       package_id: parsed.data.package_id,
@@ -1001,11 +994,34 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       merchant_id: null,
       sale_price: salePrice,
       customer_name: parsed.data.customer_name ?? null,
-      agent_commission_type: commissionType,
-      agent_commission_value: commissionValue,
-      agent_commission_amount: commissionAmount,
+      commission_currency: commission.currency,
+      total_commission_amount: commission.totalCommissionAmount,
+      agent_commission_type: directAgentRule.type,
+      agent_commission_value: directAgentRule.value,
+      agent_commission_amount: commission.agentCommissionAmount,
+      merchant_commission_type: null,
+      merchant_commission_value: null,
+      merchant_commission_amount: 0,
+      direct_agent_commission_amount: commission.directAgentCommissionAmount,
+      commission_rule_snapshot: commission.ruleSnapshot,
       created_by: auth.user.id,
+    }).select("id").single();
+    if (saleInsert.error) return message(saleInsert.error.message, 500);
+    const saleId = asString(row(saleInsert.data).id);
+
+    const agentCommissionInsert = await db.from("agent_commissions").insert({
+      organization_id: auth.orgId,
+      agent_id: sellingAgentId,
+      sim_unit_id: parsed.data.sim_unit_id,
+      sim_package_id: parsed.data.package_id,
+      sale_id: saleId || null,
+      sale_price: salePrice,
+      commission_currency: commission.currency,
+      commission_type: directAgentRule.type,
+      commission_rate: directAgentRule.value,
+      commission_amount: commission.agentCommissionAmount,
     });
+    if (agentCommissionInsert.error) return message(agentCommissionInsert.error.message, 500);
 
     return json(row(update.data));
   }

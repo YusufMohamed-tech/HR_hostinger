@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test:sim-box-generation": "node scripts/test-sim-box-generation.mjs",
     "test:sim-box-parser": "node scripts/test-sim-box-parser.mjs",
+    "test:sim-commissions": "node scripts/test-sim-commissions.mjs",
     "apply:schema": "node scripts/apply-schema.mjs",
     "apply:migration": "node scripts/apply-migration.mjs",
     "apply:supabase-sql": "node scripts/apply-supabase-sql.mjs",

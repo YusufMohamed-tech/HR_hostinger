@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRightLeft,
+  BadgePercent,
   Banknote,
   BarChart3,
   BookOpen,
@@ -68,6 +69,7 @@ import {
   getJournalEntries,
   getJournalEntry,
   getPayments,
+  getSalesCommissions,
   getTaxRates,
   getVendors,
   initializeAccountingDefaults,
@@ -78,6 +80,7 @@ import {
   recordInvoicePayment,
   rejectExpense,
   reverseJournalEntry,
+  settleSalesCommissions,
   updateAccountingAccount,
   updateAccountingSettings,
   updateCostCenter,
@@ -85,7 +88,7 @@ import {
   updateJournalEntry,
   updateVendor,
 } from "@/lib/services/accounting";
-import type { AccountingAccount, AccountingCostCenter, AccountingCustomer, AccountingPayment, AccountingSalesCompanyLink, AccountingTaxRate, AccountingVendor } from "@/types/accounting";
+import type { AccountingAccount, AccountingCostCenter, AccountingCustomer, AccountingPayment, AccountingSalesCompanyLink, AccountingTaxRate, AccountingVendor, AgentCommissionFinanceRow, CommissionPaymentMethod, MerchantCommissionFinanceRow } from "@/types/accounting";
 import { useRoleContext } from "@/providers/RoleProvider";
 
 type AccountingView =
@@ -101,6 +104,7 @@ type AccountingView =
   | "invoices"
   | "invoice-new"
   | "payments"
+  | "commissions"
   | "reports"
   | "settings";
 
@@ -199,6 +203,7 @@ export function AccountingPage({ view }: { view: AccountingView }) {
   if (view === "invoices") return <InvoicesPage />;
   if (view === "invoice-new") return <InvoiceFormPage />;
   if (view === "payments") return <PaymentsPage />;
+  if (view === "commissions") return <SalesCommissionsPage />;
   if (view === "reports") return <ReportsIndexPage />;
   if (view === "settings") return <AccountingSettingsPage />;
   return null;
@@ -988,6 +993,234 @@ function PaymentsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+type CommissionFinanceRow = AgentCommissionFinanceRow | MerchantCommissionFinanceRow;
+
+const commissionPaymentLabels: Record<CommissionPaymentMethod, string> = {
+  cash: "نقدي",
+  bank_transfer: "تحويل بنكي",
+  wallet: "محفظة",
+  other: "أخرى",
+};
+
+function SalesCommissionsPage() {
+  const { canManage } = useAccountingCapabilities();
+  const [activeTab, setActiveTab] = useState<"agent" | "merchant">("agent");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [settlement, setSettlement] = useState({
+    payment_method: "cash" as CommissionPaymentMethod,
+    payment_reference: "",
+    finance_notes: "",
+  });
+  const [filters, setFilters] = useState({
+    status: "unpaid",
+    beneficiary_type: "all",
+    date_from: "",
+    date_to: "",
+    agent_id: "",
+    merchant_id: "",
+    package_id: "",
+    provider: "",
+  });
+  const { data, loading, message, setMessage, load } = useLoad(() => getSalesCommissions(filters), [
+    filters.status,
+    filters.beneficiary_type,
+    filters.date_from,
+    filters.date_to,
+    filters.agent_id,
+    filters.merchant_id,
+    filters.package_id,
+    filters.provider,
+  ]);
+  const summary = data?.summary;
+  const rows = activeTab === "agent" ? data?.agent_commissions || [] : data?.merchant_commissions || [];
+  const selectedRows = rows.filter((row) => selectedIds.includes(row.id));
+  const selectedTotal = selectedRows.reduce((sum, row) => sum + Number(row.commission_amount || 0), 0);
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [activeTab, filters.status, filters.beneficiary_type]);
+
+  const patchFilter = (key: keyof typeof filters, value: string) => setFilters((prev) => ({ ...prev, [key]: value }));
+  const toggleSelected = (row: CommissionFinanceRow) => {
+    if (row.is_paid) return;
+    setSelectedIds((prev) => prev.includes(row.id) ? prev.filter((id) => id !== row.id) : [...prev, row.id]);
+  };
+
+  const settle = async () => {
+    if (!canManage) return;
+    if (selectedIds.length === 0) {
+      setMessage("اختر عمولة واحدة على الأقل.");
+      return;
+    }
+    const result = await settleSalesCommissions({
+      beneficiary_type: activeTab,
+      commission_ids: selectedIds,
+      payment_method: settlement.payment_method,
+      payment_reference: settlement.payment_reference.trim() || undefined,
+      finance_notes: settlement.finance_notes.trim() || undefined,
+    });
+    if (result.error) {
+      setMessage(result.error);
+      return;
+    }
+    setMessage(`تم سداد ${result.data?.settled_count || 0} عمولة بإجمالي ${formatAccountingMoney(result.data?.total_amount || 0)}.`);
+    setSelectedIds([]);
+    load();
+  };
+
+  return (
+    <div className="space-y-6">
+      <MessageDialog open={Boolean(message)} onOpenChange={(open) => !open && setMessage("")} description={message} />
+      <AccountingPageHeader
+        title="عمولات المبيعات"
+        description="متابعة عمولات شرائح SIM المستحقة والمدفوعة للمندوبين والتجار."
+        actions={<Button variant="outline" onClick={load}><BadgePercent className="ml-2 h-4 w-4" />تحديث</Button>}
+      />
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AccountingStatCard label="عمولات مندوبين غير مدفوعة" value={<MoneyAmount value={summary?.unpaid_agent_total || 0} />} tone="amber" />
+        <AccountingStatCard label="عمولات تجار غير مدفوعة" value={<MoneyAmount value={summary?.unpaid_merchant_total || 0} />} tone="amber" />
+        <AccountingStatCard label="المدفوع هذا الشهر" value={<MoneyAmount value={summary?.paid_total || 0} />} tone="green" />
+        <AccountingStatCard label="إجمالي مصروف العمولة" value={<MoneyAmount value={summary?.total_commission_expense || 0} />} />
+      </div>
+
+      <Card className="border-none shadow-sm">
+        <CardContent className="grid gap-3 p-5 md:grid-cols-4 xl:grid-cols-8">
+          <SelectField value={filters.status} onChange={(value) => patchFilter("status", value)}>
+            <option value="unpaid">غير مدفوعة</option>
+            <option value="paid">مدفوعة</option>
+            <option value="all">الكل</option>
+          </SelectField>
+          <SelectField value={filters.beneficiary_type} onChange={(value) => patchFilter("beneficiary_type", value)}>
+            <option value="all">كل المستفيدين</option>
+            <option value="agent">المندوبون</option>
+            <option value="merchant">التجار</option>
+          </SelectField>
+          <Input type="date" value={filters.date_from} onChange={(e) => patchFilter("date_from", e.target.value)} />
+          <Input type="date" value={filters.date_to} onChange={(e) => patchFilter("date_to", e.target.value)} />
+          <Input placeholder="معرف المندوب" value={filters.agent_id} onChange={(e) => patchFilter("agent_id", e.target.value)} />
+          <Input placeholder="معرف التاجر" value={filters.merchant_id} onChange={(e) => patchFilter("merchant_id", e.target.value)} />
+          <Input placeholder="معرف الباقة" value={filters.package_id} onChange={(e) => patchFilter("package_id", e.target.value)} />
+          <Input placeholder="المزود" value={filters.provider} onChange={(e) => patchFilter("provider", e.target.value)} />
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-wrap gap-2">
+        <Button variant={activeTab === "agent" ? "default" : "outline"} onClick={() => setActiveTab("agent")} className={activeTab === "agent" ? "bg-brand text-white hover:bg-brand-dark" : ""}>
+          عمولات المندوبين
+        </Button>
+        <Button variant={activeTab === "merchant" ? "default" : "outline"} onClick={() => setActiveTab("merchant")} className={activeTab === "merchant" ? "bg-brand text-white hover:bg-brand-dark" : ""}>
+          عمولات التجار
+        </Button>
+      </div>
+
+      {canManage ? (
+        <Card className="border-none shadow-sm">
+          <CardContent className="grid gap-3 p-5 md:grid-cols-[180px_1fr_1fr_auto]">
+            <SelectField value={settlement.payment_method} onChange={(value) => setSettlement((prev) => ({ ...prev, payment_method: value as CommissionPaymentMethod }))}>
+              {Object.entries(commissionPaymentLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </SelectField>
+            <Input placeholder="مرجع السداد" value={settlement.payment_reference} onChange={(e) => setSettlement((prev) => ({ ...prev, payment_reference: e.target.value }))} />
+            <Input placeholder="ملاحظات مالية" value={settlement.finance_notes} onChange={(e) => setSettlement((prev) => ({ ...prev, finance_notes: e.target.value }))} />
+            <Button className="bg-brand text-white hover:bg-brand-dark" onClick={settle} disabled={selectedIds.length === 0}>
+              سداد {selectedIds.length} / {formatAccountingMoney(selectedTotal)}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card className="border-none shadow-sm">
+        <CardContent className="p-0">
+          {loading ? (
+            <div className="p-6"><AccountingLoading /></div>
+          ) : rows.length === 0 ? (
+            <div className="p-6"><AccountingEmptyState title="لا توجد عمولات" /></div>
+          ) : (
+            <CommissionFinanceTable
+              rows={rows}
+              type={activeTab}
+              selectedIds={selectedIds}
+              canSelect={canManage}
+              onToggle={toggleSelected}
+            />
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function formatAccountingMoney(value: unknown) {
+  const number = Number(value || 0);
+  return `${Number.isFinite(number) ? number.toLocaleString("ar-SA", { maximumFractionDigits: 2 }) : "0"} ر.س`;
+}
+
+function CommissionFinanceTable({
+  rows,
+  type,
+  selectedIds,
+  canSelect,
+  onToggle,
+}: {
+  rows: CommissionFinanceRow[];
+  type: "agent" | "merchant";
+  selectedIds: string[];
+  canSelect: boolean;
+  onToggle: (row: CommissionFinanceRow) => void;
+}) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          {canSelect ? <TableHead className="w-10"></TableHead> : null}
+          <TableHead>{type === "agent" ? "المندوب" : "التاجر"}</TableHead>
+          {type === "merchant" ? <TableHead>المندوب المالك</TableHead> : null}
+          <TableHead>الباقة</TableHead>
+          <TableHead>الشريحة</TableHead>
+          <TableHead>تاريخ البيع</TableHead>
+          <TableHead>سعر البيع</TableHead>
+          <TableHead>العمولة</TableHead>
+          <TableHead>الحالة</TableHead>
+          <TableHead>مرجع السداد</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={row.id}>
+            {canSelect ? (
+              <TableCell>
+                <input
+                  aria-label="اختيار العمولة"
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-300"
+                  checked={selectedIds.includes(row.id)}
+                  disabled={row.is_paid}
+                  onChange={() => onToggle(row)}
+                />
+              </TableCell>
+            ) : null}
+            <TableCell className="font-medium">{row.beneficiary_name || "-"}</TableCell>
+            {type === "merchant" ? <TableCell>{row.owner_agent_name || row.agent_name || "-"}</TableCell> : null}
+            <TableCell>
+              {row.package_name || "-"}
+              <div className="text-xs text-gray-500">{row.package_provider || "-"}</div>
+            </TableCell>
+            <TableCell className="font-mono text-xs">{row.sim_label || row.sim_iccid || "-"}</TableCell>
+            <TableCell>{row.sale_date ? String(row.sale_date).slice(0, 10) : "-"}</TableCell>
+            <TableCell><MoneyAmount value={row.sale_price} /></TableCell>
+            <TableCell>
+              <MoneyAmount value={row.commission_amount} />
+              <div className="text-xs text-gray-500">{row.commission_type === "percentage" ? `${row.commission_rate}%` : `${row.commission_rate} ${row.commission_currency || "SAR"}`}</div>
+            </TableCell>
+            <TableCell><AccountingStatusBadge status={row.is_paid ? "paid" : "pending"} /></TableCell>
+            <TableCell>{row.payment_reference || "-"}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 

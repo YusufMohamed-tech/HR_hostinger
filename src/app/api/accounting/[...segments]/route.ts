@@ -434,6 +434,188 @@ async function getPayrollAccountingStatus(admin: ReturnType<typeof createAdminCl
   };
 }
 
+function commissionPaymentMethod(value: unknown) {
+  const method = requireText(value, "cash");
+  if (["cash", "bank_transfer", "wallet", "other"].includes(method)) return method;
+  throw new Error("طريقة السداد غير صحيحة.");
+}
+
+function commissionStatusFilter(value: string | null) {
+  if (value === "paid" || value === "unpaid" || value === "all") return value;
+  return "unpaid";
+}
+
+function isCurrentMonth(value: unknown) {
+  const text = requireText(value);
+  if (!text) return false;
+  const now = new Date();
+  const paidAt = new Date(text);
+  return paidAt.getFullYear() === now.getFullYear() && paidAt.getMonth() === now.getMonth();
+}
+
+function nestedRow(value: unknown) {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function mapCommissionRow(row: Record<string, unknown>, beneficiaryType: "agent" | "merchant"): Record<string, unknown> {
+  const agent = nestedRow(row.agent);
+  const merchant = nestedRow(row.merchant);
+  const ownerAgent = nestedRow(row.owner_agent);
+  const packageRow = nestedRow(row.package);
+  const sim = nestedRow(row.sim);
+  const sale = nestedRow(row.sale);
+  const beneficiary = beneficiaryType === "agent" ? agent : merchant;
+
+  return {
+    ...row,
+    beneficiary_type: beneficiaryType,
+    beneficiary_name: String(
+      beneficiary.full_name ||
+      beneficiary.business_name ||
+      beneficiary.owner_name ||
+      ""
+    ),
+    agent_name: String(agent.full_name || ownerAgent.full_name || ""),
+    owner_agent_name: String(ownerAgent.full_name || ""),
+    package_name: String(packageRow.package_name || ""),
+    package_provider: String(packageRow.provider || sim.provider || ""),
+    sim_label: String(sim.kit_code || sim.iccid || ""),
+    sim_iccid: String(sim.iccid || ""),
+    sim_kit_code: String(sim.kit_code || ""),
+    sale_date: String(sale.sold_at || row.created_at || ""),
+    sale_customer_name: sale.customer_name ? String(sale.customer_name) : null,
+  };
+}
+
+async function getSalesCommissionsFinance(admin: ReturnType<typeof createAdminClient>, orgId: string, request: NextRequest) {
+  const status = commissionStatusFilter(request.nextUrl.searchParams.get("status"));
+  const beneficiaryType = request.nextUrl.searchParams.get("beneficiary_type") || "all";
+  const dateFrom = request.nextUrl.searchParams.get("date_from") || "";
+  const dateTo = request.nextUrl.searchParams.get("date_to") || "";
+  const agentId = request.nextUrl.searchParams.get("agent_id") || "";
+  const merchantId = request.nextUrl.searchParams.get("merchant_id") || "";
+  const packageId = request.nextUrl.searchParams.get("package_id") || "";
+  const provider = (request.nextUrl.searchParams.get("provider") || "").toLowerCase();
+
+  const loadAgentRows = async () => {
+    let query = db(admin)
+      .from("agent_commissions")
+      .select("*, agent:agent_id(id, full_name, phone), package:sim_package_id(id, package_name, provider), sim:sim_unit_id(id, iccid, kit_code, provider, sim_type), sale:sale_id(id, sold_at, sale_price, customer_name)")
+      .eq("organization_id", orgId);
+    if (status === "paid") query = query.eq("is_paid", true);
+    if (status === "unpaid") query = query.eq("is_paid", false);
+    if (dateFrom) query = query.gte("created_at", dateFrom);
+    if (dateTo) query = query.lte("created_at", `${dateTo}T23:59:59.999Z`);
+    if (agentId) query = query.eq("agent_id", agentId);
+    if (packageId) query = query.eq("sim_package_id", packageId);
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return ((data || []) as Record<string, unknown>[])
+      .filter((row) => !provider || String(nestedRow(row.package).provider || nestedRow(row.sim).provider || "").toLowerCase() === provider)
+      .map((row) => mapCommissionRow(row, "agent"));
+  };
+
+  const loadMerchantRows = async () => {
+    let query = db(admin)
+      .from("merchant_commissions")
+      .select("*, merchant:merchant_id(id, business_name, owner_name, phone), owner_agent:agent_id(id, full_name, phone), package:sim_package_id(id, package_name, provider), sim:sim_unit_id(id, iccid, kit_code, provider, sim_type), sale:sale_id(id, sold_at, sale_price, customer_name)")
+      .eq("organization_id", orgId);
+    if (status === "paid") query = query.eq("is_paid", true);
+    if (status === "unpaid") query = query.eq("is_paid", false);
+    if (dateFrom) query = query.gte("created_at", dateFrom);
+    if (dateTo) query = query.lte("created_at", `${dateTo}T23:59:59.999Z`);
+    if (agentId) query = query.eq("agent_id", agentId);
+    if (merchantId) query = query.eq("merchant_id", merchantId);
+    if (packageId) query = query.eq("sim_package_id", packageId);
+    const { data, error } = await query.order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return ((data || []) as Record<string, unknown>[])
+      .filter((row) => !provider || String(nestedRow(row.package).provider || nestedRow(row.sim).provider || "").toLowerCase() === provider)
+      .map((row) => mapCommissionRow(row, "merchant"));
+  };
+
+  const [agentCommissions, merchantCommissions] = await Promise.all([
+    beneficiaryType === "merchant" ? Promise.resolve([]) : loadAgentRows(),
+    beneficiaryType === "agent" ? Promise.resolve([]) : loadMerchantRows(),
+  ]);
+  const allRows = [...agentCommissions, ...merchantCommissions];
+
+  return {
+    summary: {
+      unpaid_agent_total: roundMoney(agentCommissions.filter((row) => !row.is_paid).reduce((sum, row) => sum + Number(row.commission_amount || 0), 0)),
+      unpaid_merchant_total: roundMoney(merchantCommissions.filter((row) => !row.is_paid).reduce((sum, row) => sum + Number(row.commission_amount || 0), 0)),
+      paid_total: roundMoney(allRows.filter((row) => row.is_paid && isCurrentMonth(row.paid_at)).reduce((sum, row) => sum + Number(row.commission_amount || 0), 0)),
+      total_commission_expense: roundMoney(allRows.reduce((sum, row) => sum + Number(row.commission_amount || 0), 0)),
+    },
+    agent_commissions: agentCommissions,
+    merchant_commissions: merchantCommissions,
+  };
+}
+
+async function settleSalesCommissionsFinance(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  userId: string,
+  body: Record<string, unknown>
+) {
+  const beneficiaryType = requireText(body.beneficiary_type);
+  if (beneficiaryType !== "agent" && beneficiaryType !== "merchant") {
+    throw new Error("نوع المستفيد مطلوب.");
+  }
+
+  const commissionIds = Array.from(new Set(
+    (Array.isArray(body.commission_ids) ? body.commission_ids : [])
+      .map((id) => requireText(id))
+      .filter(Boolean)
+  ));
+  if (commissionIds.length === 0) throw new Error("اختر عمولة واحدة على الأقل للسداد.");
+
+  const paymentMethod = commissionPaymentMethod(body.payment_method);
+  const table = beneficiaryType === "agent" ? "agent_commissions" : "merchant_commissions";
+  const existing = await db(admin)
+    .from(table)
+    .select("id, organization_id, commission_amount, is_paid")
+    .eq("organization_id", orgId)
+    .in("id", commissionIds);
+  if (existing.error) throw new Error(existing.error.message);
+
+  const rows = (existing.data || []) as Record<string, unknown>[];
+  if (rows.length !== commissionIds.length) throw new Error("بعض العمولة المحددة غير موجودة أو خارج المنظمة.");
+  if (rows.some((row) => row.is_paid)) throw new Error("يمكن سداد العمولات غير المدفوعة فقط.");
+
+  const totalAmount = roundMoney(rows.reduce((sum, row) => sum + Number(row.commission_amount || 0), 0));
+  const update = await db(admin)
+    .from(table)
+    .update({
+      is_paid: true,
+      paid_at: new Date().toISOString(),
+      paid_by: userId,
+      payment_method: paymentMethod,
+      payment_reference: requireText(body.payment_reference) || null,
+      finance_notes: requireText(body.finance_notes) || null,
+    })
+    .eq("organization_id", orgId)
+    .eq("is_paid", false)
+    .in("id", commissionIds)
+    .select("*");
+  if (update.error) throw new Error(update.error.message);
+
+  const settledRows = (update.data || []) as Record<string, unknown>[];
+  await audit(admin, orgId, userId, "accounting.sales_commissions_settled", table, null, {
+    beneficiary_type: beneficiaryType,
+    commission_ids: commissionIds,
+    settled_count: settledRows.length,
+    total_amount: totalAmount,
+    payment_method: paymentMethod,
+  });
+
+  return {
+    settled_count: settledRows.length,
+    total_amount: totalAmount,
+    commissions: settledRows,
+  };
+}
+
 export async function GET(request: NextRequest, context: RouteContext) {
   const parts = segments(context);
   const auth = await requireAccountingAccess(actionFor("GET", parts));
@@ -443,6 +625,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
   try {
     const { dateFrom, dateTo, asOf } = getQueryDates(request);
     if (parts[0] === "dashboard") return json(await getAccountingDashboard(admin, auth.orgId, dateFrom, dateTo));
+    if (parts[0] === "commissions") return json(await getSalesCommissionsFinance(admin, auth.orgId, request));
     if (parts[0] === "accounts") return json(await listTable(admin, "accounting_accounts", auth.orgId, request, "code"));
     if (parts[0] === "cost-centers") return json(await listTable(admin, "accounting_cost_centers", auth.orgId, request, "code"));
     if (parts[0] === "vendors") {
@@ -652,6 +835,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (parts[0] === "init-defaults") {
       await initializeAccountingDefaults(admin, auth.orgId, auth.user.id);
       return json({ ok: true });
+    }
+
+    if (parts[0] === "commissions" && parts[1] === "settle") {
+      return json(await settleSalesCommissionsFinance(admin, auth.orgId, auth.user.id, body));
     }
 
     if (parts[0] === "accounts") {

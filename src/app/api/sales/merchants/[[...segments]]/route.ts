@@ -15,6 +15,7 @@ import {
   updateMerchantSchema,
   updateSimPackageSchema,
 } from "@/lib/merchants/schemas";
+import { calculateSimPackageCommission } from "@/lib/server/sim-commissions";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +125,54 @@ function asNumber(value: unknown) {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
 }
+
+function hasOwn(record: Record<string, unknown>, key: string) {
+  return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+function normalizeSimPackagePayload(values: Record<string, unknown>, actorUserId: string, source: unknown) {
+  const next = { ...values };
+  const raw = row(source);
+
+  const agentChainTypeProvided = hasOwn(raw, "agent_chain_commission_type");
+  const legacyAgentTypeProvided = hasOwn(raw, "agent_commission_type");
+  const agentChainValueProvided = hasOwn(raw, "agent_chain_commission_value");
+  const legacyAgentValueProvided = hasOwn(raw, "agent_commission_value");
+
+  if (agentChainTypeProvided || (!legacyAgentTypeProvided && next.agent_chain_commission_type != null)) {
+    next.agent_commission_type = next.agent_chain_commission_type;
+  } else if (legacyAgentTypeProvided) {
+    next.agent_chain_commission_type = next.agent_commission_type;
+  }
+
+  if (agentChainValueProvided || (!legacyAgentValueProvided && next.agent_chain_commission_value != null)) {
+    next.agent_commission_value = next.agent_chain_commission_value;
+  } else if (legacyAgentValueProvided) {
+    next.agent_chain_commission_value = next.agent_commission_value;
+  }
+
+  const commissionKeys = [
+    "commission_currency",
+    "total_commission_type",
+    "total_commission_value",
+    "agent_chain_commission_type",
+    "agent_chain_commission_value",
+    "agent_commission_type",
+    "agent_commission_value",
+    "merchant_commission_type",
+    "merchant_commission_value",
+    "direct_agent_commission_type",
+    "direct_agent_commission_value",
+    "commission_notes",
+  ];
+  if (commissionKeys.some((key) => hasOwn(raw, key))) {
+    next.commission_updated_by = actorUserId;
+    next.commission_updated_at = new Date().toISOString();
+  }
+
+  return next;
+}
+
 async function readBody(request: NextRequest) {
   return request.json().catch(() => ({}));
 }
@@ -160,11 +209,6 @@ async function uploadPublicFile(auth: AuthContext, bucket: string, folder: strin
   });
   if (upload.error || !upload.data) throw new Error(upload.error?.message || "Unable to upload file.");
   return storage(auth.admin).storage.from(bucket).getPublicUrl(upload.data.path).data.publicUrl;
-}
-
-function calculateCommission(type: string, value: number, salePrice: number) {
-  if (type === "flat") return Math.round(value * 100) / 100;
-  return Math.round(salePrice * (value / 100) * 100) / 100;
 }
 
 async function resolveAgentId(auth: AuthContext): Promise<string | null> {
@@ -286,10 +330,11 @@ async function handlePackages(request: NextRequest, auth: AuthContext, segments:
       const body = await readBody(request);
       const parsed = simPackageSchema.safeParse(body);
       if (!parsed.success) return message(parseError(parsed.error), 400);
+      const packageValues = normalizeSimPackagePayload(parsed.data, auth.user.id, body);
       const result = await db
         .from("sim_packages")
         .insert({
-          ...parsed.data,
+          ...packageValues,
           organization_id: auth.orgId,
           created_by: auth.user.id,
         })
@@ -307,9 +352,10 @@ async function handlePackages(request: NextRequest, auth: AuthContext, segments:
     const body = await readBody(request);
     const parsed = updateSimPackageSchema.safeParse(body);
     if (!parsed.success) return message(parseError(parsed.error), 400);
+    const packageValues = normalizeSimPackagePayload(parsed.data, auth.user.id, body);
     const result = await db
       .from("sim_packages")
-      .update(parsed.data)
+      .update(packageValues)
       .eq("organization_id", auth.orgId)
       .eq("id", packageId)
       .select("*")
@@ -695,12 +741,18 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       return message("Package provider must match the SIM provider.", 400);
     }
     const salePrice = asNumber(simPackage.sale_price);
-    const merchantCommissionType = asString(simPackage.merchant_commission_type) || "percentage";
-    const merchantCommissionValue = asNumber(simPackage.merchant_commission_value);
-    const merchantCommission = calculateCommission(merchantCommissionType, merchantCommissionValue, salePrice);
-    const agentCommissionType = asString(simPackage.agent_commission_type) || "percentage";
-    const agentCommissionValue = asNumber(simPackage.agent_commission_value);
-    const agentCommission = calculateCommission(agentCommissionType, agentCommissionValue, salePrice);
+    let commission;
+    try {
+      commission = calculateSimPackageCommission({
+        saleType: "merchant_sale",
+        salePrice,
+        packageRow: simPackage,
+      });
+    } catch (error) {
+      return message(error, 400);
+    }
+    const agentChainRule = commission.ruleSnapshot.rules.agentChain;
+    const merchantRule = commission.ruleSnapshot.rules.merchant;
 
     const update = await db
       .from("sim_units")
@@ -726,32 +778,7 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       from_merchant_id: sellingMerchantId,
     });
 
-    // Merchant reward (paid by agent).
-    await db.from("merchant_commissions").insert({
-      organization_id: auth.orgId,
-      merchant_id: sellingMerchantId,
-      agent_id: ownerAgentId,
-      sim_unit_id: parsed.data.sim_unit_id,
-      sim_package_id: parsed.data.package_id,
-      sale_price: salePrice,
-      commission_type: merchantCommissionType,
-      commission_rate: merchantCommissionValue,
-      commission_amount: merchantCommission,
-    });
-
-    // Agent reward (paid by the organization).
-    await db.from("agent_commissions").insert({
-      organization_id: auth.orgId,
-      agent_id: ownerAgentId,
-      sim_unit_id: parsed.data.sim_unit_id,
-      sim_package_id: parsed.data.package_id,
-      sale_price: salePrice,
-      commission_type: agentCommissionType,
-      commission_rate: agentCommissionValue,
-      commission_amount: agentCommission,
-    });
-
-    await db.from("sim_sales").insert({
+    const saleInsert = await db.from("sim_sales").insert({
       organization_id: auth.orgId,
       sim_unit_id: parsed.data.sim_unit_id,
       package_id: parsed.data.package_id,
@@ -772,14 +799,51 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       marketer_name: parsed.data.marketer_name ?? null,
       national_address: parsed.data.national_address,
       supervisor_name: parsed.data.supervisor_name,
-      agent_commission_type: agentCommissionType,
-      agent_commission_value: agentCommissionValue,
-      agent_commission_amount: agentCommission,
-      merchant_commission_type: merchantCommissionType,
-      merchant_commission_value: merchantCommissionValue,
-      merchant_commission_amount: merchantCommission,
+      commission_currency: commission.currency,
+      total_commission_amount: commission.totalCommissionAmount,
+      agent_commission_type: agentChainRule.type,
+      agent_commission_value: agentChainRule.value,
+      agent_commission_amount: commission.agentCommissionAmount,
+      merchant_commission_type: merchantRule.type,
+      merchant_commission_value: merchantRule.value,
+      merchant_commission_amount: commission.merchantCommissionAmount,
+      direct_agent_commission_amount: 0,
+      commission_rule_snapshot: commission.ruleSnapshot,
       created_by: auth.user.id,
+    }).select("id").single();
+    if (saleInsert.error) return message(saleInsert.error.message, 500);
+    const saleId = asString(row(saleInsert.data).id);
+
+    // Merchant reward (paid by agent).
+    const merchantCommissionInsert = await db.from("merchant_commissions").insert({
+      organization_id: auth.orgId,
+      merchant_id: sellingMerchantId,
+      agent_id: ownerAgentId,
+      sim_unit_id: parsed.data.sim_unit_id,
+      sim_package_id: parsed.data.package_id,
+      sale_id: saleId || null,
+      sale_price: salePrice,
+      commission_currency: commission.currency,
+      commission_type: merchantRule.type,
+      commission_rate: merchantRule.value,
+      commission_amount: commission.merchantCommissionAmount,
     });
+    if (merchantCommissionInsert.error) return message(merchantCommissionInsert.error.message, 500);
+
+    // Agent reward (paid by the organization).
+    const agentCommissionInsert = await db.from("agent_commissions").insert({
+      organization_id: auth.orgId,
+      agent_id: ownerAgentId,
+      sim_unit_id: parsed.data.sim_unit_id,
+      sim_package_id: parsed.data.package_id,
+      sale_id: saleId || null,
+      sale_price: salePrice,
+      commission_currency: commission.currency,
+      commission_type: agentChainRule.type,
+      commission_rate: agentChainRule.value,
+      commission_amount: commission.agentCommissionAmount,
+    });
+    if (agentCommissionInsert.error) return message(agentCommissionInsert.error.message, 500);
 
     return json(row(update.data));
   }

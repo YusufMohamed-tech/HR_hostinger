@@ -22,6 +22,14 @@
 - `sim-box-imports` is private storage; the database stores object paths, not public URLs.
 - The focused kit-code generation test is `npm run test:sim-box-generation`; parser coverage is `npm run test:sim-box-parser`. These do not replace database/API tests for duplicate handling, RLS, or storage policy behavior.
 
+## SIM Commission Finance v53 Notes
+
+- Package commission defaults are editable per package: trader sales default to 5 SAR field-agent chain commission plus 10 SAR trader commission, while direct field-agent activations default to 15 SAR for the field agent.
+- Sale records and commission rows snapshot the rule used at sale time. Later package edits intentionally do not recalculate old sales.
+- `/accounting/commissions` can mark agent/trader commission rows paid with method, reference, and finance notes. Settlement does not mutate `sim_sales`; it only updates `agent_commissions` or `merchant_commissions`.
+- Automatic accounting journal posting for commission expense/payable is intentionally deferred until the chart-of-accounts mapping for commission expense, commission payable, and cash/bank accounts is confirmed. The optional `accounting_journal_entry_id` column is present for future integration.
+- The focused calculation test is `npm run test:sim-commissions`. It does not replace database/API tests for tenant isolation or settlement authorization.
+
 ## Critical Issues
 
 | # | Area | Description | Impact |

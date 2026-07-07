@@ -63,11 +63,11 @@ The repository now includes a professional internal LMS module for corporate emp
 - [API Reference](./api.md#lms-v43-api)
 - [Frontend](./frontend.md#lms-v43-frontend)
 
-## On-Ground Agent and Trader SIM Chain v47-v52
+## On-Ground Agent and Trader SIM Chain v47-v53
 
-The repository also includes the on-ground SIM distribution workflow: manager stock control, field-agent accounts, trader accounts, SIM package catalog, SIM box OCR stock import, merchant/trader payment confirmations, and trader sale activation details. See:
+The repository also includes the on-ground SIM distribution workflow: manager stock control, field-agent accounts, trader accounts, editable SIM package commission rules, SIM box OCR stock import, merchant/trader payment confirmations, trader sale activation details, and Finance commission settlement tracking. See:
 - [Modules](./modules.md#10a-on-ground-agent--trader-sim-distribution)
-- [Database](./database.md#on-ground-agent-and-trader-sim-chain-v47-v52)
+- [Database](./database.md#on-ground-agent-and-trader-sim-chain-v47-v53)
 - [API Reference](./api.md#on-ground-agent--trader-sim-apis)
 - [Frontend](./frontend.md#on-ground-agent--trader-frontend)
 - [Schema Apply Notes](./schema-apply.md#apply-on-ground-agent-and-trader-migrations)
