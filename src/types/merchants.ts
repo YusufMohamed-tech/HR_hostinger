@@ -68,13 +68,19 @@ export interface MerchantCommission {
   agent_id: string;
   sim_unit_id: string;
   sim_package_id: string | null;
+  sale_id: string | null;
   sale_price: number;
+  commission_currency: string;
   commission_type: "percentage" | "flat";
   commission_rate: number;
   commission_amount: number;
   is_paid: boolean;
   paid_at: string | null;
   paid_by: string | null;
+  payment_method: string | null;
+  payment_reference: string | null;
+  finance_notes: string | null;
+  accounting_journal_entry_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -101,8 +107,12 @@ export interface TraderSaleRecord {
   marketer_name: string | null;
   national_address: string | null;
   supervisor_name: string | null;
+  commission_currency: string;
+  total_commission_amount: number;
   agent_commission_amount: number;
   merchant_commission_amount: number | null;
+  direct_agent_commission_amount: number;
+  commission_rule_snapshot: Record<string, unknown>;
   sold_at: string;
   created_at: string;
   merchant_name: string;

@@ -275,7 +275,7 @@ Tatwir Talent HRMS is organized into distinct feature modules, each with its own
 ### Features
 - Manager imports SIM stock, assigns SIMs to field agents, reviews agent requests, tracks transfers, and records organization cash collection from agents.
 - Manager can import a physical SIM dealer box from an image: OCR extracts label fields, the manager reviews/edit fields, the server generates kit codes, duplicate checks run, and confirmed SIMs enter stock or are directly assigned to one active field agent.
-- Manager creates and maintains package catalog entries with sale price, tax flag, and agent/trader commission rules.
+- Manager creates and maintains package catalog entries with sale price, tax flag, and editable commission rules.
 - Field agents receive SIMs, sell directly to customers, create trader accounts, assign SIMs to traders, review trader stock requests, collect or confirm trader payments, and track commissions.
 - Traders view their stock, select an active package, complete required activation/customer fields, record SIM sales, request more SIMs, and submit payments with optional proof files.
 - Manager-facing trader sales page lists merchant sales with customer activation details, package/SIM context, agent/trader names, and commission totals.
@@ -293,6 +293,8 @@ Kit-code generation preserves leading zeros, supports quantity `1` only when fir
 - Package provider must match the SIM provider before a sale is accepted.
 - OCR imports set `kit_code` and legacy `iccid` to the generated kit code; the import never creates a sale or merchant/trader assignment.
 - Sale price and commission amounts are calculated from the selected `sim_packages` row and snapshotted onto `sim_sales`, `agent_commissions`, and `merchant_commissions`.
+- Default package commission is 15 SAR total. Trader sales split it as 5 SAR to the field-agent chain and 10 SAR to the trader. Direct field-agent activations pay the full 15 SAR to the field agent and create no trader commission.
+- Package commission rules are editable per package. Old sales and old commission records keep their sale-time snapshots when package rules change later.
 - A suspended field agent or trader cannot receive or sell SIMs.
 - Trader payment submissions are `pending` when submitted by the trader and only reduce balances after confirmation. Cash can be confirmed by the owning agent/manager; electronic methods require manager confirmation.
 - `/sales/trader-sales` is manager-only because it exposes customer activation details.
@@ -311,6 +313,7 @@ Kit-code generation preserves leading zeros, supports quantity `1` only when fir
 - **Invoices:** Invoice generation, line items, payment tracking
 - **Expenses:** Expense submission, categorization, approval
 - **Payments:** Payment registry and reconciliation
+- **Sales Commissions:** Payable/paid commission ledger for SIM package sales, split by field-agent and trader beneficiaries
 - **Customers/Vendors:** CRM data for AR/AP
 - **Cost Centers:** Cost allocation by department/location/project
 - **Team Management:** Finance team role assignments (Finance_Manager only)
@@ -333,6 +336,7 @@ Kit-code generation preserves leading zeros, supports quantity `1` only when fir
 | View records | Yes | Yes | Yes |
 | Create/edit | Yes | Yes | No |
 | Post journals | Yes | No | No |
+| Settle sales commissions | Yes | Yes | No |
 | Manage settings | Yes | No | No |
 | Manage team | Yes | No | No |
 

@@ -1491,6 +1491,49 @@ function SimBoxImportDialog({ agents, onDone }: { agents: FieldAgent[]; onDone: 
 // ---------------------------------------------------------------------------
 // Package terms
 // ---------------------------------------------------------------------------
+function commissionTypeLabel(type: string) {
+  return type === "flat" ? "مبلغ ثابت" : "نسبة";
+}
+
+function commissionAmount(type: string, value: string, salePrice: string) {
+  const numericValue = Number(value || 0);
+  const price = Number(salePrice || 0);
+  if (!Number.isFinite(numericValue) || numericValue < 0) return 0;
+  return type === "percentage" ? (price * numericValue) / 100 : numericValue;
+}
+
+function commissionSplitWarning(form: {
+  sale_price: string;
+  total_commission_type: string;
+  total_commission_value: string;
+  agent_chain_commission_type: string;
+  agent_chain_commission_value: string;
+  merchant_commission_type: string;
+  merchant_commission_value: string;
+}) {
+  const total = commissionAmount(form.total_commission_type, form.total_commission_value, form.sale_price);
+  const split =
+    commissionAmount(form.agent_chain_commission_type, form.agent_chain_commission_value, form.sale_price) +
+    commissionAmount(form.merchant_commission_type, form.merchant_commission_value, form.sale_price);
+  return Math.abs(total - split) > 0.01
+    ? `تنبيه: مجموع عمولة بيع التاجر (${formatMoney(split)}) لا يساوي إجمالي العمولة (${formatMoney(total)}). يمكن الحفظ إذا كان ذلك مقصودا.`
+    : "";
+}
+
+function CommissionTypeSelect({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <Select value={value} onValueChange={(v) => onChange(v ?? "flat")}>
+      <SelectTrigger>
+        <SelectValue>{commissionTypeLabel(value)}</SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="flat">مبلغ ثابت</SelectItem>
+        <SelectItem value="percentage">نسبة</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
 function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -1504,13 +1547,20 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
     sale_price: String(pkg.sale_price ?? 0),
     base_price: String(pkg.base_price ?? 0),
     tax_included: String(pkg.tax_included ?? true),
-    agent_commission_type: pkg.agent_commission_type || "percentage",
-    agent_commission_value: String(pkg.agent_commission_value ?? 0),
-    merchant_commission_type: pkg.merchant_commission_type || "percentage",
-    merchant_commission_value: String(pkg.merchant_commission_value ?? 0),
+    commission_currency: pkg.commission_currency || "SAR",
+    total_commission_type: pkg.total_commission_type || "flat",
+    total_commission_value: String(pkg.total_commission_value ?? 15),
+    agent_chain_commission_type: pkg.agent_chain_commission_type || pkg.agent_commission_type || "flat",
+    agent_chain_commission_value: String(pkg.agent_chain_commission_value ?? pkg.agent_commission_value ?? 5),
+    merchant_commission_type: pkg.merchant_commission_type || "flat",
+    merchant_commission_value: String(pkg.merchant_commission_value ?? 10),
+    direct_agent_commission_type: pkg.direct_agent_commission_type || "flat",
+    direct_agent_commission_value: String(pkg.direct_agent_commission_value ?? pkg.total_commission_value ?? 15),
+    commission_notes: pkg.commission_notes || "",
     status: pkg.status || "active",
   });
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+  const warning = commissionSplitWarning(form);
 
   useEffect(() => {
     if (!open) return;
@@ -1523,10 +1573,16 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
       sale_price: String(pkg.sale_price ?? 0),
       base_price: String(pkg.base_price ?? 0),
       tax_included: String(pkg.tax_included ?? true),
-      agent_commission_type: pkg.agent_commission_type || "percentage",
-      agent_commission_value: String(pkg.agent_commission_value ?? 0),
-      merchant_commission_type: pkg.merchant_commission_type || "percentage",
-      merchant_commission_value: String(pkg.merchant_commission_value ?? 0),
+      commission_currency: pkg.commission_currency || "SAR",
+      total_commission_type: pkg.total_commission_type || "flat",
+      total_commission_value: String(pkg.total_commission_value ?? 15),
+      agent_chain_commission_type: pkg.agent_chain_commission_type || pkg.agent_commission_type || "flat",
+      agent_chain_commission_value: String(pkg.agent_chain_commission_value ?? pkg.agent_commission_value ?? 5),
+      merchant_commission_type: pkg.merchant_commission_type || "flat",
+      merchant_commission_value: String(pkg.merchant_commission_value ?? 10),
+      direct_agent_commission_type: pkg.direct_agent_commission_type || "flat",
+      direct_agent_commission_value: String(pkg.direct_agent_commission_value ?? pkg.total_commission_value ?? 15),
+      commission_notes: pkg.commission_notes || "",
       status: pkg.status || "active",
     });
     setError(null);
@@ -1540,6 +1596,24 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
       setSubmitting(false);
       return;
     }
+    if (!form.commission_currency.trim()) {
+      setError("العملة مطلوبة.");
+      setSubmitting(false);
+      return;
+    }
+    const numericKeys = [
+      "sale_price",
+      "base_price",
+      "total_commission_value",
+      "agent_chain_commission_value",
+      "merchant_commission_value",
+      "direct_agent_commission_value",
+    ];
+    if (numericKeys.some((key) => !Number.isFinite(Number(form[key as keyof typeof form] || 0)) || Number(form[key as keyof typeof form] || 0) < 0)) {
+      setError("قيم الأسعار والعمولات يجب أن تكون أرقاما موجبة أو صفرا.");
+      setSubmitting(false);
+      return;
+    }
     const result = await updateSimPackage(pkg.id, {
       provider: form.provider.trim() || "virgin",
       package_name: form.package_name.trim(),
@@ -1549,10 +1623,18 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
       sale_price: Number(form.sale_price || 0),
       base_price: Number(form.base_price || 0),
       tax_included: form.tax_included === "true",
-      agent_commission_type: form.agent_commission_type,
-      agent_commission_value: Number(form.agent_commission_value || 0),
+      commission_currency: form.commission_currency.trim() || "SAR",
+      total_commission_type: form.total_commission_type,
+      total_commission_value: Number(form.total_commission_value || 0),
+      agent_chain_commission_type: form.agent_chain_commission_type,
+      agent_chain_commission_value: Number(form.agent_chain_commission_value || 0),
+      agent_commission_type: form.agent_chain_commission_type,
+      agent_commission_value: Number(form.agent_chain_commission_value || 0),
       merchant_commission_type: form.merchant_commission_type,
       merchant_commission_value: Number(form.merchant_commission_value || 0),
+      direct_agent_commission_type: form.direct_agent_commission_type,
+      direct_agent_commission_value: Number(form.direct_agent_commission_value || 0),
+      commission_notes: form.commission_notes.trim() || null,
       status: form.status,
     });
     setSubmitting(false);
@@ -1620,38 +1702,6 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>نوع عمولة المندوب</Label>
-            <Select value={form.agent_commission_type} onValueChange={(v) => set("agent_commission_type", v ?? "percentage")}>
-              <SelectTrigger>
-                <SelectValue>{form.agent_commission_type === "flat" ? "مبلغ ثابت" : "نسبة"}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="percentage">نسبة</SelectItem>
-                <SelectItem value="flat">مبلغ ثابت</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>قيمة عمولة المندوب</Label>
-            <Input type="number" value={form.agent_commission_value} onChange={(e) => set("agent_commission_value", e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>نوع عمولة التاجر</Label>
-            <Select value={form.merchant_commission_type} onValueChange={(v) => set("merchant_commission_type", v ?? "percentage")}>
-              <SelectTrigger>
-                <SelectValue>{form.merchant_commission_type === "flat" ? "مبلغ ثابت" : "نسبة"}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="percentage">نسبة</SelectItem>
-                <SelectItem value="flat">مبلغ ثابت</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>قيمة عمولة التاجر</Label>
-            <Input type="number" value={form.merchant_commission_value} onChange={(e) => set("merchant_commission_value", e.target.value)} />
-          </div>
-          <div className="space-y-2">
             <Label>الحالة</Label>
             <Select value={form.status} onValueChange={(v) => set("status", v ?? "active")}>
               <SelectTrigger>
@@ -1663,6 +1713,58 @@ function PackageTermsDialog({ pkg, onDone }: { pkg: SimPackage; onDone: () => vo
               </SelectContent>
             </Select>
           </div>
+          </div>
+
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-emerald-950">إعدادات العمولة</p>
+              <p className="mt-1 text-xs text-emerald-700">
+                عند بيع التاجر: المندوب يحصل على 5 ريال والتاجر يحصل على 10 ريال افتراضيا. عند تفعيل المندوب بنفسه يحصل على 15 ريال كاملة.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>إجمالي العمولة</Label>
+                <div className="grid grid-cols-[130px_1fr] gap-2">
+                  <CommissionTypeSelect value={form.total_commission_type} onChange={(value) => set("total_commission_type", value)} />
+                  <Input type="number" min={0} step="0.01" value={form.total_commission_value} onChange={(e) => set("total_commission_value", e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>عمولة المندوب عند بيع التاجر</Label>
+                <div className="grid grid-cols-[130px_1fr] gap-2">
+                  <CommissionTypeSelect value={form.agent_chain_commission_type} onChange={(value) => set("agent_chain_commission_type", value)} />
+                  <Input type="number" min={0} step="0.01" value={form.agent_chain_commission_value} onChange={(e) => set("agent_chain_commission_value", e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>عمولة التاجر</Label>
+                <div className="grid grid-cols-[130px_1fr] gap-2">
+                  <CommissionTypeSelect value={form.merchant_commission_type} onChange={(value) => set("merchant_commission_type", value)} />
+                  <Input type="number" min={0} step="0.01" value={form.merchant_commission_value} onChange={(e) => set("merchant_commission_value", e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>عمولة المندوب عند التفعيل المباشر</Label>
+                <div className="grid grid-cols-[130px_1fr] gap-2">
+                  <CommissionTypeSelect value={form.direct_agent_commission_type} onChange={(value) => set("direct_agent_commission_type", value)} />
+                  <Input type="number" min={0} step="0.01" value={form.direct_agent_commission_value} onChange={(e) => set("direct_agent_commission_value", e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>العملة</Label>
+                <Input value={form.commission_currency} onChange={(e) => set("commission_currency", e.target.value.toUpperCase())} />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label>ملاحظات العمولة</Label>
+                <textarea
+                  value={form.commission_notes}
+                  onChange={(e) => set("commission_notes", e.target.value)}
+                  className="min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                />
+              </div>
+            </div>
+            {warning ? <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">{warning}</p> : null}
           </div>
         </div>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -1690,16 +1792,46 @@ function CreatePackageDialog({ onDone }: { onDone: () => void }) {
     validity: "",
     sale_price: "",
     base_price: "",
-    agent_commission_type: "percentage",
-    agent_commission_value: "0",
-    merchant_commission_type: "percentage",
-    merchant_commission_value: "0",
+    commission_currency: "SAR",
+    total_commission_type: "flat",
+    total_commission_value: "15",
+    agent_chain_commission_type: "flat",
+    agent_chain_commission_value: "5",
+    merchant_commission_type: "flat",
+    merchant_commission_value: "10",
+    direct_agent_commission_type: "flat",
+    direct_agent_commission_value: "15",
+    commission_notes: "",
   });
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
+  const warning = commissionSplitWarning(form);
 
   const submit = async () => {
     setSubmitting(true);
     setError(null);
+    if (!form.package_name.trim()) {
+      setError("اسم الباقة مطلوب.");
+      setSubmitting(false);
+      return;
+    }
+    if (!form.commission_currency.trim()) {
+      setError("العملة مطلوبة.");
+      setSubmitting(false);
+      return;
+    }
+    const numericKeys = [
+      "sale_price",
+      "base_price",
+      "total_commission_value",
+      "agent_chain_commission_value",
+      "merchant_commission_value",
+      "direct_agent_commission_value",
+    ];
+    if (numericKeys.some((key) => !Number.isFinite(Number(form[key as keyof typeof form] || 0)) || Number(form[key as keyof typeof form] || 0) < 0)) {
+      setError("قيم الأسعار والعمولات يجب أن تكون أرقاما موجبة أو صفرا.");
+      setSubmitting(false);
+      return;
+    }
     const result = await createSimPackage({
       provider: "virgin",
       package_name: form.package_name.trim(),
@@ -1709,10 +1841,18 @@ function CreatePackageDialog({ onDone }: { onDone: () => void }) {
       sale_price: Number(form.sale_price || 0),
       base_price: Number(form.base_price || 0),
       tax_included: true,
-      agent_commission_type: form.agent_commission_type,
-      agent_commission_value: Number(form.agent_commission_value || 0),
+      commission_currency: form.commission_currency.trim() || "SAR",
+      total_commission_type: form.total_commission_type,
+      total_commission_value: Number(form.total_commission_value || 0),
+      agent_chain_commission_type: form.agent_chain_commission_type,
+      agent_chain_commission_value: Number(form.agent_chain_commission_value || 0),
+      agent_commission_type: form.agent_chain_commission_type,
+      agent_commission_value: Number(form.agent_chain_commission_value || 0),
       merchant_commission_type: form.merchant_commission_type,
       merchant_commission_value: Number(form.merchant_commission_value || 0),
+      direct_agent_commission_type: form.direct_agent_commission_type,
+      direct_agent_commission_value: Number(form.direct_agent_commission_value || 0),
+      commission_notes: form.commission_notes.trim() || null,
       status: "active",
     });
     setSubmitting(false);
@@ -1728,10 +1868,16 @@ function CreatePackageDialog({ onDone }: { onDone: () => void }) {
       validity: "",
       sale_price: "",
       base_price: "",
-      agent_commission_type: "percentage",
-      agent_commission_value: "0",
-      merchant_commission_type: "percentage",
-      merchant_commission_value: "0",
+      commission_currency: "SAR",
+      total_commission_type: "flat",
+      total_commission_value: "15",
+      agent_chain_commission_type: "flat",
+      agent_chain_commission_value: "5",
+      merchant_commission_type: "flat",
+      merchant_commission_value: "10",
+      direct_agent_commission_type: "flat",
+      direct_agent_commission_value: "15",
+      commission_notes: "",
     });
     onDone();
   };
@@ -1742,7 +1888,7 @@ function CreatePackageDialog({ onDone }: { onDone: () => void }) {
         <Plus className="ml-2 h-4 w-4" />
         باقة جديدة
       </DialogTrigger>
-      <DialogContent dir="rtl" className="max-w-lg">
+      <DialogContent dir="rtl" className="max-h-[90vh] max-w-3xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>إضافة باقة Virgin</DialogTitle>
         </DialogHeader>
@@ -1767,13 +1913,56 @@ function CreatePackageDialog({ onDone }: { onDone: () => void }) {
             <Label>السعر المرجعي</Label>
             <Input type="number" value={form.base_price} onChange={(e) => set("base_price", e.target.value)} />
           </div>
-          <div className="space-y-2">
-            <Label>عمولة المندوب</Label>
-            <Input type="number" value={form.agent_commission_value} onChange={(e) => set("agent_commission_value", e.target.value)} />
-          </div>
-          <div className="space-y-2">
-            <Label>عمولة التاجر</Label>
-            <Input type="number" value={form.merchant_commission_value} onChange={(e) => set("merchant_commission_value", e.target.value)} />
+          <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-4 sm:col-span-2">
+            <div className="mb-4">
+              <p className="text-sm font-semibold text-emerald-950">إعدادات العمولة</p>
+              <p className="mt-1 text-xs text-emerald-700">
+                عند بيع التاجر: المندوب يحصل على 5 ريال والتاجر يحصل على 10 ريال افتراضيا. عند تفعيل المندوب بنفسه يحصل على 15 ريال كاملة.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>إجمالي العمولة</Label>
+                <div className="grid grid-cols-[130px_1fr] gap-2">
+                  <CommissionTypeSelect value={form.total_commission_type} onChange={(value) => set("total_commission_type", value)} />
+                  <Input type="number" min={0} step="0.01" value={form.total_commission_value} onChange={(e) => set("total_commission_value", e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>عمولة المندوب عند بيع التاجر</Label>
+                <div className="grid grid-cols-[130px_1fr] gap-2">
+                  <CommissionTypeSelect value={form.agent_chain_commission_type} onChange={(value) => set("agent_chain_commission_type", value)} />
+                  <Input type="number" min={0} step="0.01" value={form.agent_chain_commission_value} onChange={(e) => set("agent_chain_commission_value", e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>عمولة التاجر</Label>
+                <div className="grid grid-cols-[130px_1fr] gap-2">
+                  <CommissionTypeSelect value={form.merchant_commission_type} onChange={(value) => set("merchant_commission_type", value)} />
+                  <Input type="number" min={0} step="0.01" value={form.merchant_commission_value} onChange={(e) => set("merchant_commission_value", e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>عمولة المندوب عند التفعيل المباشر</Label>
+                <div className="grid grid-cols-[130px_1fr] gap-2">
+                  <CommissionTypeSelect value={form.direct_agent_commission_type} onChange={(value) => set("direct_agent_commission_type", value)} />
+                  <Input type="number" min={0} step="0.01" value={form.direct_agent_commission_value} onChange={(e) => set("direct_agent_commission_value", e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>العملة</Label>
+                <Input value={form.commission_currency} onChange={(e) => set("commission_currency", e.target.value.toUpperCase())} />
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <Label>ملاحظات العمولة</Label>
+                <textarea
+                  value={form.commission_notes}
+                  onChange={(e) => set("commission_notes", e.target.value)}
+                  className="min-h-20 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+                />
+              </div>
+            </div>
+            {warning ? <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">{warning}</p> : null}
           </div>
         </div>
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -1823,8 +2012,10 @@ function PackageManagementPanel({ packages, onDone }: { packages: SimPackage[]; 
                 <span>المرجعي: {formatMoney(pkg.base_price)}</span>
                 <span>المزود: {pkg.provider}</span>
                 <span>{pkg.tax_included ? "شامل الضريبة" : "غير شامل الضريبة"}</span>
-                <span>مندوب: {pkg.agent_commission_value}{pkg.agent_commission_type === "percentage" ? "%" : " ر.س"}</span>
-                <span>تاجر: {pkg.merchant_commission_value}{pkg.merchant_commission_type === "percentage" ? "%" : " ر.س"}</span>
+                <span>الإجمالي: {pkg.total_commission_value}{pkg.total_commission_type === "percentage" ? "%" : ` ${pkg.commission_currency || "SAR"}`}</span>
+                <span>مندوب/تاجر: {pkg.agent_chain_commission_value ?? pkg.agent_commission_value}{(pkg.agent_chain_commission_type || pkg.agent_commission_type) === "percentage" ? "%" : ` ${pkg.commission_currency || "SAR"}`}</span>
+                <span>التاجر: {pkg.merchant_commission_value}{pkg.merchant_commission_type === "percentage" ? "%" : ` ${pkg.commission_currency || "SAR"}`}</span>
+                <span>تفعيل مباشر: {pkg.direct_agent_commission_value}{pkg.direct_agent_commission_type === "percentage" ? "%" : ` ${pkg.commission_currency || "SAR"}`}</span>
               </div>
               <div className="mt-3">
                 <PackageTermsDialog pkg={pkg} onDone={onDone} />

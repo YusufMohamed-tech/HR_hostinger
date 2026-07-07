@@ -9,6 +9,7 @@ AI-driven HR and workforce management platform for deskless teams. This repo inc
 - Event stream tracking (check-in, movement, sales)
 - KPI analytics and payroll previews
 - Professional LMS module for internal corporate learning
+- On-ground SIM distribution with editable package commission rules and Finance commission settlements
 - AI insights and audit logs (mocked)
 
 ## Local Setup
@@ -81,6 +82,21 @@ Verify LMS database objects after the migration is reachable:
 ```bash
 npm run verify:lms
 ```
+
+## On-Ground SIM Commissions v53
+The SIM package catalog now stores editable commission rules. Defaults are 15 SAR total commission per package sale: trader sale pays 5 SAR to the field-agent chain and 10 SAR to the trader, while a direct field-agent activation pays 15 SAR to the field agent and no trader commission. Sale records snapshot the package rule used at sale time, so later package edits do not recalculate old commissions.
+
+Apply the additive commission/finance migration after v47-v52:
+```bash
+npm run apply:migration -- db/schema_v53_editable_sim_commission_rules_finance.sql
+```
+
+Run the focused calculation check after commission rule changes:
+```bash
+npm run test:sim-commissions
+```
+
+Finance users can review and settle sales commissions under `/accounting/commissions`. Settlement marks commission ledger rows paid with payment method, reference, and notes; it does not change the original sale snapshot.
 
 ## Deployment (Vercel)
 - Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in Vercel.

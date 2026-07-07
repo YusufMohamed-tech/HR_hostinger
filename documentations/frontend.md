@@ -43,7 +43,7 @@ The first LMS UI pass includes dashboard stats, learner course table, catalog ca
 The SIM distribution UI spans normal protected sales pages and kiosk route groups.
 
 ### Manager sales routes
-- `/sales/agents` for field-agent creation, SIM stock assignment, stock overview, OCR box import access, requests, commissions, and manager controls.
+- `/sales/agents` for field-agent creation, SIM stock assignment, stock overview, OCR box import access, package commission settings, requests, commissions, and manager controls.
 - `/sales/stock` for stock status views and filtering.
 - `/sales/traders` for trader profiles, location/photo details, trader balances, collections, and commissions.
 - `/sales/trader-sales` for manager-only trader sale activation records and search across customer, SIM, package, trader, agent, device, address, and supervisor fields.
@@ -72,6 +72,8 @@ The SIM distribution UI spans normal protected sales pages and kiosk route group
 - `src/components/merchants/MerchantScreens.tsx` implements the trader kiosk and v51 activation form.
 
 The stock manager screen exposes two import paths: the legacy Excel/CSV importer and the v52 SIM Box OCR importer. The OCR dialog accepts an image, runs free local OCR in the browser with Tesseract.js (`eng`), attempts best-effort barcode reading with ZXing, shows raw OCR text in a collapsible details section, keeps provider/order/batch/kit-code fields editable, calls server preview for generated kit-code rows and duplicate status, and offers optional direct field-agent assignment plus confirm/skip-duplicate controls.
+
+The package create/edit dialogs include an `إعدادات العمولة` section. Defaults are 15 SAR total, 5 SAR field-agent chain commission on trader sales, 10 SAR trader commission, and 15 SAR direct field-agent activation commission. Managers can change flat/percentage type, amount, currency, and notes per package. A warning appears when the trader-sale split does not equal the total, but managers can still save deliberate overrides.
 
 Local OCR accuracy depends on image quality. Managers must manually verify first kit code, last kit code, quantity, and dealer box data before pressing confirm.
 
@@ -158,7 +160,11 @@ The trader sell flow is package-first: the trader selects an active package, sel
 | Recruitment | 4 (list, new, detail, edit) |
 | Sales | 10+ (dashboard, log, history, team, products, reports, agents, stock, traders, trader-sales, promoter pages) |
 | Agent/Trader Kiosk | 12 (agent and merchant route groups for dashboards, stock, sales, requests, balances, commissions) |
-| Accounting | 12+ (dashboard, CoA, journals, invoices, expenses, payments, customers, vendors, cost centers, team, settings, reports×9) |
+| Accounting | 13+ (dashboard, CoA, journals, invoices, expenses, payments, sales commissions, customers, vendors, cost centers, team, settings, reports×9) |
+
+### Accounting Commissions Frontend
+
+`/accounting/commissions` shows sales commission payables and paid rows for field agents and traders. The page includes summary totals, filters for status/date/beneficiary/package/provider, separate agent and trader tables, row selection, and a settlement panel for Finance_Manager and Accountant roles. Finance_Viewer can view the data but cannot mark commissions paid.
 | Superadmin | 5+ (dashboard, orgs, users, audit, approvals, settings) |
 | Candidate Portal | 3 (login, register, applications) |
 

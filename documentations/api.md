@@ -260,7 +260,7 @@ All endpoints below require the sales feature through tenant context. Manager ac
 | `GET /api/sales/agents/sims/import-batches` | Manager, Field_Agent | List SIM box import batches; field agents see directly assigned batches only |
 | `GET /api/sales/agents/sims/import-batches/[batchId]` | Manager, assigned Field_Agent | View one import batch with its generated SIM rows |
 | `POST /api/sales/agents/sims/assign` | Manager | Assign SIMs to an agent by explicit ids or quantity/provider/type |
-| `POST /api/sales/agents/sims/sell` | Manager, Field_Agent | Record direct agent sale against an active package |
+| `POST /api/sales/agents/sims/sell` | Manager, Field_Agent | Record direct agent sale against an active package and snapshot direct-agent commission |
 | `POST /api/sales/agents/sims/return` | Manager, Field_Agent | Return an agent-held SIM to stock |
 | `GET /api/sales/agents/transfers` | Manager | List SIM transfer audit records |
 | `POST /api/sales/agents/collect` | Manager | Record cash collected from an agent |
@@ -306,6 +306,19 @@ All endpoints below require the sales feature through tenant context. Manager ac
 
 Client OCR is a convenience only. The server never trusts client-generated SIM lists and confirmation still recalculates the range before inserting stock.
 
+### SIM Package Commission Rule Body
+
+`POST /api/sales/merchants/packages` and `PATCH /api/sales/merchants/packages/[packageId]` accept editable commission fields in addition to package name, provider, allowances, pricing, tax flag, and status:
+
+- `commission_currency` default `SAR`
+- `total_commission_type/value` default `flat` / `15`
+- `agent_chain_commission_type/value` default `flat` / `5`
+- `merchant_commission_type/value` default `flat` / `10`
+- `direct_agent_commission_type/value` default `flat` / `15`
+- `commission_notes`
+
+The legacy `agent_commission_type/value` fields are still accepted and are synchronized with `agent_chain_commission_type/value` for backwards compatibility.
+
 ### Traders/Merchants: `/api/sales/merchants/*`
 
 | Endpoint | Access | Purpose |
@@ -313,12 +326,12 @@ Client OCR is a convenience only. The server never trusts client-generated SIM l
 | `GET/POST /api/sales/merchants` | Manager, Field_Agent, Merchant read-self | List/create trader accounts; creation also creates auth/profile/org membership |
 | `GET/PATCH /api/sales/merchants/[merchantId]` | Manager, owning Field_Agent, Merchant self | View/update trader profile |
 | `GET /api/sales/merchants/[merchantId]/collections` | Manager, owning Field_Agent, Merchant self | View trader payment records |
-| `GET/POST /api/sales/merchants/packages` | GET all sales-chain roles; POST Manager | List/create SIM package catalog entries |
-| `PATCH /api/sales/merchants/packages/[packageId]` | Manager | Update package catalog entry |
+| `GET/POST /api/sales/merchants/packages` | GET all sales-chain roles; POST Manager | List/create SIM package catalog entries and editable commission rules |
+| `PATCH /api/sales/merchants/packages/[packageId]` | Manager | Update package catalog entry and commission rules |
 | `GET /api/sales/merchants/sims` | Manager, owning Field_Agent, Merchant self | List trader SIMs |
 | `POST /api/sales/merchants/sims/preview` | Manager, Field_Agent | Preview quantity-based SIM assignment to a trader |
 | `POST /api/sales/merchants/sims/assign` | Manager, owning Field_Agent | Assign SIMs to a trader |
-| `POST /api/sales/merchants/sims/sell` | Manager, owning Field_Agent, Merchant self | Record a trader sale with activation details |
+| `POST /api/sales/merchants/sims/sell` | Manager, owning Field_Agent, Merchant self | Record a trader sale with activation details and snapshot agent/trader commission split |
 | `POST /api/sales/merchants/sims/return` | Manager, owning Field_Agent, Merchant self | Return a trader-held SIM to the owning agent |
 | `POST /api/sales/merchants/collect` | Manager, Field_Agent, Merchant | Submit or record trader payment; supports multipart `payment_proof` |
 | `PATCH /api/sales/merchants/payments/[paymentId]/confirm` | Manager, owning Field_Agent | Confirm/reject trader payment; non-cash confirmations require manager |
@@ -339,7 +352,9 @@ Required fields:
 
 Optional field: `marketer_name`.
 
-The route rejects SIMs not held by the trader, suspended traders, missing/inactive packages, and packages whose provider does not match the SIM provider. On success it updates `sim_units`, appends `sim_transfers`, inserts agent/trader commission rows, and inserts the activation snapshot into `sim_sales`.
+The route rejects SIMs not held by the trader, suspended traders, missing/inactive packages, and packages whose provider does not match the SIM provider. On success it updates `sim_units`, appends `sim_transfers`, inserts the activation snapshot into `sim_sales`, and inserts agent/trader commission rows linked to that sale. Default trader sale commission is 5 SAR for the field-agent chain and 10 SAR for the trader, with the full rule snapshotted into `sim_sales.commission_rule_snapshot`.
+
+Direct field-agent sale uses `POST /api/sales/agents/sims/sell`. It loads the selected package rule, snapshots total/direct commission on `sim_sales`, inserts one `agent_commissions` row for the direct-agent amount, and does not create a trader commission row. The default direct activation commission is 15 SAR for the field agent.
 
 ---
 
@@ -360,6 +375,7 @@ Supported segment paths:
 | `/api/accounting/expenses` | Expense tracking |
 | `/api/accounting/expenses/[id]` | Single expense |
 | `/api/accounting/payments` | Payment records |
+| `/api/accounting/commissions` | Sales commission payables and settlements |
 | `/api/accounting/vendors` | Vendor registry |
 | `/api/accounting/customers` | Customer registry |
 | `/api/accounting/cost-centers` | Cost center management |
@@ -373,7 +389,36 @@ Supported segment paths:
 | `/api/accounting/reports/employee-advances` | Employee advance report |
 | `/api/accounting/reports/payroll-cost` | Payroll cost analysis |
 
-**Finance_Viewer** has read-only access (cannot POST/PUT/DELETE on journal entries, expenses, invoices).
+**Finance_Viewer** has read-only access (cannot POST/PUT/DELETE on journal entries, expenses, invoices, or commission settlements).
+
+### Sales Commission Finance API
+
+`GET /api/accounting/commissions`
+
+Query filters:
+- `status=paid|unpaid|all`
+- `beneficiary_type=agent|merchant|all`
+- `date_from`, `date_to`
+- `agent_id`, `merchant_id`, `package_id`, `provider`
+
+Returns summary totals plus `agent_commissions` and `merchant_commissions` finance rows.
+
+`POST /api/accounting/commissions/settle`
+
+Body:
+
+```ts
+{
+  beneficiary_type: "agent" | "merchant";
+  commission_ids: string[];
+  payment_method: "cash" | "bank_transfer" | "wallet" | "other";
+  payment_reference?: string;
+  finance_notes?: string;
+  create_accounting_entry?: boolean;
+}
+```
+
+The endpoint is tenant-scoped, validates that all selected rows belong to the current organization, rejects already-paid rows, and marks only commission ledger rows as paid. It stores payment method/reference/notes and returns settled count plus total amount. Automatic journal posting is intentionally not forced until chart-of-accounts mapping for commission expense/payable is confirmed.
 
 ### `GET/POST /api/accounting/team`
 **Access:** Finance_Manager only  

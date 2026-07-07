@@ -10,7 +10,9 @@ import type {
   AccountingSettings,
   AccountingTaxRate,
   AccountingVendor,
+  CommissionSettlementPayload,
   PayrollAccountingStatus,
+  SalesCommissionsResponse,
 } from "@/types/accounting";
 
 type ApiResult<T> = { data: T | null; error: string | null };
@@ -41,6 +43,17 @@ function qs(params?: Record<string, string | undefined>) {
 
 export function getAccountingDashboard(params?: Record<string, string | undefined>) {
   return apiFetch<Record<string, unknown>>(`/api/accounting/dashboard${qs(params)}`);
+}
+
+export function getSalesCommissions(filters?: Record<string, string | undefined>) {
+  return apiFetch<SalesCommissionsResponse>(`/api/accounting/commissions${qs(filters)}`);
+}
+
+export function settleSalesCommissions(payload: CommissionSettlementPayload) {
+  return apiFetch<{ settled_count: number; total_amount: number }>("/api/accounting/commissions/settle", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function initializeAccountingDefaults() {

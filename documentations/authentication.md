@@ -150,6 +150,7 @@ The `canAccessPath(role, pathname)` function in `src/lib/rbac.ts` defines which 
 | `/recruitment` | ✓ | ✓ | ✗ | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | `/sales/*` | ✓ | ✓ | ✓ | ✗ | ✗ | ✓* | ✓ | ✗ | ✗ | ✗ | ✗ |
 | `/accounting` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✗ |
+| `/accounting/commissions` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓* | ✗ |
 | `/accounting/settings` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ |
 | `/accounting/team` | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✗ |
 | `/superadmin/*` | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -158,11 +159,14 @@ The `canAccessPath(role, pathname)` function in `src/lib/rbac.ts` defines which 
 | `/settings` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 *Sales reps: dashboard, log, and history only (not team/products/reports)
+*Finance_Viewer can view sales commissions but cannot settle or mark rows paid.
 
 On-ground SIM distribution uses the same `/sales/*` manager area plus kiosk route groups:
 - Admin, Sales_Manager, and Onground_Agent_Manager can manage field agents, stock, package catalog, trader records, trader payment confirmations, trader sale ledger, and SIM Box OCR Import.
 - Field_Agent uses `/agent/*` routes and can read only assigned SIM/import-batch data plus owned trader data.
 - Merchant uses `/merchant/*` routes and cannot access manager stock import or OCR endpoints.
+
+Finance commission settlements are under `/accounting/commissions` and `/api/accounting/commissions/*`. They follow the existing accounting RBAC pattern: Finance_Manager and Accountant can settle under current manage permissions, while Finance_Viewer is read-only. Sales, field-agent, and merchant roles cannot access the accounting settlement page.
 
 ### Default Landing Pages by Role
 

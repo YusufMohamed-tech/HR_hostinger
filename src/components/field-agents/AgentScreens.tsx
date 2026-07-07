@@ -89,8 +89,12 @@ function formatSimLabel(sim: SimUnit | null | undefined) {
 
 function commissionPreview(pkg: SimPackage | null, tier: "agent" | "merchant") {
   if (!pkg) return "";
-  const type = tier === "agent" ? pkg.agent_commission_type : pkg.merchant_commission_type;
-  const value = tier === "agent" ? pkg.agent_commission_value : pkg.merchant_commission_value;
+  const type = tier === "agent"
+    ? pkg.direct_agent_commission_type || pkg.agent_commission_type
+    : pkg.merchant_commission_type;
+  const value = tier === "agent"
+    ? pkg.direct_agent_commission_value ?? pkg.agent_commission_value
+    : pkg.merchant_commission_value;
   const amount = type === "flat" ? value : (Number(pkg.sale_price || 0) * value) / 100;
   return formatMoney(amount);
 }

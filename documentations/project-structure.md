@@ -43,11 +43,14 @@ Navigation and gates:
 
 Database and test support:
 - `db/schema_v52_sim_box_ocr_import.sql`
+- `db/schema_v53_editable_sim_commission_rules_finance.sql`
 - `scripts/test-sim-box-generation.mjs`
+- `scripts/test-sim-commissions.mjs`
 
 OCR import helpers:
 - `src/lib/sim-box-import.ts`
 - `src/lib/sim-box-local-ocr.ts`
+- `src/lib/server/sim-commissions.ts`
 - `src/lib/field-agents/schemas.ts`
 - `src/types/field-agents.ts`
 
@@ -55,6 +58,10 @@ API and frontend:
 - `src/app/api/sales/agents/[[...segments]]/route.ts`
 - `src/lib/services/field-agents.ts`
 - `src/components/field-agents/FieldAgentAdminScreens.tsx`
+- `src/app/(app)/accounting/commissions/page.tsx`
+- `src/app/api/accounting/[...segments]/route.ts`
+- `src/lib/services/accounting.ts`
+- `src/types/accounting.ts`
 
 ## Root Directory
 
@@ -220,6 +227,7 @@ db/
     schema_v50_sim_packages_trader_payments.sql
     schema_v51_trader_sale_activation_details.sql
     schema_v52_sim_box_ocr_import.sql
+    schema_v53_editable_sim_commission_rules_finance.sql
 ```
 
 ## Scripts Directory (`scripts/`)
@@ -233,6 +241,7 @@ scripts/
 ├── verify-accounting-module.mjs  # Accounting module verification
 ├── test-sim-box-generation.mjs    # SIM box kit-code generation edge-case test
 ├── test-sim-box-parser.mjs        # SIM box OCR text parser edge-case test
+├── test-sim-commissions.mjs       # SIM package commission rule calculation test
 ├── seed-initial-admin.mjs        # Create first admin user
 ├── seed-dr-amr-admin.mjs         # Create platform superadmin
 ├── seed-demo-users.mjs           # Demo user accounts (staging only)
