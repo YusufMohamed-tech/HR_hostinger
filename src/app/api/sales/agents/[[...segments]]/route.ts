@@ -502,6 +502,7 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
     let confidence: number | null = null;
     let rawOcrText = "";
     let rawNotes: string[] = [];
+    const storageWarnings: string[] = [];
 
     if (contentType.includes("multipart/form-data")) {
       const form = await request.formData().catch(() => null);
@@ -513,7 +514,10 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
         try {
           imagePath = await uploadSimBoxImage(auth, file, Buffer.from(await file.arrayBuffer()));
         } catch (error) {
-          return message(error, 500);
+          const detail = error instanceof Error ? error.message : "storage upload failed";
+          storageWarnings.push(
+            `SIM box image was not saved to storage (${detail}). Preview can continue, but this import batch will not keep an image path until the sim-box-imports bucket is available.`
+          );
         }
       }
       imagePath = imagePath || formString(form, "image_path");
@@ -571,7 +575,7 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       }
     }
 
-    const warnings = [...validation.warnings, ...rawNotes];
+    const warnings = [...validation.warnings, ...rawNotes, ...storageWarnings];
     if (confidence !== null && confidence > 0 && confidence < 65) {
       warnings.push("OCR confidence is low; review all fields before importing.");
     }
