@@ -93,6 +93,9 @@ Superadmin (Platform Level)
             ├── Training_Manager
             ├── Sales
             ├── Sales_Manager
+            ├── Onground_Agent_Manager
+            ├── Field_Agent
+            ├── Merchant
             ├── Finance_Manager
             ├── Accountant
             ├── Finance_Viewer
@@ -110,6 +113,9 @@ Superadmin (Platform Level)
 | `Training_Manager` | Training Manager | Organization | Tasks, employees (read), training |
 | `Sales` | Sales Rep | Organization | Sales log, dashboard, personal history |
 | `Sales_Manager` | Sales Manager | Organization | Full sales module + team management |
+| `Onground_Agent_Manager` | On-ground Agent Manager | Organization | On-ground SIM stock, field-agent/trader network, SIM imports, packages, payments, and trader sale ledger |
+| `Field_Agent` | Field Agent | Organization | Agent kiosk for assigned SIMs, direct SIM sales, trader management, trader stock delivery, requests, balances, and commissions |
+| `Merchant` | Trader/Merchant | Organization | Trader kiosk for assigned SIMs, package-based sale activation, stock requests, payments, and commissions |
 | `Finance_Manager` | Finance Manager | Organization | Full accounting + team + settings |
 | `Accountant` | Accountant | Organization | Accounting operations (no posting/settings) |
 | `Finance_Viewer` | Finance Viewer | Organization | Accounting read-only |
@@ -119,8 +125,8 @@ Superadmin (Platform Level)
 
 ```sql
 'super_admin' | 'admin' | 'employee' | 'hr_admin' | 'hr_recruitment' |
-'training_manager' | 'sales' | 'sales_manager' | 'finance_manager' |
-'accountant' | 'finance_viewer'
+'training_manager' | 'sales' | 'sales_manager' | 'onground_agent_manager' |
+'field_agent' | 'merchant' | 'finance_manager' | 'accountant' | 'finance_viewer'
 ```
 
 Mapping function: `roleFromOrgRole()` in `src/lib/rbac.ts`
@@ -153,6 +159,11 @@ The `canAccessPath(role, pathname)` function in `src/lib/rbac.ts` defines which 
 
 *Sales reps: dashboard, log, and history only (not team/products/reports)
 
+On-ground SIM distribution uses the same `/sales/*` manager area plus kiosk route groups:
+- Admin, Sales_Manager, and Onground_Agent_Manager can manage field agents, stock, package catalog, trader records, trader payment confirmations, trader sale ledger, and SIM Box OCR Import.
+- Field_Agent uses `/agent/*` routes and can read only assigned SIM/import-batch data plus owned trader data.
+- Merchant uses `/merchant/*` routes and cannot access manager stock import or OCR endpoints.
+
 ### Default Landing Pages by Role
 
 | Role | Default Path |
@@ -160,6 +171,9 @@ The `canAccessPath(role, pathname)` function in `src/lib/rbac.ts` defines which 
 | Superadmin | `/superadmin` |
 | HR_Recruitment | `/recruitment` |
 | Sales / Sales_Manager | `/sales/dashboard` |
+| Onground_Agent_Manager | `/sales/stock` |
+| Field_Agent | `/agent` |
+| Merchant | `/merchant` |
 | Finance_Manager / Accountant / Finance_Viewer | `/accounting` |
 | All others | `/` |
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Tatwir Talent HRMS exposes **42 API endpoints** via Next.js Route Handlers (`src/app/api/`). All endpoints require authentication via Supabase session cookies (enforced by middleware), except public candidate endpoints.
+Tatwir Talent HRMS exposes dozens of API endpoints via Next.js Route Handlers (`src/app/api/`). All endpoints require authentication via Supabase session cookies (enforced by middleware), except public candidate endpoints.
 
 All API routes return JSON. Standard response patterns:
 - **Success:** `{ data: [...] }` or `{ data: {...} }` with HTTP 200
@@ -239,6 +239,107 @@ Correct quiz answers are never returned by learner-facing course/enrollment APIs
 ### `GET /api/sales/reports`
 **Access:** Sales_Manager, Admin, HR_Admin  
 **Purpose:** Sales analytics and reporting  
+
+---
+
+## On-Ground Agent / Trader SIM APIs
+
+All endpoints below require the sales feature through tenant context. Manager access means Admin, Sales_Manager, or Onground_Agent_Manager.
+
+### Field Agents: `/api/sales/agents/*`
+
+| Endpoint | Access | Purpose |
+|----------|--------|---------|
+| `GET/POST /api/sales/agents` | Manager | List/create field-agent accounts and profiles |
+| `GET/PATCH /api/sales/agents/[agentId]` | Manager | View/update one field agent |
+| `GET /api/sales/agents/[agentId]/collections` | Manager | View cash collections for one agent |
+| `GET /api/sales/agents/sims` | Manager, Field_Agent | List SIMs; managers can filter, agents see own SIMs |
+| `POST /api/sales/agents/sims/import` | Manager | Import SIMs into stock |
+| `POST /api/sales/agents/sims/box-preview` | Manager | Validate extracted SIM box fields, optionally upload the private image, generate server-side kit-code preview, and report duplicates |
+| `POST /api/sales/agents/sims/box-import` | Manager | Confirm a reviewed SIM box import; creates batch, SIM stock, and transfer audit rows |
+| `GET /api/sales/agents/sims/import-batches` | Manager, Field_Agent | List SIM box import batches; field agents see directly assigned batches only |
+| `GET /api/sales/agents/sims/import-batches/[batchId]` | Manager, assigned Field_Agent | View one import batch with its generated SIM rows |
+| `POST /api/sales/agents/sims/assign` | Manager | Assign SIMs to an agent by explicit ids or quantity/provider/type |
+| `POST /api/sales/agents/sims/sell` | Manager, Field_Agent | Record direct agent sale against an active package |
+| `POST /api/sales/agents/sims/return` | Manager, Field_Agent | Return an agent-held SIM to stock |
+| `GET /api/sales/agents/transfers` | Manager | List SIM transfer audit records |
+| `POST /api/sales/agents/collect` | Manager | Record cash collected from an agent |
+| `GET/POST /api/sales/agents/requests` | Manager, Field_Agent | List/create agent SIM reorder requests |
+| `PATCH /api/sales/agents/requests/[requestId]/review` | Manager | Approve/reject/deliver agent requests |
+| `GET /api/sales/agents/commissions` | Manager, Field_Agent | List agent commissions |
+| `PATCH /api/sales/agents/commissions/[commissionId]/pay` | Manager | Mark agent commission paid |
+| `GET /api/sales/agents/me/dashboard` | Field_Agent | Agent self dashboard |
+| `GET /api/sales/agents/stock/overview` | Manager | Stock overview by status/agent |
+
+### SIM Box OCR Import Bodies
+
+`POST /api/sales/agents/sims/box-preview` expects extracted/reviewed fields from the frontend. The manager UI runs free client-side OCR with Tesseract.js and best-effort barcode detection with ZXing, then sends `multipart/form-data` containing optional `image` (`image/*`, max 10MB), `provider`, `order_number`, `batch_number`, `barcode_text`, `first_kitcode`, `last_kitcode`, `quantity`, `dealer_box_number`, `dealer_box_total`, `confidence`, `raw_notes`, and `raw_ocr_text`. The endpoint does not call any OCR or AI API. It uploads the image to private bucket `sim-box-imports` when present, generates kit codes on the server, checks duplicates, and returns:
+
+```ts
+{
+  extracted: {
+    provider: string | null;
+    order_number: string | null;
+    batch_number: string | null;
+    barcode_text: string | null;
+    first_kitcode: string | null;
+    last_kitcode: string | null;
+    quantity: number | null;
+    dealer_box_number: number | null;
+    dealer_box_total: number | null;
+    confidence?: number;
+    raw_notes?: string[];
+  };
+  generation: { step: number; generated_count: number; kit_codes: string[] };
+  validation: {
+    is_valid: boolean;
+    errors: string[];
+    warnings: string[];
+    duplicate_kit_codes: string[];
+    duplicate_count: number;
+  };
+  image_path: string;
+}
+```
+
+`POST /api/sales/agents/sims/box-import` validates JSON with `simBoxImportSchema`. Required fields are `provider`, `first_kitcode`, `last_kitcode`, and `quantity`; optional fields include `order_number`, `batch_number`, `barcode_text`, `dealer_box_number`, `dealer_box_total`, `step`, `image_path`, `extracted_json`, `assigned_agent_id`, and `import_duplicate_strategy` (`fail` by default, or `skip`). The server recalculates kit codes, rechecks duplicates, optionally validates assigned-agent capacity, inserts `sim_import_batches`, inserts nonduplicate `sim_units`, and appends `initial_import` plus optional `assign_to_agent` transfers. This endpoint does not sell SIMs and does not touch trader sale activation flow.
+
+Client OCR is a convenience only. The server never trusts client-generated SIM lists and confirmation still recalculates the range before inserting stock.
+
+### Traders/Merchants: `/api/sales/merchants/*`
+
+| Endpoint | Access | Purpose |
+|----------|--------|---------|
+| `GET/POST /api/sales/merchants` | Manager, Field_Agent, Merchant read-self | List/create trader accounts; creation also creates auth/profile/org membership |
+| `GET/PATCH /api/sales/merchants/[merchantId]` | Manager, owning Field_Agent, Merchant self | View/update trader profile |
+| `GET /api/sales/merchants/[merchantId]/collections` | Manager, owning Field_Agent, Merchant self | View trader payment records |
+| `GET/POST /api/sales/merchants/packages` | GET all sales-chain roles; POST Manager | List/create SIM package catalog entries |
+| `PATCH /api/sales/merchants/packages/[packageId]` | Manager | Update package catalog entry |
+| `GET /api/sales/merchants/sims` | Manager, owning Field_Agent, Merchant self | List trader SIMs |
+| `POST /api/sales/merchants/sims/preview` | Manager, Field_Agent | Preview quantity-based SIM assignment to a trader |
+| `POST /api/sales/merchants/sims/assign` | Manager, owning Field_Agent | Assign SIMs to a trader |
+| `POST /api/sales/merchants/sims/sell` | Manager, owning Field_Agent, Merchant self | Record a trader sale with activation details |
+| `POST /api/sales/merchants/sims/return` | Manager, owning Field_Agent, Merchant self | Return a trader-held SIM to the owning agent |
+| `POST /api/sales/merchants/collect` | Manager, Field_Agent, Merchant | Submit or record trader payment; supports multipart `payment_proof` |
+| `PATCH /api/sales/merchants/payments/[paymentId]/confirm` | Manager, owning Field_Agent | Confirm/reject trader payment; non-cash confirmations require manager |
+| `GET/POST /api/sales/merchants/requests` | Manager, Field_Agent, Merchant | List/create trader SIM reorder requests |
+| `PATCH /api/sales/merchants/requests/[requestId]/review` | Manager, owning Field_Agent | Approve/reject/deliver trader requests |
+| `GET /api/sales/merchants/commissions` | Manager, Field_Agent, Merchant | List trader commissions |
+| `PATCH /api/sales/merchants/commissions/[commissionId]/pay` | Manager, owning Field_Agent | Mark trader commission paid |
+| `GET /api/sales/merchants/sales` | Manager | Enriched trader sale activation ledger |
+| `GET /api/sales/merchants/me/dashboard` | Merchant | Trader self dashboard |
+| `GET /api/sales/merchants/analytics/resellers` | Manager, Field_Agent | Trader/reseller ranking |
+
+### Trader Sale Body
+
+`POST /api/sales/merchants/sims/sell` validates the body with `merchantRecordSaleSchema`.
+
+Required fields:
+`sim_unit_id`, `package_id`, `customer_name`, `customer_national_id`, `customer_absher_mobile`, `customer_birth_date_hijri`, `customer_id_expiry_hijri`, `customer_email`, `customer_nationality`, `package_reference`, `device_serial`, `city_district`, `national_address`, `supervisor_name`.
+
+Optional field: `marketer_name`.
+
+The route rejects SIMs not held by the trader, suspended traders, missing/inactive packages, and packages whose provider does not match the SIM provider. On success it updates `sim_units`, appends `sim_transfers`, inserts agent/trader commission rows, and inserts the activation snapshot into `sim_sales`.
 
 ---
 

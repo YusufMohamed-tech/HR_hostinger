@@ -447,13 +447,14 @@ no
 - Traders record their own sales.
 - Trader and on-ground agent commissions must both be calculated.
 - The system must report best traders/resellers and best on-ground agents.
+- v52 adds manager-only SIM Box OCR Import for stock intake: uploaded box images are reviewed, kit codes are generated server-side, and confirmed SIMs enter stock or direct field-agent assignment without changing sale flow.
 
 ## Parking Lot
 
 Ideas to discuss later:
 
 - Package import from telecom provider lists.
-- Barcode/QR scanning for SIM assignment and sale.
+- Barcode/QR scanning for SIM assignment and sale. SIM box OCR import is now implemented for manager stock intake only.
 - Mobile-first trader selling screen.
 - Geo-location for on-ground agent visits.
 - Trader ranking leaderboard.

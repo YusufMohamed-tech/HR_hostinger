@@ -3,16 +3,21 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowRight,
   BadgePercent,
   Check,
   CreditCard,
   Eye,
   FileDown,
+  FileImage,
+  History,
+  Loader2,
   Plus,
   RefreshCcw,
   Send,
   SlidersHorizontal,
+  Upload,
   Wallet,
   X,
 } from "lucide-react";
@@ -33,17 +38,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import {
   assignSims,
   collectCash,
+  confirmSimBoxImport,
   createFieldAgent,
   getCashCollections,
   getCommissions,
   getFieldAgent,
   getFieldAgents,
+  getSimImportBatches,
   getSimRequests,
   getSimTransfers,
   getSimUnits,
   getStockOverview,
   importSims,
   markCommissionPaid,
+  previewSimBoxImport,
   reviewSimRequest,
   updateFieldAgent,
 } from "@/lib/services/field-agents";
@@ -56,11 +64,18 @@ import {
   getSimPackages,
   updateSimPackage,
 } from "@/lib/services/merchants";
+import {
+  extractBarcodeWithZxing,
+  extractTextWithTesseract,
+  parseSimBoxText,
+} from "@/lib/sim-box-local-ocr";
 import type {
   AgentCashCollection,
   AgentCommission,
   AgentSimRequest,
   FieldAgent,
+  SimBoxPreviewResult,
+  SimImportBatch,
   SimPackage,
   SimTransfer,
   SimUnit,
@@ -620,7 +635,7 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ICCID</TableHead>
+                <TableHead>Kit Code / ICCID</TableHead>
                 <TableHead>المزود</TableHead>
                 <TableHead>النوع</TableHead>
                 <TableHead>الحالة</TableHead>
@@ -639,7 +654,12 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
               ) : (
                 sims.map((sim) => (
                   <TableRow key={sim.id}>
-                    <TableCell dir="ltr">{sim.iccid}</TableCell>
+                    <TableCell dir="ltr">
+                      <div className="font-medium">{sim.kit_code || sim.iccid}</div>
+                      {sim.kit_code && sim.kit_code !== sim.iccid ? (
+                        <div className="text-xs text-slate-400">{sim.iccid}</div>
+                      ) : null}
+                    </TableCell>
                     <TableCell>{sim.provider || "virgin"}</TableCell>
                     <TableCell>{sim.sim_type}</TableCell>
                     <TableCell>{statusBadge(sim.status, simStatusLabels)}</TableCell>
@@ -920,6 +940,547 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
             <Button onClick={submit} disabled={submitting || parsed.length === 0}>
               استيراد {parsed.length > 0 ? `(${parsed.length})` : ""}
             </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SIM box OCR import dialog
+// ---------------------------------------------------------------------------
+type SimBoxImportForm = {
+  provider: string;
+  order_number: string;
+  batch_number: string;
+  barcode_text: string;
+  first_kitcode: string;
+  last_kitcode: string;
+  quantity: string;
+  dealer_box_number: string;
+  dealer_box_total: string;
+  assigned_agent_id: string;
+  duplicateStrategy: "fail" | "skip";
+};
+
+const emptySimBoxForm: SimBoxImportForm = {
+  provider: "virgin",
+  order_number: "",
+  batch_number: "",
+  barcode_text: "",
+  first_kitcode: "",
+  last_kitcode: "",
+  quantity: "",
+  dealer_box_number: "",
+  dealer_box_total: "",
+  assigned_agent_id: "",
+  duplicateStrategy: "fail",
+};
+
+function optionalText(value: string) {
+  const trimmed = value.trim();
+  return trimmed || undefined;
+}
+
+function optionalNumber(value: string) {
+  const trimmed = value.trim();
+  return trimmed ? Number(trimmed) : null;
+}
+
+function SimBoxImportDialog({ agents, onDone }: { agents: FieldAgent[]; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  const [preview, setPreview] = useState<SimBoxPreviewResult | null>(null);
+  const [form, setForm] = useState<SimBoxImportForm>(emptySimBoxForm);
+  const [reading, setReading] = useState(false);
+  const [validatingPreview, setValidatingPreview] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<Message>(null);
+  const [imagePath, setImagePath] = useState("");
+  const [rawOcrText, setRawOcrText] = useState("");
+  const [ocrConfidence, setOcrConfidence] = useState<number | null>(null);
+  const [localWarnings, setLocalWarnings] = useState<string[]>([]);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    };
+  }, [imagePreviewUrl]);
+
+  const setField = <K extends keyof SimBoxImportForm>(key: K, value: SimBoxImportForm[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
+    if (["provider", "first_kitcode", "last_kitcode", "quantity"].includes(String(key))) {
+      setPreview(null);
+    }
+  };
+
+  const reset = () => {
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    setImagePreviewUrl("");
+    setImageFile(null);
+    setPreview(null);
+    setForm(emptySimBoxForm);
+    setMessage(null);
+    setImagePath("");
+    setRawOcrText("");
+    setOcrConfidence(null);
+    setLocalWarnings([]);
+    setReading(false);
+    setValidatingPreview(false);
+    setSubmitting(false);
+  };
+
+  const selectImage = (file: File | null) => {
+    setMessage(null);
+    setPreview(null);
+    setImagePath("");
+    setRawOcrText("");
+    setOcrConfidence(null);
+    setLocalWarnings([]);
+    setImageFile(file);
+    setImagePreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return file ? URL.createObjectURL(file) : "";
+    });
+  };
+
+  const requestServerPreview = async (
+    nextForm: SimBoxImportForm,
+    options?: {
+      uploadImage?: boolean;
+      rawText?: string;
+      confidence?: number | null;
+      warnings?: string[];
+    }
+  ) => {
+    setValidatingPreview(true);
+    setMessage(null);
+    if (!imageFile) {
+      setMessage({ tone: "error", text: "اختر صورة العلبة أولا أو أدخل البيانات يدويا ثم أعد المحاولة." });
+      setValidatingPreview(false);
+      return false;
+    }
+    const body = new FormData();
+    if (options?.uploadImage || !imagePath) body.append("image", imageFile);
+    else body.append("image_path", imagePath);
+    body.append("provider", nextForm.provider.trim());
+    body.append("order_number", nextForm.order_number.trim());
+    body.append("batch_number", nextForm.batch_number.trim());
+    body.append("barcode_text", nextForm.barcode_text.trim());
+    body.append("first_kitcode", nextForm.first_kitcode.trim());
+    body.append("last_kitcode", nextForm.last_kitcode.trim());
+    body.append("quantity", nextForm.quantity.trim());
+    body.append("dealer_box_number", nextForm.dealer_box_number.trim());
+    body.append("dealer_box_total", nextForm.dealer_box_total.trim());
+    body.append("raw_ocr_text", options?.rawText ?? rawOcrText);
+    if (options?.confidence != null) body.append("confidence", String(options.confidence));
+    else if (ocrConfidence != null) body.append("confidence", String(ocrConfidence));
+    body.append("raw_notes", JSON.stringify(options?.warnings ?? localWarnings));
+
+    const result = await previewSimBoxImport(body);
+    setValidatingPreview(false);
+    if (result.error || !result.data) {
+      setMessage({ tone: "error", text: result.error?.message || "تعذر تحديث معاينة الاستيراد." });
+      return false;
+    }
+
+    const extracted = result.data.extracted;
+    setPreview(result.data);
+    setImagePath(result.data.image_path || imagePath);
+    setForm((current) => ({
+      ...current,
+      provider: extracted.provider || current.provider || "virgin",
+      order_number: extracted.order_number || current.order_number,
+      batch_number: extracted.batch_number || current.batch_number,
+      barcode_text: extracted.barcode_text || current.barcode_text,
+      first_kitcode: extracted.first_kitcode || current.first_kitcode,
+      last_kitcode: extracted.last_kitcode || current.last_kitcode,
+      quantity: extracted.quantity ? String(extracted.quantity) : current.quantity,
+      dealer_box_number: extracted.dealer_box_number ? String(extracted.dealer_box_number) : current.dealer_box_number,
+      dealer_box_total: extracted.dealer_box_total ? String(extracted.dealer_box_total) : current.dealer_box_total,
+    }));
+    setMessage({ tone: "success", text: `تم توليد ${result.data.generation.generated_count} Kit Code للمراجعة.` });
+    return true;
+  };
+
+  const readBox = async () => {
+    if (!imageFile) {
+      setMessage({ tone: "error", text: "اختر صورة العلبة أولا." });
+      return;
+    }
+    setReading(true);
+    setMessage(null);
+    setPreview(null);
+
+    try {
+      const [ocrResult, barcodeText] = await Promise.all([
+        extractTextWithTesseract(imageFile),
+        extractBarcodeWithZxing(imageFile),
+      ]);
+      const parsed = parseSimBoxText(ocrResult.text);
+      const warnings = [...parsed.raw_notes];
+      if (!barcodeText) warnings.push("Barcode could not be read; please verify the text fields manually.");
+      if (ocrResult.confidence != null && ocrResult.confidence < 65) {
+        warnings.push("OCR confidence is low; review all fields before importing.");
+      }
+
+      const nextForm: SimBoxImportForm = {
+        ...form,
+        provider: parsed.provider || form.provider || "virgin",
+        order_number: parsed.order_number || form.order_number,
+        batch_number: parsed.batch_number || form.batch_number,
+        barcode_text: barcodeText || parsed.barcode_text || form.barcode_text,
+        first_kitcode: parsed.first_kitcode || form.first_kitcode,
+        last_kitcode: parsed.last_kitcode || form.last_kitcode,
+        quantity: parsed.quantity ? String(parsed.quantity) : form.quantity,
+        dealer_box_number: parsed.dealer_box_number ? String(parsed.dealer_box_number) : form.dealer_box_number,
+        dealer_box_total: parsed.dealer_box_total ? String(parsed.dealer_box_total) : form.dealer_box_total,
+      };
+      setRawOcrText(ocrResult.text);
+      setOcrConfidence(ocrResult.confidence ?? null);
+      setLocalWarnings(warnings);
+      setForm(nextForm);
+      await requestServerPreview(nextForm, {
+        uploadImage: !imagePath,
+        rawText: ocrResult.text,
+        confidence: ocrResult.confidence ?? null,
+        warnings,
+      });
+    } catch {
+      setMessage({ tone: "error", text: "تعذر تشغيل OCR المحلي. يمكنك إدخال البيانات يدويا ثم تحديث المعاينة." });
+    } finally {
+      setReading(false);
+    }
+  };
+
+  const duplicateSet = useMemo(
+    () => new Set(preview?.validation.duplicate_kit_codes || []),
+    [preview?.validation.duplicate_kit_codes]
+  );
+  const previewRows = useMemo(
+    () =>
+      (preview?.generation.kit_codes || []).map((kitCode, index) => ({
+        sequence: index + 1,
+        kitCode,
+        duplicate: duplicateSet.has(kitCode),
+      })),
+    [duplicateSet, preview?.generation.kit_codes]
+  );
+  const hasBlockingDuplicates =
+    (preview?.validation.duplicate_count || 0) > 0 && form.duplicateStrategy !== "skip";
+  const canConfirm = Boolean(
+    preview &&
+      !submitting &&
+      !reading &&
+      !validatingPreview &&
+      preview.validation.errors.length === 0 &&
+      !hasBlockingDuplicates &&
+      form.provider.trim() &&
+      form.first_kitcode.trim() &&
+      form.last_kitcode.trim() &&
+      Number(form.quantity || 0) > 0
+  );
+
+  const submit = async () => {
+    if (!preview) {
+      setMessage({ tone: "error", text: "اقرأ بيانات العلبة قبل الحفظ." });
+      return;
+    }
+    if (!canConfirm) {
+      setMessage({ tone: "error", text: "راجع الأخطاء أو التكرارات قبل الحفظ." });
+      return;
+    }
+
+    setSubmitting(true);
+    setMessage(null);
+    const result = await confirmSimBoxImport({
+      provider: form.provider.trim(),
+      order_number: optionalText(form.order_number),
+      batch_number: optionalText(form.batch_number),
+      barcode_text: optionalText(form.barcode_text),
+      first_kitcode: form.first_kitcode.trim(),
+      last_kitcode: form.last_kitcode.trim(),
+      quantity: Number(form.quantity),
+      dealer_box_number: optionalNumber(form.dealer_box_number),
+      dealer_box_total: optionalNumber(form.dealer_box_total),
+      step: preview.generation.step,
+      image_path: imagePath || preview.image_path,
+      extracted_json: preview.extracted,
+      assigned_agent_id: form.assigned_agent_id || null,
+      import_duplicate_strategy: form.duplicateStrategy,
+    });
+    setSubmitting(false);
+    if (result.error || !result.data) {
+      setMessage({ tone: "error", text: result.error?.message || "تعذر حفظ دفعة الاستيراد." });
+      return;
+    }
+    setMessage({
+      tone: "success",
+      text: `تم حفظ ${result.data.inserted_count} شريحة. التكرارات المتخطاة: ${result.data.skipped_duplicates.length}.`,
+    });
+    onDone();
+    setOpen(false);
+    reset();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
+      <DialogTrigger render={<Button variant="outline" />}>
+        <FileImage className="ml-2 h-4 w-4" />
+        استيراد علبة OCR
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
+        <DialogHeader>
+          <DialogTitle>استيراد علبة شرائح من صورة</DialogTitle>
+        </DialogHeader>
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(260px,0.9fr)_minmax(0,1.4fr)]">
+          <div className="space-y-4">
+            <div className="rounded-lg border border-slate-200 p-3">
+              <Label className="mb-2 block">صورة العلبة</Label>
+              <div className="flex items-center gap-2">
+                <Input type="file" accept="image/*" onChange={(event) => selectImage(event.target.files?.[0] ?? null)} />
+                <Button type="button" onClick={readBox} disabled={!imageFile || reading} className="shrink-0">
+                  {reading ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <Upload className="ml-2 h-4 w-4" />}
+                  قراءة محلية
+                </Button>
+              </div>
+              {imagePreviewUrl ? (
+                <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imagePreviewUrl} alt="SIM box" className="max-h-72 w-full object-contain" />
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-lg border border-slate-200 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium text-slate-900">النتيجة</span>
+                {preview ? (
+                  <Badge className="border-0 bg-blue-100 text-blue-700">
+                    {preview.generation.generated_count} Kit Code
+                  </Badge>
+                ) : null}
+              </div>
+              {preview ? (
+                <div className="mt-3 grid gap-2 text-xs text-slate-600">
+                  {ocrConfidence != null ? (
+                    <div className="flex justify-between gap-2">
+                      <span>ثقة OCR</span>
+                      <span dir="ltr">{Math.round(ocrConfidence)}%</span>
+                    </div>
+                  ) : null}
+                  <div className="flex justify-between gap-2">
+                    <span>الخطوة</span>
+                    <span dir="ltr">{preview.generation.step}</span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span>التكرارات</span>
+                    <span dir="ltr">{preview.validation.duplicate_count}</span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span>مسار الصورة</span>
+                    <span dir="ltr" className="max-w-44 truncate">
+                      {preview.image_path}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-slate-400">لم تتم القراءة بعد.</p>
+              )}
+            </div>
+
+            {rawOcrText || localWarnings.length > 0 ? (
+              <details className="rounded-lg border border-slate-200 p-3 text-sm">
+                <summary className="cursor-pointer font-medium text-slate-900">نص OCR الخام</summary>
+                {localWarnings.length > 0 ? (
+                  <ul className="mt-3 list-disc space-y-1 pr-5 text-xs text-amber-700">
+                    {localWarnings.map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                ) : null}
+                {rawOcrText ? (
+                  <pre dir="ltr" className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-xs text-slate-700">
+                    {rawOcrText}
+                  </pre>
+                ) : null}
+              </details>
+            ) : null}
+          </div>
+
+          <div className="space-y-4">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-2">
+                <Label>المزود</Label>
+                <Input dir="ltr" value={form.provider} onChange={(event) => setField("provider", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>رقم الطلب</Label>
+                <Input dir="ltr" value={form.order_number} onChange={(event) => setField("order_number", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>رقم الدفعة</Label>
+                <Input dir="ltr" value={form.batch_number} onChange={(event) => setField("batch_number", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>أول Kit Code</Label>
+                <Input dir="ltr" value={form.first_kitcode} onChange={(event) => setField("first_kitcode", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>آخر Kit Code</Label>
+                <Input dir="ltr" value={form.last_kitcode} onChange={(event) => setField("last_kitcode", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>الكمية</Label>
+                <Input dir="ltr" type="number" min="1" value={form.quantity} onChange={(event) => setField("quantity", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>رقم العلبة</Label>
+                <Input dir="ltr" type="number" min="1" value={form.dealer_box_number} onChange={(event) => setField("dealer_box_number", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>إجمالي العلب</Label>
+                <Input dir="ltr" type="number" min="1" value={form.dealer_box_total} onChange={(event) => setField("dealer_box_total", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>التسليم المباشر</Label>
+                <Select value={form.assigned_agent_id || "none"} onValueChange={(value) => setField("assigned_agent_id", value === "none" ? "" : value ?? "")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">المخزون</SelectItem>
+                    {agents
+                      .filter((agent) => agent.status === "active")
+                      .map((agent) => (
+                        <SelectItem key={agent.id} value={agent.id}>
+                          {agent.full_name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>النص المقروء من الباركود</Label>
+                <Input dir="ltr" value={form.barcode_text} onChange={(event) => setField("barcode_text", event.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <Label>التكرارات</Label>
+                <Select value={form.duplicateStrategy} onValueChange={(value) => setField("duplicateStrategy", (value as "fail" | "skip") ?? "fail")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="fail">إيقاف الحفظ</SelectItem>
+                    <SelectItem value="skip">تخطي المتكرر</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex justify-start">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => requestServerPreview(form, { uploadImage: !imagePath })}
+                disabled={validatingPreview || reading || !form.first_kitcode.trim() || !form.last_kitcode.trim() || !form.quantity.trim()}
+              >
+                {validatingPreview ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="ml-2 h-4 w-4" />}
+                تحديث المعاينة
+              </Button>
+            </div>
+
+            {preview?.validation.errors.length ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <div className="mb-1 flex items-center gap-2 font-medium">
+                  <AlertTriangle className="h-4 w-4" />
+                  أخطاء المراجعة
+                </div>
+                <ul className="list-disc space-y-1 pr-5">
+                  {preview.validation.errors.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {preview?.validation.warnings.length ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700">
+                <div className="mb-1 flex items-center gap-2 font-medium">
+                  <AlertTriangle className="h-4 w-4" />
+                  تنبيهات
+                </div>
+                <ul className="list-disc space-y-1 pr-5">
+                  {preview.validation.warnings.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {message ? <MessageBanner message={message} /> : null}
+
+            <div className="rounded-lg border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                <span className="text-sm font-medium text-slate-900">Kit Codes</span>
+                {previewRows.length > 0 ? <span className="text-xs text-slate-500">{previewRows.length}</span> : null}
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-20">#</TableHead>
+                      <TableHead>Kit Code</TableHead>
+                      <TableHead>الحالة</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {previewRows.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-center text-slate-400">
+                          لا توجد أرقام مولدة.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      previewRows.map((item) => (
+                        <TableRow key={`${item.sequence}-${item.kitCode}`}>
+                          <TableCell dir="ltr">{item.sequence}</TableCell>
+                          <TableCell dir="ltr" className="font-medium">
+                            {item.kitCode}
+                          </TableCell>
+                          <TableCell>
+                            {item.duplicate ? (
+                              <Badge className="border-0 bg-red-100 text-red-700">متكرر</Badge>
+                            ) : (
+                              <Badge className="border-0 bg-emerald-100 text-emerald-700">جديد</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setOpen(false)}>
+                إلغاء
+              </Button>
+              <Button onClick={submit} disabled={!canConfirm}>
+                {submitting ? <Loader2 className="ml-2 h-4 w-4 animate-spin" /> : <Check className="ml-2 h-4 w-4" />}
+                حفظ الدفعة
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
@@ -1440,6 +2001,7 @@ export function StockManagementScreen() {
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [merchantCollections, setMerchantCollections] = useState<MerchantCashCollection[]>([]);
   const [ranking, setRanking] = useState<ResellerRanking[]>([]);
+  const [importBatches, setImportBatches] = useState<SimImportBatch[]>([]);
   const [statusFilter, setStatusFilter] = useState("all");
   const [message, setMessage] = useState<Message>(null);
 
@@ -1453,7 +2015,8 @@ export function StockManagementScreen() {
       getSimPackages(),
       getMerchants(),
       getResellerRanking(),
-    ]).then(async ([overviewResult, simResult, agentResult, requestResult, transferResult, packageResult, merchantResult, rankingResult]) => {
+      getSimImportBatches(),
+    ]).then(async ([overviewResult, simResult, agentResult, requestResult, transferResult, packageResult, merchantResult, rankingResult, batchResult]) => {
       if (overviewResult.error) setMessage({ tone: "error", text: overviewResult.error.message });
       setOverview(overviewResult.data);
       setSims(rows(simResult.data));
@@ -1461,6 +2024,7 @@ export function StockManagementScreen() {
       setRequests(rows(requestResult.data));
       setTransfers(rows(transferResult.data).slice(0, 20));
       setPackages(rows(packageResult.data));
+      setImportBatches(rows(batchResult.data).slice(0, 8));
       const merchantRows = rows(merchantResult.data);
       setMerchants(merchantRows);
       setRanking(rows(rankingResult.data));
@@ -1494,6 +2058,8 @@ export function StockManagementScreen() {
     else load();
   };
 
+  const agentName = (id: string | null) =>
+    id ? agents.find((agent) => agent.id === id)?.full_name || "مندوب" : "المخزون";
   const merchantName = (id: string) => merchants.find((merchant) => merchant.id === id)?.business_name || "تاجر";
   const pendingMerchantCollections = useMemo(
     () => merchantCollections.filter((collection) => collection.status === "pending"),
@@ -1507,6 +2073,7 @@ export function StockManagementScreen() {
         subtitle="مخزون الشرائح والتسليم للمندوبين ومتابعة الطلبات."
         actions={
           <>
+            <SimBoxImportDialog agents={agents} onDone={load} />
             <ImportSimsDialog onDone={load} />
             <AssignSimsDialog agents={agents} stockSims={stockSims} onDone={load} />
           </>
@@ -1520,6 +2087,40 @@ export function StockManagementScreen() {
         <StatCard label="مباعة" value={String(overview?.sold ?? 0)} />
         <StatCard label="مرتجعة" value={String(overview?.returned ?? 0)} />
       </div>
+
+      <Card className="border border-slate-200 shadow-sm">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <History className="h-4 w-4" />
+            دفعات استيراد العلب
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {importBatches.length === 0 ? (
+            <p className="text-sm text-slate-400">لا توجد دفعات OCR محفوظة بعد.</p>
+          ) : (
+            importBatches.map((batch) => (
+              <div key={batch.id} className="grid gap-3 rounded-lg border border-slate-200 p-3 text-sm lg:grid-cols-[1.2fr_1fr_1fr_auto] lg:items-center">
+                <div>
+                  <p className="font-medium text-slate-950">
+                    {batch.provider} · {batch.batch_number || batch.order_number || batch.id.slice(0, 8)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500" dir="ltr">
+                    {batch.first_kitcode} → {batch.last_kitcode}
+                  </p>
+                </div>
+                <div className="text-slate-600">
+                  {batch.imported_count} شريحة · {batch.duplicate_count} متكرر
+                </div>
+                <div className="text-slate-500">
+                  {agentName(batch.assigned_agent_id)} · {new Date(batch.created_at).toLocaleDateString("ar-SA")}
+                </div>
+                {statusBadge(batch.status, { confirmed: "مؤكدة", draft: "مسودة", cancelled: "ملغاة", failed: "فشلت" })}
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
 
       <PackageManagementPanel packages={packages} onDone={load} />
 
@@ -1643,7 +2244,7 @@ export function StockManagementScreen() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>ICCID</TableHead>
+                <TableHead>Kit Code / ICCID</TableHead>
                 <TableHead>المزود</TableHead>
                 <TableHead>النوع</TableHead>
                 <TableHead>الباقة المباعة</TableHead>
@@ -1660,7 +2261,12 @@ export function StockManagementScreen() {
               ) : (
                 filteredSims.slice(0, 100).map((sim) => (
                   <TableRow key={sim.id}>
-                    <TableCell dir="ltr">{sim.iccid}</TableCell>
+                    <TableCell dir="ltr">
+                      <div className="font-medium">{sim.kit_code || sim.iccid}</div>
+                      {sim.kit_code && sim.kit_code !== sim.iccid ? (
+                        <div className="text-xs text-slate-400">{sim.iccid}</div>
+                      ) : null}
+                    </TableCell>
                     <TableCell>{sim.provider || "virgin"}</TableCell>
                     <TableCell>{sim.sim_type}</TableCell>
                     <TableCell>{sim.sold_package_name || "—"}</TableCell>

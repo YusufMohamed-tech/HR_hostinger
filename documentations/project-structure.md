@@ -39,6 +39,23 @@ Navigation and gates:
 - `src/lib/rbac.ts`
 - `src/components/layout/Sidebar.tsx`
 
+## On-Ground SIM Import Files
+
+Database and test support:
+- `db/schema_v52_sim_box_ocr_import.sql`
+- `scripts/test-sim-box-generation.mjs`
+
+OCR import helpers:
+- `src/lib/sim-box-import.ts`
+- `src/lib/sim-box-local-ocr.ts`
+- `src/lib/field-agents/schemas.ts`
+- `src/types/field-agents.ts`
+
+API and frontend:
+- `src/app/api/sales/agents/[[...segments]]/route.ts`
+- `src/lib/services/field-agents.ts`
+- `src/components/field-agents/FieldAgentAdminScreens.tsx`
+
 ## Root Directory
 
 ```
@@ -189,7 +206,7 @@ src/
 db/
 ├── schema.sql                        # Original development schema
 ├── schema-production-clean.sql       # Canonical base schema (v1)
-└── schema_v2_additions.sql           # Incremental migrations (v2 through v40)
+└── schema_v2_additions.sql           # Incremental migrations (v2 through current)
     schema_v3_rbac.sql
     schema_v4_modules.sql
     ...
@@ -197,6 +214,12 @@ db/
     schema_v38_accounting_hardening.sql
     schema_v39_accounting_completion.sql
     schema_v40_accounting_audit_fixes.sql
+    schema_v47_field_agents.sql
+    schema_v48_merchants.sql
+    schema_v49_onground_agent_manager.sql
+    schema_v50_sim_packages_trader_payments.sql
+    schema_v51_trader_sale_activation_details.sql
+    schema_v52_sim_box_ocr_import.sql
 ```
 
 ## Scripts Directory (`scripts/`)
@@ -208,6 +231,8 @@ scripts/
 ├── apply-supabase-sql.mjs        # Raw SQL execution via Supabase API
 ├── debug-schema.mjs              # Schema debugging utility
 ├── verify-accounting-module.mjs  # Accounting module verification
+├── test-sim-box-generation.mjs    # SIM box kit-code generation edge-case test
+├── test-sim-box-parser.mjs        # SIM box OCR text parser edge-case test
 ├── seed-initial-admin.mjs        # Create first admin user
 ├── seed-dr-amr-admin.mjs         # Create platform superadmin
 ├── seed-demo-users.mjs           # Demo user accounts (staging only)

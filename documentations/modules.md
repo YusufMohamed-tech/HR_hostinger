@@ -260,6 +260,45 @@ Tatwir Talent HRMS is organized into distinct feature modules, each with its own
 
 ---
 
+## 10a. On-Ground Agent / Trader SIM Distribution
+
+**Manager paths:** `/sales/agents`, `/sales/stock`, `/sales/traders`, `/sales/trader-sales`
+
+**Agent kiosk paths:** `/agent`, `/agent/sims`, `/agent/sell`, `/agent/merchants`, `/agent/requests`, `/agent/balance`, `/agent/commissions`
+
+**Trader kiosk paths:** `/merchant`, `/merchant/sims`, `/merchant/sell`, `/merchant/requests`, `/merchant/balance`
+
+**Access:** Admin, Sales_Manager, Onground_Agent_Manager, Field_Agent, Merchant
+
+**Service:** `src/lib/services/field-agents.ts`, `src/lib/services/merchants.ts`
+
+### Features
+- Manager imports SIM stock, assigns SIMs to field agents, reviews agent requests, tracks transfers, and records organization cash collection from agents.
+- Manager can import a physical SIM dealer box from an image: OCR extracts label fields, the manager reviews/edit fields, the server generates kit codes, duplicate checks run, and confirmed SIMs enter stock or are directly assigned to one active field agent.
+- Manager creates and maintains package catalog entries with sale price, tax flag, and agent/trader commission rules.
+- Field agents receive SIMs, sell directly to customers, create trader accounts, assign SIMs to traders, review trader stock requests, collect or confirm trader payments, and track commissions.
+- Traders view their stock, select an active package, complete required activation/customer fields, record SIM sales, request more SIMs, and submit payments with optional proof files.
+- Manager-facing trader sales page lists merchant sales with customer activation details, package/SIM context, agent/trader names, and commission totals.
+
+### Trader Sale Activation Fields
+Before a trader sale is completed, the merchant UI requires customer name, national ID, Absher mobile, Hijri birth date, Hijri ID expiry, email, nationality, package reference, device serial, city/district, national address, and supervisor name. Marketer name is optional. These values are stored in `sim_sales` by migration v51.
+
+### SIM Box OCR Import
+The v52 SIM box import workflow is manager-only and belongs to stock intake, not sales. The frontend reads the uploaded box image locally with Tesseract.js and tries barcode detection with ZXing. `POST /api/sales/agents/sims/box-preview` receives the extracted/editable fields, stores the private image path, recalculates kit codes, checks duplicates, and returns a reviewable preview. `POST /api/sales/agents/sims/box-import` recalculates the kit-code range again before inserting `sim_units` and `sim_import_batches`.
+
+Kit-code generation preserves leading zeros, supports quantity `1` only when first and last kit code match, and requires `(last - first)` to divide evenly by `quantity - 1`. Duplicate strategy defaults to fail, with an optional skip mode for already-imported kit codes.
+
+### Business Rules
+- SIM ownership follows `in_stock -> with_agent -> with_merchant -> sold`.
+- Package provider must match the SIM provider before a sale is accepted.
+- OCR imports set `kit_code` and legacy `iccid` to the generated kit code; the import never creates a sale or merchant/trader assignment.
+- Sale price and commission amounts are calculated from the selected `sim_packages` row and snapshotted onto `sim_sales`, `agent_commissions`, and `merchant_commissions`.
+- A suspended field agent or trader cannot receive or sell SIMs.
+- Trader payment submissions are `pending` when submitted by the trader and only reduce balances after confirmation. Cash can be confirmed by the owning agent/manager; electronic methods require manager confirmation.
+- `/sales/trader-sales` is manager-only because it exposes customer activation details.
+
+---
+
 ## 11. Accounting / Finance Module
 
 **Path:** `/accounting/*`  
