@@ -746,72 +746,78 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
                 />
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
-              {filteredSales.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">
-                  لا توجد مبيعات لهذا المندوب.
-                </div>
-              ) : (
-                filteredSales.map((sale) => (
-                  <div key={sale.id} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1.15fr)_auto] lg:items-center">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {sale.seller_type === "merchant" ? (
-                          <Badge className="border-0 bg-blue-100 text-blue-700">
-                            <Store className="ml-1 h-3.5 w-3.5" />
-                            تاجر
-                          </Badge>
-                        ) : (
-                          <Badge className="border-0 bg-emerald-100 text-emerald-700">
-                            <UserRound className="ml-1 h-3.5 w-3.5" />
-                            مباشر
-                          </Badge>
-                        )}
-                        <span className="text-xs text-slate-500" dir="ltr">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>العميل</TableHead>
+                    <TableHead>قناة البيع</TableHead>
+                    <TableHead className="hidden lg:table-cell">التاجر</TableHead>
+                    <TableHead>الباقة / الشريحة</TableHead>
+                    <TableHead className="hidden md:table-cell">التاريخ</TableHead>
+                    <TableHead>قيمة البيع</TableHead>
+                    <TableHead className="hidden xl:table-cell">عمولة المندوب</TableHead>
+                    <TableHead></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredSales.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="py-14 text-center text-slate-400">
+                        لا توجد مبيعات لهذا المندوب.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredSales.map((sale) => (
+                      <TableRow key={sale.id}>
+                        <TableCell>
+                          <div className="font-semibold text-slate-950">
+                            {sale.customer_name || "عميل بدون اسم"}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-400" dir="ltr">
+                            {sale.customer_absher_mobile || sale.customer_national_id || "—"}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {sale.seller_type === "merchant" ? (
+                            <Badge className="border-0 bg-blue-100 text-blue-700">
+                              <Store className="ml-1 h-3.5 w-3.5" />
+                              تاجر
+                            </Badge>
+                          ) : (
+                            <Badge className="border-0 bg-emerald-100 text-emerald-700">
+                              <UserRound className="ml-1 h-3.5 w-3.5" />
+                              مباشر
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="hidden lg:table-cell">
+                          {sale.merchant_name || (sale.seller_type === "agent" ? "بيع مباشر" : "—")}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{sale.package_name || sale.package_reference || "—"}</div>
+                          <div className="mt-1 text-xs text-slate-400" dir="ltr">
+                            {sale.sim_iccid || sale.sim_unit_id}
+                          </div>
+                        </TableCell>
+                        <TableCell className="hidden whitespace-nowrap text-xs text-slate-500 md:table-cell" dir="ltr">
                           {formatDateTime(sale.sold_at)}
-                        </span>
-                      </div>
-                      <p className="mt-2 truncate text-sm font-semibold text-slate-950">
-                        {sale.customer_name || "عميل بدون اسم"}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-slate-400" dir="ltr">
-                        {sale.customer_absher_mobile || sale.customer_national_id || "—"}
-                      </p>
-                    </div>
-
-                    <div className="min-w-0 rounded-md bg-slate-50 px-3 py-2">
-                      <p className="text-xs text-slate-500">التاجر</p>
-                      <p className="mt-1 truncate text-sm font-medium text-slate-900">
-                        {sale.merchant_name || (sale.seller_type === "agent" ? "بيع مباشر" : "—")}
-                      </p>
-                    </div>
-
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-900">
-                        {sale.package_name || sale.package_reference || "—"}
-                      </p>
-                      <p className="mt-1 truncate text-xs text-slate-400" dir="ltr">
-                        {sale.sim_iccid || sale.sim_unit_id}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                      <div className="min-w-28 rounded-md bg-emerald-50 px-3 py-2 text-center">
-                        <p className="text-[11px] text-emerald-700">قيمة البيع</p>
-                        <p className="mt-1 text-sm font-bold text-emerald-800">{formatMoney(sale.sale_price)}</p>
-                      </div>
-                      <div className="min-w-28 rounded-md bg-amber-50 px-3 py-2 text-center">
-                        <p className="text-[11px] text-amber-700">عمولته</p>
-                        <p className="mt-1 text-sm font-bold text-amber-800">{formatMoney(sale.agent_commission_amount)}</p>
-                      </div>
-                      <Button size="sm" variant="outline" onClick={() => setSelectedSale(sale)}>
-                        <Eye className="ml-2 h-4 w-4" />
-                        تفاصيل
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              )}
+                        </TableCell>
+                        <TableCell className="font-bold text-emerald-700">{formatMoney(sale.sale_price)}</TableCell>
+                        <TableCell className="hidden font-semibold text-amber-700 xl:table-cell">
+                          {formatMoney(sale.agent_commission_amount)}
+                        </TableCell>
+                        <TableCell>
+                          <Button size="sm" variant="outline" onClick={() => setSelectedSale(sale)}>
+                            <Eye className="ml-2 h-4 w-4" />
+                            تفاصيل
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
         </TabsContent>
