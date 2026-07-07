@@ -15,9 +15,12 @@ import {
   Loader2,
   Plus,
   RefreshCcw,
+  Search,
   Send,
   SlidersHorizontal,
+  Store,
   Upload,
+  UserRound,
   Wallet,
   X,
 } from "lucide-react";
@@ -34,6 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   assignSims,
@@ -44,6 +48,7 @@ import {
   getCommissions,
   getFieldAgent,
   getFieldAgents,
+  getAgentSales,
   getSimImportBatches,
   getSimRequests,
   getSimTransfers,
@@ -72,6 +77,8 @@ import {
 import type {
   AgentCashCollection,
   AgentCommission,
+  AgentSaleRecord,
+  AgentSalesResponse,
   AgentSimRequest,
   FieldAgent,
   SimBoxPreviewResult,
@@ -158,6 +165,17 @@ function statusBadge(status: string, labels: Record<string, string>) {
           ? "bg-amber-100 text-amber-700"
           : "bg-slate-100 text-slate-600";
   return <Badge className={`border-0 ${tone}`}>{labels[status] || status}</Badge>;
+}
+
+function DetailTile({ label, value, dir }: { label: string; value: unknown; dir?: "rtl" | "ltr" }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="mt-1 break-words text-sm font-semibold text-slate-950" dir={dir}>
+        {value === null || value === undefined || value === "" ? "—" : String(value)}
+      </p>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -549,17 +567,23 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
   const [sims, setSims] = useState<SimUnit[]>([]);
   const [collections, setCollections] = useState<AgentCashCollection[]>([]);
   const [commissions, setCommissions] = useState<AgentCommission[]>([]);
+  const [salesData, setSalesData] = useState<AgentSalesResponse | null>(null);
+  const [salesSearch, setSalesSearch] = useState("");
+  const [selectedSale, setSelectedSale] = useState<AgentSaleRecord | null>(null);
   const [message, setMessage] = useState<Message>(null);
 
   const load = useCallback(() => {
     Promise.all([
       getFieldAgent(agentId),
+      getAgentSales(agentId),
       getSimUnits({ agent_id: agentId }),
       getCashCollections(agentId),
       getCommissions({ agent_id: agentId }),
-    ]).then(([agentResult, simResult, collectionResult, commissionResult]) => {
+    ]).then(([agentResult, salesResult, simResult, collectionResult, commissionResult]) => {
       if (agentResult.error) setMessage({ tone: "error", text: agentResult.error.message });
+      if (salesResult.error) setMessage({ tone: "error", text: salesResult.error.message });
       setAgent(agentResult.data);
+      setSalesData(salesResult.data);
       setSims(rows(simResult.data));
       setCollections(rows(collectionResult.data));
       setCommissions(rows(commissionResult.data));
@@ -571,11 +595,36 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
   }, [load]);
 
   const soldDebt = useMemo(
-    () => sims.filter((s) => s.status === "sold").reduce((sum, sim) => sum + Number(sim.sold_price || 0), 0),
-    [sims]
+    () => salesData?.summary.total_value ?? sims.filter((s) => s.status === "sold").reduce((sum, sim) => sum + Number(sim.sold_price || 0), 0),
+    [salesData?.summary.total_value, sims]
   );
   const collected = useMemo(() => collections.reduce((sum, c) => sum + Number(c.amount || 0), 0), [collections]);
   const inHand = useMemo(() => sims.filter((s) => s.status === "with_agent").length, [sims]);
+  const sales = rows(salesData?.sales);
+  const salesSummary = salesData?.summary;
+  const filteredSales = useMemo(() => {
+    const q = salesSearch.trim().toLowerCase();
+    if (!q) return sales;
+    return sales.filter((sale) =>
+      [
+        sale.customer_name,
+        sale.customer_national_id,
+        sale.customer_absher_mobile,
+        sale.customer_email,
+        sale.sim_iccid,
+        sale.package_name,
+        sale.package_reference,
+        sale.merchant_name,
+        sale.merchant_owner_name,
+        sale.device_serial,
+        sale.city_district,
+        sale.national_address,
+        sale.supervisor_name,
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q))
+    );
+  }, [sales, salesSearch]);
 
   const toggleStatus = async () => {
     if (!agent) return;
@@ -620,110 +669,259 @@ export function AgentDetailScreen({ agentId }: { agentId: string }) {
         }
       />
       <MessageBanner message={message} />
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <StatCard label="شرائح في اليد" value={String(inHand)} />
-        <StatCard label="المستحق على المندوب" value={formatMoney(soldDebt)} />
-        <StatCard label="إجمالي المحصّل" value={formatMoney(collected)} />
-        <StatCard label="المتبقي" value={formatMoney(soldDebt - collected)} />
+        <StatCard label="إجمالي المبيعات" value={String(salesSummary?.total_count ?? sales.length)} hint={formatMoney(soldDebt)} />
+        <StatCard label="بيع مباشر" value={String(salesSummary?.direct_count ?? sales.filter((sale) => sale.seller_type === "agent").length)} hint={formatMoney(salesSummary?.direct_value)} />
+        <StatCard label="بيع عبر التجار" value={String(salesSummary?.merchant_count ?? sales.filter((sale) => sale.seller_type === "merchant").length)} hint={formatMoney(salesSummary?.merchant_value)} />
+        <StatCard label="عمولة المندوب" value={formatMoney(salesSummary?.agent_commission_amount)} hint={`المحصل: ${formatMoney(collected)}`} />
       </div>
 
-      <Card className="border border-slate-200 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-base">الشرائح</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Kit Code / ICCID</TableHead>
-                <TableHead>المزود</TableHead>
-                <TableHead>النوع</TableHead>
-                <TableHead>الحالة</TableHead>
-                <TableHead>الباقة</TableHead>
-                <TableHead>سعر البيع</TableHead>
-                <TableHead>العميل</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sims.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} className="text-center text-slate-400">
-                    لا توجد شرائح.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                sims.map((sim) => (
-                  <TableRow key={sim.id}>
-                    <TableCell dir="ltr">
-                      <div className="font-medium">{sim.kit_code || sim.iccid}</div>
-                      {sim.kit_code && sim.kit_code !== sim.iccid ? (
-                        <div className="text-xs text-slate-400">{sim.iccid}</div>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>{sim.provider || "virgin"}</TableCell>
-                    <TableCell>{sim.sim_type}</TableCell>
-                    <TableCell>{statusBadge(sim.status, simStatusLabels)}</TableCell>
-                    <TableCell>{sim.sold_package_name || "—"}</TableCell>
-                    <TableCell>{sim.sold_price ? formatMoney(sim.sold_price) : "—"}</TableCell>
-                    <TableCell>{sim.customer_name || "—"}</TableCell>
+      <Tabs defaultValue="sales" className="space-y-4">
+        <TabsList className="h-auto w-full flex-wrap justify-start rounded-lg bg-white p-1 shadow-sm">
+          <TabsTrigger value="sales" className="h-10 px-4 data-active:bg-brand data-active:text-white">
+            المبيعات
+          </TabsTrigger>
+          <TabsTrigger value="sims" className="h-10 px-4 data-active:bg-brand data-active:text-white">
+            الشرائح
+          </TabsTrigger>
+          <TabsTrigger value="collections" className="h-10 px-4 data-active:bg-brand data-active:text-white">
+            التحصيلات
+          </TabsTrigger>
+          <TabsTrigger value="commissions" className="h-10 px-4 data-active:bg-brand data-active:text-white">
+            العمولات
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="sales" className="space-y-4">
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader className="gap-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CreditCard className="h-4 w-4" />
+                مبيعات المندوب
+              </CardTitle>
+              <div className="relative max-w-xl">
+                <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={salesSearch}
+                  onChange={(event) => setSalesSearch(event.target.value)}
+                  placeholder="بحث بالعميل، التاجر، الشريحة، الباقة، الجهاز، أو العنوان"
+                  className="pr-9"
+                />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>التاريخ</TableHead>
+                    <TableHead>قناة البيع</TableHead>
+                    <TableHead>العميل</TableHead>
+                    <TableHead>التاجر</TableHead>
+                    <TableHead>الباقة / الشريحة</TableHead>
+                    <TableHead>قيمة البيع</TableHead>
+                    <TableHead>عمولة المندوب</TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredSales.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-slate-400">
+                        لا توجد مبيعات لهذا المندوب.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredSales.map((sale) => (
+                      <TableRow key={sale.id}>
+                        <TableCell className="whitespace-nowrap text-xs text-slate-500" dir="ltr">
+                          {new Date(sale.sold_at).toLocaleString("ar-SA")}
+                        </TableCell>
+                        <TableCell>
+                          {sale.seller_type === "merchant" ? (
+                            <Badge className="border-0 bg-blue-100 text-blue-700">
+                              <Store className="ml-1 h-3.5 w-3.5" />
+                              تاجر
+                            </Badge>
+                          ) : (
+                            <Badge className="border-0 bg-emerald-100 text-emerald-700">
+                              <UserRound className="ml-1 h-3.5 w-3.5" />
+                              مباشر
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>{sale.customer_name || "—"}</TableCell>
+                        <TableCell>{sale.merchant_name || "—"}</TableCell>
+                        <TableCell>
+                          <div className="font-medium">{sale.package_name || sale.package_reference || "—"}</div>
+                          <div className="text-xs text-slate-400" dir="ltr">
+                            {sale.sim_iccid || sale.sim_unit_id}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-semibold">{formatMoney(sale.sale_price)}</TableCell>
+                        <TableCell>{formatMoney(sale.agent_commission_amount)}</TableCell>
+                        <TableCell>
+                          <Button size="sm" variant="outline" onClick={() => setSelectedSale(sale)}>
+                            <Eye className="ml-2 h-4 w-4" />
+                            تفاصيل
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="sims">
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base">الشرائح</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Kit Code / ICCID</TableHead>
+                    <TableHead>المزود</TableHead>
+                    <TableHead>النوع</TableHead>
+                    <TableHead>الحالة</TableHead>
+                    <TableHead>الباقة</TableHead>
+                    <TableHead>سعر البيع</TableHead>
+                    <TableHead>العميل</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sims.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-slate-400">
+                        لا توجد شرائح.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    sims.map((sim) => (
+                      <TableRow key={sim.id}>
+                        <TableCell dir="ltr">
+                          <div className="font-medium">{sim.kit_code || sim.iccid}</div>
+                          {sim.kit_code && sim.kit_code !== sim.iccid ? (
+                            <div className="text-xs text-slate-400">{sim.iccid}</div>
+                          ) : null}
+                        </TableCell>
+                        <TableCell>{sim.provider || "virgin"}</TableCell>
+                        <TableCell>{sim.sim_type}</TableCell>
+                        <TableCell>{statusBadge(sim.status, simStatusLabels)}</TableCell>
+                        <TableCell>{sim.sold_package_name || "—"}</TableCell>
+                        <TableCell>{sim.sold_price ? formatMoney(sim.sold_price) : "—"}</TableCell>
+                        <TableCell>{sim.customer_name || "—"}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="collections">
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base">التحصيلات النقدية</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {collections.length === 0 ? (
+                <p className="text-sm text-slate-400">لا توجد تحصيلات.</p>
+              ) : (
+                collections.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
+                    <span>{c.collection_date}</span>
+                    <span className="font-semibold">{formatMoney(c.amount)}</span>
+                  </div>
                 ))
               )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="border border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base">التحصيلات النقدية</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {collections.length === 0 ? (
-              <p className="text-sm text-slate-400">لا توجد تحصيلات.</p>
-            ) : (
-              collections.map((c) => (
-                <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
-                  <span>{c.collection_date}</span>
-                  <span className="font-semibold">{formatMoney(c.amount)}</span>
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-        <Card className="border border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base">العمولات</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {commissions.length === 0 ? (
-              <p className="text-sm text-slate-400">لا توجد عمولات.</p>
-            ) : (
-              commissions.map((c) => (
-                <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
-                  <span>{formatMoney(c.commission_amount)}</span>
-                  {c.is_paid ? (
-                    <Badge className="border-0 bg-emerald-100 text-emerald-700">مدفوعة</Badge>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={async () => {
-                        const result = await markCommissionPaid(c.id);
-                        if (result.error) setMessage({ tone: "error", text: result.error.message });
-                        else load();
-                      }}
-                    >
-                      تعليم كمدفوعة
-                    </Button>
-                  )}
-                </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
+        <TabsContent value="commissions">
+          <Card className="border border-slate-200 shadow-sm">
+            <CardHeader>
+              <CardTitle className="text-base">العمولات</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {commissions.length === 0 ? (
+                <p className="text-sm text-slate-400">لا توجد عمولات.</p>
+              ) : (
+                commissions.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between rounded-lg border border-slate-200 p-3 text-sm">
+                    <span>{formatMoney(c.commission_amount)}</span>
+                    {c.is_paid ? (
+                      <Badge className="border-0 bg-emerald-100 text-emerald-700">مدفوعة</Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={async () => {
+                          const result = await markCommissionPaid(c.id);
+                          if (result.error) setMessage({ tone: "error", text: result.error.message });
+                          else load();
+                        }}
+                      >
+                        تعليم كمدفوعة
+                      </Button>
+                    )}
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <Dialog open={Boolean(selectedSale)} onOpenChange={(open) => !open && setSelectedSale(null)}>
+        {selectedSale ? (
+          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-5xl" dir="rtl">
+            <DialogHeader>
+              <DialogTitle>تفاصيل بيع {selectedSale.customer_name || "عميل بدون اسم"}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                <DetailTile label="قناة البيع" value={selectedSale.seller_type === "merchant" ? "بيع عبر تاجر" : "بيع مباشر من المندوب"} />
+                <DetailTile label="قيمة البيع" value={formatMoney(selectedSale.sale_price)} />
+                <DetailTile label="التاريخ" value={new Date(selectedSale.sold_at).toLocaleString("ar-SA")} dir="ltr" />
+                <DetailTile label="الباقة" value={selectedSale.package_name || selectedSale.package_reference} />
+                <DetailTile label="عمولة المندوب" value={formatMoney(selectedSale.agent_commission_amount)} />
+                <DetailTile label="عمولة التاجر" value={formatMoney(selectedSale.merchant_commission_amount)} />
+                <DetailTile label="عمولة البيع المباشر" value={formatMoney(selectedSale.direct_agent_commission_amount)} />
+                <DetailTile label="إجمالي العمولة" value={formatMoney(selectedSale.total_commission_amount)} />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <DetailTile label="اسم العميل" value={selectedSale.customer_name} />
+                <DetailTile label="هوية العميل" value={selectedSale.customer_national_id} dir="ltr" />
+                <DetailTile label="جوال أبشر" value={selectedSale.customer_absher_mobile} dir="ltr" />
+                <DetailTile label="البريد الإلكتروني" value={selectedSale.customer_email} dir="ltr" />
+                <DetailTile label="تاريخ الميلاد هجري" value={selectedSale.customer_birth_date_hijri} dir="ltr" />
+                <DetailTile label="انتهاء الهوية هجري" value={selectedSale.customer_id_expiry_hijri} dir="ltr" />
+                <DetailTile label="الجنسية" value={selectedSale.customer_nationality} />
+                <DetailTile label="المدينة / الحي" value={selectedSale.city_district} />
+                <DetailTile label="العنوان الوطني" value={selectedSale.national_address} dir="ltr" />
+                <DetailTile label="سيريال الجهاز" value={selectedSale.device_serial} dir="ltr" />
+                <DetailTile label="مرجع الباقة" value={selectedSale.package_reference} />
+                <DetailTile label="اسم المسوق" value={selectedSale.marketer_name} />
+                <DetailTile label="المشرف" value={selectedSale.supervisor_name} />
+                <DetailTile label="ICCID" value={selectedSale.sim_iccid || selectedSale.sim_unit_id} dir="ltr" />
+                <DetailTile label="مزود الشريحة" value={selectedSale.sim_provider || selectedSale.package_provider} />
+                <DetailTile label="نوع الشريحة" value={selectedSale.sim_type} />
+                <DetailTile label="التاجر" value={selectedSale.merchant_name} />
+                <DetailTile label="مالك التاجر" value={selectedSale.merchant_owner_name} />
+                <DetailTile label="جوال التاجر" value={selectedSale.merchant_phone} dir="ltr" />
+              </div>
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
   );
 }
