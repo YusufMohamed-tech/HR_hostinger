@@ -2,6 +2,7 @@ import type {
   AgentCashCollection,
   AgentCommission,
   AgentDashboardData,
+  AgentSalesResponse,
   AgentSimRequest,
   FieldAgent,
   SimBoxImportConfirmPayload,
@@ -58,6 +59,8 @@ export const createFieldAgent = (body: Record<string, unknown>) =>
   apiFetch<FieldAgent>(BASE, jsonInit("POST", body));
 export const updateFieldAgent = (id: string, body: Record<string, unknown>) =>
   apiFetch<FieldAgent>(`${BASE}/${id}`, jsonInit("PATCH", body));
+export const getAgentSales = (id: string, p?: QueryParams) =>
+  apiFetch<AgentSalesResponse>(`${BASE}/${id}/sales` + qs(p));
 
 // SIM inventory
 export const getSimUnits = (p?: QueryParams) => apiFetch<SimUnit[]>(`${BASE}/sims` + qs(p));

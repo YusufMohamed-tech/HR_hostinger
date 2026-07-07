@@ -149,6 +149,20 @@ function rows(value: unknown) {
   return Array.isArray(value) ? (value as Record<string, unknown>[]) : [];
 }
 
+function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}
+
+function mapById(value: unknown) {
+  const map = new Map<string, Record<string, unknown>>();
+  for (const item of rows(value)) {
+    const entry = row(item);
+    const id = asString(entry.id);
+    if (id) map.set(id, entry);
+  }
+  return map;
+}
+
 function asString(value: unknown) {
   return String(value || "").trim();
 }
@@ -374,6 +388,110 @@ async function handleAgents(request: NextRequest, auth: AuthContext, segments: s
     }
 
     return message("Method not allowed", 405);
+  }
+
+  // /agents/[id]/sales
+  if (segments[1] === "sales") {
+    if (request.method !== "GET") return message("Method not allowed", 405);
+
+    const agentResult = await db
+      .from("field_agents")
+      .select("*")
+      .eq("organization_id", auth.orgId)
+      .eq("id", agentId)
+      .maybeSingle();
+    if (agentResult.error) return message(agentResult.error.message, 500);
+    if (!agentResult.data) return message("Agent not found.", 404);
+    const agent = row(agentResult.data);
+
+    let query = db
+      .from("sim_sales")
+      .select("*")
+      .eq("organization_id", auth.orgId)
+      .eq("agent_id", agentId);
+
+    const sellerType = asString(request.nextUrl.searchParams.get("seller_type"));
+    if (sellerType === "agent" || sellerType === "merchant") {
+      query = query.eq("seller_type", sellerType);
+    }
+
+    const result = await query.order("sold_at", { ascending: false }).limit(500);
+    if (result.error) return message(result.error.message, 500);
+
+    const sales = rows(result.data);
+    const merchantIds = uniqueStrings(sales.map((sale) => asString(sale.merchant_id)));
+    const simIds = uniqueStrings(sales.map((sale) => asString(sale.sim_unit_id)));
+    const packageIds = uniqueStrings(sales.map((sale) => asString(sale.package_id)));
+
+    const [merchantResult, simResult, packageResult] = await Promise.all([
+      merchantIds.length
+        ? db
+            .from("merchants")
+            .select("id, business_name, owner_name, phone")
+            .eq("organization_id", auth.orgId)
+            .in("id", merchantIds)
+        : Promise.resolve({ data: [], error: null }),
+      simIds.length
+        ? db
+            .from("sim_units")
+            .select("id, iccid, provider, sim_type")
+            .eq("organization_id", auth.orgId)
+            .in("id", simIds)
+        : Promise.resolve({ data: [], error: null }),
+      packageIds.length
+        ? db
+            .from("sim_packages")
+            .select("id, package_name, provider")
+            .eq("organization_id", auth.orgId)
+            .in("id", packageIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+    if (merchantResult.error) return message(merchantResult.error.message, 500);
+    if (simResult.error) return message(simResult.error.message, 500);
+    if (packageResult.error) return message(packageResult.error.message, 500);
+
+    const merchants = mapById(merchantResult.data);
+    const sims = mapById(simResult.data);
+    const packages = mapById(packageResult.data);
+
+    const directSales = sales.filter((sale) => asString(sale.seller_type) === "agent");
+    const merchantSales = sales.filter((sale) => asString(sale.seller_type) === "merchant");
+    const sum = (items: Record<string, unknown>[], key: string) =>
+      items.reduce((total, item) => total + asNumber(item[key]), 0);
+
+    return json({
+      agent,
+      summary: {
+        total_count: sales.length,
+        direct_count: directSales.length,
+        merchant_count: merchantSales.length,
+        total_value: sum(sales, "sale_price"),
+        direct_value: sum(directSales, "sale_price"),
+        merchant_value: sum(merchantSales, "sale_price"),
+        agent_commission_amount: sum(sales, "agent_commission_amount"),
+        merchant_commission_amount: sum(sales, "merchant_commission_amount"),
+        direct_agent_commission_amount: sum(sales, "direct_agent_commission_amount"),
+      },
+      sales: sales.map((sale) => {
+        const merchant = merchants.get(asString(sale.merchant_id));
+        const sim = sims.get(asString(sale.sim_unit_id));
+        const simPackage = packages.get(asString(sale.package_id));
+
+        return {
+          ...sale,
+          merchant_name: asString(merchant?.business_name),
+          merchant_owner_name: asString(merchant?.owner_name),
+          merchant_phone: asString(merchant?.phone),
+          agent_name: asString(agent.full_name),
+          agent_phone: asString(agent.phone),
+          sim_iccid: asString(sim?.iccid),
+          sim_provider: asString(sim?.provider),
+          sim_type: asString(sim?.sim_type),
+          package_name: asString(simPackage?.package_name),
+          package_provider: asString(simPackage?.provider),
+        };
+      }),
+    });
   }
 
   // /agents/[id]/collections
