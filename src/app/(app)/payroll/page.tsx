@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { getPayslips, generatePayslip, updatePayslipStatus } from "@/lib/services/payroll";
+import { getPayslips, generatePayslip, updatePayslipStatus, type ManualAdjustment } from "@/lib/services/payroll";
 import { createPayrollDraftEntry, getPayrollAccountingStatus, postJournalEntry, recordPayrollPayment } from "@/lib/services/accounting";
 import type { PayrollAccountingStatus } from "@/types/accounting";
 import { useEmployees } from "@/hooks/use-data";
@@ -12,10 +12,13 @@ import { Button } from "@/components/ui/button";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatCurrency } from "@/lib/utils/currency";
 import { printHtmlReport } from "@/lib/utils/print-report";
-import { Calendar, Download, Calculator, CheckCircle, Banknote } from "lucide-react";
+import { Calendar, Download, Calculator, CheckCircle, Banknote, RefreshCw, Plus, ChevronDown, ChevronUp, Trash2, AlertTriangle } from "lucide-react";
 
 const statusLabels: Record<string, string> = {
   draft: "مسودة",
@@ -143,6 +146,8 @@ function exportPayrollPdf(input: {
   return printHtmlReport(html, `payroll-${input.monthLabel}`);
 }
 
+type AdjustForm = { type: "bonus" | "deduction"; amount: string; reason: string };
+
 export default function PayrollPage() {
   const { currentUser } = useRoleContext();
   const { data: employees } = useEmployees();
@@ -153,6 +158,13 @@ export default function PayrollPage() {
   const [accountingStatus, setAccountingStatus] = useState<PayrollAccountingStatus | null>(null);
   const [message, setMessage] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(() => new Date().toISOString().substring(0, 7));
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+  const [recalculating, setRecalculating] = useState<string | null>(null);
+  const [adjustDialog, setAdjustDialog] = useState<{ payslipId: string; employeeName: string } | null>(null);
+  const [adjustForm, setAdjustForm] = useState<AdjustForm>({ type: "bonus", amount: "", reason: "" });
+  const [adjustSubmitting, setAdjustSubmitting] = useState(false);
+  const [adjustError, setAdjustError] = useState("");
+
   const role = String(currentUser?.role || "");
   const canRunPayroll = ["Admin", "HR_Admin"].includes(role);
   const canViewAccountingStatus = ["Admin", "HR_Admin", "Finance_Manager", "Accountant", "Finance_Viewer", "Superadmin"].includes(role);
@@ -168,33 +180,74 @@ export default function PayrollPage() {
       getPayslips(currentUser.orgId, monthParam),
       canViewAccountingStatus ? getPayrollAccountingStatus(monthParam) : Promise.resolve({ data: null, error: null }),
     ]);
-    if (payslipsResult.data) setPayslips(payslipsResult.data);
-    else setPayslips([]);
+    setPayslips(payslipsResult.data || []);
     if (accountingResult.data) setAccountingStatus(accountingResult.data);
     else setAccountingStatus(null);
     setLoading(false);
   }, [currentUser?.orgId, monthParam, canViewAccountingStatus]);
 
-  useEffect(() => {
-    loadPayslips();
-  }, [loadPayslips]);
+  useEffect(() => { loadPayslips(); }, [loadPayslips]);
 
   const handleRunPayroll = async () => {
     if (!currentUser?.orgId) return;
     setGenerating(true);
     for (const emp of employees) {
-      if (payslips.find((p) => p.employee_id === emp.id)) continue;
+      if (payslips.find((p) => p.employee_id === emp.id && p.status === "paid")) continue;
       await generatePayslip(currentUser.orgId, String(emp.id), monthParam);
     }
     await loadPayslips();
     setGenerating(false);
   };
 
+  const handleRecalculate = async (slip: Record<string, unknown>) => {
+    const slipId = String(slip.id);
+    setRecalculating(slipId);
+    const res = await fetch("/api/payroll/recalculate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employee_id: slip.employee_id, month: monthParam }),
+    });
+    const json = await res.json();
+    if (!res.ok) setMessage(json.message || "فشل إعادة الحساب.");
+    else await loadPayslips();
+    setRecalculating(null);
+  };
+
   const handleStatusChange = async (payslipId: string, newStatus: "draft" | "approved" | "paid") => {
     await updatePayslipStatus(payslipId, newStatus);
-    setPayslips((prev) =>
-      prev.map((p) => (p.id === payslipId ? { ...p, status: newStatus } : p))
-    );
+    setPayslips((prev) => prev.map((p) => (p.id === payslipId ? { ...p, status: newStatus } : p)));
+  };
+
+  const openAdjustDialog = (slip: Record<string, unknown>) => {
+    const employee = (slip.employee ?? {}) as Record<string, unknown>;
+    setAdjustDialog({ payslipId: String(slip.id), employeeName: String(employee.full_name || "الموظف") });
+    setAdjustForm({ type: "bonus", amount: "", reason: "" });
+    setAdjustError("");
+  };
+
+  const handleAddAdjustment = async () => {
+    if (!adjustDialog) return;
+    const amount = Number(adjustForm.amount);
+    if (!amount || amount <= 0) { setAdjustError("أدخل مبلغاً صحيحاً."); return; }
+    if (!adjustForm.reason.trim()) { setAdjustError("السبب مطلوب."); return; }
+    setAdjustSubmitting(true);
+    setAdjustError("");
+    const res = await fetch("/api/payroll/adjust", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payslip_id: adjustDialog.payslipId, type: adjustForm.type, amount, reason: adjustForm.reason }),
+    });
+    const json = await res.json();
+    setAdjustSubmitting(false);
+    if (!res.ok) { setAdjustError(json.message || "فشل إضافة التسوية."); return; }
+    await loadPayslips();
+    setAdjustDialog(null);
+  };
+
+  const handleRemoveAdjustment = async (payslipId: string, adjustmentId: string) => {
+    const res = await fetch(`/api/payroll/adjust/${adjustmentId}?payslipId=${payslipId}`, { method: "DELETE" });
+    if (res.ok) await loadPayslips();
+    else { const json = await res.json(); setMessage(json.message || "فشل حذف التسوية."); }
   };
 
   const handleGenerateAccountingDraft = async () => {
@@ -225,45 +278,72 @@ export default function PayrollPage() {
     setAccountingBusy(false);
   };
 
-  // Summary totals
+  const toggleRow = (id: string) =>
+    setExpandedRows((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+
   const totalNet = payslips.reduce((sum, p) => sum + Number(p.net_salary || 0), 0);
   const totalDeductions = payslips.reduce((sum, p) => sum + Number(p.total_deductions || 0), 0);
+  const totalEmployerGosi = payslips.reduce((sum, p) => sum + Number(p.employer_gosi || 0), 0);
   const approvedCount = payslips.filter((p) => p.status === "approved" || p.status === "paid").length;
   const monthLabel = new Date(monthParam).toLocaleDateString("ar-SA", { month: "long", year: "numeric" });
 
   const handleExportPayroll = () => {
-    const exported = exportPayrollPdf({
-      monthLabel,
-      rows: payslips,
-      totalNet,
-      totalDeductions,
-      approvedCount,
-    });
-    if (!exported) {
-      setMessage("تعذر فتح نافذة الطباعة، لذلك تم تنزيل نسخة التقرير كملف HTML. افتح الملف من التنزيلات ثم اختر طباعة / حفظ PDF.");
-    }
+    const exported = exportPayrollPdf({ monthLabel, rows: payslips, totalNet, totalDeductions, approvedCount });
+    if (!exported) setMessage("تعذر فتح نافذة الطباعة. افتح الملف من التنزيلات ثم اختر طباعة / حفظ PDF.");
   };
 
   return (
     <div className="space-y-6">
       <MessageDialog open={Boolean(message)} onOpenChange={(open) => !open && setMessage("")} description={message} />
+
+      {/* Manual Adjustment Dialog */}
+      <Dialog open={Boolean(adjustDialog)} onOpenChange={(open) => !open && setAdjustDialog(null)}>
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>إضافة تسوية يدوية</DialogTitle>
+            <DialogDescription>{adjustDialog?.employeeName}</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>النوع</Label>
+              <Select value={adjustForm.type} onValueChange={(v) => setAdjustForm((f) => ({ ...f, type: v as "bonus" | "deduction" }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bonus">مكافأة / إضافة</SelectItem>
+                  <SelectItem value="deduction">خصم يدوي</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>المبلغ (ر.س)</Label>
+              <Input type="number" min={0} step="0.01" value={adjustForm.amount} onChange={(e) => setAdjustForm((f) => ({ ...f, amount: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>السبب</Label>
+              <Input value={adjustForm.reason} onChange={(e) => setAdjustForm((f) => ({ ...f, reason: e.target.value }))} placeholder="مثال: مكافأة أداء Q2" />
+            </div>
+            {adjustError && <p className="text-sm text-red-600">{adjustError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdjustDialog(null)} disabled={adjustSubmitting}>إلغاء</Button>
+            <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleAddAdjustment} disabled={adjustSubmitting}>
+              {adjustSubmitting ? "جار الحفظ..." : "إضافة التسوية"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-gray-900">وحدة الرواتب</h1>
           <p className="text-sm text-gray-500">إدارة رواتب الموظفين والخصومات المبنية على الحضور ومسيرات الرواتب.</p>
         </div>
         <div className="flex gap-2 items-center">
-          <Input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="w-40 text-center"
-          />
+          <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="w-40 text-center" />
           {canRunPayroll && (
             <>
-              <Button variant="outline" onClick={handleExportPayroll}>
-                <Download className="w-4 h-4 ml-2" /> تصدير PDF
-              </Button>
+              <Button variant="outline" onClick={handleExportPayroll}><Download className="w-4 h-4 ml-2" /> تصدير PDF</Button>
               <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleRunPayroll} disabled={generating}>
                 <Calculator className="w-4 h-4 ml-2" /> {generating ? "جار الحساب..." : "تشغيل رواتب الشهر"}
               </Button>
@@ -273,10 +353,10 @@ export default function PayrollPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="border-none shadow-sm">
           <CardContent className="py-4">
-            <p className="text-xs text-gray-500">إجمالي صافي الرواتب</p>
+            <p className="text-xs text-gray-500">صافي الرواتب الإجمالي</p>
             <p className="text-xl font-semibold text-green-600">{formatCurrency(totalNet)}</p>
           </CardContent>
         </Card>
@@ -288,12 +368,19 @@ export default function PayrollPage() {
         </Card>
         <Card className="border-none shadow-sm">
           <CardContent className="py-4">
+            <p className="text-xs text-gray-500">التأمينات (صاحب العمل)</p>
+            <p className="text-xl font-semibold text-amber-600">{formatCurrency(totalEmployerGosi)}</p>
+          </CardContent>
+        </Card>
+        <Card className="border-none shadow-sm">
+          <CardContent className="py-4">
             <p className="text-xs text-gray-500">المعتمدون / الإجمالي</p>
             <p className="text-xl font-semibold text-blue-600">{approvedCount} / {payslips.length}</p>
           </CardContent>
         </Card>
       </div>
 
+      {/* Accounting status bar */}
       {canViewAccountingStatus && (
         <Card className="border-none shadow-sm">
           <CardContent className="flex flex-col gap-4 py-4 lg:flex-row lg:items-center lg:justify-between">
@@ -303,66 +390,56 @@ export default function PayrollPage() {
                 <Badge variant="outline" className={accountingStatusColors[accountingStatus?.status || "not_generated"] || "bg-gray-50 text-gray-700 border-gray-200"}>
                   {accountingStatusLabels[accountingStatus?.status || "not_generated"] || accountingStatus?.status || "not_generated"}
                 </Badge>
-                {accountingStatus?.journal_entry_no && <span className="text-sm text-gray-600">قيد الرواتب: {accountingStatus.journal_entry_no}</span>}
-                {accountingStatus?.payment_no && <span className="text-sm text-gray-600">دفعة الرواتب: {accountingStatus.payment_no}</span>}
+                {accountingStatus?.journal_entry_no && <span className="text-sm text-gray-600">قيد: {accountingStatus.journal_entry_no}</span>}
+                {accountingStatus?.payment_no && <span className="text-sm text-gray-600">دفعة: {accountingStatus.payment_no}</span>}
                 {Number(accountingStatus?.advance_deductions || 0) > 0 && <span className="text-sm text-gray-600">خصومات السلف: {formatCurrency(accountingStatus?.advance_deductions)}</span>}
               </div>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {accountingStatus?.journal_entry_id && (
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/accounting/journal-entries/${accountingStatus.journal_entry_id}`}>عرض قيد الرواتب</Link>
-                </Button>
+                <Button asChild variant="outline" size="sm"><Link href={`/accounting/journal-entries/${accountingStatus.journal_entry_id}`}>عرض قيد الرواتب</Link></Button>
               )}
               {accountingStatus?.payment_journal_entry_id && (
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/accounting/journal-entries/${accountingStatus.payment_journal_entry_id}`}>عرض قيد السداد</Link>
-                </Button>
+                <Button asChild variant="outline" size="sm"><Link href={`/accounting/journal-entries/${accountingStatus.payment_journal_entry_id}`}>عرض قيد السداد</Link></Button>
               )}
               {canGenerateAccountingDraft && accountingStatus?.status === "not_generated" && Number(accountingStatus?.payslip_count || 0) > 0 && (
-                <Button variant="outline" size="sm" onClick={handleGenerateAccountingDraft} disabled={accountingBusy}>
-                  إنشاء مسودة محاسبية
-                </Button>
+                <Button variant="outline" size="sm" onClick={handleGenerateAccountingDraft} disabled={accountingBusy}>إنشاء مسودة محاسبية</Button>
               )}
               {canPostPayrollAccounting && accountingStatus?.status === "draft_created" && (
-                <Button size="sm" className="bg-brand text-white hover:bg-brand-dark" onClick={handlePostAccountingJournal} disabled={accountingBusy}>
-                  ترحيل قيد الرواتب
-                </Button>
+                <Button size="sm" className="bg-brand text-white hover:bg-brand-dark" onClick={handlePostAccountingJournal} disabled={accountingBusy}>ترحيل قيد الرواتب</Button>
               )}
               {canPostPayrollAccounting && accountingStatus?.status === "posted" && (
-                <Button variant="outline" size="sm" onClick={handleRecordPayrollPayment} disabled={accountingBusy}>
-                  تسجيل سداد الرواتب
-                </Button>
+                <Button variant="outline" size="sm" onClick={handleRecordPayrollPayment} disabled={accountingBusy}>تسجيل سداد الرواتب</Button>
               )}
             </div>
           </CardContent>
         </Card>
       )}
 
+      {/* Payroll table */}
       <Card className="border-none shadow-sm">
         <CardHeader>
           <div className="flex items-center gap-2">
             <Calendar className="w-5 h-5 text-gray-500" />
-            <CardTitle>
-              {new Date(monthParam).toLocaleDateString("ar-SA", { month: "long", year: "numeric" })} — مسيرات الرواتب
-            </CardTitle>
+            <CardTitle>{monthLabel} — مسيرات الرواتب</CardTitle>
           </div>
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
             <div className="py-8 text-center text-sm text-gray-500">جار تحميل بيانات الرواتب...</div>
           ) : payslips.length === 0 ? (
-            <div className="py-8 text-center text-sm text-gray-500">
-              لم يتم إنشاء مسيرات لهذا الشهر. شغّل الرواتب للبدء.
-            </div>
+            <div className="py-8 text-center text-sm text-gray-500">لم يتم إنشاء مسيرات لهذا الشهر. شغّل الرواتب للبدء.</div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow className="bg-gray-50/50 hover:bg-gray-50/50">
+                  <TableHead className="w-8"></TableHead>
                   <TableHead>الموظف</TableHead>
                   <TableHead>الراتب الأساسي</TableHead>
-                  <TableHead>أيام الحضور</TableHead>
-                  <TableHead>الخصومات</TableHead>
+                  <TableHead>الحضور</TableHead>
+                  <TableHead>خصم التأخر</TableHead>
+                  <TableHead>خصم الغياب</TableHead>
+                  <TableHead>تسويات</TableHead>
                   <TableHead>صافي الراتب</TableHead>
                   <TableHead>الحالة</TableHead>
                   {canRunPayroll && <TableHead className="text-right">الإجراءات</TableHead>}
@@ -370,59 +447,156 @@ export default function PayrollPage() {
               </TableHeader>
               <TableBody>
                 {payslips.map((slip) => {
-                  const employee = (slip.employee ?? null) as Record<string, unknown> | null;
-                  const status = typeof slip.status === "string" ? slip.status : "draft";
+                  const employee = (slip.employee ?? {}) as Record<string, unknown>;
+                  const status = String(slip.status || "draft");
                   const slipId = String(slip.id);
+                  const isExpanded = expandedRows.has(slipId);
+                  const isPaid = status === "paid";
+                  const isRecalculating = recalculating === slipId;
+                  const adjustments = Array.isArray(slip.manual_adjustments) ? (slip.manual_adjustments as ManualAdjustment[]) : [];
+                  const manualTotal = Number(slip.manual_adjustments_total || 0);
+
                   return (
-                    <TableRow key={slipId}>
-                      <TableCell className="font-medium">
-                        <div>
-                          <p>{String(employee?.full_name || "غير معروف")}</p>
-                          <p className="text-xs text-gray-500">{String(employee?.employee_code || "")}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>{formatCurrency(slip.base_salary)}</TableCell>
-                      <TableCell>{Number(slip.attendance_days || 0)} يوم</TableCell>
-                      <TableCell className="text-red-600">
-                        -{formatCurrency(slip.total_deductions)}
-                      </TableCell>
-                      <TableCell className="font-bold text-green-600">
-                        {formatCurrency(slip.net_salary)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={statusColors[status] || "bg-gray-50 text-gray-700"}>
-                          {statusLabels[status] || status}
-                        </Badge>
-                      </TableCell>
-                      {canRunPayroll && (
-                        <TableCell className="text-right">
-                          <div className="flex gap-1 justify-end">
-                            {status === "draft" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleStatusChange(slipId, "approved")}
-                              >
-                                <CheckCircle className="h-4 w-4 ml-1" /> اعتماد
-                              </Button>
-                            )}
-                            {status === "approved" && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-green-700 border-green-300 hover:bg-green-50"
-                                onClick={() => handleStatusChange(slipId, "paid")}
-                              >
-                                <Banknote className="h-4 w-4 ml-1" /> تحديد مدفوع
-                              </Button>
-                            )}
-                            {status === "paid" && (
-                              <span className="text-xs text-gray-400">مكتمل</span>
-                            )}
-                          </div>
+                    <React.Fragment key={slipId}>
+                      <TableRow className="hover:bg-gray-50/50">
+                        <TableCell>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => toggleRow(slipId)}>
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          </Button>
                         </TableCell>
+                        <TableCell className="font-medium">
+                          <p>{String(employee.full_name || "غير معروف")}</p>
+                          <p className="text-xs text-gray-400">{String(employee.employee_code || "")}</p>
+                          {slip.snapshot_group_name && (
+                            <p className="text-xs text-blue-500">{String(slip.snapshot_group_name)}</p>
+                          )}
+                        </TableCell>
+                        <TableCell>{formatCurrency(slip.base_salary)}</TableCell>
+                        <TableCell>
+                          <span className="text-sm">{Number(slip.attendance_days || 0)} يوم</span>
+                          {(Number(slip.late_minutes || 0) > 0) && (
+                            <p className="text-xs text-amber-600">{Number(slip.late_minutes)} د. تأخر</p>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-amber-600">{Number(slip.late_deduction || 0) > 0 ? `-${formatCurrency(slip.late_deduction)}` : "—"}</TableCell>
+                        <TableCell>
+                          {Number(slip.unapproved_absent_days || 0) > 0 && (
+                            <p className="text-xs text-red-600 flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3" />{Number(slip.unapproved_absent_days)} غير مبرر
+                            </p>
+                          )}
+                          {Number(slip.approved_absent_days || 0) > 0 && (
+                            <p className="text-xs text-gray-500">{Number(slip.approved_absent_days)} معتمد</p>
+                          )}
+                          {Number(slip.absence_deduction || 0) > 0 ? (
+                            <p className="text-sm text-red-600">-{formatCurrency(slip.absence_deduction)}</p>
+                          ) : "—"}
+                        </TableCell>
+                        <TableCell>
+                          {manualTotal !== 0 ? (
+                            <span className={manualTotal > 0 ? "text-green-600 text-sm" : "text-red-600 text-sm"}>
+                              {manualTotal > 0 ? "+" : ""}{formatCurrency(manualTotal)}
+                            </span>
+                          ) : "—"}
+                        </TableCell>
+                        <TableCell className="font-bold text-green-600">{formatCurrency(slip.net_salary)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={statusColors[status] || "bg-gray-50 text-gray-700"}>
+                            {statusLabels[status] || status}
+                          </Badge>
+                        </TableCell>
+                        {canRunPayroll && (
+                          <TableCell className="text-right">
+                            <div className="flex gap-1 justify-end flex-wrap">
+                              {!isPaid && (
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500" title="إعادة الحساب"
+                                  onClick={() => handleRecalculate(slip)} disabled={isRecalculating}>
+                                  <RefreshCw className={`w-3.5 h-3.5 ${isRecalculating ? "animate-spin" : ""}`} />
+                                </Button>
+                              )}
+                              {!isPaid && (
+                                <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500" title="إضافة تسوية"
+                                  onClick={() => openAdjustDialog(slip)}>
+                                  <Plus className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                              {status === "draft" && (
+                                <Button variant="outline" size="sm" onClick={() => handleStatusChange(slipId, "approved")}>
+                                  <CheckCircle className="h-3.5 w-3.5 ml-1" /> اعتماد
+                                </Button>
+                              )}
+                              {status === "approved" && (
+                                <Button variant="outline" size="sm" className="text-green-700 border-green-300 hover:bg-green-50"
+                                  onClick={() => handleStatusChange(slipId, "paid")}>
+                                  <Banknote className="h-3.5 w-3.5 ml-1" /> مدفوع
+                                </Button>
+                              )}
+                              {isPaid && <span className="text-xs text-gray-400">مكتمل</span>}
+                            </div>
+                          </TableCell>
+                        )}
+                      </TableRow>
+
+                      {/* Expanded breakdown row */}
+                      {isExpanded && (
+                        <TableRow className="bg-gray-50/30 hover:bg-gray-50/30">
+                          <TableCell />
+                          <TableCell colSpan={canRunPayroll ? 9 : 8} className="py-3">
+                            <div className="grid md:grid-cols-2 gap-4 text-sm">
+                              {/* Policy snapshot */}
+                              {slip.snapshot_group_name && (
+                                <div className="space-y-1">
+                                  <p className="font-semibold text-gray-600 text-xs uppercase tracking-wide">سياسة الخصم المطبقة</p>
+                                  <div className="rounded-lg bg-blue-50 border border-blue-100 p-2.5 space-y-1 text-xs">
+                                    <div className="flex justify-between"><span className="text-gray-600">المجموعة</span><span className="font-medium">{String(slip.snapshot_group_name)}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600">مهلة التأخر</span><span>{Number(slip.snapshot_late_grace_minutes || 0)} دقيقة</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600">خصم التأخر / ساعة</span><span>{formatCurrency(slip.snapshot_deduction_per_late_hour)}</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600">أيام غياب مسموحة</span><span>{Number(slip.snapshot_allowed_absent_days || 0)} يوم</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600">خصم غياب غير مبرر</span><span>{formatCurrency(slip.snapshot_deduction_per_absent_day)} / يوم</span></div>
+                                    <div className="flex justify-between"><span className="text-gray-600">خصم تجاوز الإجازة</span><span>{formatCurrency(slip.snapshot_deduction_per_excess_approved_day)} / يوم</span></div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Manual adjustments */}
+                              <div className="space-y-1">
+                                <p className="font-semibold text-gray-600 text-xs uppercase tracking-wide">التسويات اليدوية</p>
+                                {adjustments.length === 0 ? (
+                                  <p className="text-xs text-gray-400 py-2">لا توجد تسويات يدوية.</p>
+                                ) : (
+                                  <div className="space-y-1">
+                                    {adjustments.map((adj) => (
+                                      <div key={adj.id} className="flex items-center justify-between rounded-lg border border-gray-100 bg-white px-2.5 py-1.5 text-xs gap-2">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <Badge variant="outline" className={adj.type === "bonus" ? "bg-green-50 text-green-700 border-green-200 text-xs" : "bg-red-50 text-red-700 border-red-200 text-xs"}>
+                                            {adj.type === "bonus" ? "مكافأة" : "خصم"}
+                                          </Badge>
+                                          <span className="font-medium">{formatCurrency(adj.amount)}</span>
+                                          <span className="text-gray-500 truncate">{adj.reason}</span>
+                                        </div>
+                                        {!isPaid && canRunPayroll && (
+                                          <Button variant="ghost" size="icon" className="h-5 w-5 text-red-400 hover:text-red-600 hover:bg-red-50 shrink-0"
+                                            onClick={() => handleRemoveAdjustment(slipId, adj.id)}>
+                                            <Trash2 className="w-3 h-3" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* GOSI + notes footer */}
+                            <div className="mt-3 pt-2 border-t border-gray-100 flex flex-wrap gap-4 text-xs text-gray-500">
+                              <span>تأمينات الموظف: <strong>{formatCurrency(slip.employee_gosi)}</strong></span>
+                              <span>تأمينات صاحب العمل: <strong>{formatCurrency(slip.employer_gosi)}</strong></span>
+                              {slip.payroll_notes && <span className="text-gray-400">{String(slip.payroll_notes)}</span>}
+                            </div>
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </TableRow>
+                    </React.Fragment>
                   );
                 })}
               </TableBody>
