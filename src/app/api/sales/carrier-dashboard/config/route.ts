@@ -24,7 +24,8 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const { error } = await admin.from("carrier_dashboard_config").upsert(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (admin as any).from("carrier_dashboard_config").upsert(
     {
       organization_id: auth.orgId,
       config_key,

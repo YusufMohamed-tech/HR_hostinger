@@ -71,7 +71,7 @@ export default function ExecutivePage() {
       supData.forEach((monthRows) => {
         monthRows.forEach((r) => supervisorNames.set(r.supervisorId, r.supervisorName));
       });
-      const heatRows = [...supervisorNames.entries()].map(([id, name]) => ({
+      const heatRows = Array.from(supervisorNames.entries()).map(([id, name]) => ({
         supervisorName: name,
         values: supData.map((monthRows) => {
           const found = monthRows.find((r) => r.supervisorId === id);
@@ -91,7 +91,7 @@ export default function ExecutivePage() {
   for (const r of bundles) {
     byCategory.set(r.bundleCategory, (byCategory.get(r.bundleCategory) ?? 0) + r.count);
   }
-  const bundleChartData = [...byCategory.entries()].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({
+  const bundleChartData = Array.from(byCategory.entries()).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({
     label, value, color: BUNDLE_COLORS[label] ?? "#3b82f6",
   }));
 

@@ -12,7 +12,8 @@ export async function GET(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const { data, error } = await admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (admin as any)
     .from("carrier_sales_targets")
     .select(`
       *,
@@ -52,7 +53,8 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const { data, error } = await admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (admin as any)
     .from("carrier_sales_targets")
     .upsert({
       organization_id: auth.orgId,

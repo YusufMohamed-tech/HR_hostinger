@@ -49,7 +49,7 @@ export function DailyTrendChart({ data, label = "FPE", color = "#ef4444" }: Dail
             contentStyle={{ backgroundColor: "#0f3460", border: "1px solid #1e4080", borderRadius: 6 }}
             labelStyle={{ color: "#94a3b8" }}
             itemStyle={{ color: "#fff" }}
-            formatter={(v: number) => [v.toLocaleString(), label]}
+            formatter={(v) => [Number(v ?? 0).toLocaleString(), label]}
             labelFormatter={(l) => new Date(l as string).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}
           />
           <ReferenceLine y={avg} stroke={color} strokeDasharray="4 4" strokeOpacity={0.6} />

@@ -82,7 +82,7 @@ export default function DealerCodesPage() {
       for (const r of codesJson.data ?? []) {
         if (r.employee) empSet.set(r.employee.id, r.employee.full_name);
       }
-      setEmployees([...empSet.entries()].map(([id, full_name]) => ({ id, full_name })));
+      setEmployees(Array.from(empSet.entries()).map(([id, full_name]) => ({ id, full_name })));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {

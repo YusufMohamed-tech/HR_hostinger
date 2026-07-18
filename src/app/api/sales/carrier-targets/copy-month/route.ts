@@ -12,7 +12,8 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const { data: sourceRows, error } = await admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: sourceRows, error } = await (admin as any)
     .from("carrier_sales_targets")
     .select("employee_id, supervisor_id, fpe_target, revenue_target, friendi_target, virgin_target, postpaid_target, hbb_target, working_days")
     .eq("organization_id", auth.orgId)
@@ -39,7 +40,8 @@ export async function POST(request: NextRequest) {
     updated_at: new Date().toISOString(),
   }));
 
-  const { error: insertErr } = await admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error: insertErr } = await (admin as any)
     .from("carrier_sales_targets")
     .upsert(inserts, { onConflict: "organization_id,target_month,employee_id" });
 
