@@ -1,6 +1,7 @@
 import * as XLSX from "xlsx";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getBundleCategory, getShiftType, DEFAULT_BUNDLE_CATEGORIES } from "@/lib/utils/carrier-kpi";
+import { runVerification } from "@/lib/services/carrier-verification";
 
 const BATCH_SIZE = 500;
 
@@ -373,6 +374,13 @@ export async function processCarrierExcel(
       updated_at: new Date().toISOString(),
     })
     .eq("id", importId);
+
+  // Run verification engine (non-blocking — failures don't fail the import)
+  try {
+    await runVerification(orgId, importId, dateRangeStart, dateRangeEnd);
+  } catch {
+    // Verification errors are logged but do not fail the import
+  }
 
   return {
     importId,

@@ -5,7 +5,7 @@ import { CarrierKPICard } from "@/components/carrier-dashboard/CarrierKPICard";
 import { DailyTrendChart } from "@/components/carrier-dashboard/DailyTrendChart";
 import { HorizontalBarChart } from "@/components/carrier-dashboard/HorizontalBarChart";
 import { formatCarrierNumber, computeTargetKPIs } from "@/lib/utils/carrier-kpi";
-import type { CarrierKPIs } from "@/lib/services/carrier-dashboard";
+import type { CarrierKPIs, BundleBreakdownRow } from "@/lib/services/carrier-dashboard";
 import type { DailyDataPoint } from "@/lib/services/carrier-dashboard";
 
 interface EmployeeTarget {
@@ -39,6 +39,7 @@ export default function EmployeePerformancePage() {
   const [kpis, setKpis] = useState<CarrierKPIs | null>(null);
   const [daily, setDaily] = useState<DailyDataPoint[]>([]);
   const [targets, setTargets] = useState<EmployeeTarget[]>([]);
+  const [bundles, setBundles] = useState<BundleBreakdownRow[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -50,22 +51,25 @@ export default function EmployeePerformancePage() {
       const qp = new URLSearchParams({ month });
       if (selectedEmployeeId) qp.set("employee_id", selectedEmployeeId);
 
-      const [kpisRes, dailyRes, targetsRes] = await Promise.all([
+      const [kpisRes, dailyRes, targetsRes, bundlesRes] = await Promise.all([
         fetch(`/api/sales/carrier-dashboard/kpis?${qp}`),
         fetch(`/api/sales/carrier-dashboard/daily?${qp}`),
         fetch(`/api/sales/carrier-targets?month=${month}`),
+        fetch(`/api/sales/carrier-dashboard/bundles?${qp}`),
       ]);
 
-      const [kpisJson, dailyJson, targetsJson] = await Promise.all([
+      const [kpisJson, dailyJson, targetsJson, bundlesJson] = await Promise.all([
         kpisRes.json() as Promise<{ data?: CarrierKPIs; message?: string }>,
         dailyRes.json() as Promise<{ data?: DailyDataPoint[]; message?: string }>,
         targetsRes.json() as Promise<{ data?: EmployeeTarget[]; message?: string }>,
+        bundlesRes.json() as Promise<{ data?: BundleBreakdownRow[]; message?: string }>,
       ]);
 
       if (!kpisRes.ok) throw new Error(kpisJson.message);
       setKpis(kpisJson.data ?? null);
       setDaily(dailyJson.data ?? []);
       setTargets(targetsJson.data ?? []);
+      setBundles(bundlesJson.data ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
@@ -100,15 +104,24 @@ export default function EmployeePerformancePage() {
     value: d.fpe,
   }));
 
-  // Bundle category breakdown from kpis if we had it — use a placeholder aggregation
-  const bundleChartData = [
-    { label: "+90", value: 0, color: "#3b82f6" },
-    { label: "+70", value: 0, color: "#6366f1" },
-    { label: "+45", value: 0, color: "#8b5cf6" },
-    { label: "+30", value: 0, color: "#a78bfa" },
-    { label: "+20", value: 0, color: "#c4b5fd" },
-    { label: "+10", value: 0, color: "#ddd6fe" },
-  ];
+  const BUNDLE_COLORS: Record<string, string> = {
+    "+90": "#3b82f6", "+70": "#6366f1", "+45": "#8b5cf6",
+    "+30": "#a78bfa", "+20": "#c4b5fd", "+10": "#ddd6fe",
+  };
+  const bundleChartData = bundles.length > 0
+    ? bundles.map((b) => ({
+        label: b.bundleCategory ?? "Other",
+        value: b.count ?? 0,
+        color: BUNDLE_COLORS[b.bundleCategory ?? ""] ?? "#94a3b8",
+      }))
+    : [
+        { label: "+90", value: 0, color: "#3b82f6" },
+        { label: "+70", value: 0, color: "#6366f1" },
+        { label: "+45", value: 0, color: "#8b5cf6" },
+        { label: "+30", value: 0, color: "#a78bfa" },
+        { label: "+20", value: 0, color: "#c4b5fd" },
+        { label: "+10", value: 0, color: "#ddd6fe" },
+      ];
 
   const employeeOptions = targets.map((t) => ({
     id: t.employee_id,
@@ -195,7 +208,6 @@ export default function EmployeePerformancePage() {
             <div className="bg-[#16213e] rounded-lg p-4">
               <div className="text-sm text-[#94a3b8] mb-4">Bundle Quality Distribution</div>
               <HorizontalBarChart data={bundleChartData} formatValue={(v) => v.toLocaleString()} />
-              <p className="text-xs text-[#64748b] mt-3">Bundle breakdown available after filtering by employee with loaded activation data</p>
             </div>
           </div>
         </>

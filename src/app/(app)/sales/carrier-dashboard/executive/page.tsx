@@ -4,9 +4,10 @@ import { useEffect, useState, useCallback } from "react";
 import { CarrierKPICard } from "@/components/carrier-dashboard/CarrierKPICard";
 import { CarrierGaugeChart } from "@/components/carrier-dashboard/CarrierGaugeChart";
 import { HorizontalBarChart } from "@/components/carrier-dashboard/HorizontalBarChart";
+import { HeatmapTable } from "@/components/carrier-dashboard/HeatmapTable";
 import { formatCarrierNumber } from "@/lib/utils/carrier-kpi";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import type { CarrierKPIs, BundleBreakdownRow } from "@/lib/services/carrier-dashboard";
+import type { CarrierKPIs, BundleBreakdownRow, SupervisorRow } from "@/lib/services/carrier-dashboard";
 
 function getDefaultMonth() {
   const now = new Date();
@@ -18,26 +19,66 @@ const BUNDLE_COLORS: Record<string, string> = {
   "+45": "#8b5cf6", "+70": "#6366f1", "+90": "#3b82f6",
 };
 
+function buildMonthRange(endMonth: string, count = 6): string[] {
+  const [y, m] = endMonth.split("-").map(Number);
+  const months: string[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    let mo = m - i;
+    let yr = y;
+    while (mo < 1) { mo += 12; yr--; }
+    months.push(`${yr}-${String(mo).padStart(2, "0")}`);
+  }
+  return months;
+}
+
+interface HeatmapData {
+  months: string[];
+  rows: Array<{ supervisorName: string; values: number[] }>;
+}
+
 export default function ExecutivePage() {
   const [month, setMonth] = useState(getDefaultMonth);
   const [kpis, setKpis] = useState<CarrierKPIs | null>(null);
   const [bundles, setBundles] = useState<BundleBreakdownRow[]>([]);
+  const [heatmap, setHeatmap] = useState<HeatmapData>({ months: [], rows: [] });
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     const qp = new URLSearchParams({ month });
+    const heatmapMonths = buildMonthRange(month, 6);
+
     try {
-      const [kpisRes, bundlesRes] = await Promise.all([
+      const [kpisRes, bundlesRes, ...supResArray] = await Promise.all([
         fetch(`/api/sales/carrier-dashboard/kpis?${qp}`),
         fetch(`/api/sales/carrier-dashboard/bundles?${qp}`),
+        ...heatmapMonths.map((m) => fetch(`/api/sales/carrier-dashboard/supervisors?month=${m}`)),
       ]);
+
       const [kpisJson, bundlesJson] = await Promise.all([
         kpisRes.json() as Promise<{ data?: CarrierKPIs }>,
         bundlesRes.json() as Promise<{ data?: BundleBreakdownRow[] }>,
       ]);
+      const supData: SupervisorRow[][] = await Promise.all(
+        supResArray.map((r) => r.json().then((j: { data?: SupervisorRow[] }) => j.data ?? []))
+      );
+
       setKpis(kpisJson.data ?? null);
       setBundles(bundlesJson.data ?? []);
+
+      // Pivot supervisor × month for heatmap
+      const supervisorNames = new Map<string, string>();
+      supData.forEach((monthRows) => {
+        monthRows.forEach((r) => supervisorNames.set(r.supervisorId, r.supervisorName));
+      });
+      const heatRows = [...supervisorNames.entries()].map(([id, name]) => ({
+        supervisorName: name,
+        values: supData.map((monthRows) => {
+          const found = monthRows.find((r) => r.supervisorId === id);
+          return found?.ibr ?? 0;
+        }),
+      }));
+      setHeatmap({ months: heatmapMonths, rows: heatRows });
     } finally {
       setLoading(false);
     }
@@ -119,6 +160,16 @@ export default function ExecutivePage() {
               </ResponsiveContainer>
             </div>
           </div>
+
+          <HeatmapTable
+            title="Supervisor Revenue (IBR) — Last 6 Months"
+            columnLabels={heatmap.months}
+            rows={heatmap.rows.map((r) => ({
+              rowLabel: r.supervisorName,
+              cells: r.values.map((v) => ({ value: v })),
+            }))}
+            formatValue={(v) => `${formatCarrierNumber(v)}`}
+          />
         </>
       ) : null}
     </div>

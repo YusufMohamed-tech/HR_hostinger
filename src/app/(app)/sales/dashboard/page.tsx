@@ -22,6 +22,7 @@ import {
 } from "@/lib/services/sales";
 import { formatCurrency } from "@/lib/utils/currency";
 import { PageSkeleton } from "@/components/Skeletons";
+import { VerificationAlert } from "@/components/carrier-dashboard/VerificationAlert";
 
 function formatMoney(value: number) {
   return formatCurrency(value, 0);
@@ -159,6 +160,8 @@ export default function SalesDashboardPage() {
           </div>
         )}
       </div>
+
+      <VerificationAlert />
 
       {report && <SalesPerformanceReport report={report} />}
 
