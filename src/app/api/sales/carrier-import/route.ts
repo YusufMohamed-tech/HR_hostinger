@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   const auth = await requireSalesAccess({ managerOnly: true });
   if ("error" in auth) return auth.error;
 
