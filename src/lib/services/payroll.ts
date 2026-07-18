@@ -82,7 +82,8 @@ async function _computeAndSave(
   let deductionPerExcessApprovedDay = 0;
 
   if (emp?.deduction_rule_group_id) {
-    const groupRes = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const groupRes = await (supabase as any)
       .from("deduction_rule_groups")
       .select("name, late_grace_minutes, deduction_per_late_hour, allowed_absent_days, deduction_per_absent_day, deduction_per_excess_approved_day")
       .eq("id", emp.deduction_rule_group_id)
@@ -180,8 +181,8 @@ async function _computeAndSave(
 
   // 10. Preserve manual adjustments on recalculate
   const savedAdjustments: ManualAdjustment[] =
-    preserveAdjustments && Array.isArray((existing as Record<string, unknown> | null)?.manual_adjustments)
-      ? ((existing as Record<string, unknown>).manual_adjustments as ManualAdjustment[])
+    preserveAdjustments && Array.isArray((existing as unknown as Record<string, unknown> | null)?.manual_adjustments)
+      ? ((existing as unknown as Record<string, unknown>).manual_adjustments as ManualAdjustment[])
       : [];
 
   const manualAdjustmentsTotal = _sumAdjustments(savedAdjustments);

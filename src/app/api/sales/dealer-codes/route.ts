@@ -11,7 +11,8 @@ export async function GET(request: NextRequest) {
   const employeeId = sp.get("employee_id");
   const isActive = sp.get("is_active");
 
-  let q = admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q = (admin as any)
     .from("employee_dealer_codes")
     .select(`
       *,
@@ -51,7 +52,8 @@ export async function POST(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const { data, error } = await admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (admin as any)
     .from("employee_dealer_codes")
     .insert({
       organization_id: auth.orgId,
@@ -94,7 +96,8 @@ export async function PATCH(request: NextRequest) {
   }
 
   const admin = createAdminClient();
-  const { data, error } = await admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (admin as any)
     .from("employee_dealer_codes")
     .update(update)
     .eq("id", id)
@@ -114,7 +117,8 @@ export async function DELETE(request: NextRequest) {
   if (!id) return NextResponse.json({ message: "id is required" }, { status: 400 });
 
   const admin = createAdminClient();
-  const { error } = await admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (admin as any)
     .from("employee_dealer_codes")
     .delete()
     .eq("id", id)

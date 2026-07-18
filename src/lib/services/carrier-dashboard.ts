@@ -13,10 +13,8 @@ export interface DashboardFilters {
   gosiStatus?: "registered" | "unregistered";
 }
 
-function buildActivationFilter(
-  query: ReturnType<typeof createAdminClient>["from"] extends (t: string) => infer Q ? Q : never,
-  filters: DashboardFilters
-) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildActivationFilter(query: any, filters: DashboardFilters) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let q = query as any;
   q = q.eq("organization_id", filters.orgId);
@@ -144,7 +142,7 @@ export async function getDailySeries(filters: DashboardFilters): Promise<DailyDa
     if (r.segment_group === "Virgin Postpaid") point.postpaid++;
   }
 
-  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
 }
 
 // ---------------------------------------------------------------------------
@@ -166,7 +164,8 @@ export interface EmployeePerformanceRow {
 }
 
 export async function getEmployeePerformance(filters: DashboardFilters): Promise<EmployeePerformanceRow[]> {
-  const admin = createAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any;
 
   const [activationsResult, employeesResult, targetsResult] = await Promise.all([
     buildActivationFilter(
@@ -242,7 +241,7 @@ export async function getEmployeePerformance(filters: DashboardFilters): Promise
     }
   }
 
-  return [...byEmployee.values()].sort((a, b) => b.fpe - a.fpe);
+  return Array.from(byEmployee.values()).sort((a, b) => b.fpe - a.fpe);
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +260,8 @@ export interface SupervisorRow {
 }
 
 export async function getSupervisorPerformance(filters: DashboardFilters): Promise<SupervisorRow[]> {
-  const admin = createAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any;
 
   const [activationsResult, employeesResult, targetsResult] = await Promise.all([
     buildActivationFilter(
@@ -331,7 +331,7 @@ export async function getSupervisorPerformance(filters: DashboardFilters): Promi
     if (r.matched_employee_id) row.employeeSet.add(r.matched_employee_id);
   }
 
-  return [...bySupervisor.values()].map(({ employeeSet, ...rest }) => ({
+  return Array.from(bySupervisor.values()).map(({ employeeSet, ...rest }) => ({
     ...rest,
     employeeCount: employeeSet.size,
   })).sort((a, b) => b.fpe - a.fpe);
@@ -369,7 +369,7 @@ export async function getBundleBreakdown(filters: DashboardFilters): Promise<Bun
     row.ibr += r.ibr_value;
   }
 
-  return [...byKey.values()].sort((a, b) => b.count - a.count);
+  return Array.from(byKey.values()).sort((a, b) => b.count - a.count);
 }
 
 // ---------------------------------------------------------------------------
@@ -399,7 +399,7 @@ export async function getShiftDistribution(filters: DashboardFilters): Promise<H
     else point.night++;
   }
 
-  return [...byHour.values()].sort((a, b) => a.hour - b.hour);
+  return Array.from(byHour.values()).sort((a, b) => a.hour - b.hour);
 }
 
 // ---------------------------------------------------------------------------
@@ -459,7 +459,7 @@ export async function getLocationCoverage(
     if (!loc.lastDate || r.activation_date > loc.lastDate) loc.lastDate = r.activation_date;
   }
 
-  return [...byLocation.values()].map((loc) => {
+  return Array.from(byLocation.values()).map((loc) => {
     const daysWithActivations = loc.activationDates.size;
     const coveragePercent = totalWorkingDays > 0 ? (daysWithActivations / totalWorkingDays) * 100 : 0;
     let status: LocationRow["status"] = "inactive";
@@ -485,7 +485,8 @@ export async function getLocationCoverage(
 // Import history
 // ---------------------------------------------------------------------------
 export async function getImportHistory(orgId: string) {
-  const admin = createAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any;
   const { data, error } = await admin
     .from("carrier_activation_imports")
     .select("*")

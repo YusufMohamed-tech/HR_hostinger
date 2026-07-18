@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
 
     if (!emp) return NextResponse.json({ data: [] });
 
-    const { data, error } = await admin
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (admin as any)
       .from("carrier_sales_verifications")
       .select("*")
       .eq("organization_id", auth.orgId)
@@ -38,7 +39,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "Manager access required" }, { status: 403 });
   }
 
-  let q = admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q = (admin as any)
     .from("carrier_sales_verifications")
     .select(`
       *,
@@ -92,7 +94,8 @@ export async function PATCH(request: NextRequest) {
   if (body.status && auth.isManager) update.status = body.status;
 
   const admin = createAdminClient();
-  const { data, error } = await admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (admin as any)
     .from("carrier_sales_verifications")
     .update(update)
     .eq("id", id)

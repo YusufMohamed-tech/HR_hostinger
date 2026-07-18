@@ -17,7 +17,8 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   if (body.deduction_per_absent_day !== undefined) updates.deduction_per_absent_day = Number(body.deduction_per_absent_day);
   if (body.deduction_per_excess_approved_day !== undefined) updates.deduction_per_excess_approved_day = Number(body.deduction_per_excess_approved_day);
 
-  const { data, error } = await auth.admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (auth.admin as any)
     .from("deduction_rule_groups")
     .update(updates)
     .eq("id", params.id)

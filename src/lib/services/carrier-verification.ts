@@ -31,7 +31,8 @@ export async function runVerification(
   dateRangeStart: string,
   dateRangeEnd: string
 ): Promise<{ checked: number; discrepancies: number }> {
-  const admin = createAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any;
 
   // Load tolerance from config (default 5%)
   const { data: cfgData } = await admin
@@ -80,7 +81,7 @@ export async function runVerification(
   if (carrierByKey.size === 0) return { checked: 0, discrepancies: 0 };
 
   // 2. Get the user_ids for all matched employees
-  const employeeIds = [...new Set([...carrierByKey.values()].map((d) => d.employeeId))];
+  const employeeIds = Array.from(new Set(Array.from(carrierByKey.values()).map((d) => d.employeeId)));
   const { data: empData } = await admin
     .from("employees")
     .select("id, user_id")
@@ -98,7 +99,7 @@ export async function runVerification(
   // 3. Aggregate sales_logs per (user, date) for the date range
   // sales_logs.items is a jsonb array; each item has product_name/company hints
   // We aggregate grand_total as proxy for IBR and item counts as proxy for FPE
-  const userIds = [...empToUser.values()];
+  const userIds = Array.from(empToUser.values());
   const logByKey = new Map<string, LogDay>();
 
   if (userIds.length > 0) {
@@ -149,7 +150,7 @@ export async function runVerification(
   // 4. Compare and build verification records
   const upserts: Record<string, unknown>[] = [];
 
-  for (const [key, carrier] of carrierByKey) {
+  for (const [key, carrier] of Array.from(carrierByKey.entries())) {
     const log = logByKey.get(key);
     const logFpe = log?.fpe ?? 0;
     const logIbr = log?.ibr ?? 0;

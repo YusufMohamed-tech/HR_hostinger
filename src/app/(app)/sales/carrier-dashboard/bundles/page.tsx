@@ -50,7 +50,7 @@ export default function BundlesPage() {
     byCategory.set(r.bundleCategory, existing);
   }
 
-  const chartData = [...byCategory.entries()]
+  const chartData = Array.from(byCategory.entries())
     .sort((a, b) => b[1].count - a[1].count)
     .map(([label, vals]) => ({
       label,
@@ -58,8 +58,8 @@ export default function BundlesPage() {
       color: BUNDLE_COLORS[label] ?? "#3b82f6",
     }));
 
-  const totalFPE = [...byCategory.values()].reduce((s, v) => s + v.count, 0);
-  const totalIBR = [...byCategory.values()].reduce((s, v) => s + v.ibr, 0);
+  const totalFPE = Array.from(byCategory.values()).reduce((s, v) => s + v.count, 0);
+  const totalIBR = Array.from(byCategory.values()).reduce((s, v) => s + v.ibr, 0);
 
   return (
     <div className="space-y-5">

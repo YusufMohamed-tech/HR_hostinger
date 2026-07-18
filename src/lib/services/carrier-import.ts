@@ -125,7 +125,8 @@ interface RawActivationRow {
 // Dealer code → employee lookup cache
 // ---------------------------------------------------------------------------
 async function buildDealerCodeMap(
-  admin: ReturnType<typeof createAdminClient>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
   orgId: string,
   activationDates: string[]
 ): Promise<Map<string, { employeeId: string; supervisorId: string | null }[]>> {
@@ -143,7 +144,7 @@ async function buildDealerCodeMap(
   if (error) throw error;
 
   // Also fetch supervisor info for each employee
-  const employeeIds = [...new Set((data ?? []).map((r) => r.employee_id as string))];
+  const employeeIds = Array.from(new Set((data ?? []).map((r: { employee_id: string }) => r.employee_id)));
   const supervisorMap = new Map<string, string | null>();
   if (employeeIds.length > 0) {
     const { data: empData } = await admin
@@ -187,7 +188,8 @@ function matchEmployee(
 // ---------------------------------------------------------------------------
 // Config loader
 // ---------------------------------------------------------------------------
-async function loadConfig(admin: ReturnType<typeof createAdminClient>, orgId: string): Promise<Record<string, string>> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadConfig(admin: any, orgId: string): Promise<Record<string, string>> {
   const { data } = await admin
     .from("carrier_dashboard_config")
     .select("config_key, config_value")
@@ -222,7 +224,8 @@ export async function processCarrierExcel(
   orgId: string,
   uploadedBy: string
 ): Promise<ImportResult> {
-  const admin = createAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any;
 
   // Parse workbook
   const workbook = XLSX.read(fileBuffer, { type: "array", cellDates: false });
@@ -237,7 +240,7 @@ export async function processCarrierExcel(
   const rows = dataRows.map((r) => parseRow(r as unknown[]));
 
   // Collect all activation dates for building the dealer-code map
-  const allDates = [...new Set(rows.map((r) => r.activation_date).filter(Boolean))];
+  const allDates = Array.from(new Set(rows.map((r) => r.activation_date).filter(Boolean))) as string[];
   const dateRangeStart = allDates.reduce((a, b) => (a < b ? a : b));
   const dateRangeEnd = allDates.reduce((a, b) => (a > b ? a : b));
 
@@ -389,7 +392,7 @@ export async function processCarrierExcel(
     duplicateRows,
     matchedRows,
     unmatchedRows,
-    unmatchedCodes: [...unmatchedCodeSet],
+    unmatchedCodes: Array.from(unmatchedCodeSet),
     dateRangeStart,
     dateRangeEnd,
   };
@@ -402,7 +405,8 @@ export async function rematchActivations(
   orgId: string,
   month: string
 ): Promise<{ updated: number }> {
-  const admin = createAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const admin = createAdminClient() as any;
 
   const { data: unmatched, error } = await admin
     .from("carrier_activations")
@@ -415,7 +419,7 @@ export async function rematchActivations(
   if (error) throw error;
   if (!unmatched || unmatched.length === 0) return { updated: 0 };
 
-  const dates = [...new Set(unmatched.map((r) => r.activation_date as string))];
+  const dates = Array.from(new Set((unmatched as { activation_date: string }[]).map((r) => r.activation_date)));
   const dealerCodeMap = await buildDealerCodeMap(admin, orgId, dates);
 
   let updated = 0;

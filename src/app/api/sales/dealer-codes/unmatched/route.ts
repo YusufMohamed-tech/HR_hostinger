@@ -10,7 +10,8 @@ export async function GET(request: NextRequest) {
   const month = request.nextUrl.searchParams.get("month");
   const admin = createAdminClient();
 
-  let q = admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let q = (admin as any)
     .from("carrier_activations")
     .select("dealer_code")
     .eq("organization_id", auth.orgId)
@@ -25,6 +26,6 @@ export async function GET(request: NextRequest) {
   const { data, error } = await q;
   if (error) return NextResponse.json({ message: error.message }, { status: 500 });
 
-  const codes = [...new Set((data ?? []).map((r) => (r as { dealer_code: string }).dealer_code))].sort();
+  const codes = Array.from(new Set(((data ?? []) as { dealer_code: string }[]).map((r) => r.dealer_code))).sort();
   return NextResponse.json({ data: codes });
 }

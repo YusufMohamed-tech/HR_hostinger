@@ -16,7 +16,8 @@ export type DeductionRuleGroup = {
 export type DeductionRuleGroupInput = Omit<DeductionRuleGroup, "id" | "org_id" | "created_at" | "updated_at">;
 
 export async function getDeductionRuleGroups(orgId: string) {
-  const supabase = createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabase = createClient() as any;
   return supabase
     .from("deduction_rule_groups")
     .select("*")
@@ -25,7 +26,8 @@ export async function getDeductionRuleGroups(orgId: string) {
 }
 
 export async function getDeductionRuleGroup(id: string) {
-  const supabase = createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabase = createClient() as any;
   return supabase
     .from("deduction_rule_groups")
     .select("*")
@@ -34,7 +36,8 @@ export async function getDeductionRuleGroup(id: string) {
 }
 
 export async function createDeductionRuleGroup(orgId: string, data: DeductionRuleGroupInput) {
-  const supabase = createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabase = createClient() as any;
   return supabase
     .from("deduction_rule_groups")
     .insert({ ...data, org_id: orgId })
@@ -43,7 +46,8 @@ export async function createDeductionRuleGroup(orgId: string, data: DeductionRul
 }
 
 export async function updateDeductionRuleGroup(id: string, data: Partial<DeductionRuleGroupInput>) {
-  const supabase = createClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const supabase = createClient() as any;
   return supabase
     .from("deduction_rule_groups")
     .update({ ...data, updated_at: new Date().toISOString() })
@@ -55,7 +59,6 @@ export async function updateDeductionRuleGroup(id: string, data: Partial<Deducti
 export async function deleteDeductionRuleGroup(id: string) {
   const supabase = createClient();
 
-  // Block deletion if any employees are assigned to this group
   const { count } = await supabase
     .from("employees")
     .select("id", { count: "exact", head: true })
@@ -71,7 +74,8 @@ export async function deleteDeductionRuleGroup(id: string) {
     };
   }
 
-  return supabase.from("deduction_rule_groups").delete().eq("id", id);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (supabase as any).from("deduction_rule_groups").delete().eq("id", id);
 }
 
 export async function getGroupAssignedCount(id: string): Promise<number> {

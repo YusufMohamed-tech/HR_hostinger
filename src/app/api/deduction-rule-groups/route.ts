@@ -7,7 +7,8 @@ export async function GET() {
   const auth = await requireTenantContext({ feature: "hr" });
   if ("error" in auth) return auth.error;
 
-  const { data, error } = await auth.admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (auth.admin as any)
     .from("deduction_rule_groups")
     .select("*")
     .eq("org_id", auth.orgId)
@@ -36,7 +37,8 @@ export async function POST(request: NextRequest) {
     deduction_per_excess_approved_day: Number(body.deduction_per_excess_approved_day ?? 0),
   };
 
-  const { data, error } = await auth.admin
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (auth.admin as any)
     .from("deduction_rule_groups")
     .insert(payload)
     .select()

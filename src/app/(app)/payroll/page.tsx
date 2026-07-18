@@ -467,7 +467,7 @@ export default function PayrollPage() {
                         <TableCell className="font-medium">
                           <p>{String(employee.full_name || "غير معروف")}</p>
                           <p className="text-xs text-gray-400">{String(employee.employee_code || "")}</p>
-                          {slip.snapshot_group_name && (
+                          {Boolean(slip.snapshot_group_name) && (
                             <p className="text-xs text-blue-500">{String(slip.snapshot_group_name)}</p>
                           )}
                         </TableCell>
@@ -544,7 +544,7 @@ export default function PayrollPage() {
                           <TableCell colSpan={canRunPayroll ? 9 : 8} className="py-3">
                             <div className="grid md:grid-cols-2 gap-4 text-sm">
                               {/* Policy snapshot */}
-                              {slip.snapshot_group_name && (
+                              {Boolean(slip.snapshot_group_name) && (
                                 <div className="space-y-1">
                                   <p className="font-semibold text-gray-600 text-xs uppercase tracking-wide">سياسة الخصم المطبقة</p>
                                   <div className="rounded-lg bg-blue-50 border border-blue-100 p-2.5 space-y-1 text-xs">
@@ -591,7 +591,7 @@ export default function PayrollPage() {
                             <div className="mt-3 pt-2 border-t border-gray-100 flex flex-wrap gap-4 text-xs text-gray-500">
                               <span>تأمينات الموظف: <strong>{formatCurrency(slip.employee_gosi)}</strong></span>
                               <span>تأمينات صاحب العمل: <strong>{formatCurrency(slip.employer_gosi)}</strong></span>
-                              {slip.payroll_notes && <span className="text-gray-400">{String(slip.payroll_notes)}</span>}
+                              {Boolean(slip.payroll_notes) && <span className="text-gray-400">{String(slip.payroll_notes)}</span>}
                             </div>
                           </TableCell>
                         </TableRow>
