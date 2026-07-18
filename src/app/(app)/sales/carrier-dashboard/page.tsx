@@ -84,14 +84,10 @@ export default function EmployeePerformancePage() {
     ? targets.find((t) => t.employee_id === selectedEmployeeId)
     : null;
 
-  const fpeTargetVal = target?.fpe_target ?? 0;
   const friendiTargetVal = target?.friendi_target ?? 0;
   const virginTargetVal = target?.virgin_target ?? 0;
   const workingDays = target?.working_days ?? 25;
 
-  const fpeKPIs = fpeTargetVal > 0
-    ? computeTargetKPIs({ achieved: kpis?.fpe ?? 0, target: fpeTargetVal, daysElapsed, totalWorkingDays: workingDays })
-    : null;
   const friendiKPIs = friendiTargetVal > 0
     ? computeTargetKPIs({ achieved: kpis?.fpeFriendi ?? 0, target: friendiTargetVal, daysElapsed, totalWorkingDays: workingDays })
     : null;

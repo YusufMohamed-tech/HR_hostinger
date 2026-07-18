@@ -144,7 +144,7 @@ async function buildDealerCodeMap(
 
   // Also fetch supervisor info for each employee
   const employeeIds = [...new Set((data ?? []).map((r) => r.employee_id as string))];
-  let supervisorMap = new Map<string, string | null>();
+  const supervisorMap = new Map<string, string | null>();
   if (employeeIds.length > 0) {
     const { data: empData } = await admin
       .from("employees")

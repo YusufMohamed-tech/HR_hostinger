@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { CarrierKPICard } from "@/components/carrier-dashboard/CarrierKPICard";
 import { CarrierGaugeChart } from "@/components/carrier-dashboard/CarrierGaugeChart";
 import { DailyTrendChart } from "@/components/carrier-dashboard/DailyTrendChart";
 import { formatCarrierNumber } from "@/lib/utils/carrier-kpi";

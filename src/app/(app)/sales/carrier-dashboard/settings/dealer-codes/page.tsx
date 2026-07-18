@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Pencil, Trash2, RefreshCw, AlertCircle } from "lucide-react";
+import { Plus, Trash2, RefreshCw, AlertCircle } from "lucide-react";
 import { ImportUploader } from "@/components/carrier-dashboard/ImportUploader";
 
 interface DealerCodeRow {

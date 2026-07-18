@@ -279,7 +279,7 @@ export default function PayrollPage() {
   };
 
   const toggleRow = (id: string) =>
-    setExpandedRows((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+    setExpandedRows((prev) => { const next = new Set(prev); if (next.has(id)) { next.delete(id); } else { next.add(id); } return next; });
 
   const totalNet = payslips.reduce((sum, p) => sum + Number(p.net_salary || 0), 0);
   const totalDeductions = payslips.reduce((sum, p) => sum + Number(p.total_deductions || 0), 0);
