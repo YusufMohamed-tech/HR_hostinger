@@ -41,10 +41,35 @@ export default function TargetsPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`/api/sales/carrier-targets?month=${month}`);
-      const json = await res.json() as { data?: TargetRow[]; message?: string };
-      if (!res.ok) throw new Error(json.message);
-      setRows(json.data ?? []);
+      const [targetsRes, perfRes] = await Promise.all([
+        fetch(`/api/sales/carrier-targets?month=${month}`),
+        fetch(`/api/sales/carrier-dashboard/employees?month=${month}`),
+      ]);
+      const targetsJson = await targetsRes.json() as { data?: TargetRow[]; message?: string };
+      if (!targetsRes.ok) throw new Error(targetsJson.message);
+
+      const existing = targetsJson.data ?? [];
+      if (existing.length > 0) {
+        setRows(existing);
+      } else {
+        // Seed zero-target rows from performance/employee list
+        type PerfRow = { employeeId: string; employeeName: string };
+        const perfJson = await perfRes.json() as { data?: PerfRow[] };
+        const emps = perfJson.data ?? [];
+        setRows(
+          emps.map((e) => ({
+            employee_id: e.employeeId,
+            employee: { id: e.employeeId, full_name: e.employeeName },
+            fpe_target: 0,
+            revenue_target: 0,
+            friendi_target: 0,
+            virgin_target: 0,
+            postpaid_target: 0,
+            hbb_target: 0,
+            working_days: 25,
+          }))
+        );
+      }
       setEdits({});
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
@@ -150,11 +175,6 @@ export default function TargetsPage() {
 
       {loading ? (
         <p className="text-[#94a3b8] text-sm">Loading…</p>
-      ) : rows.length === 0 ? (
-        <div className="bg-[#16213e] rounded-lg p-8 text-center text-[#94a3b8]">
-          <p className="mb-2">No targets set for {month}</p>
-          <p className="text-xs">Use &quot;Copy from previous month&quot; or add targets from the employee roster</p>
-        </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-[#0f3460]">
           <table className="w-full text-sm">

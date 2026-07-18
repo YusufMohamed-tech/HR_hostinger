@@ -72,6 +72,7 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
   const [accountRole, setAccountRole] = useState<EmployeeAccountRole>("employee");
   const [accountPassword, setAccountPassword] = useState("");
   const [canMultiCheckin, setCanMultiCheckin] = useState(false);
+  const [gosiRegistered, setGosiRegistered] = useState(false);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
   const [primaryLocationId, setPrimaryLocationId] = useState("");
 
@@ -114,6 +115,8 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
     bank_name: "",
     iban: "",
     education_level: "",
+    gosi_number: "",
+    carrier_supervisor_id: "",
   });
 
   useEffect(() => {
@@ -157,7 +160,10 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
         iban: employee.iban || employee.bank_account || "",
         education_level: employee.education_level || "",
         deduction_rule_group_id: (employee as Record<string, unknown>).deduction_rule_group_id ? String((employee as Record<string, unknown>).deduction_rule_group_id) : "",
+        gosi_number: String((employee as Record<string, unknown>).gosi_number || ""),
+        carrier_supervisor_id: String((employee as Record<string, unknown>).carrier_supervisor_id || ""),
       });
+      setGosiRegistered(Boolean((employee as Record<string, unknown>).gosi_registered));
       const managedDepartment = departments.find((department) => {
         const departmentRecord = department as Record<string, unknown>;
         return String(departmentRecord.manager_employee_id || "") === String(employee.id || "");
@@ -321,6 +327,9 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
       leave_balance_manual_adjustment: form.leave_balance_manual_adjustment ? parseFloat(form.leave_balance_manual_adjustment) : undefined,
       leave_accrual_start_date: form.leave_accrual_start_date || form.hiring_date || undefined,
       can_multi_checkin: canMultiCheckin,
+      gosi_registered: gosiRegistered,
+      gosi_number: form.gosi_number || undefined,
+      carrier_supervisor_id: form.carrier_supervisor_id || undefined,
       payment_method: form.payment_method || undefined,
       bank_account: form.bank_account || undefined,
       bank_account_name: form.bank_account_name || undefined,
@@ -759,6 +768,49 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
               )}
             </div>
           )}
+
+          <div className="space-y-4">
+            <p className="text-sm font-semibold text-slate-700">بيانات فيرجن / فريندي (GOSI)</p>
+            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300"
+                checked={gosiRegistered}
+                onChange={(e) => setGosiRegistered(e.target.checked)}
+              />
+              <span>مسجل في نظام التأمينات الاجتماعية (GOSI)</span>
+            </label>
+            <div className={twoColumnGridClass}>
+              <div className="space-y-2">
+                <Label>رقم GOSI</Label>
+                <Input
+                  value={form.gosi_number}
+                  onChange={(e) => set("gosi_number", e.target.value)}
+                  dir="ltr"
+                  placeholder="رقم التسجيل في التأمينات"
+                  disabled={!gosiRegistered}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>المشرف (فيرجن / فريندي)</Label>
+                <Select
+                  value={form.carrier_supervisor_id}
+                  onValueChange={(v) => set("carrier_supervisor_id", v || "")}
+                >
+                  <SelectTrigger><SelectValue placeholder="اختر المشرف" /></SelectTrigger>
+                  <SelectContent>
+                    {employees
+                      .filter((emp) => String(emp.id) !== String(employee.id))
+                      .map((emp) => (
+                        <SelectItem key={String(emp.id)} value={String(emp.id)}>
+                          {String(emp.full_name || emp.name)}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
 
           <div className="space-y-4">
             <p className="text-sm font-semibold text-slate-700">بيانات الراتب</p>

@@ -350,3 +350,45 @@ CREATE POLICY "dashboard_config_modify" ON public.carrier_dashboard_config
       AND public.current_role() IN ('admin', 'hr_admin')
     )
   );
+
+-- ---------------------------------------------------------------------------
+-- Seed default bundle categories for every existing organization
+-- (idempotent via ON CONFLICT DO NOTHING)
+-- ---------------------------------------------------------------------------
+INSERT INTO public.carrier_bundle_categories
+  (organization_id, category_label, min_value, max_value, display_order, color)
+SELECT
+  o.id,
+  c.category_label,
+  c.min_value,
+  c.max_value,
+  c.display_order,
+  c.color
+FROM public.organizations o
+CROSS JOIN (VALUES
+  ('+10', 10,   20,   1, '#ddd6fe'),
+  ('+20', 20,   30,   2, '#c4b5fd'),
+  ('+30', 30,   50,   3, '#a78bfa'),
+  ('+45', 50,   70,   4, '#8b5cf6'),
+  ('+70', 70,   100,  5, '#6366f1'),
+  ('+90', 100,  NULL, 6, '#3b82f6')
+) AS c(category_label, min_value, max_value, display_order, color)
+ON CONFLICT (organization_id, category_label) DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Seed default dashboard config for every existing organization
+-- (idempotent via ON CONFLICT DO NOTHING)
+-- ---------------------------------------------------------------------------
+INSERT INTO public.carrier_dashboard_config
+  (organization_id, config_key, config_value)
+SELECT o.id, k.config_key, k.config_value
+FROM public.organizations o
+CROSS JOIN (VALUES
+  ('shift_morning_start',           '08:00'),
+  ('shift_night_start',             '16:00'),
+  ('verification_tolerance_percent','5'),
+  ('location_active_threshold',     '100'),
+  ('location_acceptable_threshold', '85'),
+  ('location_warning_threshold',    '70')
+) AS k(config_key, config_value)
+ON CONFLICT (organization_id, config_key) DO NOTHING;

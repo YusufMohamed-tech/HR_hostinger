@@ -7,6 +7,7 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import { useNotifications } from "@/hooks/use-data";
 import {
   BarChart3,
+  Activity,
   Bell,
   BookOpen,
   Boxes,
@@ -142,6 +143,7 @@ export function SidebarContent() {
 
     const salesManagementOps: NavLink[] = [
       { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
+      { name: "لوحة فيرجن / فريندي", href: "/sales/carrier-dashboard", icon: Activity },
       { name: "عملاء الترويج", href: "/sales/leads", icon: Users },
       { name: "إدارة الترويج", href: "/sales/promoter", icon: Megaphone },
       { name: "المندوبون الميدانيون", href: "/sales/agents", icon: Users },
@@ -199,6 +201,7 @@ export function SidebarContent() {
           title: "المبيعات",
           links: [
             { name: "لوحة المبيعات", href: "/sales/dashboard", icon: BarChart3 },
+            { name: "لوحة فيرجن / فريندي", href: "/sales/carrier-dashboard", icon: Activity },
             { name: "الحضور", href: "/attendance", icon: Clock },
             { name: "ورديتي", href: "/schedule", icon: CalendarDays },
             { name: "تسجيل اليوم", href: "/sales/log", icon: ShoppingCart },
