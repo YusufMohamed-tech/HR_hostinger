@@ -674,7 +674,11 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
               <div className="space-y-2">
                 <Label>المشروع / القناة *</Label>
                 <Select value={form.project_id} onValueChange={(value) => setProject(value)}>
-                  <SelectTrigger><SelectValue placeholder="اختر المشروع" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر المشروع">
+                      {() => companies.find((c) => c.id === form.project_id)?.name || "اختر المشروع"}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     {companies.map((company) => (
                       <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
