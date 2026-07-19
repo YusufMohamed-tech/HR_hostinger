@@ -23,6 +23,7 @@ import {
 import { formatCurrency } from "@/lib/utils/currency";
 import { PageSkeleton } from "@/components/Skeletons";
 import { VerificationAlert } from "@/components/carrier-dashboard/VerificationAlert";
+import CarrierDashboardEmbed from "./CarrierDashboardEmbed";
 
 function formatMoney(value: number) {
   return formatCurrency(value, 0);
@@ -70,7 +71,52 @@ function defaultDraft(settings?: SalesDashboardSettings | null): SalesDashboardS
   };
 }
 
+type DashboardTab = "general" | "carrier";
+
 export default function SalesDashboardPage() {
+  const [activeTab, setActiveTab] = useState<DashboardTab>("general");
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Tab bar */}
+      <div className="border-b border-gray-200 bg-white sticky top-0 z-10" dir="rtl">
+        <nav className="flex gap-0">
+          <button
+            onClick={() => setActiveTab("general")}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "general"
+                ? "border-brand text-brand-dark"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              عام
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab("carrier")}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "carrier"
+                ? "border-brand text-brand-dark"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <span className="flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Virgin & FRiENDi
+            </span>
+          </button>
+        </nav>
+      </div>
+
+      {/* Tab content */}
+      {activeTab === "general" ? <GeneralSalesDashboard /> : <CarrierDashboardEmbed />}
+    </div>
+  );
+}
+
+function GeneralSalesDashboard() {
   const [dashboard, setDashboard] = useState<SalesDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
