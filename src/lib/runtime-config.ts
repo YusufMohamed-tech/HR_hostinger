@@ -94,16 +94,6 @@ export function validateRuntimeConfiguration(
       }
     }
 
-    const malwareScanUrl = value(environment, "MALWARE_SCAN_URL");
-    if (!malwareScanUrl) {
-      addIssue("MALWARE_SCAN_URL", "missing");
-    } else if (isPlaceholder(malwareScanUrl)) {
-      addIssue("MALWARE_SCAN_URL", "placeholder");
-    } else {
-      const parsed = parseUrl(malwareScanUrl);
-      if (!parsed || parsed.protocol !== "https:") addIssue("MALWARE_SCAN_URL", "valid_https_url_required");
-    }
-
     for (const field of dangerousProductionFlags) {
       if (value(environment, field).toLowerCase() === "true") addIssue(field, "must_be_disabled");
     }
