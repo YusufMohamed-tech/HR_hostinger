@@ -159,8 +159,8 @@ function CreateTraderDialog({ agents, onDone }: { agents: FieldAgent[]; onDone: 
       setSubmitting(false);
       return;
     }
-    if (form.password.length < 8) {
-      setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل.");
+    if (form.password.length < 12 || !/[a-z]/.test(form.password) || !/[A-Z]/.test(form.password) || !/\d/.test(form.password)) {
+      setError("كلمة المرور يجب أن تكون 12 حرفًا وتحتوي على حرف كبير وصغير ورقم.");
       setSubmitting(false);
       return;
     }
@@ -224,7 +224,7 @@ function CreateTraderDialog({ agents, onDone }: { agents: FieldAgent[]; onDone: 
           </div>
           <div className="space-y-2">
             <Label>كلمة المرور</Label>
-            <Input dir="ltr" type="text" value={form.password} onChange={(event) => set("password", event.target.value)} placeholder="8 أحرف على الأقل" />
+            <Input dir="ltr" type="password" value={form.password} onChange={(event) => set("password", event.target.value)} placeholder="12 حرفًا + كبير وصغير ورقم" />
           </div>
           <div className="space-y-2">
             <Label>اسم التاجر</Label>

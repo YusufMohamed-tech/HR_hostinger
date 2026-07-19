@@ -52,6 +52,7 @@ export const employeeFormSchema = z.object({
   base_salary: optionalMoney,
   bonus: optionalMoney,
   deductions: optionalMoney,
+  deduction_rule_group_id: optionalUuid,
   leave_balance_manual_adjustment: optionalMoney,
   leave_accrual_start_date: optionalDate,
   payment_method: optionalTrimmedString,
@@ -213,6 +214,7 @@ export const lmsTaskSchema = z.object({
 });
 
 export const lmsAssignmentSchema = z.object({
+  command_id: optionalUuid,
   course_id: optionalUuid,
   learning_path_id: optionalUuid,
   assignment_type: z.enum(["employee", "department", "team", "location", "role", "all"]),
@@ -232,6 +234,7 @@ export const lmsTaskSubmissionSchema = z.object({
 });
 
 export const lmsTaskReviewSchema = z.object({
+  command_id: optionalUuid,
   score: z.coerce.number().min(0).max(10000),
   feedback: optionalLongString,
   review_status: z.enum(["accepted", "rejected", "needs_revision"]),
@@ -302,6 +305,7 @@ export const lmsActivityEventSchema = z.object({
 });
 
 export const lmsRubricSchema = z.object({
+  command_id: optionalUuid,
   title: optionalTrimmedString,
   description: optionalLongString,
   pass_points: z.preprocess(emptyToUndefined, z.coerce.number().min(0).max(100000).optional()),
@@ -316,6 +320,7 @@ export const lmsRubricSchema = z.object({
 });
 
 export const lmsRubricReviewSchema = z.object({
+  command_id: optionalUuid,
   score: z.preprocess(emptyToUndefined, z.coerce.number().min(0).max(100000).optional()),
   feedback: optionalLongString,
   review_status: z.enum(["accepted", "rejected", "needs_revision"]).optional(),

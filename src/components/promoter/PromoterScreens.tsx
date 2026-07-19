@@ -658,7 +658,7 @@ export function PromoterLeadsScreen({ agentQueue = false }: { agentQueue?: boole
       <PageTitle
         title={agentQueue ? "عملاء الترويج" : "إدارة عملاء الترويج"}
         subtitle={agentQueue ? "قائمة العملاء المسندة لك من فريق الترويج." : "متابعة العملاء وتصديرهم وإرسالهم لفريق المبيعات."}
-        actions={<Button asChild variant="outline"><a href="/api/sales/promoter/leads/export"><FileDown className="ml-2 h-4 w-4" />تصدير CSV</a></Button>}
+        actions={<Button asChild variant="outline"><Link href="/api/sales/promoter/leads/export"><FileDown className="ml-2 h-4 w-4" />تصدير CSV</Link></Button>}
       />
       <MessageBanner message={message} />
       <Card className="border border-slate-200 shadow-sm">

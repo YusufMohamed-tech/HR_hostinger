@@ -108,7 +108,7 @@ export default function LocationsPage() {
                             confirmLabel="حذف"
                             destructive
                             onConfirm={async () => {
-                              await deleteLocation(locationId);
+                              await deleteLocation(locationId, Number(locationRecord.version || 1));
                               refetch();
                             }}
                           >

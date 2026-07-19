@@ -35,6 +35,25 @@ function jsonInit(method: string, body?: Record<string, unknown>): RequestInit {
   return { method, body: body ? JSON.stringify(body) : undefined };
 }
 
+function commandFingerprint(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+async function leadCommand(path: string, method: "POST" | "PATCH", values: Record<string, unknown>) {
+  const key = `hrms-command:promoter-lead:${commandFingerprint(`${path}:${JSON.stringify(values)}`)}`;
+  const existing = typeof window === "undefined" ? null : window.sessionStorage.getItem(key);
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(key, commandId);
+  const result = await apiFetch<PromoterLead>(path, jsonInit(method, { ...values, command_id: commandId }));
+  if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(key);
+  return result;
+}
+
 function qs(params?: Record<string, string | number | boolean | null | undefined>) {
   const search = new URLSearchParams();
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -92,11 +111,11 @@ export function getPromoterLead(leadId: string) {
 }
 
 export function createPromoterLead(values: Record<string, unknown>) {
-  return apiFetch<PromoterLead>("/api/sales/promoter/leads", jsonInit("POST", values));
+  return leadCommand("/api/sales/promoter/leads", "POST", values);
 }
 
 export function updatePromoterLeadStatus(leadId: string, values: Record<string, unknown>) {
-  return apiFetch<PromoterLead>(`/api/sales/promoter/leads/${leadId}`, jsonInit("PATCH", values));
+  return leadCommand(`/api/sales/promoter/leads/${leadId}`, "PATCH", values);
 }
 
 export function assignPromoterLead(leadId: string, assignedAgentId: string) {

@@ -198,6 +198,7 @@ export default function MyTasksPage() {
                           {myAssignment && (
                             <TaskUpdateButtons
                               assignmentId={String(myAssignment.id ?? "")}
+                              assignmentVersion={Number(myAssignment.version || 1)}
                               onSuccess={refetch}
                             />
                           )}
@@ -217,9 +218,11 @@ export default function MyTasksPage() {
 
 function TaskUpdateButtons({
   assignmentId,
+  assignmentVersion,
   onSuccess,
 }: {
   assignmentId: string;
+  assignmentVersion: number;
   onSuccess: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -240,6 +243,7 @@ function TaskUpdateButtons({
     setError("");
     const { error: assignmentError } = await updateMyTaskAssignment({
       assignment_id: assignmentId,
+      expected_version: assignmentVersion,
       status: targetStatus,
       note: note.trim(),
       attachments,

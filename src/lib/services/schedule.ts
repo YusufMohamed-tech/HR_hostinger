@@ -12,86 +12,28 @@ export async function getShifts(orgId: string) {
 }
 
 export async function createShift(values: Record<string, unknown>) {
-  const supabase = createClient();
-  const orgId = String(values.org_id || "");
   const name = String(values.name || "").trim();
-  const normalizedName = name.toLowerCase();
-
-  if (!orgId || !name) {
+  if (!name) {
     return {
       data: null,
       error: { message: "اسم الوردية مطلوب." },
     };
   }
-
-  const existing = await supabase
-    .from("shifts")
-    .select("id, name")
-    .eq("org_id", orgId);
-
-  const hasDuplicate = (existing.data || []).some((shift: Record<string, unknown>) =>
-    String(shift.name || "").trim().toLowerCase() === normalizedName
-  );
-
-  if (hasDuplicate) {
-    return {
-      data: null,
-      error: { message: "يوجد وردية بنفس الاسم بالفعل. اختر اسمًا مختلفًا." },
-    };
-  }
-
-  const result = await supabase
-    .from("shifts")
-    .insert({ ...values, name } as never)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+  return scheduleCommand({ action: "save_shift", command_id: crypto.randomUUID(), target_id: crypto.randomUUID(),
+    expected_version: null, name, shift_type: values.shift_type, start_time: values.start_time,
+    end_time: values.end_time, location_id: values.location_id || null });
 }
 
 export async function updateShift(id: string, values: Record<string, unknown>) {
-  const supabase = createClient();
-  const orgId = String(values.org_id || "");
   const name = typeof values.name === "string" ? values.name.trim() : "";
-
-  if (orgId && name) {
-    const existing = await supabase
-      .from("shifts")
-      .select("id, name")
-      .eq("org_id", orgId);
-
-    const normalizedName = name.toLowerCase();
-    const hasDuplicate = (existing.data || []).some((shift: Record<string, unknown>) =>
-      String(shift.id || "") !== id &&
-      String(shift.name || "").trim().toLowerCase() === normalizedName
-    );
-
-    if (hasDuplicate) {
-      return {
-        data: null,
-        error: { message: "يوجد وردية بنفس الاسم بالفعل. اختر اسمًا مختلفًا." },
-      };
-    }
-  }
-
-  const result = await supabase
-    .from("shifts")
-    .update((name ? { ...values, name } : values) as never)
-    .eq("id", id)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+  return scheduleCommand({ action: "save_shift", command_id: crypto.randomUUID(), target_id: id,
+    expected_version: Number(values.expected_version), name, shift_type: values.shift_type,
+    start_time: values.start_time, end_time: values.end_time, location_id: values.location_id || null });
 }
 
-export async function deleteShift(id: string) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("shifts")
-    .delete()
-    .eq("id", id);
-
-  return result as unknown as { error: { message: string } | null };
+export async function deleteShift(id: string, expectedVersion: number) {
+  return scheduleCommand({ action: "delete_shift", command_id: crypto.randomUUID(), target_id: id,
+    expected_version: expectedVersion });
 }
 
 export async function getEmployeeShifts(orgId: string, employeeId?: string) {
@@ -110,22 +52,31 @@ export async function getEmployeeShifts(orgId: string, employeeId?: string) {
 }
 
 export async function assignEmployeeShift(values: Record<string, unknown>) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("employee_shifts")
-    .insert(values as never)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+  return scheduleCommand({ action: "assign_shift", command_id: crypto.randomUUID(), target_id: crypto.randomUUID(),
+    employee_id: values.employee_id, shift_id: values.shift_id,
+    start_date: values.start_date || undefined, end_date: values.end_date || undefined });
 }
 
-export async function removeEmployeeShift(id: string) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("employee_shifts")
-    .delete()
-    .eq("id", id);
+export async function removeEmployeeShift(id: string, expectedVersion: number) {
+  return scheduleCommand({ action: "remove_assignment", command_id: crypto.randomUUID(), target_id: id,
+    expected_version: expectedVersion });
+}
 
-  return result as unknown as { error: { message: string } | null };
+async function scheduleCommand(values: Record<string, unknown>) {
+  try {
+    const response = await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-request-id": crypto.randomUUID() },
+      body: JSON.stringify(values),
+    });
+    const payload = await response.json().catch(() => ({})) as {
+      data?: Record<string, unknown>;
+      message?: string;
+    };
+    return response.ok
+      ? { data: payload.data || null, error: null }
+      : { data: null, error: { message: payload.message || "تعذر تنفيذ أمر الجدول." } };
+  } catch {
+    return { data: null, error: { message: "تعذر الاتصال بخدمة الجداول." } };
+  }
 }

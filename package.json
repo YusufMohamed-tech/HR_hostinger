@@ -6,13 +6,22 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:strict": "eslint . --ext .ts,.tsx --max-warnings 0",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test:unit": "tsx --test tests/**/*.test.ts",
+    "test:db": "node scripts/test-database-migrations.mjs",
     "test:sim-box-generation": "node scripts/test-sim-box-generation.mjs",
     "test:sim-box-parser": "node scripts/test-sim-box-parser.mjs",
     "test:sim-commissions": "node scripts/test-sim-commissions.mjs",
+    "test:sim": "npm run test:sim-box-generation && npm run test:sim-box-parser && npm run test:sim-commissions",
     "apply:schema": "node scripts/apply-schema.mjs",
     "apply:migration": "node scripts/apply-migration.mjs",
     "apply:supabase-sql": "node scripts/apply-supabase-sql.mjs",
+    "db:verify-migrations": "node scripts/verify-migrations.mjs",
+    "db:migrate": "node scripts/apply-migrations.mjs",
+    "verify:outbox": "node scripts/verify-outbox-topics.mjs",
+    "verify:launch-contract": "node scripts/verify-launch-contract.mjs",
     "verify:accounting": "node scripts/verify-accounting-module.mjs",
     "verify:lms": "node scripts/verify-lms-module.mjs",
     "seed:admin": "node scripts/seed-initial-admin.mjs",
@@ -29,7 +38,9 @@
     "seed:recruitment-mock": "node scripts/seed-recruitment-mock.mjs",
     "seed:lms-studio-course": "node scripts/seed-lms-studio-course.mjs",
     "seed:promoter-mock": "node scripts/seed-promoter-mock.mjs",
-    "cleanup:test-accounts": "node scripts/cleanup-test-accounts.mjs"
+    "cleanup:test-accounts": "node scripts/cleanup-test-accounts.mjs",
+    "audit:production": "npm audit --omit=dev --audit-level=high",
+    "verify:ci": "npm run db:verify-migrations && npm run verify:outbox && npm run verify:launch-contract && npm run typecheck && npm run lint:strict && npm run test:unit && npm run test:db && npm run test:sim && npm run verify:accounting && npm run audit:production && npm run build"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -42,16 +53,16 @@
     "date-fns": "^4.1.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.14.0",
-    "next": "14.2.35",
+    "next": "15.5.20",
     "react": "^18.3.1",
     "react-day-picker": "^9.14.0",
     "react-dom": "^18.3.1",
+    "read-excel-file": "9.3.2",
     "recharts": "^3.8.1",
     "shadcn": "^4.6.0",
     "tailwind-merge": "^3.5.0",
     "tesseract.js": "^7.0.0",
     "tw-animate-css": "^1.4.0",
-    "xlsx": "^0.18.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -60,11 +71,15 @@
     "@types/react-dom": "^18",
     "dotenv": "^16.4.5",
     "eslint": "^8",
-    "eslint-config-next": "14.2.35",
+    "eslint-config-next": "15.5.20",
     "pg": "^8.11.5",
-    "postcss": "^8",
+    "postcss": "8.5.13",
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",
+    "tsx": "^4.20.6",
     "typescript": "^5"
+  },
+  "overrides": {
+    "postcss": "$postcss"
   }
 }

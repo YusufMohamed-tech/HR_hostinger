@@ -6,6 +6,23 @@ type OrganizationSettingsPayload = {
   usage: Record<string, unknown> | null;
 };
 
+function commandFingerprint(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function settingsCommand(values: Record<string, unknown>) {
+  const key = `hrms-command:organization-settings:${commandFingerprint(JSON.stringify(values))}`;
+  const existing = typeof window === "undefined" ? null : window.sessionStorage.getItem(key);
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(key, commandId);
+  return { key, commandId };
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit) {
   try {
     const response = await fetch(path, {
@@ -30,10 +47,13 @@ export async function updateCurrentOrganizationSettings(values: {
   name?: string;
   settings?: Record<string, unknown>;
 }) {
-  return apiFetch<OrganizationSettingsPayload>("/api/organization/settings", {
+  const command = settingsCommand(values);
+  const result = await apiFetch<OrganizationSettingsPayload>("/api/organization/settings", {
     method: "PATCH",
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, command_id: command.commandId }),
   });
+  if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(command.key);
+  return result;
 }
 
 export async function getOrganizations() {

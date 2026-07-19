@@ -481,24 +481,17 @@ function ResetPasswordDialog({
   onSuccess: () => Promise<void> | void;
 }) {
   const [open, setOpen] = useState(false);
-  const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
   const handleReset = async () => {
-    if (password.length < 8) {
-      setError("كلمة المرور يجب ألا تقل عن 8 أحرف.");
-      return;
-    }
-
     setSubmitting(true);
     setError("");
     const result = await updateManagedUser({
       user_id: member.user_id,
       target_org_id: orgId,
       action: "reset_password",
-      password,
     });
     setSubmitting(false);
 
@@ -512,7 +505,6 @@ function ResetPasswordDialog({
     setTimeout(() => {
       setOpen(false);
       setSaved(false);
-      setPassword("");
     }, 1000);
   };
 
@@ -524,21 +516,13 @@ function ResetPasswordDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-[420px]">
         <DialogHeader>
-          <DialogTitle>إعادة تعيين كلمة المرور</DialogTitle>
+          <DialogTitle>إرسال رابط استعادة كلمة المرور</DialogTitle>
           <DialogDescription>
-            سيتم تغيير كلمة مرور {member.profile?.full_name || "هذا المستخدم"} داخل المنظمة.
+            سيرسل النظام رابط استعادة آمن إلى بريد {member.profile?.full_name || "هذا المستخدم"}. لن يتمكن مسؤول المنصة من اختيار كلمة مرور المستخدم أو الاطلاع عليها.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          <div className="space-y-2">
-            <Label>كلمة المرور الجديدة</Label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="8 أحرف على الأقل"
-            />
-          </div>
+          <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">سيبقى الرابط محدود الصلاحية ويخضع لسياسة كلمة المرور والتحقق من الجلسة.</p>
           {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
@@ -549,7 +533,7 @@ function ResetPasswordDialog({
             ) : submitting ? (
               "جار التحديث..."
             ) : (
-              "تحديث كلمة المرور"
+              "إرسال رابط الاستعادة"
             )}
           </Button>
         </DialogFooter>
@@ -581,8 +565,7 @@ function CreateOrgUserDialog({
   const [form, setForm] = useState({
     full_name: "",
     email: "",
-    password: "",
-    role: "hr_admin" as ManagedOrgRole,
+    role: "admin" as ManagedOrgRole,
   });
 
   const set = (key: keyof typeof form, value: string) => {
@@ -590,8 +573,8 @@ function CreateOrgUserDialog({
   };
 
   const handleCreate = async () => {
-    if (!form.full_name.trim() || !form.email.trim() || !form.password.trim()) {
-      setError("الاسم والبريد وكلمة المرور مطلوبة.");
+    if (!form.full_name.trim() || !form.email.trim()) {
+      setError("الاسم والبريد مطلوبان.");
       return;
     }
 
@@ -613,7 +596,7 @@ function CreateOrgUserDialog({
     setTimeout(() => {
       setOpen(false);
       setSaved(false);
-      setForm({ full_name: "", email: "", password: "", role: "hr_admin" });
+      setForm({ full_name: "", email: "", role: "admin" });
     }, 1000);
   };
 
@@ -625,8 +608,8 @@ function CreateOrgUserDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-[460px]">
         <DialogHeader>
-          <DialogTitle>إنشاء مستخدم داخل المنظمة</DialogTitle>
-          <DialogDescription>اختر الدور الصحيح لهذا الحساب داخل المنظمة المحددة.</DialogDescription>
+          <DialogTitle>دعوة مسؤول منظمة</DialogTitle>
+          <DialogDescription>أدوار الموظفين تُدعى من دورة تهيئة الموظف لدى HR بعد اكتمال ملفهم.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
@@ -638,15 +621,11 @@ function CreateOrgUserDialog({
             <Input type="email" value={form.email} onChange={(event) => set("email", event.target.value)} placeholder="hr@company.com" />
           </div>
           <div className="space-y-2">
-            <Label>كلمة المرور</Label>
-            <Input type="password" value={form.password} onChange={(event) => set("password", event.target.value)} placeholder="8 أحرف على الأقل" />
-          </div>
-          <div className="space-y-2">
             <Label>الدور</Label>
             <Select value={form.role} onValueChange={(value) => set("role", value || "hr_admin")}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {managedRoleOptions.map((option) => (
+                {managedRoleOptions.filter((option) => option.value === "admin").map((option) => (
                   <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                 ))}
               </SelectContent>

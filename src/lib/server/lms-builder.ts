@@ -7,7 +7,11 @@ import {
   reviewSubmission,
 } from "@/lib/server/lms";
 
-type Db = { from: (table: string) => any; storage: { from: (bucket: string) => any } };
+type Db = {
+  from: (table: string) => any;
+  rpc: (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
+  storage: { from: (bucket: string) => any };
+};
 type LmsAuth = TenantAuthContext;
 type RecordMap = Record<string, unknown>;
 
@@ -107,7 +111,9 @@ export async function getProjectRubric(auth: LmsAuth, taskId: string) {
     .maybeSingle();
   if (result.error) throw new Error(result.error.message);
   const rubric = asRecord(result.data);
-  if (rubric.id) rubric.items = asRows(rubric.items).sort((a, b) => numberValue(a.sort_order) - numberValue(b.sort_order));
+  if (rubric.id) rubric.items = asRows(rubric.items)
+    .filter((item) => item.is_active !== false)
+    .sort((a, b) => numberValue(a.sort_order) - numberValue(b.sort_order));
   return { task, rubric: rubric.id ? rubric : null };
 }
 
@@ -119,60 +125,23 @@ export async function upsertProjectRubric(auth: LmsAuth, taskId: string, values:
   const courseId = text(task.course_id);
   await assertManageCourse(auth, courseId, "can_edit_content");
 
-  const items = asRows(values.items);
-  const totalPoints = items.reduce((sum, item) => sum + numberValue(item.points, 0), 0);
-  const passPoints = values.pass_points !== undefined ? numberValue(values.pass_points, 0) : Math.round(totalPoints * 0.7 * 100) / 100;
-
-  const rubricPayload = {
-    org_id: auth.orgId,
-    task_id: taskId,
-    course_id: courseId,
-    title: text(values.title) || "معايير تقييم المشروع",
-    description: optionalText(values.description),
-    total_points: totalPoints,
-    pass_points: passPoints,
-    created_by: auth.user.id,
-    updated_at: new Date().toISOString(),
-  };
-  const rubricResult = await db(auth)
-    .from("lms_project_rubrics")
-    .upsert(rubricPayload as never, { onConflict: "org_id,task_id" })
-    .select()
-    .single();
-  if (rubricResult.error) throw new Error(rubricResult.error.message);
-  const rubric = asRecord(rubricResult.data);
-  const rubricId = text(rubric.id);
-
-  const keepIds = items.map((item) => text(item.id)).filter(Boolean);
-  const existing = await db(auth).from("lms_project_rubric_items").select("id").eq("org_id", auth.orgId).eq("rubric_id", rubricId);
-  if (existing.error) throw new Error(existing.error.message);
-  const toDelete = asRows(existing.data).map((row) => text(row.id)).filter((id) => id && !keepIds.includes(id));
-  if (toDelete.length > 0) {
-    const del = await db(auth).from("lms_project_rubric_items").delete().eq("org_id", auth.orgId).in("id", toDelete);
-    if (del.error) throw new Error(del.error.message);
-  }
-
-  for (let index = 0; index < items.length; index += 1) {
-    const item = items[index];
-    const itemPayload = {
-      org_id: auth.orgId,
-      rubric_id: rubricId,
-      task_id: taskId,
-      course_id: courseId,
-      title: text(item.title),
-      description: optionalText(item.description),
-      passing_criteria: optionalText(item.passing_criteria),
-      points: numberValue(item.points, 1),
-      sort_order: numberValue(item.sort_order, index),
-      updated_at: new Date().toISOString(),
-    };
-    const itemId = text(item.id);
-    const itemResult = itemId
-      ? await db(auth).from("lms_project_rubric_items").update(itemPayload as never).eq("org_id", auth.orgId).eq("id", itemId)
-      : await db(auth).from("lms_project_rubric_items").insert(itemPayload as never);
-    if (itemResult.error) throw new Error(itemResult.error.message);
-  }
-
+  const result = await db(auth).rpc("save_lms_project_rubric_atomic", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_command_id: text(values.command_id) || crypto.randomUUID(),
+    p_task_id: taskId,
+    p_payload: {
+      title: text(values.title) || "معايير تقييم المشروع",
+      description: optionalText(values.description),
+      pass_points: values.pass_points,
+      items: asRows(values.items).map((item, index) => ({
+        ...item,
+        sort_order: numberValue(item.sort_order, index),
+      })),
+    },
+  });
+  if (result.error) throw new Error(result.error.message);
   return getProjectRubric(auth, taskId);
 }
 
@@ -207,33 +176,13 @@ export async function reviewProjectWithRubric(auth: LmsAuth, submissionId: strin
     }
   }
 
-  const reviewResult = await reviewSubmission(auth, submissionId, {
+  return reviewSubmission(auth, submissionId, {
+    command_id: values.command_id,
     score: computedScore,
     feedback: optionalText(values.feedback),
     review_status: reviewStatus,
+    rubric_items: rubricItems,
   });
-  const reviewId = text(asRecord(asRecord(reviewResult).review).id);
-
-  if (reviewId && rubricItems.length > 0) {
-    for (const item of rubricItems) {
-      const payload = {
-        org_id: auth.orgId,
-        review_id: reviewId,
-        submission_id: submissionId,
-        rubric_item_id: text(item.rubric_item_id),
-        task_id: text(submission.task_id),
-        course_id: courseId,
-        score: numberValue(item.score, 0),
-        passed: item.passed === true,
-        feedback: optionalText(item.feedback),
-      };
-      if (!payload.rubric_item_id) continue;
-      const itemResult = await db(auth).from("lms_project_review_items").insert(payload as never);
-      if (itemResult.error) throw new Error(itemResult.error.message);
-    }
-  }
-
-  return reviewResult;
 }
 
 // ---------------------------------------------------------------------------

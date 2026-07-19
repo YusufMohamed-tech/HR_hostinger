@@ -52,7 +52,7 @@ export function getSalesCommissions(filters?: Record<string, string | undefined>
 export function settleSalesCommissions(payload: CommissionSettlementPayload) {
   return apiFetch<{ settled_count: number; total_amount: number }>("/api/accounting/commissions/settle", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ command_id: crypto.randomUUID(), ...payload }),
   });
 }
 
@@ -121,15 +121,24 @@ export function getCustomers(params?: Record<string, string | undefined>) {
 }
 
 export function createCustomer(values: Partial<AccountingCustomer>) {
-  return apiFetch<AccountingCustomer>("/api/accounting/customers", { method: "POST", body: JSON.stringify(values) });
+  return apiFetch<AccountingCustomer>("/api/accounting/customers", {
+    method: "POST",
+    body: JSON.stringify({ command_id: crypto.randomUUID(), ...values }),
+  });
 }
 
 export function updateCustomer(id: string, values: Partial<AccountingCustomer>) {
-  return apiFetch<AccountingCustomer>(`/api/accounting/customers/${id}`, { method: "PATCH", body: JSON.stringify(values) });
+  return apiFetch<AccountingCustomer>(`/api/accounting/customers/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ command_id: crypto.randomUUID(), ...values }),
+  });
 }
 
 export function deactivateCustomer(id: string) {
-  return apiFetch<AccountingCustomer>(`/api/accounting/customers/${id}`, { method: "DELETE" });
+  return apiFetch<AccountingCustomer>(`/api/accounting/customers/${id}`, {
+    method: "DELETE",
+    body: JSON.stringify({ command_id: crypto.randomUUID() }),
+  });
 }
 
 export function getJournalEntries(params?: Record<string, string | undefined>) {
@@ -245,7 +254,7 @@ export function getAccountingSalesCompanies() {
 export function linkSalesCompanyCustomer(values: { company_id: string; customer_id: string }) {
   return apiFetch<{ company: AccountingSalesCompanyLink; customer: AccountingCustomer }>("/api/accounting/sales/link-company-customer", {
     method: "POST",
-    body: JSON.stringify(values),
+    body: JSON.stringify({ command_id: crypto.randomUUID(), ...values }),
   });
 }
 
@@ -290,6 +299,17 @@ export function getAccountingPeriods() {
 
 export function closePeriod(id: string) {
   return apiFetch<Record<string, unknown>>(`/api/accounting/periods/${id}/close`, { method: "POST", body: "{}" });
+}
+
+export function reopenPeriod(id: string, reason: string, expectedVersion?: number) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/periods/${id}/reopen`, {
+    method: "POST",
+    body: JSON.stringify({ reason, expected_version: expectedVersion }),
+  });
+}
+
+export function getAccountingReconciliation(params?: { date_from?: string; date_to?: string }) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/reports/reconciliation${qs(params || {})}`);
 }
 
 // Report Export

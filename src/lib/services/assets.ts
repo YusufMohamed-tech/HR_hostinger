@@ -53,7 +53,7 @@ export async function createAssetAssignment(values: Record<string, unknown>) {
   const response = await fetch("/api/assets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, mode: "assignment", assignment_id: crypto.randomUUID(), command_id: crypto.randomUUID() }),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -66,7 +66,7 @@ export async function updateAssetAssignment(id: string, values: Record<string, u
   const response = await fetch("/api/assets", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, ...values }),
+    body: JSON.stringify({ id, ...values, command_id: crypto.randomUUID() }),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -79,7 +79,7 @@ export async function createAssetInventory(values: Record<string, unknown>) {
   const response = await fetch("/api/assets", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ mode: "inventory", ...values }),
+    body: JSON.stringify({ mode: "inventory", ...values, inventory_id: crypto.randomUUID(), command_id: crypto.randomUUID() }),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
@@ -88,26 +88,12 @@ export async function createAssetInventory(values: Record<string, unknown>) {
   return { data: payload?.data || null, error: null };
 }
 
-export async function uploadAssetSignature(orgId: string, assetId: string, signatureData: string) {
-  const supabase = createClient();
-  const bytes = new TextEncoder().encode(signatureData);
-  const filePath = `${orgId}/assets/${assetId}/signature-${Date.now()}.txt`;
-
-  const result = await supabase.storage
-    .from("balance-attachments")
-    .upload(filePath, bytes, {
-      contentType: "text/plain",
-      upsert: false,
-    });
-
-  return result as unknown as { data: { path: string } | null; error: { message: string } | null };
-}
-
-export async function acknowledgeAssetAssignment(id: string, signatureData: string) {
+export async function acknowledgeAssetAssignment(id: string, expectedVersion: number, signatureData: string) {
   const response = await fetch("/api/assets", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, signature_data: signatureData }),
+    body: JSON.stringify({ id, expected_version: expectedVersion, signature_data: signatureData,
+      consent: true, command_id: crypto.randomUUID() }),
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {

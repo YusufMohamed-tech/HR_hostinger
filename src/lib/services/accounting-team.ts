@@ -10,6 +10,7 @@ export type FinanceTeamMember = {
   title: string | null;
   status: string;
   employee_id: string | null;
+  lifecycle_version: number;
   job_title: string | null;
   created_at: string | null;
 };
@@ -36,25 +37,40 @@ export async function getFinanceTeam() {
 export async function createFinanceTeamMember(values: {
   full_name: string;
   email: string;
-  password: string;
   phone?: string;
   role: FinanceTeamRole;
 }) {
+  const scope = `hrms-command:finance-onboarding:${values.email.toLowerCase()}`;
+  const existing = typeof window !== "undefined" ? window.sessionStorage.getItem(scope) : null;
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(scope, commandId);
   return apiFetch<FinanceTeamMember>("/api/accounting/team", {
     method: "POST",
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, command_id: commandId }),
+  }).then((result) => {
+    if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(scope);
+    return result;
   });
 }
 
 export async function updateFinanceTeamMember(values: {
   user_id: string;
+  expected_version: number;
   role?: FinanceTeamRole;
   full_name?: string;
   phone?: string;
   status?: "active" | "inactive" | "suspended";
 }) {
+  const fingerprint = JSON.stringify(values);
+  const scope = `hrms-command:finance-team:${values.user_id}:${values.expected_version}:${fingerprint}`;
+  const existing = typeof window !== "undefined" ? window.sessionStorage.getItem(scope) : null;
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(scope, commandId);
   return apiFetch<FinanceTeamMember>("/api/accounting/team", {
     method: "PATCH",
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, command_id: commandId }),
+  }).then((result) => {
+    if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(scope);
+    return result;
   });
 }

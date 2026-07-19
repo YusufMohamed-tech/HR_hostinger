@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recordPlatformAudit, requireSuperadmin } from "@/lib/superadmin/server";
-import { deductApprovedLeaveBalanceServer } from "@/lib/server/leave-balances";
 
 const reviewableRoles = new Set(["hr_admin", "hr_recruitment"]);
 
@@ -148,64 +147,25 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ message: "Only HR Admin and HR Recruitment leave requests can be reviewed here." }, { status: 403 });
   }
 
-  const now = new Date().toISOString();
-  const history = Array.isArray(leaveRequest.approval_history) ? leaveRequest.approval_history : [];
-  const historyEntry = {
-    step: "superadmin",
-    status: decision,
-    at: now,
-    by: auth.user.id,
-    note: note || null,
-  };
+  const reviewResult = await admin.rpc("review_leave_request", {
+    p_org_id: orgId,
+    p_actor_user_id: auth.user.id,
+    p_leave_request_id: requestId,
+    p_command_id: crypto.randomUUID(),
+    p_decision: decision as "approved" | "rejected",
+    p_note: note || null,
+  });
 
-  const updateValues: Record<string, unknown> = {
-    status: decision,
-    manager_approval_status: decision,
-    hr_approval_status: decision,
-    current_step: 1,
-    total_steps: 1,
-    decision_note: note || null,
-    decided_at: now,
-    decided_by: auth.user.id,
-    approval_history: [...history, historyEntry],
-  };
-
-  const updateResult = await admin
-    .from("leave_requests")
-    .update(updateValues as never)
-    .eq("id", requestId)
-    .select()
-    .single();
-
-  if (updateResult.error) {
-    return NextResponse.json({ message: updateResult.error.message }, { status: 500 });
+  if (reviewResult.error) {
+    const status = reviewResult.error.code === "42501"
+      ? 403
+      : reviewResult.error.code === "23505"
+        ? 409
+        : reviewResult.error.code === "P0001"
+          ? 422
+          : 500;
+    return NextResponse.json({ message: reviewResult.error.message }, { status });
   }
-
-  if (decision === "approved") {
-    const balanceUpdate = await deductApprovedLeaveBalanceServer(admin, {
-      orgId,
-      employeeId,
-      leaveType: String(leaveRequest.leave_type || ""),
-      days: leaveDays(leaveRequest.start_date, leaveRequest.end_date),
-      leaveRequestId: requestId,
-      actorUserId: auth.user.id,
-      reason: "Superadmin approved leave request",
-    });
-
-    if (balanceUpdate.error) {
-      return NextResponse.json({ message: balanceUpdate.error.message }, { status: 500 });
-    }
-  }
-
-  await admin.from("notifications").insert({
-    org_id: orgId,
-    user_id: userId,
-    title: decision === "approved" ? "تم اعتماد طلب الإجازة" : "تم رفض طلب الإجازة",
-    body: note || null,
-    type: "leave",
-    link: "/leave?view=mine",
-    is_read: false,
-  } as never);
 
   await recordPlatformAudit({
     actorUserId: auth.user.id,
@@ -223,5 +183,5 @@ export async function PATCH(request: NextRequest) {
     },
   });
 
-  return NextResponse.json({ data: updateResult.data });
+  return NextResponse.json({ data: reviewResult.data?.[0] ?? null });
 }

@@ -123,6 +123,7 @@ export type PromoterLead = PromoterSurveyInput & {
   consent_version: string | null;
   consent_at: string | null;
   language: string;
+  version: number;
   created_at: string;
   updated_at: string;
 };

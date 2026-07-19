@@ -1,5 +1,6 @@
 import { LmsPlayerScreen } from "@/components/lms/LmsScreens";
 
-export default function LmsPlayerPage({ params }: { params: { enrollmentId: string } }) {
-  return <LmsPlayerScreen enrollmentId={params.enrollmentId} />;
+export default async function LmsPlayerPage({ params }: { params: Promise<{ enrollmentId: string }> }) {
+  const { enrollmentId } = await params;
+  return <LmsPlayerScreen enrollmentId={enrollmentId} />;
 }

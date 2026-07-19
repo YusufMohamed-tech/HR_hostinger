@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireSalesAccess } from "@/lib/server/sales-auth";
+import {
+  beginEmployeeOnboarding,
+  EmployeeLifecycleError,
+  inviteAndLinkEmployeeIdentity,
+  offboardEmployee,
+} from "@/lib/server/employee-lifecycle";
+import { queueIdentityDeletion } from "@/lib/server/identity-reconciliation";
 
 type AuthContext = {
   user: { id: string; email?: string | null };
@@ -21,12 +28,6 @@ type AssignmentInput = {
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function yesterdayIso() {
-  const date = new Date();
-  date.setDate(date.getDate() - 1);
-  return date.toISOString().slice(0, 10);
 }
 
 function validDate(value: unknown) {
@@ -139,212 +140,58 @@ async function assertCompaniesInScope(
   return { ok: true as const, managedCompanyIds };
 }
 
-async function replaceAssignments(
+function roleAssignmentsAreValid(role: string, assignments: ReturnType<typeof uniqueAssignments>) {
+  if (role === "sales") return assignments.every((assignment) => assignment.assignment_role === "sales");
+  return assignments.some((assignment) => assignment.assignment_role === "manager");
+}
+
+function rpcStatus(code?: string) {
+  if (code === "42501") return 403;
+  if (code === "P0002") return 404;
+  if (code === "23505" || code === "40001") return 409;
+  if (["22023", "23503", "23514", "23502"].includes(code || "")) return 400;
+  return 500;
+}
+
+async function executeSalesTeamCommand(
   admin: ReturnType<typeof createAdminClient>,
   auth: AuthContext,
-  userId: string,
-  rawAssignments: unknown
-) {
-  const assignments = uniqueAssignments(rawAssignments);
-  const companyIds = Array.from(new Set(assignments.map((assignment) => assignment.company_id)));
-  const scope = await assertCompaniesInScope(admin, auth, companyIds);
-  if (!scope.ok) return { error: scope };
-
-  if (Array.isArray(scope.managedCompanyIds) && scope.managedCompanyIds.length === 0) {
-    return { error: { message: "لا توجد شركات مسندة لك كمدير مبيعات.", status: 403 } };
-  }
-
-  let updateQuery = admin
-    .from("sales_company_assignments")
-    .update({ is_active: false, end_date: todayIso() } as never)
-    .eq("organization_id", auth.orgId)
-    .eq("user_id", userId)
-    .eq("is_active", true);
-
-  if (Array.isArray(scope.managedCompanyIds)) {
-    updateQuery = updateQuery.in("company_id", scope.managedCompanyIds);
-  }
-
-  const updateResult = await updateQuery;
-  if (updateResult.error) return { error: { message: updateResult.error.message, status: 500 } };
-
-  if (assignments.length === 0) return { error: null };
-
-  const insertResult = await admin.from("sales_company_assignments").insert(assignments.map((assignment) => ({
-    organization_id: auth.orgId,
-    company_id: assignment.company_id,
-    user_id: userId,
-    assignment_role: assignment.assignment_role,
-    start_date: assignment.start_date,
-    end_date: assignment.end_date,
-    daily_target: assignment.daily_target,
-    target_notes: assignment.target_notes,
-    notes: assignment.notes,
-    is_active: true,
-    created_by: auth.user.id,
-  })) as never);
-
-  return { error: insertResult.error ? { message: insertResult.error.message, status: 500 } : null };
-}
-
-async function getAuthUserByEmail(email: string) {
-  const admin = createAdminClient();
-  let page = 1;
-  const perPage = 100;
-
-  while (true) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) throw error;
-    const found = data.users.find((candidate) => candidate.email?.toLowerCase() === email.toLowerCase());
-    if (found) return found;
-    if (data.users.length < perPage) return null;
-    page += 1;
-  }
-}
-
-async function recordSalesCareerEvent(
-  admin: ReturnType<typeof createAdminClient>,
   values: {
-    employee_id: string;
-    event_type: "hired" | "promoted" | "role_change";
-    previous_value?: Record<string, unknown> | null;
-    new_value: Record<string, unknown>;
-    effective_date?: string;
-    notes?: string;
-    created_by?: string;
+    commandId: string;
+    targetUserId: string;
+    employeeId: string;
+    expectedVersion: number;
+    fullName: string;
+    phone: string;
+    nationalId: string;
+    role: "sales" | "sales_manager";
+    locationId: string;
+    shiftId: string;
+    locationTouched: boolean;
+    shiftTouched: boolean;
+    assignments: ReturnType<typeof uniqueAssignments>;
   }
 ) {
-  if (!values.employee_id) return { error: null };
-
-  const result = await admin.from("employee_career_events").insert({
-    employee_id: values.employee_id,
-    event_type: values.event_type,
-    previous_value: values.previous_value || null,
-    new_value: values.new_value,
-    effective_date: values.effective_date || todayIso(),
-    notes: values.notes || null,
-    created_by: values.created_by || null,
-  } as never);
-
-  return { error: result.error ? { message: result.error.message } : null };
-}
-
-async function ensureOrgRecord(
-  admin: ReturnType<typeof createAdminClient>,
-  table: "locations" | "shifts",
-  orgId: string,
-  id: string
-) {
-  if (!id) return { ok: true as const };
-  const result = await admin.from(table).select("id").eq("org_id", orgId).eq("id", id).maybeSingle();
-  if (result.error) return { ok: false as const, message: result.error.message, status: 500 };
-  if (!result.data) {
-    return {
-      ok: false as const,
-      message: table === "locations" ? "اختر موقع حضور صحيح داخل نفس المنظمة." : "اختر وردية صحيحة داخل نفس المنظمة.",
-      status: 400,
-    };
-  }
-  return { ok: true as const };
-}
-
-async function replacePrimaryEmployeeLocation(
-  admin: ReturnType<typeof createAdminClient>,
-  employeeId: string,
-  locationId: string
-) {
-  const deleteResult = await admin.from("employee_locations").delete().eq("employee_id", employeeId);
-  if (deleteResult.error) return { error: { message: deleteResult.error.message, status: 500 } };
-  if (!locationId) return { error: null };
-
-  const insertResult = await admin.from("employee_locations").insert({
-    employee_id: employeeId,
-    location_id: locationId,
-    is_primary: true,
-    assigned_from: todayIso(),
-  } as never);
-
-  return { error: insertResult.error ? { message: insertResult.error.message, status: 500 } : null };
-}
-
-async function replaceActiveEmployeeShift(
-  admin: ReturnType<typeof createAdminClient>,
-  orgId: string,
-  employeeId: string,
-  shiftId: string
-) {
-  const existingResult = await admin
-    .from("employee_shifts")
-    .select("id, shift_id, start_date, end_date")
-    .eq("org_id", orgId)
-    .eq("employee_id", employeeId);
-
-  if (existingResult.error) return { error: { message: existingResult.error.message, status: 500 } };
-
-  const activeRows = ((existingResult.data ?? []) as Record<string, unknown>[]).filter(isActiveAssignment);
-  const alreadyAssigned = Boolean(shiftId) && activeRows.some((row) => String(row.shift_id || "") === shiftId);
-  const rowsToClose = activeRows.filter((row) => !shiftId || String(row.shift_id || "") !== shiftId);
-
-  for (const row of rowsToClose) {
-    const updateResult = await admin
-      .from("employee_shifts")
-      .update({ end_date: yesterdayIso() } as never)
-      .eq("id", String(row.id || ""));
-    if (updateResult.error) return { error: { message: updateResult.error.message, status: 500 } };
-  }
-
-  if (!shiftId || alreadyAssigned) return { error: null };
-
-  const insertResult = await admin.from("employee_shifts").insert({
-    org_id: orgId,
-    employee_id: employeeId,
-    shift_id: shiftId,
-    start_date: todayIso(),
-    end_date: null,
-  } as never);
-
-  return { error: insertResult.error ? { message: insertResult.error.message, status: 500 } : null };
-}
-
-async function applyAttendanceSetup(
-  admin: ReturnType<typeof createAdminClient>,
-  auth: AuthContext,
-  employeeId: string,
-  values: {
-    locationId?: string;
-    shiftId?: string;
-    locationTouched?: boolean;
-    shiftTouched?: boolean;
-  }
-) {
-  if (!employeeId) return { error: { message: "لا يوجد ملف موظف مرتبط بحساب المبيعات.", status: 400 } };
-
-  if (values.locationTouched) {
-    const locationId = values.locationId || "";
-    const locationScope = await ensureOrgRecord(admin, "locations", auth.orgId, locationId);
-    if (!locationScope.ok) return { error: locationScope };
-
-    const updateEmployee = await admin
-      .from("employees")
-      .update({ location_id: locationId || null } as never)
-      .eq("id", employeeId)
-      .eq("org_id", auth.orgId);
-    if (updateEmployee.error) return { error: { message: updateEmployee.error.message, status: 500 } };
-
-    const locationResult = await replacePrimaryEmployeeLocation(admin, employeeId, locationId);
-    if (locationResult.error) return { error: locationResult.error };
-  }
-
-  if (values.shiftTouched) {
-    const shiftId = values.shiftId || "";
-    const shiftScope = await ensureOrgRecord(admin, "shifts", auth.orgId, shiftId);
-    if (!shiftScope.ok) return { error: shiftScope };
-
-    const shiftResult = await replaceActiveEmployeeShift(admin, auth.orgId, employeeId, shiftId);
-    if (shiftResult.error) return { error: shiftResult.error };
-  }
-
-  return { error: null };
+  return admin.rpc("execute_sales_team_command", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: crypto.randomUUID(),
+    p_command_id: values.commandId,
+    p_target_user_id: values.targetUserId,
+    p_employee_id: values.employeeId,
+    p_expected_version: values.expectedVersion,
+    p_payload: {
+      full_name: values.fullName,
+      phone: values.phone || null,
+      national_id: values.nationalId || null,
+      role: values.role,
+      location_touched: values.locationTouched,
+      location_id: values.locationId || null,
+      shift_touched: values.shiftTouched,
+      shift_id: values.shiftId || null,
+      company_assignments: values.assignments,
+    },
+  });
 }
 
 async function loadTeam(orgId: string, visibleCompanyIds?: string[] | null) {
@@ -358,7 +205,7 @@ async function loadTeam(orgId: string, visibleCompanyIds?: string[] | null) {
     admin.from("profiles").select("user_id, full_name, email, phone, account_status").eq("org_id", orgId),
     admin
       .from("employees")
-      .select("id, user_id, national_id, status, job_title, location_id, location:location_id(id, name, city, radius_meters), employee_shifts(id, shift_id, start_date, end_date, shift:shift_id(id, name, start_time, end_time, location_id))")
+      .select("id, user_id, national_id, status, job_title, location_id, lifecycle_version, location:location_id(id, name, city, radius_meters), employee_shifts(id, shift_id, start_date, end_date, shift:shift_id(id, name, start_time, end_time, location_id))")
       .eq("org_id", orgId),
     admin
       .from("sales_company_assignments")
@@ -407,6 +254,7 @@ async function loadTeam(orgId: string, visibleCompanyIds?: string[] | null) {
         national_id: typeof employee.national_id === "string" ? employee.national_id : null,
         status: String(profile.account_status || employee.status || "active"),
         employee_id: String(employee.id || ""),
+        lifecycle_version: Number(employee.lifecycle_version || 1),
         location_id: typeof employee.location_id === "string" ? employee.location_id : null,
         location: employee.location || null,
         shift_id: typeof activeShift?.shift_id === "string" ? activeShift.shift_id : null,
@@ -441,7 +289,6 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const fullName = String(body.full_name || "").trim();
   const email = String(body.email || "").trim().toLowerCase();
-  const password = String(body.password || "");
   const phone = String(body.phone || "").trim();
   const nationalId = String(body.national_id || "").trim();
   const requestedRole = String(body.role || "sales").trim().toLowerCase();
@@ -451,149 +298,110 @@ export async function POST(request: NextRequest) {
   const shiftId = typeof body.shift_id === "string" ? body.shift_id.trim() : "";
   const locationTouched = Object.prototype.hasOwnProperty.call(body, "location_id");
   const shiftTouched = Object.prototype.hasOwnProperty.call(body, "shift_id");
+  const commandId = typeof body.command_id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.command_id)
+    ? body.command_id
+    : "";
 
   if (fullName.length < 2) return NextResponse.json({ message: "اسم البائع مطلوب." }, { status: 400 });
   if (!email.includes("@")) return NextResponse.json({ message: "بريد إلكتروني صحيح مطلوب." }, { status: 400 });
-  if (password.length < 8) return NextResponse.json({ message: "كلمة المرور يجب ألا تقل عن 8 أحرف." }, { status: 400 });
+  if (!commandId) return NextResponse.json({ message: "معرف عملية صالح مطلوب لحماية إنشاء الحساب من التكرار." }, { status: 400 });
 
   const admin = createAdminClient();
   const requestedAssignments = uniqueAssignments(body.company_assignments);
   if (requestedAssignments.length === 0) {
     return NextResponse.json({ message: "اسند البائع إلى شركة واحدة على الأقل." }, { status: 400 });
   }
+  if (!roleAssignmentsAreValid(salesRole, requestedAssignments)) {
+    return NextResponse.json({
+      message: salesRole === "sales_manager"
+        ? "مدير المبيعات يحتاج تعيين مدير لشركة واحدة على الأقل."
+        : "حساب البائع لا يمكن أن يحمل تعيين مدير شركة.",
+    }, { status: 400 });
+  }
 
   const scope = await assertCompaniesInScope(admin, auth, requestedAssignments.map((assignment) => assignment.company_id));
   if (!scope.ok) return NextResponse.json({ message: scope.message }, { status: scope.status });
 
-  const existing = await getAuthUserByEmail(email);
-  if (existing) {
-    const { data: membership } = await admin
-      .from("org_members")
-      .select("org_id, role")
-      .eq("user_id", existing.id)
-      .maybeSingle();
-    const member = membership as Record<string, unknown> | null;
-    if (member && String(member.org_id || "") !== auth.orgId) {
-      return NextResponse.json({ message: "هذا البريد مرتبط بمنظمة أخرى." }, { status: 409 });
-    }
-  }
-
-  const authResult = existing
-    ? await admin.auth.admin.updateUserById(existing.id, {
-        password,
-        email_confirm: true,
-        user_metadata: { full_name: fullName },
-      })
-    : await admin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { full_name: fullName },
-      });
-
-  if (authResult.error || !authResult.data.user) {
-    return NextResponse.json({ message: authResult.error?.message || "تعذر إنشاء الحساب." }, { status: 500 });
-  }
-
-  const userId = authResult.data.user.id;
-  const profileError = (await admin.from("profiles").upsert({
-    user_id: userId,
-    org_id: auth.orgId,
-    full_name: fullName,
-    email,
-    phone: phone || null,
-    title: salesTitle,
-    account_status: "active",
-  } as never, { onConflict: "user_id" })).error;
-  if (profileError) return NextResponse.json({ message: profileError.message }, { status: 500 });
-
-  const memberError = (await admin.from("org_members").upsert({
-    org_id: auth.orgId,
-    user_id: userId,
-    role: salesRole,
-  } as never, { onConflict: "org_id,user_id" })).error;
-  if (memberError) return NextResponse.json({ message: memberError.message }, { status: 500 });
-
-  const employeeResult = await admin
-    .from("employees")
-    .select("id, job_title")
-    .eq("org_id", auth.orgId)
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (employeeResult.error) return NextResponse.json({ message: employeeResult.error.message }, { status: 500 });
-
   let salesEmployeeId = "";
-
-  if (employeeResult.data) {
-    const employeeRecord = employeeResult.data as Record<string, unknown>;
-    salesEmployeeId = String(employeeRecord.id || "");
-    const previousTitle = String(employeeRecord.job_title || "");
-    const updateError = (await admin.from("employees").update({
-      full_name: fullName,
-      email,
-      phone: phone || null,
-      national_id: nationalId || null,
-      job_title: salesTitle,
-      status: "Active",
-    } as never).eq("id", String(employeeRecord.id))).error;
-    if (updateError) return NextResponse.json({ message: updateError.message }, { status: 500 });
-
-    if (previousTitle && previousTitle !== salesTitle) {
-      const eventResult = await recordSalesCareerEvent(admin, {
-        employee_id: String(employeeRecord.id || ""),
-        event_type: salesRole === "sales_manager" ? "promoted" : "role_change",
-        previous_value: { job_title: previousTitle },
-        new_value: { job_title: salesTitle, sales_role: salesRole },
-        notes: salesRole === "sales_manager" ? "Promotion to Sales Manager" : "Sales role changed",
-        created_by: auth.user.id,
-      });
-      if (eventResult.error) return NextResponse.json({ message: eventResult.error.message }, { status: 500 });
-    }
-  } else {
-    const createResult = await admin.from("employees").insert({
-      org_id: auth.orgId,
-      user_id: userId,
-      full_name: fullName,
-      email,
-      phone: phone || null,
-      national_id: nationalId || null,
-      job_title: salesTitle,
-      status: "Active",
-    } as never).select("id").single();
-    if (createResult.error) return NextResponse.json({ message: createResult.error.message }, { status: 500 });
-    salesEmployeeId = String((createResult.data as Record<string, unknown> | null)?.id || "");
-
-    const eventResult = await recordSalesCareerEvent(admin, {
-      employee_id: salesEmployeeId,
-      event_type: "hired",
-      previous_value: null,
-      new_value: { job_title: salesTitle, sales_role: salesRole },
-      notes: "Sales team member created",
-      created_by: auth.user.id,
+  let userId = "";
+  let employeeVersion = 0;
+  let invitedUser = false;
+  try {
+    const employee = await beginEmployeeOnboarding(admin, {
+      orgId: auth.orgId,
+      actorUserId: auth.user.id,
+      commandId,
+      sourceType: "sales",
+      sourceId: commandId,
+      employee: {
+        full_name: fullName,
+        email,
+        phone: phone || undefined,
+        national_id: nationalId || undefined,
+        job_title: salesTitle,
+        location_id: locationId || undefined,
+        hiring_date: todayIso(),
+        leave_accrual_start_date: todayIso(),
+        employment_type: "full_time",
+        status: "Active",
+      },
     });
-    if (eventResult.error) return NextResponse.json({ message: eventResult.error.message }, { status: 500 });
+    salesEmployeeId = String(employee.id || "");
+    const identity = await inviteAndLinkEmployeeIdentity(admin, {
+      orgId: auth.orgId,
+      employeeId: salesEmployeeId,
+      actorUserId: auth.user.id,
+      commandId: crypto.randomUUID(),
+      email,
+      fullName,
+      role: salesRole,
+    });
+    userId = identity.user.id;
+    employeeVersion = Number(identity.employee.lifecycle_version || 0);
+    invitedUser = identity.invited;
+  } catch (error) {
+    const lifecycleError = error instanceof EmployeeLifecycleError ? error : null;
+    return NextResponse.json({ message: lifecycleError?.message || "تعذر بدء إعداد حساب المبيعات." }, { status: lifecycleError?.status || 500 });
   }
 
-  const attendanceSetup = await applyAttendanceSetup(admin, auth, salesEmployeeId, {
+  const configuration = await executeSalesTeamCommand(admin, auth, {
+    commandId,
+    targetUserId: userId,
+    employeeId: salesEmployeeId,
+    expectedVersion: employeeVersion,
+    fullName,
+    phone,
+    nationalId,
+    role: salesRole,
     locationId,
     shiftId,
     locationTouched,
     shiftTouched,
+    assignments: requestedAssignments,
   });
-  if (attendanceSetup.error) {
-    return NextResponse.json({ message: attendanceSetup.error.message }, { status: attendanceSetup.error.status });
-  }
-
-  const assignmentResult = await replaceAssignments(admin, auth, userId, requestedAssignments);
-  if (assignmentResult.error) {
-    return NextResponse.json({ message: assignmentResult.error.message }, { status: assignmentResult.error.status });
+  if (configuration.error) {
+    if (invitedUser) {
+      try {
+        await queueIdentityDeletion(admin, {
+          orgId: auth.orgId,
+          userId,
+          sourceType: "failed_provisioning_cleanup",
+          sourceId: commandId,
+          reason: "Sales-team configuration failed after identity linking.",
+          actorUserId: auth.user.id,
+          requestId: auth.requestId,
+        });
+      } catch (error) {
+        console.error("Unable to queue failed sales-team identity cleanup.", { userId, error });
+      }
+    }
+    return NextResponse.json({ message: configuration.error.message }, { status: rpcStatus(configuration.error.code) });
   }
 
   const team = await loadTeam(auth.orgId, Array.isArray(scope.managedCompanyIds) ? scope.managedCompanyIds : null);
   if (team.error) return NextResponse.json({ message: team.error.message }, { status: 500 });
   const created = (team.data || []).find((agent) => agent.user_id === userId) || null;
-  return NextResponse.json({ data: created });
+  return NextResponse.json({ data: created, onboarding_required: true }, { status: 201 });
 }
 
 export async function PATCH(request: NextRequest) {
@@ -616,16 +424,10 @@ export async function PATCH(request: NextRequest) {
   if (memberResult.error) return NextResponse.json({ message: memberResult.error.message }, { status: 500 });
   if (!memberResult.data) return NextResponse.json({ message: "البائع غير موجود داخل منظمتك." }, { status: 404 });
 
-  if ("company_assignments" in body) {
-    const assignments = uniqueAssignments(body.company_assignments);
-    const scope = await assertCompaniesInScope(admin, auth, assignments.map((assignment) => assignment.company_id));
-    if (!scope.ok) return NextResponse.json({ message: scope.message }, { status: scope.status });
-  }
-
   const previousRole = String((memberResult.data as Record<string, unknown>).role || "");
   const employeeResult = await admin
     .from("employees")
-    .select("id, job_title")
+    .select("id, lifecycle_version")
     .eq("org_id", auth.orgId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -634,91 +436,82 @@ export async function PATCH(request: NextRequest) {
 
   const employeeRecord = (employeeResult.data || null) as Record<string, unknown> | null;
   const employeeId = String(employeeRecord?.id || "");
-  const previousTitle = String(employeeRecord?.job_title || (previousRole === "sales_manager" ? "Sales Manager" : "Sales"));
 
   const fullName = String(body.full_name || "").trim();
   const phone = String(body.phone || "").trim();
   const nationalId = String(body.national_id || "").trim();
   const status = String(body.status || "").trim().toLowerCase();
   const requestedRole = String(body.role || "").trim().toLowerCase();
-  const nextRole = requestedRole === "sales" || requestedRole === "sales_manager" ? requestedRole : "";
+  const nextRole = requestedRole === "sales" || requestedRole === "sales_manager" ? requestedRole : previousRole;
   const locationId = typeof body.location_id === "string" ? body.location_id.trim() : "";
   const shiftId = typeof body.shift_id === "string" ? body.shift_id.trim() : "";
   const locationTouched = Object.prototype.hasOwnProperty.call(body, "location_id");
   const shiftTouched = Object.prototype.hasOwnProperty.call(body, "shift_id");
-  const profileValues: Record<string, unknown> = {};
-  const employeeValues: Record<string, unknown> = {};
+  const commandId = typeof body.command_id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(body.command_id)
+    ? body.command_id
+    : "";
 
-  if (fullName) {
-    profileValues.full_name = fullName;
-    employeeValues.full_name = fullName;
-  }
-  if ("phone" in body) {
-    profileValues.phone = phone || null;
-    employeeValues.phone = phone || null;
-  }
-  if ("national_id" in body) employeeValues.national_id = nationalId || null;
   if (status) {
-    const active = status === "active" || status === "نشط";
-    profileValues.account_status = active ? "active" : "inactive";
-    employeeValues.status = active ? "Active" : "Inactive";
-  }
-  if (nextRole) {
-    const title = nextRole === "sales_manager" ? "Sales Manager" : "Sales";
-    profileValues.title = title;
-    employeeValues.job_title = title;
-  }
-
-  if (nextRole) {
-    const memberError = (await admin
-      .from("org_members")
-      .update({ role: nextRole } as never)
-      .eq("org_id", auth.orgId)
-      .eq("user_id", userId)
-      .in("role", ["sales", "sales_manager"])).error;
-    if (memberError) return NextResponse.json({ message: memberError.message }, { status: 500 });
-  }
-
-  if (Object.keys(profileValues).length > 0) {
-    const profileError = (await admin.from("profiles").update(profileValues as never).eq("user_id", userId).eq("org_id", auth.orgId)).error;
-    if (profileError) return NextResponse.json({ message: profileError.message }, { status: 500 });
-  }
-
-  if (Object.keys(employeeValues).length > 0) {
-    const employeeError = (await admin.from("employees").update(employeeValues as never).eq("user_id", userId).eq("org_id", auth.orgId)).error;
-    if (employeeError) return NextResponse.json({ message: employeeError.message }, { status: 500 });
-  }
-
-  if (locationTouched || shiftTouched) {
-    const attendanceSetup = await applyAttendanceSetup(admin, auth, employeeId, {
-      locationId,
-      shiftId,
-      locationTouched,
-      shiftTouched,
-    });
-    if (attendanceSetup.error) {
-      return NextResponse.json({ message: attendanceSetup.error.message }, { status: attendanceSetup.error.status });
+    if (status === "active" || status === "نشط") {
+      return NextResponse.json({ message: "إعادة التفعيل تتطلب دورة إعادة تعيين موثقة من HR." }, { status: 409 });
+    }
+    if (!employeeId) return NextResponse.json({ message: "لا يوجد ملف موظف مرتبط بحساب المبيعات." }, { status: 409 });
+    if (!isOrgSalesAdmin(auth.role)) {
+      return NextResponse.json({ message: "إنهاء الخدمة قرار موارد بشرية ويتطلب مسؤول المنظمة أو مسؤول HR." }, { status: 403 });
+    }
+    if (!commandId) return NextResponse.json({ message: "معرف عملية صالح مطلوب لحماية إنهاء الخدمة من التكرار." }, { status: 400 });
+    try {
+      await offboardEmployee(admin, {
+        orgId: auth.orgId,
+        employeeId,
+        actorUserId: auth.user.id,
+        commandId,
+        effectiveDate: todayIso(),
+        reason: "Sales team access ended by an authorized administrator.",
+        terminationType: "termination",
+      });
+      return NextResponse.json({ data: null });
+    } catch (error) {
+      const lifecycleError = error instanceof EmployeeLifecycleError ? error : null;
+      return NextResponse.json({ message: lifecycleError?.message || "تعذر إنهاء خدمة عضو المبيعات." }, { status: lifecycleError?.status || 500 });
     }
   }
 
-  if ("company_assignments" in body) {
-    const assignmentResult = await replaceAssignments(admin, auth, userId, body.company_assignments);
-    if (assignmentResult.error) {
-      return NextResponse.json({ message: assignmentResult.error.message }, { status: assignmentResult.error.status });
-    }
+  const expectedVersion = Number(body.expected_version);
+  const requestedAssignments = uniqueAssignments(body.company_assignments);
+  if (!employeeId || !Number.isInteger(expectedVersion) || expectedVersion < 1 || !commandId || fullName.length < 2) {
+    return NextResponse.json({ message: "بيانات الموظف وإصدار السجل ومعرف العملية مطلوبة لإتمام التعديل بأمان." }, { status: 400 });
   }
+  if (requestedAssignments.length === 0) {
+    return NextResponse.json({ message: "اسند عضو المبيعات إلى شركة واحدة على الأقل." }, { status: 400 });
+  }
+  if (!roleAssignmentsAreValid(nextRole, requestedAssignments)) {
+    return NextResponse.json({
+      message: nextRole === "sales_manager"
+        ? "مدير المبيعات يحتاج تعيين مدير لشركة واحدة على الأقل."
+        : "حساب البائع لا يمكن أن يحمل تعيين مدير شركة.",
+    }, { status: 400 });
+  }
+  const scope = await assertCompaniesInScope(admin, auth, requestedAssignments.map((assignment) => assignment.company_id));
+  if (!scope.ok) return NextResponse.json({ message: scope.message }, { status: scope.status });
 
-  if (nextRole && nextRole !== previousRole && employeeId) {
-    const title = nextRole === "sales_manager" ? "Sales Manager" : "Sales";
-    const eventResult = await recordSalesCareerEvent(admin, {
-      employee_id: employeeId,
-      event_type: nextRole === "sales_manager" ? "promoted" : "role_change",
-      previous_value: { sales_role: previousRole, job_title: previousTitle },
-      new_value: { sales_role: nextRole, job_title: title },
-      notes: nextRole === "sales_manager" ? "Promotion to Sales Manager" : "Sales role changed",
-      created_by: auth.user.id,
-    });
-    if (eventResult.error) return NextResponse.json({ message: eventResult.error.message }, { status: 500 });
+  const configuration = await executeSalesTeamCommand(admin, auth, {
+    commandId,
+    targetUserId: userId,
+    employeeId,
+    expectedVersion,
+    fullName,
+    phone,
+    nationalId,
+    role: nextRole as "sales" | "sales_manager",
+    locationId,
+    shiftId,
+    locationTouched,
+    shiftTouched,
+    assignments: requestedAssignments,
+  });
+  if (configuration.error) {
+    return NextResponse.json({ message: configuration.error.message }, { status: rpcStatus(configuration.error.code) });
   }
 
   const visibleCompanyIds = isOrgSalesAdmin(auth.role) ? null : await getManagedCompanyIds(admin, auth);

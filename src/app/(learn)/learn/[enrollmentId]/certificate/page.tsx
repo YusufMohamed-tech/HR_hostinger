@@ -1,5 +1,6 @@
 import { CertificateView } from "@/components/lms/classroom/ClassroomExtras";
 
-export default function ClassroomCertificatePage({ params }: { params: { enrollmentId: string } }) {
-  return <CertificateView enrollmentId={params.enrollmentId} />;
+export default async function ClassroomCertificatePage({ params }: { params: Promise<{ enrollmentId: string }> }) {
+  const { enrollmentId } = await params;
+  return <CertificateView enrollmentId={enrollmentId} />;
 }

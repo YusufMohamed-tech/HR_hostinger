@@ -1,5 +1,33 @@
 import { createClient } from "@/lib/supabase/client";
-import { ensureEmployeeLeaveBalance } from "@/lib/services/leaves";
+
+function commandId(scope: string) {
+  if (typeof window === "undefined") return crypto.randomUUID();
+  const key = `hrms-command:${scope}`;
+  const existing = window.sessionStorage.getItem(key);
+  if (existing) return existing;
+  const created = crypto.randomUUID();
+  window.sessionStorage.setItem(key, created);
+  return created;
+}
+
+function clearCommandId(scope: string) {
+  if (typeof window !== "undefined") window.sessionStorage.removeItem(`hrms-command:${scope}`);
+}
+
+function clearCommandPrefix(prefix: string) {
+  if (typeof window === "undefined") return;
+  const storagePrefix = `hrms-command:${prefix}`;
+  for (let index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+    const key = window.sessionStorage.key(index);
+    if (key?.startsWith(storagePrefix)) window.sessionStorage.removeItem(key);
+  }
+}
+
+async function responseResult(response: Response, fallback: string) {
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) return { data: null, error: { message: String(body.message || fallback) } };
+  return { data: (body.employee ?? body.data ?? body) as Record<string, unknown>, error: null };
+}
 
 export async function getEmployees(orgId: string) {
   const supabase = createClient();
@@ -25,29 +53,15 @@ export async function getEmployeeById(orgId: string, id: string) {
 }
 
 export async function createEmployee(values: Record<string, unknown>) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("employees")
-    .insert(values as never)
-    .select()
-    .single() as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
-
-  if (!result.error && result.data) {
-    const employee = result.data;
-    const balanceResult = await ensureEmployeeLeaveBalance({
-      orgId: String(employee.org_id || values.org_id || ""),
-      employeeId: String(employee.id || ""),
-      hiringDate: typeof employee.hiring_date === "string" ? employee.hiring_date : typeof values.hiring_date === "string" ? values.hiring_date : null,
-      accrualStartDate: typeof employee.leave_accrual_start_date === "string" ? employee.leave_accrual_start_date : typeof values.leave_accrual_start_date === "string" ? values.leave_accrual_start_date : null,
-      manualAdjustment: typeof employee.leave_balance_manual_adjustment === "number" || typeof employee.leave_balance_manual_adjustment === "string"
-        ? employee.leave_balance_manual_adjustment
-        : values.leave_balance_manual_adjustment as number | string | null,
-    });
-    if (balanceResult.error) {
-      return { data: result.data as Record<string, unknown>, error: balanceResult.error };
-    }
-  }
-
+  const employee = { ...values };
+  delete employee.org_id;
+  const scope = `employee-onboarding:${String(employee.email || employee.employee_code || employee.full_name || "draft")}`;
+  const response = await fetch("/api/hr/employees", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command_id: commandId(scope), employee }),
+  });
+  const result = await responseResult(response, "Unable to begin employee onboarding.");
   return result;
 }
 
@@ -57,44 +71,25 @@ export async function replaceEmployeeLocations(
   locationIds: string[],
   primaryLocationId?: string
 ) {
-  const supabase = createClient();
   const uniqueLocationIds = Array.from(new Set(locationIds.filter(Boolean)));
   const primaryId = primaryLocationId && uniqueLocationIds.includes(primaryLocationId)
     ? primaryLocationId
     : uniqueLocationIds[0];
-
-  const deleteResult = await supabase
-    .from("employee_locations")
-    .delete()
-    .eq("org_id", orgId)
-    .eq("employee_id", employeeId);
-
-  if (deleteResult.error) {
-    return { error: { message: deleteResult.error.message } };
-  }
-
-  if (uniqueLocationIds.length === 0) {
-    return { error: null };
-  }
-
-  const rows = uniqueLocationIds.map((locationId) => ({
-    org_id: orgId,
-    employee_id: employeeId,
-    location_id: locationId,
-    is_primary: locationId === primaryId,
-    assigned_from: new Date().toISOString().split("T")[0],
-  }));
-
-  const insertResult = await supabase
-    .from("employee_locations")
-    .insert(rows as never);
-
-  return { error: insertResult.error ? { message: insertResult.error.message } : null };
+  const response = await fetch(`/api/hr/employees/${employeeId}/locations`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ location_ids: uniqueLocationIds, primary_location_id: primaryId || null, org_id: orgId }),
+  });
+  const body = await response.json().catch(() => ({}));
+  return { error: response.ok ? null : { message: String(body.message || "Unable to update employee locations.") } };
 }
 
 export type EmployeeAccountRole =
   | "employee"
+  | "hr_admin"
+  | "hr_recruitment"
   | "training_manager"
+  | "onground_agent_manager"
   | "promoter"
   | "finance_manager"
   | "accountant"
@@ -103,14 +98,14 @@ export type EmployeeAccountRole =
 export async function createEmployeeAccount(values: {
   employee_id: string;
   email: string;
-  password: string;
   full_name?: string;
   role: EmployeeAccountRole;
 }) {
+  const scope = `employee-identity:${values.employee_id}:${values.email.toLowerCase()}`;
   const response = await fetch("/api/hr/employee-accounts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, command_id: commandId(scope) }),
   });
   const data = await response.json().catch(() => null);
 
@@ -121,50 +116,79 @@ export async function createEmployeeAccount(values: {
     };
   }
 
+  clearCommandId(scope);
+
   return {
     data,
     error: null,
   } as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
-export async function updateEmployee(orgId: string, id: string, values: Record<string, unknown>) {
-  const supabase = createClient();
+export async function updateEmployee(
+  id: string,
+  values: Record<string, unknown>,
+  options: { expectedVersion: number; locationIds: string[]; primaryLocationId?: string; managedDepartmentIds: string[] }
+) {
   const safeValues = { ...values };
   delete safeValues.org_id;
-  const result = await supabase
-    .from("employees")
-    .update(safeValues as never)
-    .eq("org_id", orgId)
-    .eq("id", id)
-    .select()
-    .single() as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
-
-  if (!result.error && result.data) {
-    const employee = result.data;
-    const balanceResult = await ensureEmployeeLeaveBalance({
-      orgId: String(employee.org_id || ""),
-      employeeId: String(employee.id || id),
-      hiringDate: typeof employee.hiring_date === "string" ? employee.hiring_date : null,
-      accrualStartDate: typeof employee.leave_accrual_start_date === "string" ? employee.leave_accrual_start_date : null,
-      manualAdjustment: typeof employee.leave_balance_manual_adjustment === "number" || typeof employee.leave_balance_manual_adjustment === "string"
-        ? employee.leave_balance_manual_adjustment
-        : null,
-    });
-    if (balanceResult.error) {
-      return { data: result.data as Record<string, unknown>, error: balanceResult.error };
-    }
-  }
-
+  const scope = `employee-update:${id}:${options.expectedVersion}`;
+  const response = await fetch(`/api/hr/employees/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command_id: commandId(scope), expected_version: options.expectedVersion,
+      employee: safeValues, location_ids: options.locationIds,
+      primary_location_id: options.primaryLocationId || null,
+      managed_department_ids: options.managedDepartmentIds }),
+  });
+  const result = await responseResult(response, "Unable to update employee.");
+  if (!result.error) clearCommandId(scope);
   return result;
 }
 
-export async function deleteEmployee(orgId: string, id: string) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("employees")
-    .delete()
-    .eq("org_id", orgId)
-    .eq("id", id);
+export async function promoteEmployee(id: string, values: Record<string, unknown>) {
+  const response = await fetch("/api/hr/structure", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "promote_employee", command_id: crypto.randomUUID(), target_id: id,
+      expected_version: Number(values.expected_version), payload: values }),
+  });
+  const body = await response.json().catch(() => ({}));
+  return response.ok ? { data: body.data || null, error: null }
+    : { data: null, error: { message: String(body.message || "Unable to promote employee.") } };
+}
 
-  return result as unknown as { error: { message: string } | null };
+export async function finalizeEmployeeOnboarding(employeeId: string) {
+  const scope = `employee-finalize:${employeeId}`;
+  const response = await fetch(`/api/hr/employees/${employeeId}/finalize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command_id: commandId(scope) }),
+  });
+  const result = await responseResult(response, "Unable to finalize employee onboarding.");
+  if (!result.error) {
+    clearCommandId(scope);
+    clearCommandPrefix("employee-onboarding:");
+  }
+  return result;
+}
+
+export async function offboardEmployeeRecord(
+  _orgId: string,
+  id: string,
+  values?: { effectiveDate?: string; reason?: string; terminationType?: "resignation" | "termination" | "end_of_contract" | "retirement" | "other" }
+) {
+  const scope = `employee-offboard:${id}`;
+  const response = await fetch(`/api/hr/employees/${id}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      command_id: commandId(scope),
+      effective_date: values?.effectiveDate || new Date().toISOString().slice(0, 10),
+      reason: values?.reason || "Offboarded by HR from the employee directory.",
+      termination_type: values?.terminationType || "termination",
+    }),
+  });
+  const result = await responseResult(response, "Unable to offboard employee.");
+  if (!result.error) clearCommandId(scope);
+  return { error: result.error };
 }

@@ -1,5 +1,6 @@
 import { WorkspaceView } from "@/components/lms/classroom/ClassroomExtras";
 
-export default function ClassroomWorkspacePage({ params }: { params: { enrollmentId: string } }) {
-  return <WorkspaceView enrollmentId={params.enrollmentId} />;
+export default async function ClassroomWorkspacePage({ params }: { params: Promise<{ enrollmentId: string }> }) {
+  const { enrollmentId } = await params;
+  return <WorkspaceView enrollmentId={enrollmentId} />;
 }

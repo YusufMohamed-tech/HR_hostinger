@@ -48,6 +48,7 @@ export function EditDepartmentDialog({ department, onSuccess }: Props) {
     const { error: err } = await updateDepartment(department.id, {
       name: parsed.data.name,
       manager_employee_id: parsed.data.manager_employee_id,
+      expected_version: Number(department.version || 1),
     });
 
     if (err) {

@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { getChatInbox, sendChatMessage, type ChatConversation, type ChatUser } from "@/lib/services/chat";
+import { getChatInbox, markChatConversationRead, sendChatMessage, type ChatConversation, type ChatPage, type ChatUser } from "@/lib/services/chat";
 import { AttachmentLink } from "@/components/AttachmentLink";
+import { createClient } from "@/lib/supabase/client";
 
 function roleLabel(role: string) {
   const labels: Record<string, string> = {
@@ -51,6 +52,7 @@ function formatTime(value?: string) {
 
 export default function ChatPage() {
   const { currentUser } = useRoleContext();
+  const supabase = useMemo(() => createClient(), []);
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [availableUsers, setAvailableUsers] = useState<ChatUser[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -63,11 +65,12 @@ export default function ChatPage() {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [conversationSearch, setConversationSearch] = useState("");
   const [userSearch, setUserSearch] = useState("");
+  const [page, setPage] = useState<ChatPage | null>(null);
   const canCreateGroup = ["Admin", "HR_Admin", "Superadmin"].includes(currentUser?.role || "");
 
-  const load = async () => {
+  const load = async (conversationId?: string) => {
     setLoading(true);
-    const result = await getChatInbox();
+    const result = await getChatInbox(conversationId);
     setLoading(false);
     if (result.error || !result.data) {
       setError(result.error?.message || "تعذر تحميل الشات.");
@@ -75,13 +78,25 @@ export default function ChatPage() {
     }
     setConversations(result.data.conversations);
     setAvailableUsers(result.data.available_users.filter((user) => user.user_id !== currentUser?.id));
-    setSelectedId((current) => current || result.data.conversations[0]?.id || "");
+    setPage(result.data.page);
+    setSelectedId(conversationId || result.data.page.conversation_id || result.data.conversations[0]?.id || "");
   };
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const channel = supabase.channel(`chat:${selectedId}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `conversation_id=eq.${selectedId}` }, () => {
+        void load(selectedId);
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, supabase]);
 
   const selectedConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === selectedId) || null,
@@ -124,7 +139,7 @@ export default function ChatPage() {
     }
     setBody("");
     setFiles([]);
-    await load();
+    await load(selectedConversation.id);
     setSelectedId(result.data?.conversation_id || selectedConversation.id);
   };
 
@@ -153,14 +168,31 @@ export default function ChatPage() {
     }
     setSelectedUsers([]);
     setGroupTitle("");
-    await load();
-    setSelectedId(result.data?.conversation_id || "");
+    const nextConversationId = result.data?.conversation_id || "";
+    await load(nextConversationId);
+    setSelectedId(nextConversationId);
   };
 
   const toggleUser = (userId: string) => {
     setSelectedUsers((current) =>
       current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]
     );
+  };
+
+  const selectConversation = async (conversationId: string) => {
+    setSelectedId(conversationId);
+    await markChatConversationRead(conversationId);
+    await load(conversationId);
+  };
+
+  const loadOlder = async () => {
+    if (!selectedId || !page?.next_before || !page.next_before_id) return;
+    const result = await getChatInbox(selectedId, { before: page.next_before, beforeId: page.next_before_id });
+    if (result.error || !result.data) return setError(result.error?.message || "تعذر تحميل الرسائل السابقة.");
+    const older = result.data.conversations.find((conversation) => conversation.id === selectedId)?.messages || [];
+    setConversations((current) => current.map((conversation) => conversation.id === selectedId
+      ? { ...conversation, messages: [...older, ...conversation.messages] } : conversation));
+    setPage(result.data.page);
   };
 
   return (
@@ -225,7 +257,7 @@ export default function ChatPage() {
                           ? "border-brand bg-brand-light shadow-sm"
                           : "border-gray-200 bg-white hover:bg-gray-50"
                       }`}
-                      onClick={() => setSelectedId(conversation.id)}
+                      onClick={() => void selectConversation(conversation.id)}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <p className="truncate font-semibold text-gray-900">{conversationName(conversation, currentUser?.id)}</p>
@@ -255,6 +287,11 @@ export default function ChatPage() {
 
                 <div className="flex-1 overflow-y-auto bg-gray-50 px-4 py-4">
                   <div className="space-y-3">
+                    {page?.conversation_id === selectedId && page.has_more && (
+                      <Button type="button" variant="ghost" size="sm" className="mx-auto block" onClick={() => void loadOlder()}>
+                        تحميل رسائل أقدم
+                      </Button>
+                    )}
                     {selectedConversation.messages.map((message) => {
                       const mine = message.sender_user_id === currentUser?.id;
                       return (

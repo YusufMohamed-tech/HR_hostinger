@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { Briefcase, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,10 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
-import { createClient } from "@/lib/supabase/client";
 
 export default function CandidateRegisterPage() {
-  const supabase = useMemo(() => createClient(), []);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,19 +20,20 @@ export default function CandidateRegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 8) {
-      setMessage("كلمة المرور يجب أن تكون 8 أحرف على الأقل");
+    if (password.length < 12 || !/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password)) {
+      setMessage("استخدم 12 حرفًا على الأقل مع حرف كبير وصغير ورقم.");
       return;
     }
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { full_name: fullName } },
+    const response = await fetch("/api/auth/candidate-register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name: fullName, email, password }),
     });
+    const payload = await response.json().catch(() => null);
     setLoading(false);
-    if (error) {
-      setMessage(error.message);
+    if (!response.ok) {
+      setMessage(String(payload?.message || "تعذر إنشاء الحساب."));
     } else {
       setRegistered(true);
     }
@@ -106,7 +105,7 @@ export default function CandidateRegisterPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     autoComplete="new-password"
-                    placeholder="8 أحرف على الأقل"
+                    placeholder="12 حرفًا مع حرف كبير وصغير ورقم"
                     className="pl-10"
                   />
                   <button

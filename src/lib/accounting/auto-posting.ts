@@ -1,7 +1,13 @@
+import { createHash, randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { postTransaction, type AccountingSettings, type AdminClient } from "@/lib/accounting/posting-engine";
 import { getAccountingSettings } from "@/lib/accounting/posting";
 import { roundMoney } from "@/lib/accounting/validation";
+
+function accountingSourceUuid(scope: string) {
+  const hash = createHash("sha256").update(scope).digest("hex").slice(0, 32);
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20)}`;
+}
 
 // =============================================================================
 // Phase 1: Sales Revenue Auto-Recognition
@@ -62,12 +68,11 @@ export async function autoPostSalesLog(
       }
     }
 
-    // Compute VAT from org tax rate (default 15%)
-    const subtotal = salesLog.subtotal ?? salesLog.grand_total;
-    const taxRate = Number((settings as any).default_tax_rate ?? 15) / 100;
-    const vatAmount = roundMoney(subtotal * taxRate);
-    // AR debit = subtotal + VAT
-    const arTotal = roundMoney(subtotal + vatAmount);
+    // The sales log total is already the customer-facing total. VAT may only be
+    // posted when it was explicitly captured by the originating transaction.
+    const arTotal = roundMoney(salesLog.grand_total);
+    const vatAmount = roundMoney(salesLog.vat_amount || 0);
+    const commandId = accountingSourceUuid(`sales-revenue:${orgId}:${salesLog.id}`);
 
     const result = await postTransaction(admin, orgId, userId, "sales_revenue", {
       id: salesLog.id,
@@ -79,12 +84,295 @@ export async function autoPostSalesLog(
       entryDate: salesLog.log_date,
       status: "posted",
       sourceId: salesLog.id,
+      commandId,
+      requestId: commandId,
     });
 
     return { success: true, journalEntryId: result.journalEntryId };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Auto-posting failed";
     await logAutoPostFailure(admin, orgId, "sales_log", salesLog.id, message);
+    return { success: false, error: message };
+  }
+}
+
+export async function autoPostSalesLogRevision(
+  admin: AdminClient,
+  orgId: string,
+  userId: string,
+  revisionId: string,
+  options: { commandId: string; requestId: string }
+): Promise<{ success: boolean; journalEntryId?: string; error?: string }> {
+  try {
+    const { data: revision, error } = await (admin as any).from("sales_log_revisions")
+      .select("id, sales_log_id, event_type, grand_total, accounting_status, accounting_journal_entry_id, sales_log:sales_log_id(log_date, current_revision_id, status)")
+      .eq("organization_id", orgId).eq("id", revisionId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!revision) throw new Error("Sales log revision was not found for accounting posting.");
+    if (revision.accounting_journal_entry_id) {
+      return { success: true, journalEntryId: String(revision.accounting_journal_entry_id) };
+    }
+    const salesLog = Array.isArray(revision.sales_log) ? revision.sales_log[0] : revision.sales_log;
+    if (revision.event_type === "void" || revision.accounting_status !== "pending"
+      || String(salesLog?.current_revision_id || "") !== revisionId || salesLog?.status === "voided") {
+      return { success: true };
+    }
+    const settings = (await getAccountingSettings(admin, orgId)) as AccountingSettings | null;
+    if (!settings?.auto_post_sales) return { success: true };
+    if (!settings.default_accounts_receivable_id || !settings.default_sales_revenue_id) {
+      throw new Error("Sales receivable and revenue accounts are required before sales logs can be posted.");
+    }
+    const total = roundMoney(revision.grand_total);
+    if (total <= 0) throw new Error("Sales log revision total must be positive before accounting posting.");
+    const { createJournalEntry, reverseJournalEntry } = await import("@/lib/accounting/posting");
+    const entry = await createJournalEntry(admin, {
+      orgId,
+      userId,
+      entryDate: String(salesLog?.log_date || new Date().toISOString().slice(0, 10)),
+      description: `Sales log revision ${revisionId}`,
+      sourceModule: "sales_log_revision",
+      sourceId: revisionId,
+      status: "posted",
+      lines: [
+        { account_id: settings.default_accounts_receivable_id, debit: total, credit: 0, description: `Sales receivable ${revision.sales_log_id}` },
+        { account_id: settings.default_sales_revenue_id, debit: 0, credit: total, description: `Sales revenue ${revision.sales_log_id}` },
+      ],
+      commandId: options.commandId,
+      requestId: options.requestId,
+    });
+    const { data: updated, error: updateError } = await (admin as any).from("sales_log_revisions")
+      .update({ accounting_status: "posted", accounting_journal_entry_id: entry.id })
+      .eq("organization_id", orgId).eq("id", revisionId).eq("accounting_status", "pending")
+      .select("id").maybeSingle();
+    if (updateError) throw new Error(updateError.message);
+    if (!updated) {
+      const reversal = await reverseJournalEntry(
+        admin, orgId, String(entry.id), userId,
+        "Sales log changed while its accounting event was being posted.",
+        { commandId: accountingSourceUuid(`${options.commandId}:race-reversal`), requestId: options.requestId }
+      );
+      const { error: reversalLinkError } = await (admin as any).from("sales_log_revisions").update({
+        accounting_status: "reversed",
+        accounting_journal_entry_id: entry.id,
+        accounting_reversal_entry_id: reversal.id,
+      }).eq("organization_id", orgId).eq("id", revisionId);
+      if (reversalLinkError) throw new Error(reversalLinkError.message);
+    }
+    return { success: true, journalEntryId: String(entry.id) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Sales log revision posting failed";
+    await (admin as any).from("sales_log_revisions").update({ accounting_status: "failed" })
+      .eq("organization_id", orgId).eq("id", revisionId).eq("accounting_status", "pending");
+    await logAutoPostFailure(admin, orgId, "sales_log_revision", revisionId, message);
+    return { success: false, error: message };
+  }
+}
+
+export async function autoReverseSalesLogRevision(
+  admin: AdminClient,
+  orgId: string,
+  userId: string,
+  revisionId: string,
+  reason: string,
+  options: { commandId: string; requestId: string }
+): Promise<{ success: boolean; reversalEntryId?: string; error?: string }> {
+  try {
+    const { data: revision, error } = await (admin as any).from("sales_log_revisions")
+      .select("accounting_status, accounting_journal_entry_id, accounting_reversal_entry_id")
+      .eq("organization_id", orgId).eq("id", revisionId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!revision) throw new Error("Sales log revision was not found for accounting reversal.");
+    if (revision.accounting_reversal_entry_id) {
+      return { success: true, reversalEntryId: String(revision.accounting_reversal_entry_id) };
+    }
+    if (!revision.accounting_journal_entry_id) {
+      const { error: statusError } = await (admin as any).from("sales_log_revisions").update({ accounting_status: "reversed" })
+        .eq("organization_id", orgId).eq("id", revisionId);
+      if (statusError) throw new Error(statusError.message);
+      return { success: true };
+    }
+    const { reverseJournalEntry } = await import("@/lib/accounting/posting");
+    const reversal = await reverseJournalEntry(
+      admin, orgId, String(revision.accounting_journal_entry_id), userId, reason, options
+    );
+    const { error: updateError } = await (admin as any).from("sales_log_revisions").update({
+      accounting_status: "reversed",
+      accounting_reversal_entry_id: reversal.id,
+    }).eq("organization_id", orgId).eq("id", revisionId);
+    if (updateError) throw new Error(updateError.message);
+    return { success: true, reversalEntryId: String(reversal.id) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Sales log revision reversal failed";
+    await logAutoPostFailure(admin, orgId, "sales_log_revision_reversal", revisionId, message);
+    return { success: false, error: message };
+  }
+}
+
+export async function autoPostSimSale(
+  admin: AdminClient,
+  orgId: string,
+  userId: string,
+  saleId: string,
+  options: { commandId: string; requestId: string }
+): Promise<{ success: boolean; journalEntryId?: string; error?: string }> {
+  try {
+    const { data: sale, error } = await (admin as any).from("sim_sales")
+      .select("id, status, sold_at, sale_price, agent_commission_amount, merchant_commission_amount, accounting_status, accounting_journal_entry_id")
+      .eq("organization_id", orgId).eq("id", saleId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!sale) throw new Error("SIM sale was not found for accounting posting.");
+    if (sale.accounting_journal_entry_id) {
+      return { success: true, journalEntryId: String(sale.accounting_journal_entry_id) };
+    }
+    if (sale.status !== "active") {
+      const { error: statusError } = await (admin as any).from("sim_sales").update({ accounting_status: "reversed" })
+        .eq("organization_id", orgId).eq("id", saleId).is("accounting_journal_entry_id", null);
+      if (statusError) throw new Error(statusError.message);
+      return { success: true };
+    }
+    const settings = (await getAccountingSettings(admin, orgId)) as AccountingSettings | null;
+    const commissionExpenseId = String(settings?.default_commission_expense_id || "");
+    const commissionPayableId = String(settings?.default_commission_payable_id || "");
+    if (!settings?.default_accounts_receivable_id || !settings.default_sales_revenue_id
+      || !commissionExpenseId || !commissionPayableId) {
+      throw new Error("SIM sales receivable, revenue, commission expense, and commission payable accounts are required.");
+    }
+    const salePrice = roundMoney(sale.sale_price);
+    const commission = roundMoney(Number(sale.agent_commission_amount || 0) + Number(sale.merchant_commission_amount || 0));
+    if (salePrice <= 0) throw new Error("SIM sale amount must be positive before accounting posting.");
+    const lines = [
+      { account_id: settings.default_accounts_receivable_id, debit: salePrice, credit: 0, description: `SIM sale ${saleId}` },
+      { account_id: settings.default_sales_revenue_id, debit: 0, credit: salePrice, description: `SIM sale revenue ${saleId}` },
+    ];
+    if (commission > 0) {
+      lines.push(
+        { account_id: commissionExpenseId, debit: commission, credit: 0, description: `SIM commission accrual ${saleId}` },
+        { account_id: commissionPayableId, debit: 0, credit: commission, description: `SIM commission payable ${saleId}` }
+      );
+    }
+    const { createJournalEntry } = await import("@/lib/accounting/posting");
+    const entry = await createJournalEntry(admin, {
+      orgId,
+      userId,
+      entryDate: String(sale.sold_at).slice(0, 10),
+      description: `SIM sale and commission accrual ${saleId}`,
+      sourceModule: "sim_sale",
+      sourceId: saleId,
+      status: "posted",
+      lines,
+      commandId: options.commandId,
+      requestId: options.requestId,
+    });
+    const { data: updated, error: updateError } = await (admin as any).from("sim_sales")
+      .update({ accounting_status: "posted", accounting_journal_entry_id: entry.id })
+      .eq("organization_id", orgId).eq("id", saleId).eq("status", "active")
+      .is("accounting_journal_entry_id", null).select("id").maybeSingle();
+    if (updateError) throw new Error(updateError.message);
+    if (!updated) {
+      const { reverseJournalEntry } = await import("@/lib/accounting/posting");
+      const reversal = await reverseJournalEntry(admin, orgId, String(entry.id), userId,
+        "Sale was voided while its accounting event was being posted.", {
+          commandId: accountingSourceUuid(`${options.commandId}:race-reversal`),
+          requestId: options.requestId,
+        });
+      const { error: reversalLinkError } = await (admin as any).from("sim_sales").update({
+        accounting_status: "reversed",
+        accounting_journal_entry_id: entry.id,
+        accounting_reversal_entry_id: reversal.id,
+      }).eq("organization_id", orgId).eq("id", saleId);
+      if (reversalLinkError) throw new Error(reversalLinkError.message);
+    }
+    return { success: true, journalEntryId: String(entry.id) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "SIM sale auto-posting failed";
+    await (admin as any).from("sim_sales").update({ accounting_status: "failed" })
+      .eq("organization_id", orgId).eq("id", saleId).eq("status", "active");
+    await logAutoPostFailure(admin, orgId, "sim_sale", saleId, message);
+    return { success: false, error: message };
+  }
+}
+
+export async function autoReverseSimSale(
+  admin: AdminClient,
+  orgId: string,
+  userId: string,
+  saleId: string,
+  reason: string,
+  options: { commandId: string; requestId: string }
+): Promise<{ success: boolean; reversalEntryId?: string; error?: string }> {
+  try {
+    const { data: sale, error } = await (admin as any).from("sim_sales")
+      .select("status, accounting_status, accounting_journal_entry_id, accounting_reversal_entry_id")
+      .eq("organization_id", orgId).eq("id", saleId).maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!sale || sale.status !== "voided") throw new Error("Only a voided SIM sale can be reversed in accounting.");
+    if (sale.accounting_reversal_entry_id) {
+      return { success: true, reversalEntryId: String(sale.accounting_reversal_entry_id) };
+    }
+    if (!sale.accounting_journal_entry_id) {
+      const { error: statusError } = await (admin as any).from("sim_sales").update({ accounting_status: "reversed" })
+        .eq("organization_id", orgId).eq("id", saleId);
+      if (statusError) throw new Error(statusError.message);
+      return { success: true };
+    }
+    const { reverseJournalEntry } = await import("@/lib/accounting/posting");
+    const reversal = await reverseJournalEntry(admin, orgId, String(sale.accounting_journal_entry_id), userId, reason, options);
+    const { error: updateError } = await (admin as any).from("sim_sales").update({
+      accounting_status: "reversed",
+      accounting_reversal_entry_id: reversal.id,
+    }).eq("organization_id", orgId).eq("id", saleId);
+    if (updateError) throw new Error(updateError.message);
+    return { success: true, reversalEntryId: String(reversal.id) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "SIM sale reversal failed";
+    await logAutoPostFailure(admin, orgId, "sim_sale_void", saleId, message);
+    return { success: false, error: message };
+  }
+}
+
+export async function autoPostSalesCashCollection(
+  admin: AdminClient,
+  orgId: string,
+  userId: string,
+  collection: {
+    collection_id: string;
+    collection_type: "agent" | "merchant";
+    amount: number;
+    payment_method: string;
+    collection_date: string;
+  },
+  options: { commandId: string; requestId: string }
+): Promise<{ success: boolean; journalEntryId?: string; error?: string }> {
+  try {
+    const settings = (await getAccountingSettings(admin, orgId)) as AccountingSettings | null;
+    const receiptAccount = collection.payment_method === "cash"
+      ? settings?.default_cash_account_id
+      : settings?.default_bank_account_id;
+    if (!receiptAccount || !settings?.default_accounts_receivable_id) {
+      throw new Error("Cash/bank and accounts-receivable accounts are required before sales collections can be posted.");
+    }
+    const amount = roundMoney(collection.amount);
+    if (amount <= 0) throw new Error("Sales cash collection amount must be positive.");
+    const { createJournalEntry } = await import("@/lib/accounting/posting");
+    const entry = await createJournalEntry(admin, {
+      orgId,
+      userId,
+      entryDate: collection.collection_date,
+      description: `${collection.collection_type === "agent" ? "Agent" : "Merchant"} cash collection ${collection.collection_id}`,
+      sourceModule: "sales_cash_collection",
+      sourceId: collection.collection_id,
+      status: "posted",
+      lines: [
+        { account_id: receiptAccount, debit: amount, credit: 0, description: `Sales cash received ${collection.collection_id}` },
+        { account_id: settings.default_accounts_receivable_id, debit: 0, credit: amount, description: `Sales receivable settled ${collection.collection_id}` },
+      ],
+      commandId: options.commandId,
+      requestId: options.requestId,
+    });
+    return { success: true, journalEntryId: String(entry.id) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Sales cash accounting posting failed";
+    await logAutoPostFailure(admin, orgId, "sales_cash_collection", collection.collection_id, message);
     return { success: false, error: message };
   }
 }
@@ -113,72 +401,74 @@ export async function autoPostPayrollMonth(
   admin: AdminClient,
   orgId: string,
   userId: string,
-  month: string
+  month: string,
+  options?: { commandId?: string; requestId?: string }
 ): Promise<{ success: boolean; journalEntryId?: string; error?: string }> {
   try {
     const settings = (await getAccountingSettings(admin, orgId)) as AccountingSettings | null;
     if (!settings?.auto_post_payroll) return { success: true };
+    if (!settings.default_salary_expense_id || !settings.default_salary_payable_id
+      || !settings.default_gosi_expense_id || !settings.default_gosi_payable_id) {
+      throw new Error("أكمل حسابات الرواتب والتأمينات قبل الترحيل التلقائي.");
+    }
 
-    const { data: payslips, error } = await (admin as any)
-      .from("payslips")
-      .select("id, employee_id, base_salary, total_allowances, total_deductions, net_salary, deductions_details, status, employee_gosi, employer_gosi")
+    const { data: run, error } = await (admin as any)
+      .from("payroll_runs")
+      .select("*")
       .eq("org_id", orgId)
       .eq("month", `${month}-01`)
-      .eq("status", "approved");
-
+      .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!payslips || payslips.length === 0) {
-      throw new Error("لا توجد مسيرات رواتب معتمدة لهذا الشهر.");
+    if (!run || run.status !== "approved" || run.formula_version !== "sa-payroll-v1") {
+      throw new Error("يجب اعتماد مسير رواتب مكتمل بالصيغة الحالية قبل الترحيل.");
     }
 
-    let totalBaseSalary = 0;
-    let totalAllowances = 0;
-    let totalNet = 0;
-    let advanceDeductions = 0;
-    let totalEmployerGosi = 0;
-    let totalEmployeeGosi = 0;
-
-    for (const slip of payslips as Record<string, unknown>[]) {
-      totalBaseSalary += Number(slip.base_salary || 0);
-      totalAllowances += Number(slip.total_allowances || 0);
-      totalNet += Number(slip.net_salary || 0);
-      totalEmployerGosi += Number(slip.employer_gosi || 0);
-      totalEmployeeGosi += Number(slip.employee_gosi || 0);
-
-      const details = Array.isArray(slip.deductions_details) ? slip.deductions_details : [];
-      for (const d of details as Record<string, unknown>[]) {
-        const label = String(d.label || d.type || "").toLowerCase();
-        if (label.includes("advance") || label.includes("سلف")) {
-          advanceDeductions += Number(d.amount || 0);
-        }
-      }
+    const { data: payslips, error: payslipError } = await (admin as any)
+      .from("payslips")
+      .select("advance_deduction")
+      .eq("org_id", orgId)
+      .eq("payroll_run_id", run.id)
+      .eq("status", "approved");
+    if (payslipError) throw new Error(payslipError.message);
+    const advanceDeductions = roundMoney(((payslips || []) as Record<string, unknown>[])
+      .reduce((sum, slip) => sum + Number(slip.advance_deduction || 0), 0));
+    if (advanceDeductions > 0 && !settings.default_employee_advances_id) {
+      throw new Error("حساب سلف الموظفين مطلوب قبل ترحيل خصومات السلف.");
     }
 
-    // Use a stable sourceId that does NOT conflict with the manual create-draft-entry path
-    // (which uses a deterministic UUID). We use a distinct prefix to avoid collision.
-    const sourceId = `auto-payroll-${month}`;
-    const result = await postTransaction(admin, orgId, userId, "payroll_accrual", {
-      id: sourceId,
-      month,
-      total_base_salary: roundMoney(totalBaseSalary),
-      total_allowances: roundMoney(totalAllowances),
-      total_net: roundMoney(totalNet),
-      advance_deductions: roundMoney(advanceDeductions),
-      total_employer_gosi: roundMoney(totalEmployerGosi),
-      total_employee_gosi: roundMoney(totalEmployeeGosi),
-    }, {
+    const totalNet = roundMoney(run.total_net);
+    const employeeGosi = roundMoney(run.total_employee_gosi);
+    const employerGosi = roundMoney(run.total_employer_gosi);
+    const lines = [
+      { account_id: settings.default_salary_expense_id, debit: roundMoney(totalNet + employeeGosi + advanceDeductions), credit: 0, description: `رواتب ${month}` },
+      { account_id: settings.default_salary_payable_id, debit: 0, credit: totalNet, description: `رواتب مستحقة ${month}` },
+    ];
+    if (employerGosi > 0) lines.push({ account_id: settings.default_gosi_expense_id, debit: employerGosi, credit: 0, description: `تأمينات صاحب العمل ${month}` });
+    if (employeeGosi + employerGosi > 0) lines.push({ account_id: settings.default_gosi_payable_id, debit: 0, credit: roundMoney(employeeGosi + employerGosi), description: `تأمينات مستحقة ${month}` });
+    if (advanceDeductions > 0) lines.push({ account_id: settings.default_employee_advances_id!, debit: 0, credit: advanceDeductions, description: `خصم سلف ${month}` });
+
+    const { createJournalEntry } = await import("@/lib/accounting/posting");
+    const commandId = options?.commandId || accountingSourceUuid(`payroll:${orgId}:${run.id}`);
+    const entry = await createJournalEntry(admin, {
+      orgId,
+      userId,
       entryDate: lastDayOfMonth(month),
+      description: `قيد رواتب ${month}`,
+      sourceModule: "payroll",
+      sourceId: String(run.id),
       status: "posted",
-      sourceId,
+      lines,
+      commandId,
+      requestId: options?.requestId || commandId,
     });
-
-    return { success: true, journalEntryId: result.journalEntryId };
+    return { success: true, journalEntryId: String(entry.id) };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Payroll auto-posting failed";
-    await logAutoPostFailure(admin, orgId, "payroll", `auto-payroll-${month}`, message);
+    await logAutoPostFailure(admin, orgId, "payroll", month, message);
     return { success: false, error: message };
   }
 }
+
 
 // =============================================================================
 // Phase 3: Employee Advance Auto-Posting
@@ -200,6 +490,7 @@ export async function autoPostAdvanceDisbursement(
   try {
     const settings = (await getAccountingSettings(admin, orgId)) as AccountingSettings | null;
     if (!settings?.auto_post_advances) return { success: true };
+    const commandId = accountingSourceUuid(`advance-disbursement:${orgId}:${advanceRequest.id}`);
 
     const result = await postTransaction(admin, orgId, userId, "advance_disbursement", {
       id: advanceRequest.id,
@@ -209,13 +500,16 @@ export async function autoPostAdvanceDisbursement(
       entryDate: new Date().toISOString().slice(0, 10),
       status: "posted",
       sourceId: advanceRequest.id,
+      commandId,
+      requestId: commandId,
     });
 
-    await (admin as any)
+    const { error: linkError } = await (admin as any)
       .from("advance_requests")
       .update({ journal_entry_id: result.journalEntryId })
       .eq("organization_id", orgId)
       .eq("id", advanceRequest.id);
+    if (linkError) throw new Error(`Advance journal linkage failed: ${linkError.message}`);
 
     return { success: true, journalEntryId: result.journalEntryId };
   } catch (error) {
@@ -234,6 +528,8 @@ interface AssetData {
   asset_name: string;
   purchase_price: number;
   paid_immediately?: boolean;
+  command_id?: string;
+  request_id?: string;
 }
 
 export async function autoCapitalizeAsset(
@@ -259,6 +555,7 @@ export async function autoCapitalizeAsset(
     }
 
     const { createJournalEntry } = await import("@/lib/accounting/posting");
+    const commandId = asset.command_id || accountingSourceUuid(`asset-capitalization:${orgId}:${asset.id}`);
     const entry = await createJournalEntry(admin, {
       orgId,
       userId,
@@ -267,6 +564,8 @@ export async function autoCapitalizeAsset(
       sourceModule: "asset_capitalization",
       sourceId: asset.id,
       status: "posted",
+      commandId,
+      requestId: asset.request_id || commandId,
       lines: [
         {
           account_id: settings.default_asset_account_id,
@@ -283,11 +582,12 @@ export async function autoCapitalizeAsset(
       ],
     });
 
-    await (admin as any)
-      .from("employee_assets")
+    const { error: linkError } = await (admin as any)
+      .from("asset_inventory")
       .update({ capitalized_journal_id: entry.id })
       .eq("org_id", orgId)
       .eq("id", asset.id);
+    if (linkError) throw new Error(`Asset capitalization linkage failed: ${linkError.message}`);
 
     return { success: true, journalEntryId: String(entry.id) };
   } catch (error) {
@@ -304,89 +604,20 @@ export async function runMonthlyDepreciation(
   month: string
 ): Promise<{ success: boolean; journalEntryId?: string; assetsProcessed: number; error?: string }> {
   try {
-    const settings = (await getAccountingSettings(admin, orgId)) as AccountingSettings | null;
-    if (!settings?.auto_post_assets) return { success: true, assetsProcessed: 0 };
-
-    if (!settings.default_depreciation_expense_id || !settings.default_accumulated_depreciation_id) {
-      throw new Error("حسابات الإهلاك غير محددة.");
-    }
-
-    // Fetch assets with depreciation columns; skip those already depreciated this month
-    const { data: assets, error } = await (admin as any)
-      .from("employee_assets")
-      .select("id, asset_name, purchase_price, useful_life_months, salvage_value, last_depreciation_date, months_depreciated")
-      .eq("org_id", orgId)
-      .gt("purchase_price", 0)
-      .neq("status", "returned");
-
-    if (error) throw new Error(error.message);
-    if (!assets || assets.length === 0) return { success: true, assetsProcessed: 0 };
-
-    const { createJournalEntry } = await import("@/lib/accounting/posting");
-    const lines: Array<{ account_id: string; debit: number; credit: number; description: string }> = [];
-    let assetsProcessed = 0;
-    const monthEnd = lastDayOfMonth(month);
-
-    for (const asset of assets as Record<string, unknown>[]) {
-      const purchasePrice = Number(asset.purchase_price || 0);
-      const salvageValue = Number(asset.salvage_value || 0);
-      const usefulLifeMonths = Number(asset.useful_life_months || 60);
-      const monthsDepreciated = Number(asset.months_depreciated || 0);
-
-      if (purchasePrice <= salvageValue) continue;
-
-      // Skip if already fully depreciated
-      if (monthsDepreciated >= usefulLifeMonths) continue;
-
-      // Skip if already depreciated this month (last_depreciation_date in same month)
-      const lastDepDate = String(asset.last_depreciation_date || "");
-      if (lastDepDate.startsWith(month)) continue;
-
-      const monthlyDep = roundMoney((purchasePrice - salvageValue) / usefulLifeMonths);
-      if (monthlyDep <= 0) continue;
-
-      lines.push(
-        {
-          account_id: settings.default_depreciation_expense_id!,
-          debit: monthlyDep,
-          credit: 0,
-          description: `إهلاك ${asset.asset_name} - ${month}`,
-        },
-        {
-          account_id: settings.default_accumulated_depreciation_id!,
-          debit: 0,
-          credit: monthlyDep,
-          description: `مجمع إهلاك ${asset.asset_name} - ${month}`,
-        }
-      );
-
-      await (admin as any)
-        .from("employee_assets")
-        .update({
-          last_depreciation_date: monthEnd,
-          months_depreciated: monthsDepreciated + 1,
-        })
-        .eq("org_id", orgId)
-        .eq("id", String(asset.id));
-
-      assetsProcessed++;
-    }
-
-    if (lines.length === 0) return { success: true, assetsProcessed: 0 };
-
-    const sourceId = `depreciation-${month}`;
-    const entry = await createJournalEntry(admin, {
-      orgId,
-      userId,
-      entryDate: monthEnd,
-      description: `إهلاك أصول شهر ${month}`,
-      sourceModule: "asset_depreciation",
-      sourceId,
-      status: "posted",
-      lines,
+    const { data, error } = await (admin as any).rpc("run_asset_depreciation", {
+      p_org_id: orgId,
+      p_actor_user_id: userId,
+      p_request_id: randomUUID(),
+      p_command_id: randomUUID(),
+      p_month: `${month}-01`,
     });
-
-    return { success: true, journalEntryId: String(entry.id), assetsProcessed };
+    if (error) throw new Error(error.message);
+    const result = (data || {}) as Record<string, unknown>;
+    return {
+      success: true,
+      journalEntryId: result.journalEntryId ? String(result.journalEntryId) : undefined,
+      assetsProcessed: Number(result.assetsProcessed || 0),
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Depreciation batch failed";
     await logAutoPostFailure(admin, orgId, "asset_depreciation", `depreciation-${month}`, message);
@@ -425,121 +656,25 @@ export async function runMonthlyEOSBAccrual(
   admin: AdminClient,
   orgId: string,
   userId: string,
-  month: string
+  month: string,
+  options?: { commandId?: string; requestId?: string }
 ): Promise<{ success: boolean; journalEntryId?: string; employeesProcessed: number; error?: string }> {
   try {
-    const settings = (await getAccountingSettings(admin, orgId)) as (AccountingSettings & { default_eosb_expense_id?: string; default_eosb_provision_id?: string }) | null;
-    if (!settings?.auto_post_eosb) return { success: true, employeesProcessed: 0 };
-
-    if (!settings.default_eosb_expense_id || !settings.default_eosb_provision_id) {
-      throw new Error("حسابات مكافأة نهاية الخدمة غير محددة.");
-    }
-
-    const { data: employees, error } = await (admin as any)
-      .from("employees")
-      .select("id, full_name, base_salary, hiring_date")
-      .eq("org_id", orgId)
-      .eq("status", "Active")
-      .not("hiring_date", "is", null);
-
-    if (error) throw new Error(error.message);
-    if (!employees || employees.length === 0) return { success: true, employeesProcessed: 0 };
-
-    const { createJournalEntry } = await import("@/lib/accounting/posting");
-    const lines: Array<{ account_id: string; debit: number; credit: number; description: string; employee_id?: string }> = [];
-    let employeesProcessed = 0;
-    const monthDate = new Date(`${month}-01`);
-
-    for (const emp of employees as Record<string, unknown>[]) {
-      const baseSalary = Number(emp.base_salary || 0);
-      if (baseSalary <= 0) continue;
-
-      const hireDate = new Date(String(emp.hiring_date));
-      const yearsOfService = (monthDate.getTime() - hireDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
-      if (yearsOfService < 0) continue;
-
-      // Smooth monthly accrual: use daily rate × (15 or 30 days) / 12
-      // This avoids the lumpy delta-of-totals approach.
-      const dailyRate = roundMoney(baseSalary / 30);
-      const daysPerYear = yearsOfService > 5 ? 30 : 15;
-      const monthlyAccrual = roundMoney(dailyRate * daysPerYear / 12);
-
-      if (monthlyAccrual <= 0) continue;
-
-      const { data: existing } = await (admin as any)
-        .from("eosb_accruals")
-        .select("id")
-        .eq("organization_id", orgId)
-        .eq("employee_id", String(emp.id))
-        .eq("month", month)
-        .maybeSingle();
-
-      if (existing) continue;
-
-      // Cumulative: sum of all prior accruals + this month
-      const { data: priorRows } = await (admin as any)
-        .from("eosb_accruals")
-        .select("monthly_accrual")
-        .eq("organization_id", orgId)
-        .eq("employee_id", String(emp.id));
-      const priorTotal = roundMoney(
-        ((priorRows as Record<string, unknown>[] | null) || []).reduce(
-          (sum, r) => sum + Number(r.monthly_accrual || 0), 0
-        )
-      );
-      const cumulativeAccrual = roundMoney(priorTotal + monthlyAccrual);
-
-      lines.push(
-        {
-          account_id: settings.default_eosb_expense_id,
-          debit: monthlyAccrual,
-          credit: 0,
-          description: `مخصص نهاية خدمة ${emp.full_name} - ${month}`,
-          employee_id: String(emp.id),
-        },
-        {
-          account_id: settings.default_eosb_provision_id,
-          debit: 0,
-          credit: monthlyAccrual,
-          description: `مخصص نهاية خدمة ${emp.full_name} - ${month}`,
-          employee_id: String(emp.id),
-        }
-      );
-
-      await (admin as any).from("eosb_accruals").insert({
-        organization_id: orgId,
-        employee_id: String(emp.id),
-        month,
-        years_of_service: roundMoney(yearsOfService),
-        daily_rate: dailyRate,
-        monthly_accrual: monthlyAccrual,
-        cumulative_accrual: cumulativeAccrual,
-      });
-
-      employeesProcessed++;
-    }
-
-    if (lines.length === 0) return { success: true, employeesProcessed: 0 };
-
-    const sourceId = `eosb-accrual-${month}`;
-    const entry = await createJournalEntry(admin, {
-      orgId,
-      userId,
-      entryDate: lastDayOfMonth(month),
-      description: `مخصص مكافأة نهاية الخدمة - ${month}`,
-      sourceModule: "eosb",
-      sourceId,
-      status: "posted",
-      lines,
+    const commandId = options?.commandId || accountingSourceUuid(`eosb-accrual:${orgId}:${month}`);
+    const { data, error } = await (admin as any).rpc("run_eosb_accrual", {
+      p_org_id: orgId,
+      p_actor_user_id: userId,
+      p_request_id: options?.requestId || commandId,
+      p_command_id: commandId,
+      p_month: `${month}-01`,
     });
-
-    await (admin as any)
-      .from("eosb_accruals")
-      .update({ journal_entry_id: entry.id })
-      .eq("organization_id", orgId)
-      .eq("month", month);
-
-    return { success: true, journalEntryId: String(entry.id), employeesProcessed };
+    if (error) throw new Error(error.message);
+    const result = (data || {}) as Record<string, unknown>;
+    return {
+      success: true,
+      journalEntryId: result.journalEntryId ? String(result.journalEntryId) : undefined,
+      employeesProcessed: Number(result.employeesProcessed || 0),
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : "EOSB accrual failed";
     await logAutoPostFailure(admin, orgId, "eosb", `eosb-accrual-${month}`, message);
@@ -596,6 +731,7 @@ export async function settleEmployeeEOSB(
     const difference = roundMoney(settlementAmount - accruedAmount);
 
     const { createJournalEntry } = await import("@/lib/accounting/posting");
+    const commandId = accountingSourceUuid(`eosb-settlement:${orgId}:${employeeId}`);
     const lines: Array<{ account_id: string; debit: number; credit: number; description: string; employee_id?: string }> = [];
 
     if (accruedAmount > 0) {
@@ -647,6 +783,8 @@ export async function settleEmployeeEOSB(
       sourceId: employeeId,
       status: "posted",
       lines,
+      commandId,
+      requestId: commandId,
     });
 
     return { success: true, journalEntryId: String(entry.id), settlementAmount };
@@ -703,6 +841,7 @@ export async function calculateAndPostLeaveEncashment(
     const encashmentAmount = roundMoney(vacationDays * (baseSalary / 30));
 
     const { createJournalEntry } = await import("@/lib/accounting/posting");
+    const commandId = accountingSourceUuid(`leave-encashment:${orgId}:${employeeId}`);
     const entry = await createJournalEntry(admin, {
       orgId,
       userId,
@@ -711,6 +850,8 @@ export async function calculateAndPostLeaveEncashment(
       sourceModule: "leave_encashment",
       sourceId: employeeId,
       status: "posted",
+      commandId,
+      requestId: commandId,
       lines: [
         {
           account_id: leaveEncashmentAccount,
@@ -759,7 +900,7 @@ export async function recordGOSIPayment(
     if (!bankAccount) throw new Error("حساب البنك غير محدد.");
 
     const { createJournalEntry } = await import("@/lib/accounting/posting");
-    const sourceId = `gosi-payment-${month}`;
+    const sourceId = accountingSourceUuid(`gosi-payment:${orgId}:${month}`);
     const entry = await createJournalEntry(admin, {
       orgId,
       userId,
@@ -768,6 +909,8 @@ export async function recordGOSIPayment(
       sourceModule: "gosi_payment",
       sourceId,
       status: "posted",
+      commandId: sourceId,
+      requestId: sourceId,
       lines: [
         {
           account_id: gosiPayableId,
@@ -814,14 +957,17 @@ async function logAutoPostFailure(
   errorMessage: string
 ): Promise<void> {
   try {
-    await (admin as any).from("accounting_source_postings").upsert({
-      organization_id: orgId,
-      source_module: sourceModule,
-      source_id: sourceId,
-      journal_entry_id: null,
-      status: "failed",
-      error_message: errorMessage,
-    }, { onConflict: "organization_id,source_module,source_id" });
+    await (admin as any).from("operational_audit_logs").insert({
+      org_id: orgId,
+      request_id: randomUUID(),
+      action: "accounting.auto_post_failed",
+      target_type: sourceModule,
+      target_id: sourceId,
+      outcome: "failed",
+      status_code: 500,
+      error_code: "AUTO_POST_FAILED",
+      metadata: { error: errorMessage },
+    });
   } catch {
     // Silently ignore logging failures to not block the main flow
   }

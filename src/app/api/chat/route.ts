@@ -1,406 +1,204 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { z } from "zod";
+import { requireTenantContext } from "@/lib/server/tenant-context";
+import type { TenantAuthContext } from "@/lib/server/tenant-context";
+import { inspectUpload, removeUploadedPaths, UploadSecurityError } from "@/lib/server/upload-security";
 
 const allowedAttachmentTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "application/pdf",
+  "image/jpeg", "image/png", "image/gif", "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "text/plain",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain",
 ]);
 const maxAttachmentBytes = 10 * 1024 * 1024;
+
+type RpcClient = {
+  rpc: (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string; code?: string } | null }>;
+};
+type RecordMap = Record<string, unknown>;
 
 function safeFilename(name: string) {
   return name.replace(/[^\w.\-()[\]\u0600-\u06FF ]+/g, "_").slice(0, 160) || "attachment";
 }
 
-function pathFromPublicUrl(bucket: string, url: string) {
-  try {
-    const parsed = new URL(url);
-    const marker = `/storage/v1/object/public/${bucket}/`;
-    const index = parsed.pathname.indexOf(marker);
-    if (index === -1) return "";
-    return decodeURIComponent(parsed.pathname.slice(index + marker.length));
-  } catch {
-    return "";
-  }
-}
-
-function getAttachmentPath(bucket: string, attachment: Record<string, unknown>) {
-  const directPath = String(attachment.path || "");
-  if (directPath) return directPath;
-
-  const url = String(attachment.url || "");
-  return pathFromPublicUrl(bucket, url);
-}
-
-async function signAttachments(
-  admin: ReturnType<typeof createAdminClient>,
-  bucket: string,
-  attachments: Record<string, unknown>[]
-) {
-  return Promise.all(
-    attachments.map(async (attachment) => {
-      const path = getAttachmentPath(bucket, attachment);
-      if (!path) return attachment;
-
-      const signedUrl = await admin.storage.from(bucket).createSignedUrl(path, 60 * 60);
-      return {
-        ...attachment,
-        bucket,
-        path,
-        url: signedUrl.data?.signedUrl || attachment.url || "",
-      };
-    })
-  );
-}
-
-async function getAuthContext() {
-  const supabase = await createServerSupabaseClient();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  const user = userData?.user;
-  if (userError || !user) {
-    return { error: NextResponse.json({ message: "غير مصرح بالدخول." }, { status: 401 }) };
-  }
-
-  const { data: membership, error: membershipError } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const member = membership as Record<string, unknown> | null;
-  const orgId = String(member?.org_id || "");
-  const role = String(member?.role || "");
-  if (!membershipError && orgId && role) {
-    return { user, orgId, role, isSuperadmin: false };
-  }
-
-  const admin = createAdminClient();
-  const { data: platformAdmin, error: platformError } = await admin
-    .from("platform_admins")
-    .select("role, status")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const platformRecord = platformAdmin as Record<string, unknown> | null;
-  if (!platformError && platformRecord?.role === "superadmin" && platformRecord.status === "active") {
-    return { user, orgId: "", role: "super_admin", isSuperadmin: true };
-  }
-
-  if (membershipError || !orgId || !role) {
-    return { error: NextResponse.json({ message: "لا توجد صلاحية منظمة." }, { status: 403 }) };
-  }
-  return { user, orgId, role, isSuperadmin: false };
-}
-
 function parseJsonArray(value: FormDataEntryValue | null) {
-  if (!value) return [];
   try {
-    const parsed = JSON.parse(String(value));
+    const parsed = JSON.parse(String(value || "[]"));
     return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
   } catch {
     return [];
   }
 }
 
-async function getOrgUsers(admin: ReturnType<typeof createAdminClient>, orgId?: string) {
-  const [membersResult, profilesResult, employeesResult] = await Promise.all([
-    orgId
-      ? admin.from("org_members").select("org_id, user_id, role").eq("org_id", orgId)
-      : admin.from("org_members").select("org_id, user_id, role"),
-    orgId
-      ? admin.from("profiles").select("org_id, user_id, full_name, email, phone, title, account_status").eq("org_id", orgId)
-      : admin.from("profiles").select("org_id, user_id, full_name, email, phone, title, account_status"),
-    orgId
-      ? admin.from("employees").select("org_id, id, user_id, full_name, employee_code, job_title, status").eq("org_id", orgId)
-      : admin.from("employees").select("org_id, id, user_id, full_name, employee_code, job_title, status"),
+async function signAttachments(auth: TenantAuthContext, attachments: RecordMap[]) {
+  return Promise.all(attachments.map(async (attachment) => {
+    const path = String(attachment.path || "");
+    if (!path || attachment.scan_status !== "clean") return { ...attachment, url: "" };
+    const signed = await auth.admin.storage.from("chat-attachments").createSignedUrl(path, 3600);
+    return { ...attachment, bucket: "chat-attachments", url: signed.data?.signedUrl || "" };
+  }));
+}
+
+async function getOrgUsers(auth: TenantAuthContext) {
+  const [members, profiles, employees] = await Promise.all([
+    auth.admin.from("org_members").select("org_id, user_id, role").eq("org_id", auth.orgId).limit(500),
+    auth.admin.from("profiles").select("org_id, user_id, full_name, email, title, account_status").eq("org_id", auth.orgId).limit(500),
+    auth.admin.from("employees").select("org_id, id, user_id, full_name, employee_code, job_title, status").eq("org_id", auth.orgId).limit(500),
   ]);
-
-  if (membersResult.error) throw membersResult.error;
-  if (profilesResult.error) throw profilesResult.error;
-  if (employeesResult.error) throw employeesResult.error;
-
-  const profiles = new Map(((profilesResult.data ?? []) as Record<string, unknown>[]).map((profile) => [String(profile.user_id), profile]));
-  const employees = new Map(((employeesResult.data ?? []) as Record<string, unknown>[]).map((employee) => [String(employee.user_id), employee]));
-
-  return ((membersResult.data ?? []) as Record<string, unknown>[]).map((member) => {
-    const userId = String(member.user_id || "");
-    const profile = profiles.get(userId) || {};
-    const employee = employees.get(userId) || {};
+  for (const result of [members, profiles, employees]) if (result.error) throw new Error(result.error.message);
+  const profileMap = new Map((profiles.data || []).map((row) => [String(row.user_id), row as RecordMap]));
+  const employeeMap = new Map((employees.data || []).map((row) => [String(row.user_id), row as RecordMap]));
+  return (members.data || []).map((member) => {
+    const profile = profileMap.get(String(member.user_id)) || {};
+    const employee = employeeMap.get(String(member.user_id)) || {};
     return {
-      org_id: String(member.org_id || profile.org_id || employee.org_id || ""),
-      user_id: userId,
-      employee_id: String(employee.id || ""),
-      role: String(member.role || ""),
-      full_name: String(employee.full_name || profile.full_name || profile.email || "مستخدم"),
-      email: String(profile.email || ""),
-      title: String(employee.job_title || profile.title || ""),
-      employee_code: String(employee.employee_code || ""),
+      org_id: auth.orgId, user_id: String(member.user_id), employee_id: String(employee.id || ""), role: String(member.role),
+      full_name: String(employee.full_name || profile.full_name || profile.email || "مستخدم"), email: String(profile.email || ""),
+      title: String(employee.job_title || profile.title || ""), employee_code: String(employee.employee_code || ""),
       status: String(profile.account_status || employee.status || "active"),
     };
   });
 }
 
-export async function GET() {
-  const auth = await getAuthContext();
+function rpcStatus(code?: string) {
+  if (code === "42501") return 403;
+  if (code === "P0002") return 404;
+  if (code === "23505") return 409;
+  if (code === "22023" || code === "23514") return 422;
+  return 500;
+}
+
+export async function GET(request: NextRequest) {
+  const auth = await requireTenantContext({ feature: "chat" }, request);
   if ("error" in auth) return auth.error;
-
-  const admin = createAdminClient();
+  const params = new URL(request.url).searchParams;
+  const requestedConversationId = params.get("conversation_id") || "";
+  const before = params.get("before");
+  const beforeId = params.get("before_id");
+  const limit = Math.min(Math.max(Number(params.get("limit") || 50), 1), 100);
   try {
-    const availableUsers = await getOrgUsers(admin, auth.isSuperadmin ? undefined : auth.orgId);
-    const userMap = new Map(availableUsers.map((user) => [user.user_id, user]));
-
-    let myParticipantsQuery = admin
-      .from("chat_participants")
-      .select("conversation_id")
-      .eq("user_id", auth.user.id);
-    if (!auth.isSuperadmin) {
-      myParticipantsQuery = myParticipantsQuery.eq("org_id", auth.orgId);
-    }
-    const { data: myParticipants, error: participantError } = await myParticipantsQuery;
-
-    if (participantError) return NextResponse.json({ message: participantError.message }, { status: 500 });
-
-    const conversationIds = ((myParticipants ?? []) as Record<string, unknown>[]).map((row) => String(row.conversation_id));
-    if (conversationIds.length === 0) {
-      return NextResponse.json({ data: { conversations: [], available_users: availableUsers } });
-    }
-
-    const [conversationsResult, participantsResult, messagesResult] = await Promise.all([
-      (() => {
-        let query = admin
-          .from("chat_conversations")
-          .select("*")
-          .in("id", conversationIds)
-          .order("updated_at", { ascending: false });
-        if (!auth.isSuperadmin) query = query.eq("org_id", auth.orgId);
-        return query;
-      })(),
-      (() => {
-        let query = admin
-          .from("chat_participants")
-          .select("*")
-          .in("conversation_id", conversationIds);
-        if (!auth.isSuperadmin) query = query.eq("org_id", auth.orgId);
-        return query;
-      })(),
-      (() => {
-        let query = admin
-          .from("chat_messages")
-          .select("*")
-          .in("conversation_id", conversationIds)
-          .order("created_at", { ascending: true })
-          .limit(800);
-        if (!auth.isSuperadmin) query = query.eq("org_id", auth.orgId);
-        return query;
-      })(),
+    const [inboxResult, availableUsers] = await Promise.all([
+      (auth.admin as unknown as RpcClient).rpc("chat_inbox_snapshot", {
+        p_org_id: auth.orgId, p_actor_user_id: auth.user.id, p_limit: 100,
+      }),
+      getOrgUsers(auth),
     ]);
-
-    if (conversationsResult.error) return NextResponse.json({ message: conversationsResult.error.message }, { status: 500 });
-    if (participantsResult.error) return NextResponse.json({ message: participantsResult.error.message }, { status: 500 });
-    if (messagesResult.error) return NextResponse.json({ message: messagesResult.error.message }, { status: 500 });
-
-    const participantsByConversation = new Map<string, Record<string, unknown>[]>();
-    for (const participant of (participantsResult.data ?? []) as Record<string, unknown>[]) {
-      const conversationId = String(participant.conversation_id || "");
-      const list = participantsByConversation.get(conversationId) || [];
-      list.push({ ...participant, user: userMap.get(String(participant.user_id || "")) || null });
-      participantsByConversation.set(conversationId, list);
-    }
-
-    const messagesByConversation = new Map<string, Record<string, unknown>[]>();
-    for (const message of (messagesResult.data ?? []) as Record<string, unknown>[]) {
-      const conversationId = String(message.conversation_id || "");
-      const list = messagesByConversation.get(conversationId) || [];
-      const attachments = Array.isArray(message.attachments)
-        ? await signAttachments(admin, "chat-attachments", message.attachments as Record<string, unknown>[])
-        : [];
-      list.push({
-        ...message,
-        attachments,
-        sender: userMap.get(String(message.sender_user_id || "")) || null,
+    if (inboxResult.error) throw new Error(inboxResult.error.message);
+    const conversations = Array.isArray(inboxResult.data) ? inboxResult.data as RecordMap[] : [];
+    const conversationId = requestedConversationId || String(conversations[0]?.id || "");
+    let page: RecordMap[] = [];
+    if (conversationId) {
+      const messagesResult = await (auth.admin as unknown as RpcClient).rpc("chat_message_page", {
+        p_org_id: auth.orgId, p_actor_user_id: auth.user.id, p_conversation_id: conversationId,
+        p_before: before || null, p_before_id: beforeId || null, p_limit: limit,
       });
-      messagesByConversation.set(conversationId, list);
+      if (messagesResult.error) return NextResponse.json({ message: messagesResult.error.message, requestId: auth.requestId }, { status: rpcStatus(messagesResult.error.code) });
+      const userMap = new Map(availableUsers.map((user) => [user.user_id, user]));
+      page = await Promise.all(((messagesResult.data || []) as RecordMap[]).map(async (message) => ({
+        ...message,
+        body: message.deleted_at ? null : message.body,
+        attachments: message.deleted_at ? [] : await signAttachments(auth, Array.isArray(message.attachments) ? message.attachments as RecordMap[] : []),
+        sender: userMap.get(String(message.sender_user_id || "")) || null,
+      })));
+      page.reverse();
     }
-
-    const conversations = ((conversationsResult.data ?? []) as Record<string, unknown>[]).map((conversation) => {
-      const conversationId = String(conversation.id || "");
-      return {
-        ...conversation,
-        participants: participantsByConversation.get(conversationId) || [],
-        messages: messagesByConversation.get(conversationId) || [],
-      };
-    });
-
-    return NextResponse.json({ data: { conversations, available_users: availableUsers } });
+    const signedConversations = await Promise.all(conversations.map(async (conversation) => {
+      const latest = conversation.latest_message as RecordMap | null;
+      const signedLatest = latest ? {
+        ...latest,
+        body: latest.deleted_at ? null : latest.body,
+        attachments: latest.deleted_at ? [] : await signAttachments(auth, Array.isArray(latest.attachments) ? latest.attachments as RecordMap[] : []),
+      } : null;
+      return { ...conversation, messages: String(conversation.id) === conversationId ? page : signedLatest ? [signedLatest] : [] };
+    }));
+    const oldest = page[0];
+    return NextResponse.json({ data: { conversations: signedConversations, available_users: availableUsers,
+      page: { conversation_id: conversationId || null, has_more: page.length === limit,
+        next_before: oldest?.created_at || null, next_before_id: oldest?.id || null } }, requestId: auth.requestId });
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "تعذر تحميل المحادثات." }, { status: 500 });
+    return NextResponse.json({ message: error instanceof Error ? error.message : "تعذر تحميل المحادثات.", requestId: auth.requestId }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await getAuthContext();
+  const auth = await requireTenantContext({ feature: "chat" }, request);
   if ("error" in auth) return auth.error;
-
-  const contentType = request.headers.get("content-type") || "";
-  if (!contentType.includes("multipart/form-data")) {
-    return NextResponse.json({ message: "بيانات الرسالة غير صحيحة." }, { status: 400 });
+  if (!(request.headers.get("content-type") || "").includes("multipart/form-data")) {
+    return NextResponse.json({ message: "بيانات الرسالة غير صحيحة.", requestId: auth.requestId }, { status: 400 });
   }
-
   const formData = await request.formData();
-  const conversationId = String(formData.get("conversation_id") || "").trim();
+  const existingConversationId = String(formData.get("conversation_id") || "").trim();
+  const conversationId = existingConversationId || String(formData.get("proposed_conversation_id") || "").trim();
+  const commandId = String(formData.get("command_id") || "").trim();
+  const type = String(formData.get("type") || "direct") === "group" ? "group" : "direct";
   const title = String(formData.get("title") || "").trim();
-  const typeInput = String(formData.get("type") || "direct").trim();
-  const type = typeInput === "group" ? "group" : "direct";
   const body = String(formData.get("body") || "").trim();
-  const requestedParticipants = parseJsonArray(formData.get("participant_user_ids"));
+  const participants = parseJsonArray(formData.get("participant_user_ids"));
   const files = formData.getAll("attachments").filter((item): item is File => item instanceof File && item.size > 0);
-
-  if (!conversationId && requestedParticipants.length === 0) {
-    return NextResponse.json({ message: "اختر شخصًا واحدًا على الأقل لبدء المحادثة." }, { status: 400 });
+  if (!z.string().uuid().safeParse(conversationId).success || !z.string().uuid().safeParse(commandId).success) {
+    return NextResponse.json({ message: "معرّف المحادثة أو الأمر غير صالح.", requestId: auth.requestId }, { status: 400 });
   }
-  if (!body && files.length === 0) {
-    return NextResponse.json({ message: "اكتب رسالة أو أرفق ملفًا." }, { status: 400 });
-  }
-  if (type === "group" && !["admin", "hr_admin", "super_admin"].includes(auth.role)) {
-    return NextResponse.json({ message: "إنشاء الجروبات متاح للموارد البشرية فقط." }, { status: 403 });
-  }
-
-  for (const file of files) {
-    if (file.size > maxAttachmentBytes || !allowedAttachmentTypes.has(file.type)) {
-      return NextResponse.json({ message: "نوع الملف غير مدعوم أو حجمه أكبر من 10MB." }, { status: 400 });
+  const uploadedPaths: string[] = [];
+  try {
+    const attachments: RecordMap[] = [];
+    for (const file of files) {
+      const inspected = await inspectUpload(file, { allowedMimeTypes: allowedAttachmentTypes, maxBytes: maxAttachmentBytes });
+      const filename = safeFilename(file.name);
+      const path = `${auth.orgId}/${conversationId}/${crypto.randomUUID()}-${filename}`;
+      const upload = await auth.admin.storage.from("chat-attachments").upload(path, inspected.bytes, {
+        contentType: inspected.detectedMime, upsert: false,
+      });
+      if (upload.error) throw new Error(upload.error.message);
+      uploadedPaths.push(path);
+      attachments.push({ bucket: "chat-attachments", path, filename, type: inspected.detectedMime,
+        size_bytes: file.size, sha256: inspected.sha256, scan_status: inspected.scanStatus,
+        scan_engine: inspected.engine, scanned_at: inspected.scannedAt });
     }
-  }
-
-  const admin = createAdminClient();
-  const orgUsers = await getOrgUsers(admin, auth.isSuperadmin ? undefined : auth.orgId);
-  const orgUserIds = new Set(orgUsers.map((user) => user.user_id));
-  const employeeByUserId = new Map(orgUsers.map((user) => [user.user_id, user.employee_id]));
-  const orgByUserId = new Map(orgUsers.map((user) => [user.user_id, user.org_id]));
-
-  let targetConversationId = conversationId;
-  let participantUserIds = Array.from(new Set([auth.user.id, ...requestedParticipants.filter((id) => orgUserIds.has(id))]));
-  let conversationOrgId = auth.orgId;
-  if (auth.isSuperadmin && !targetConversationId) {
-    const selectedOrgIds = Array.from(new Set(requestedParticipants.map((id) => orgByUserId.get(id)).filter(Boolean)));
-    if (selectedOrgIds.length !== 1) {
-      return NextResponse.json({ message: "اختار مستخدمين من نفس المنظمة لإنشاء محادثة مع السوبر أدمن." }, { status: 400 });
-    }
-    conversationOrgId = String(selectedOrgIds[0]);
-  }
-
-  if (!targetConversationId) {
-    if (participantUserIds.length < 2) {
-      return NextResponse.json({ message: "لا يمكن إنشاء محادثة بدون مشاركين." }, { status: 400 });
-    }
-
-    const conversationResult = await admin
-      .from("chat_conversations")
-      .insert({
-        org_id: conversationOrgId,
-        type,
-        title: type === "group" ? title || "جروب جديد" : null,
-        created_by: auth.user.id,
-      } as never)
-      .select()
-      .single();
-
-    if (conversationResult.error) return NextResponse.json({ message: conversationResult.error.message }, { status: 500 });
-    targetConversationId = String((conversationResult.data as Record<string, unknown>).id || "");
-
-    const participantRows = participantUserIds.map((userId) => ({
-      conversation_id: targetConversationId,
-      org_id: conversationOrgId,
-      user_id: userId,
-      employee_id: employeeByUserId.get(userId) || null,
-      added_by: auth.user.id,
-    }));
-
-    const participantResult = await admin.from("chat_participants").insert(participantRows as never);
-    if (participantResult.error) return NextResponse.json({ message: participantResult.error.message }, { status: 500 });
-  } else {
-    let accessQuery = admin
-      .from("chat_participants")
-      .select("id, org_id")
-      .eq("conversation_id", targetConversationId)
-      .eq("user_id", auth.user.id);
-    if (!auth.isSuperadmin) {
-      accessQuery = accessQuery.eq("org_id", auth.orgId);
-    }
-    const { data: existingParticipant, error: accessError } = await accessQuery.maybeSingle();
-
-    if (accessError) return NextResponse.json({ message: accessError.message }, { status: 500 });
-    if (!existingParticipant) return NextResponse.json({ message: "ليست لديك صلاحية لهذه المحادثة." }, { status: 403 });
-    conversationOrgId = String((existingParticipant as Record<string, unknown>).org_id || auth.orgId);
-
-    let participantsQuery = admin
-      .from("chat_participants")
-      .select("user_id")
-      .eq("conversation_id", targetConversationId);
-    if (!auth.isSuperadmin) {
-      participantsQuery = participantsQuery.eq("org_id", auth.orgId);
-    }
-    const { data: allParticipants } = await participantsQuery;
-    participantUserIds = ((allParticipants ?? []) as Record<string, unknown>[]).map((row) => String(row.user_id || ""));
-  }
-
-  const attachments: Record<string, unknown>[] = [];
-  for (const file of files) {
-    const filename = safeFilename(file.name);
-    const path = `${conversationOrgId}/${targetConversationId}/${Date.now()}-${filename}`;
-    const upload = await admin.storage.from("chat-attachments").upload(path, file, {
-      contentType: file.type,
-      upsert: false,
+    const result = await (auth.admin as unknown as RpcClient).rpc("send_chat_message", {
+      p_org_id: auth.orgId, p_actor_user_id: auth.user.id, p_request_id: auth.requestId,
+      p_command_id: commandId, p_conversation_id: conversationId, p_type: type, p_title: title || null,
+      p_participant_user_ids: participants, p_body: body || null, p_attachments: attachments,
     });
-    if (upload.error) return NextResponse.json({ message: upload.error.message }, { status: 500 });
-    const signedUrl = await admin.storage.from("chat-attachments").createSignedUrl(path, 60 * 60);
-    attachments.push({
-      bucket: "chat-attachments",
-      path,
-      filename,
-      url: signedUrl.data?.signedUrl || "",
-      type: file.type,
-      size_bytes: file.size,
-    });
+    if (result.error) {
+      await removeUploadedPaths(auth.admin, "chat-attachments", uploadedPaths);
+      return NextResponse.json({ message: result.error.message, requestId: auth.requestId }, { status: rpcStatus(result.error.code) });
+    }
+    const data = result.data as { conversation_id?: string; message?: RecordMap };
+    if (data.message && Array.isArray(data.message.attachments)) {
+      data.message.attachments = await signAttachments(auth, data.message.attachments as RecordMap[]);
+    }
+    return NextResponse.json({ data, requestId: auth.requestId });
+  } catch (error) {
+    await removeUploadedPaths(auth.admin, "chat-attachments", uploadedPaths).catch(() => undefined);
+    const status = error instanceof UploadSecurityError ? (error.code === "scanner_unavailable" ? 503 : 400) : 500;
+    return NextResponse.json({ message: error instanceof Error ? error.message : "تعذر إرسال الرسالة.", requestId: auth.requestId }, { status });
   }
+}
 
-  const messageResult = await admin
-    .from("chat_messages")
-    .insert({
-      conversation_id: targetConversationId,
-      org_id: conversationOrgId,
-      sender_user_id: auth.user.id,
-      sender_employee_id: employeeByUserId.get(auth.user.id) || null,
-      body: body || null,
-      attachments,
-    } as never)
-    .select()
-    .single();
+export async function PATCH(request: NextRequest) {
+  const auth = await requireTenantContext({ feature: "chat" }, request);
+  if ("error" in auth) return auth.error;
+  const parsed = z.object({ conversation_id: z.string().uuid() }).safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) return NextResponse.json({ message: "Conversation id is required.", requestId: auth.requestId }, { status: 400 });
+  const result = await (auth.admin as unknown as RpcClient).rpc("mark_chat_conversation_read", {
+    p_org_id: auth.orgId, p_actor_user_id: auth.user.id, p_conversation_id: parsed.data.conversation_id,
+  });
+  if (result.error) return NextResponse.json({ message: result.error.message, requestId: auth.requestId }, { status: rpcStatus(result.error.code) });
+  return NextResponse.json({ data: { read_at: result.data }, requestId: auth.requestId });
+}
 
-  if (messageResult.error) return NextResponse.json({ message: messageResult.error.message }, { status: 500 });
-
-  await admin
-    .from("chat_conversations")
-    .update({ updated_at: new Date().toISOString() } as never)
-    .eq("id", targetConversationId);
-
-  const sender = orgUsers.find((user) => user.user_id === auth.user.id);
-  const notificationRows = participantUserIds
-    .filter((userId) => userId !== auth.user.id)
-    .map((userId) => ({
-      org_id: conversationOrgId,
-      user_id: userId,
-      title: "رسالة شات جديدة",
-      body: `${sender?.full_name || "مستخدم"}: ${body || "أرسل مرفقًا"}`,
-      type: "system",
-      link: `/chat?conversation=${encodeURIComponent(targetConversationId)}`,
-      is_read: false,
-    }));
-  if (notificationRows.length > 0) await admin.from("notifications").insert(notificationRows as never);
-
-  return NextResponse.json({ data: { conversation_id: targetConversationId, message: messageResult.data } });
+export async function DELETE(request: NextRequest) {
+  const auth = await requireTenantContext({ feature: "chat", roles: ["admin", "hr_admin"] }, request);
+  if ("error" in auth) return auth.error;
+  const parsed = z.object({ message_id: z.string().uuid(), reason: z.string().trim().min(3).max(2000), command_id: z.string().uuid() })
+    .safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) return NextResponse.json({ message: "Message id and moderation reason are required.", requestId: auth.requestId }, { status: 400 });
+  const result = await (auth.admin as unknown as RpcClient).rpc("moderate_chat_message", {
+    p_org_id: auth.orgId, p_actor_user_id: auth.user.id, p_request_id: auth.requestId,
+    p_command_id: parsed.data.command_id, p_message_id: parsed.data.message_id, p_reason: parsed.data.reason,
+  });
+  if (result.error) return NextResponse.json({ message: result.error.message, requestId: auth.requestId }, { status: rpcStatus(result.error.code) });
+  const message = (Array.isArray(result.data) ? result.data[0] : result.data) as RecordMap;
+  const paths = Array.isArray(message?.attachments) ? (message.attachments as RecordMap[]).map((item) => String(item.path || "")) : [];
+  await removeUploadedPaths(auth.admin, "chat-attachments", paths).catch(() => undefined);
+  return NextResponse.json({ data: message, requestId: auth.requestId });
 }

@@ -8,6 +8,39 @@ import {
   roleFromOrgRole,
 } from "./lib/rbac";
 import type { Role } from "./types";
+import { requestIdFromHeaders } from "./lib/request-id";
+
+const PRIVILEGED_MFA_ROLES: ReadonlySet<Role> = new Set([
+  "Superadmin",
+  "Admin",
+  "HR_Admin",
+  "HR_Recruitment",
+  "Training_Manager",
+  "Sales_Manager",
+  "Onground_Agent_Manager",
+  "Finance_Manager",
+  "Accountant",
+]);
+
+function contentSecurityPolicy(nonce: string) {
+  const development = process.env.NODE_ENV !== "production";
+  return [
+    "default-src 'self'",
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${development ? " 'unsafe-eval'" : ""}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https://*.supabase.co https://*.tile.openstreetmap.org",
+    "font-src 'self' data:",
+    "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://nominatim.openstreetmap.org",
+    "media-src 'self' blob: https://*.supabase.co",
+    "worker-src 'self' blob:",
+    "frame-src 'self' https://www.youtube.com https://player.vimeo.com",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    ...(development ? [] : ["upgrade-insecure-requests"]),
+  ].join("; ");
+}
 
 function requiredFeatureForPath(pathname: string) {
   const normalized = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
@@ -27,16 +60,76 @@ function requiredFeatureForPath(pathname: string) {
 }
 
 function featureEnabled(featureRecord: Record<string, unknown> | null, feature: string) {
-  if (!featureRecord) return true;
-  if (featureRecord[`${feature}_enabled`] === false) return false;
+  if (!featureRecord || featureRecord[`${feature}_enabled`] !== true) return false;
   const enabledModules = featureRecord.enabled_modules;
-  if (Array.isArray(enabledModules)) return enabledModules.map(String).includes(feature);
-  return true;
+  return Array.isArray(enabledModules) && enabledModules.map(String).includes(feature);
+}
+
+function planAllowsFeature(plan: { features?: unknown } | null, feature: string) {
+  const features = plan?.features;
+  return Boolean(
+    features
+    && typeof features === "object"
+    && !Array.isArray(features)
+    && (features as Record<string, unknown>)[feature] === true
+  );
+}
+
+function subscriptionEnabled(subscription: { status?: string; period_end?: string | null; trial_end?: string | null } | null) {
+  const status = String(subscription?.status || "").toLowerCase();
+  if (status !== "active" && status !== "trialing") return false;
+  const expiry = status === "trialing" ? subscription?.trial_end : subscription?.period_end;
+  return !expiry || Date.parse(expiry) > Date.now();
+}
+
+function crossSiteMutation(request: NextRequest) {
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method) || !request.nextUrl.pathname.startsWith("/api/")) {
+    return false;
+  }
+  if (request.headers.get("sec-fetch-site")?.toLowerCase() === "cross-site") return true;
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+  try {
+    return new URL(origin).origin !== request.nextUrl.origin;
+  } catch {
+    return true;
+  }
 }
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request: { headers: request.headers } });
+  const requestId = requestIdFromHeaders(request.headers);
+  const nonce = btoa(crypto.randomUUID());
+  const policy = contentSecurityPolicy(nonce);
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", policy);
+  const secure = <T extends NextResponse>(result: T): T => {
+    result.headers.set("Content-Security-Policy", policy);
+    result.headers.set("x-request-id", requestId);
+    return result;
+  };
+  let response = secure(NextResponse.next({ request: { headers: requestHeaders } }));
   const pathname = request.nextUrl.pathname;
+
+  if (crossSiteMutation(request)) {
+    return secure(NextResponse.json(
+      { message: "Cross-site mutation was rejected.", requestId },
+      { status: 403 },
+    ));
+  }
+
+  // Health probes must remain independent from authentication availability.
+  if (
+    pathname === "/api/health"
+    || pathname === "/api/ready"
+    || pathname === "/api/internal/outbox"
+    || pathname === "/api/internal/compliance"
+    || pathname === "/api/internal/file-retention"
+    || pathname.startsWith("/api/auth/")
+    || pathname === "/forgot-password"
+    || pathname === "/reset-password"
+  ) return response;
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -48,12 +141,18 @@ export async function middleware(request: NextRequest) {
         },
         set(name: string, value: string, options: CookieOptions) {
           request.cookies.set({ name, value, ...options });
-          response = NextResponse.next({ request: { headers: request.headers } });
+          requestHeaders.set("cookie", request.cookies.toString());
+          const updatedResponse = secure(NextResponse.next({ request: { headers: requestHeaders } }));
+          for (const cookie of response.cookies.getAll()) updatedResponse.cookies.set(cookie);
+          response = updatedResponse;
           response.cookies.set({ name, value, ...options });
         },
         remove(name: string, options: CookieOptions) {
           request.cookies.set({ name, value: "", ...options });
-          response = NextResponse.next({ request: { headers: request.headers } });
+          requestHeaders.set("cookie", request.cookies.toString());
+          const updatedResponse = secure(NextResponse.next({ request: { headers: requestHeaders } }));
+          for (const cookie of response.cookies.getAll()) updatedResponse.cookies.set(cookie);
+          response = updatedResponse;
           response.cookies.set({ name, value: "", ...options });
         },
       },
@@ -69,11 +168,11 @@ export async function middleware(request: NextRequest) {
   if (!user) {
     if (isPublicPath(pathname)) return response;
     if (isApi) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+      return secure(NextResponse.json({ message: "Unauthorized" }, { status: 401 }));
     }
     const loginUrl = new URL("/login", request.url);
     if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+    return secure(NextResponse.redirect(loginUrl));
   }
 
   if (isCallback || isCandidatePath(pathname)) {
@@ -91,7 +190,9 @@ export async function middleware(request: NextRequest) {
     .maybeSingle();
 
   const platformAdminRecord = platformAdmin as { role?: string; status?: string } | null;
-  const platformTableMissing = platformAdminError?.code === "42P01";
+  if (platformAdminError) {
+    console.error("Platform admin lookup failed", { requestId, code: platformAdminError.code });
+  }
   let role: Role | null = platformAdminRecord?.role === "superadmin" && platformAdminRecord.status === "active"
     ? "Superadmin" as const
     : null;
@@ -105,48 +206,111 @@ export async function middleware(request: NextRequest) {
 
     const membershipRecord = membership as { org_id?: string; role?: string } | null;
     const rawMembershipRole = String(membershipRecord?.role || "");
-    role = !platformTableMissing && rawMembershipRole === "super_admin"
+    role = rawMembershipRole === "super_admin"
       ? null
       : roleFromOrgRole(rawMembershipRole);
 
     if (role && membershipRecord?.org_id) {
-      const [{ data: profile }, { data: organization }] = await Promise.all([
+      const [profileResult, organizationResult, settingsResult, featuresResult, subscriptionResult, plansResult] = await Promise.all([
         supabase
           .from("profiles")
           .select("account_status")
           .eq("user_id", user.id)
+          .eq("org_id", membershipRecord.org_id)
           .maybeSingle(),
         supabase
           .from("organizations")
-          .select("status")
+          .select("status, deleted_at")
           .eq("id", membershipRecord.org_id)
           .maybeSingle(),
+        supabase
+          .from("organization_settings")
+          .select("timezone, locale")
+          .eq("org_id", membershipRecord.org_id)
+          .maybeSingle(),
+        supabase
+          .from("organization_features")
+          .select("*")
+          .eq("org_id", membershipRecord.org_id)
+          .maybeSingle(),
+        supabase
+          .from("organization_subscriptions")
+          .select("plan_code, status, period_end, trial_end")
+          .eq("org_id", membershipRecord.org_id)
+          .maybeSingle(),
+        supabase
+          .from("plans")
+          .select("code, features")
+          .eq("is_active", true),
       ]);
 
-      const accountStatus = String((profile as { account_status?: string } | null)?.account_status || "active").toLowerCase();
-      const organizationStatus = String((organization as { status?: string } | null)?.status || "active").toLowerCase();
-      const blocked = accountStatus !== "active" || organizationStatus !== "active";
+      const tenantDependencyError = [
+        profileResult.error,
+        organizationResult.error,
+        settingsResult.error,
+        featuresResult.error,
+        subscriptionResult.error,
+        plansResult.error,
+      ].find(Boolean);
+      if (tenantDependencyError) {
+        console.error("Middleware tenant authorization failed", { requestId, code: tenantDependencyError.code });
+        return secure(isApi
+          ? NextResponse.json({ message: "Tenant authorization is temporarily unavailable." }, { status: 503 })
+          : new NextResponse("Service unavailable", { status: 503 }));
+      }
+
+      const profile = profileResult.data as { account_status?: string } | null;
+      const organization = organizationResult.data as { status?: string; deleted_at?: string | null } | null;
+      const settings = settingsResult.data as { timezone?: string; locale?: string } | null;
+      const organizationFeatures = featuresResult.data as (Record<string, unknown> & { plan_code?: string | null }) | null;
+      const subscription = subscriptionResult.data as {
+        plan_code?: string;
+        status?: string;
+        period_end?: string | null;
+        trial_end?: string | null;
+      } | null;
+      const plan = (plansResult.data as Array<{ code?: string; features?: unknown }> | null)
+        ?.find((candidate) => candidate.code === subscription?.plan_code) ?? null;
+
+      if (!profile || !organization) {
+        return secure(isApi
+          ? NextResponse.json({ message: "Tenant account provisioning is incomplete." }, { status: 403 })
+          : NextResponse.redirect(new URL("/suspended", request.url)));
+      }
+
+      const accountStatus = String(profile.account_status || "").toLowerCase();
+      const organizationStatus = String(organization.status || "").toLowerCase();
+      const blocked = Boolean(organization.deleted_at) || accountStatus !== "active" || organizationStatus !== "active";
 
       if (blocked) {
         if (isApi) {
-          return NextResponse.json({ message: "Account or organization is suspended." }, { status: 403 });
+          return secure(NextResponse.json({ message: "Account or organization is suspended." }, { status: 403 }));
         }
-        return NextResponse.redirect(new URL("/suspended", request.url));
+        return secure(NextResponse.redirect(new URL("/suspended", request.url)));
+      }
+
+      const tenantConfigurationReady = Boolean(
+        settings?.timezone
+        && settings.locale
+        && organizationFeatures?.plan_code
+        && subscription?.plan_code
+        && organizationFeatures.plan_code === subscription.plan_code
+        && plan
+        && subscriptionEnabled(subscription)
+      );
+      if (!tenantConfigurationReady) {
+        return secure(isApi
+          ? NextResponse.json({ message: "Tenant configuration or subscription is inactive." }, { status: 403 })
+          : NextResponse.redirect(new URL("/suspended", request.url)));
       }
 
       const requiredFeature = requiredFeatureForPath(pathname);
       if (requiredFeature) {
-        const { data: organizationFeatures, error: organizationFeaturesError } = await supabase
-          .from("organization_features")
-          .select("*")
-          .eq("org_id", membershipRecord.org_id)
-          .maybeSingle();
-
-        if (!organizationFeaturesError && !featureEnabled(organizationFeatures as Record<string, unknown> | null, requiredFeature)) {
+        if (!featureEnabled(organizationFeatures, requiredFeature) || !planAllowsFeature(plan, requiredFeature)) {
           if (isApi) {
-            return NextResponse.json({ message: "This module is not enabled for the organization plan." }, { status: 403 });
+            return secure(NextResponse.json({ message: "This module is not enabled for the organization plan." }, { status: 403 }));
           }
-          return NextResponse.redirect(new URL(getDefaultPathForRole(role), request.url));
+          return secure(NextResponse.redirect(new URL(getDefaultPathForRole(role), request.url)));
         }
       }
     }
@@ -157,22 +321,45 @@ export async function middleware(request: NextRequest) {
     // Allow authenticated candidates (no org role) to access candidate API routes
     if (isApi && pathname.startsWith("/api/candidate/")) return response;
     if (isApi) {
-      return NextResponse.json({ message: "Organization membership is required." }, { status: 403 });
+      return secure(NextResponse.json({ message: "Organization membership is required." }, { status: 403 }));
     }
     // Redirect to candidate portal (not the HR login)
     if (pathname.startsWith("/candidate/")) return response;
-    return NextResponse.redirect(new URL("/candidate/applications", request.url));
+    return secure(NextResponse.redirect(new URL("/candidate/applications", request.url)));
   }
 
   if (isAuthPage) {
-    return NextResponse.redirect(new URL(getDefaultPathForRole(role), request.url));
+    return secure(NextResponse.redirect(new URL(getDefaultPathForRole(role), request.url)));
   }
 
   if (!canAccessPath(role, pathname)) {
     if (isApi) {
-      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+      return secure(NextResponse.json({ message: "Forbidden" }, { status: 403 }));
     }
-    return NextResponse.redirect(new URL(getDefaultPathForRole(role), request.url));
+    return secure(NextResponse.redirect(new URL(getDefaultPathForRole(role), request.url)));
+  }
+
+  const isMfaSetupPage = pathname === "/settings/security";
+  if (PRIVILEGED_MFA_ROLES.has(role) && !isMfaSetupPage) {
+    const assurance = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assurance.error || !assurance.data) {
+      console.error("MFA assurance lookup failed", { requestId, message: assurance.error?.message });
+      return secure(isApi
+        ? NextResponse.json({ message: "Authentication assurance is temporarily unavailable." }, { status: 503 })
+        : new NextResponse("Service unavailable", { status: 503 }));
+    }
+    if (assurance.data.currentLevel !== "aal2") {
+      if (isApi) {
+        return secure(NextResponse.json(
+          { message: "Multi-factor authentication is required.", code: "mfa_required" },
+          { status: 403 }
+        ));
+      }
+      const securityUrl = new URL("/settings/security", request.url);
+      securityUrl.searchParams.set("mfa", "required");
+      securityUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+      return secure(NextResponse.redirect(securityUrl));
+    }
   }
 
   return response;

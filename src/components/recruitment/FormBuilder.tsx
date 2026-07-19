@@ -234,7 +234,7 @@ export function FormBuilder({ questions, onChange }: Props) {
                 <Label className="text-xs mb-1 block">أنواع الملفات المقبولة</Label>
                 <Input
                   value={q.accept ?? ""}
-                  placeholder=".pdf,.doc,.docx"
+                  placeholder=".pdf,.docx,.xlsx,.jpg,.jpeg,.png"
                   className="h-8 text-sm"
                   onChange={(e) => updateQuestion(q.id, { accept: e.target.value })}
                 />

@@ -16,7 +16,8 @@ async function authorizeRecruiter() {
   return { userId: user.id, orgId: m.org_id, role: m.role };
 }
 
-export async function POST(_request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const auth = await authorizeRecruiter();
   if (!auth) return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
 
@@ -24,7 +25,7 @@ export async function POST(_request: NextRequest, { params }: { params: { id: st
   let sourceQuery = admin
     .from("job_postings")
     .select("*")
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("org_id", auth.orgId);
   if (auth.role === "hr_recruitment") sourceQuery = sourceQuery.eq("created_by", auth.userId);
   const { data: source, error: sourceError } = await sourceQuery.maybeSingle();

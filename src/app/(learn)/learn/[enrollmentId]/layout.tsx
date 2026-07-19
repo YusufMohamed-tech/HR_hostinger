@@ -1,11 +1,12 @@
 import { ClassroomShell } from "@/components/lms/classroom/ClassroomShell";
 
-export default function ClassroomLayout({
+export default async function ClassroomLayout({
   children,
   params,
 }: {
   children: React.ReactNode;
-  params: { enrollmentId: string };
+  params: Promise<{ enrollmentId: string }>;
 }) {
-  return <ClassroomShell enrollmentId={params.enrollmentId}>{children}</ClassroomShell>;
+  const { enrollmentId } = await params;
+  return <ClassroomShell enrollmentId={enrollmentId}>{children}</ClassroomShell>;
 }

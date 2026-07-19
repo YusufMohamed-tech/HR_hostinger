@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Briefcase, Eye, EyeOff } from "lucide-react";
@@ -9,10 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
-import { createClient } from "@/lib/supabase/client";
 
 export default function CandidateLoginPage() {
-  const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -24,10 +22,15 @@ export default function CandidateLoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const payload = await response.json().catch(() => null);
     setLoading(false);
-    if (error) {
-      setMessage(error.message);
+    if (!response.ok) {
+      setMessage(String(payload?.message || "تعذر تسجيل الدخول."));
     } else {
       router.push("/candidate/applications");
     }

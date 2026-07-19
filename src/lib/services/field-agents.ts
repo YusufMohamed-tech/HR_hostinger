@@ -52,11 +52,24 @@ function qs(p?: QueryParams) {
 
 const BASE = "/api/sales/agents";
 
+function identityCommandId(scope: string) {
+  const key = `hrms-sales-identity:${scope.trim().toLowerCase()}`;
+  const existing = typeof window === "undefined" ? null : window.sessionStorage.getItem(key);
+  if (existing) return { key, value: existing };
+  const value = crypto.randomUUID();
+  if (typeof window !== "undefined") window.sessionStorage.setItem(key, value);
+  return { key, value };
+}
+
 // Agents
 export const getFieldAgents = (p?: QueryParams) => apiFetch<FieldAgent[]>(BASE + qs(p));
 export const getFieldAgent = (id: string) => apiFetch<FieldAgent>(`${BASE}/${id}`);
-export const createFieldAgent = (body: Record<string, unknown>) =>
-  apiFetch<FieldAgent>(BASE, jsonInit("POST", body));
+export const createFieldAgent = async (body: Record<string, unknown>) => {
+  const command = identityCommandId(`field-agent:${String(body.email || "")}`);
+  const result = await apiFetch<FieldAgent>(BASE, jsonInit("POST", { ...body, command_id: command.value }));
+  if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(command.key);
+  return result;
+};
 export const updateFieldAgent = (id: string, body: Record<string, unknown>) =>
   apiFetch<FieldAgent>(`${BASE}/${id}`, jsonInit("PATCH", body));
 export const getAgentSales = (id: string, p?: QueryParams) =>
@@ -80,9 +93,11 @@ export const getSimImportBatches = (p?: QueryParams) =>
 export const getSimImportBatch = (id: string) =>
   apiFetch<{ batch: SimImportBatch; sims: SimUnit[] }>(`${BASE}/sims/import-batches/${id}`);
 export const recordSale = (body: Record<string, unknown>) =>
-  apiFetch<SimUnit>(`${BASE}/sims/sell`, jsonInit("POST", body));
+  apiFetch<SimUnit>(`${BASE}/sims/sell`, jsonInit("POST", { command_id: crypto.randomUUID(), ...body }));
 export const returnSim = (body: Record<string, unknown>) =>
-  apiFetch<SimUnit>(`${BASE}/sims/return`, jsonInit("POST", body));
+  apiFetch<SimUnit>(`${BASE}/sims/return`, jsonInit("POST", { command_id: crypto.randomUUID(), ...body }));
+export const voidSimSale = (body: { sale_id: string; expected_version: number; reason: string; command_id?: string }) =>
+  apiFetch<Record<string, unknown>>(`${BASE}/sims/void`, jsonInit("POST", { command_id: crypto.randomUUID(), ...body }));
 
 // Transfers
 export const getSimTransfers = (p?: QueryParams) =>
@@ -91,8 +106,19 @@ export const getSimTransfers = (p?: QueryParams) =>
 // Cash collections
 export const getCashCollections = (agentId: string) =>
   apiFetch<AgentCashCollection[]>(`${BASE}/${agentId}/collections`);
-export const collectCash = (body: Record<string, unknown>) =>
-  apiFetch<AgentCashCollection>(`${BASE}/collect`, jsonInit("POST", body));
+export const collectCash = async (body: Record<string, unknown>) => {
+  const scope = `agent-cash:${String(body.agent_id || "")}:${String(body.amount || "")}:${String(body.collection_date || "")}`;
+  const command = identityCommandId(`${scope}:command`);
+  const collection = identityCommandId(`${scope}:collection`);
+  const result = await apiFetch<AgentCashCollection>(`${BASE}/collect`, jsonInit("POST", {
+    ...body, command_id: command.value, collection_id: collection.value,
+  }));
+  if (!result.error && typeof window !== "undefined") {
+    window.sessionStorage.removeItem(command.key);
+    window.sessionStorage.removeItem(collection.key);
+  }
+  return result;
+};
 
 // SIM requests
 export const getSimRequests = (p?: QueryParams) =>

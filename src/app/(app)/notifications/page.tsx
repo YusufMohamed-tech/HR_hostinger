@@ -80,7 +80,7 @@ export default function NotificationsPage() {
           disabled={!hasUnread || !currentUser?.orgId || !currentUser?.id}
           onClick={async () => {
             if (!currentUser?.orgId || !currentUser?.id) return;
-            await markAllNotificationsRead(currentUser.orgId, currentUser.id);
+            await markAllNotificationsRead();
             refetch();
           }}
         >

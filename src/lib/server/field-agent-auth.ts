@@ -4,8 +4,8 @@ import { requireTenantContext } from "@/lib/server/tenant-context";
 const fieldAgentManagerRoles = new Set(["admin", "sales_manager", "onground_agent_manager"]);
 const fieldAgentAllRoles = new Set(["field_agent", "admin", "sales_manager", "onground_agent_manager"]);
 
-export async function requireFieldAgentAccess(options?: { managerOnly?: boolean }) {
-  const auth = await requireTenantContext({ feature: "sales" });
+export async function requireFieldAgentAccess(options?: { managerOnly?: boolean }, request?: import("next/server").NextRequest) {
+  const auth = await requireTenantContext({ feature: "sales" }, request);
   if ("error" in auth) return auth;
 
   const allowed = options?.managerOnly
@@ -27,6 +27,7 @@ export async function requireFieldAgentAccess(options?: { managerOnly?: boolean 
     employeeId: auth.employeeId,
     role: auth.role,
     admin: auth.admin,
+    requestId: auth.requestId,
     isManager: fieldAgentManagerRoles.has(auth.role),
   };
 }

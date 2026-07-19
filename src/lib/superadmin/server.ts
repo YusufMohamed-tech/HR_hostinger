@@ -11,8 +11,8 @@ type PlatformAdminRecord = {
 
 export type SuperadminAuth = {
   user: User;
-  platformAdmin: PlatformAdminRecord | null;
-  source: "platform_admins" | "legacy_org_members";
+  platformAdmin: PlatformAdminRecord;
+  source: "platform_admins";
 };
 
 export async function requireSuperadmin(): Promise<SuperadminAuth | { error: NextResponse }> {
@@ -32,10 +32,14 @@ export async function requireSuperadmin(): Promise<SuperadminAuth | { error: Nex
     .maybeSingle();
 
   const platformRecord = platformAdmin as unknown as PlatformAdminRecord | null;
-  const platformTableMissing = platformError && platformError.code === "42P01";
-
-  if (platformError && !platformTableMissing) {
-    return { error: NextResponse.json({ message: platformError.message }, { status: 500 }) };
+  if (platformError) {
+    console.error("Platform admin authorization failed", { code: platformError.code });
+    return {
+      error: NextResponse.json(
+        { message: "Platform administration is temporarily unavailable." },
+        { status: 503 }
+      ),
+    };
   }
 
   if (platformRecord?.role === "superadmin" && platformRecord.status === "active") {
@@ -46,22 +50,7 @@ export async function requireSuperadmin(): Promise<SuperadminAuth | { error: Nex
     return { error: NextResponse.json({ message: "Superadmin account is suspended." }, { status: 403 }) };
   }
 
-  if (!platformTableMissing) {
-    return { error: NextResponse.json({ message: "Superadmin access is required." }, { status: 403 }) };
-  }
-
-  const { data: membership, error: membershipError } = await admin
-    .from("org_members")
-    .select("role")
-    .eq("user_id", user.id)
-    .eq("role", "super_admin")
-    .maybeSingle();
-
-  if (membershipError || !membership) {
-    return { error: NextResponse.json({ message: "Superadmin access is required." }, { status: 403 }) };
-  }
-
-  return { user, platformAdmin: null, source: "legacy_org_members" };
+  return { error: NextResponse.json({ message: "Superadmin access is required." }, { status: 403 }) };
 }
 
 export async function recordPlatformAudit(values: {
@@ -83,7 +72,7 @@ export async function recordPlatformAudit(values: {
     target_type: values.targetType ?? null,
     target_id: values.targetId ?? null,
     metadata: values.metadata ?? {},
-  } as never);
+  });
 
   if (error && error.code !== "42P01") {
     console.error("Unable to write platform audit log:", error.message);

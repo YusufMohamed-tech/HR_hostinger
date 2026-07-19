@@ -1,6 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireTenantContext } from "@/lib/server/tenant-context";
-import { writeAuditLog } from "@/lib/utils/audit";
+
+type OrganizationRpcClient = {
+  rpc: (name: string, args: Record<string, unknown>) => Promise<{
+    data: unknown;
+    error: { code?: string; message: string } | null;
+  }>;
+};
+
+function validUuid(value: unknown) {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function rpcStatus(code?: string) {
+  if (code === "42501") return 403;
+  if (code === "P0002" || code === "23503") return 404;
+  if (code === "23505" || code === "40001") return 409;
+  if (["22023", "23514", "23502"].includes(code || "")) return 400;
+  return 500;
+}
 
 function nullableText(value: unknown) {
   if (typeof value !== "string") return undefined;
@@ -63,23 +82,22 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
-  const auth = await requireTenantContext({ roles: ["admin", "hr_admin"] });
+  const auth = await requireTenantContext({ roles: ["admin", "hr_admin"] }, request);
   if ("error" in auth) return auth.error;
 
   const body = await request.json().catch(() => ({}));
   const name = optionalText((body as Record<string, unknown>).name);
   const settings = ((body as Record<string, unknown>).settings || {}) as Record<string, unknown>;
-  const now = new Date().toISOString();
+  const commandId = (body as Record<string, unknown>).command_id;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const db = auth.admin as any;
-  const updates: Record<string, unknown> = {};
-  const settingsUpdates: Record<string, unknown> = {
-    org_id: auth.orgId,
-    updated_at: now,
-  };
+  if (!validUuid(commandId)) {
+    return NextResponse.json({ message: "A valid command id is required." }, { status: 400 });
+  }
 
-  if (name) updates.name = name;
+  const payload: Record<string, unknown> = {};
+  const settingsUpdates: Record<string, unknown> = {};
+
+  if (name) payload.name = name;
 
   const brandName = nullableText(settings.brand_name);
   const tagline = nullableText(settings.tagline);
@@ -93,11 +111,11 @@ export async function PATCH(request: NextRequest) {
   if (locale !== undefined) settingsUpdates.locale = locale;
   if (timezone !== undefined) settingsUpdates.timezone = timezone;
 
-  if (Object.keys(updates).length === 0 && Object.keys(settingsUpdates).length <= 2) {
+  if (Object.keys(payload).length === 0 && Object.keys(settingsUpdates).length === 0) {
     return NextResponse.json({ message: "No supported updates were provided." }, { status: 400 });
   }
 
-  if (updates.name && String(updates.name).length < 2) {
+  if (payload.name && String(payload.name).length < 2) {
     return NextResponse.json({ message: "Organization name is too short." }, { status: 400 });
   }
 
@@ -105,37 +123,38 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ message: "Primary color must be a hex color like #0f766e." }, { status: 400 });
   }
 
-  if (Object.keys(updates).length > 0) {
-    updates.updated_at = now;
-    const organizationUpdate = await auth.admin
-      .from("organizations")
-      .update(updates as never)
-      .eq("id", auth.orgId)
-      .is("deleted_at", null);
-
-    if (organizationUpdate.error) {
-      return NextResponse.json({ message: organizationUpdate.error.message }, { status: 500 });
-    }
+  if (Object.keys(settingsUpdates).length > 0) {
+    payload.settings = settingsUpdates;
   }
 
-  if (Object.keys(settingsUpdates).length > 2) {
-    const settingsUpdate = await db
-      .from("organization_settings")
-      .upsert(settingsUpdates, { onConflict: "org_id" });
-
-    if (settingsUpdate.error) {
-      return NextResponse.json({ message: settingsUpdate.error.message }, { status: 500 });
-    }
+  const [organizationResult, settingsResult] = await Promise.all([
+    auth.admin.from("organizations").select("version").eq("id", auth.orgId).maybeSingle(),
+    auth.admin.from("organization_settings").select("version").eq("org_id", auth.orgId).maybeSingle(),
+  ]);
+  const dependencyError = organizationResult.error || settingsResult.error;
+  if (dependencyError) {
+    return NextResponse.json({ message: dependencyError.message }, { status: 500 });
+  }
+  if (!organizationResult.data || !settingsResult.data) {
+    return NextResponse.json({ message: "Organization settings are not fully provisioned." }, { status: 409 });
   }
 
-  await writeAuditLog(auth.admin, {
-    org_id: auth.orgId,
-    actor_user_id: auth.user.id,
-    action: "organization.settings_updated",
-    entity: "organizations",
-    entity_id: auth.orgId,
-    new_values: { organization: updates, settings: settingsUpdates },
+  const command = await (auth.admin as unknown as OrganizationRpcClient).rpc("execute_organization_command", {
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_command_id: commandId,
+    p_action: "tenant_settings_update",
+    p_target_org_id: auth.orgId,
+    p_expected_org_version: Number(organizationResult.data.version ?? 0),
+    p_expected_settings_version: Number(settingsResult.data.version ?? 0),
+    p_payload: payload,
   });
+  if (command.error) {
+    return NextResponse.json(
+      { message: command.error.message },
+      { status: rpcStatus(command.error.code) }
+    );
+  }
 
   try {
     const data = await loadOrganizationSettings(auth);

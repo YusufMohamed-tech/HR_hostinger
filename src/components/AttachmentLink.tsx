@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 
 type AttachmentLinkProps = {
   bucket: string;
@@ -33,8 +32,7 @@ export const AttachmentLink = React.forwardRef<HTMLAnchorElement, AttachmentLink
   { bucket, attachment, className, children, target, rel, download, ...props },
   ref
 ) {
-  const rawUrl = String(attachment.url || "");
-  const fallbackUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : "";
+  const fallbackUrl = "";
   const path = useMemo(() => getAttachmentPath(bucket, attachment), [attachment, bucket]);
   const [href, setHref] = useState(fallbackUrl || "#");
   const targetValue = target ?? (download ? undefined : "_blank");
@@ -48,13 +46,15 @@ export const AttachmentLink = React.forwardRef<HTMLAnchorElement, AttachmentLink
       return;
     }
 
-    const supabase = createClient();
-    supabase.storage
-      .from(bucket)
-      .createSignedUrl(path, 60 * 60)
-      .then((result) => {
+    fetch("/api/files/signed-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bucket, path }),
+    })
+      .then(async (response) => ({ response, payload: await response.json().catch(() => null) }))
+      .then(({ response, payload }) => {
         if (!active) return;
-        setHref(result.data?.signedUrl || fallbackUrl || "#");
+        setHref(response.ok ? String(payload?.data?.signedUrl || "#") : "#");
       });
 
     return () => {

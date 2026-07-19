@@ -1,7 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { provisionOrganizationDefaults } from "@/lib/server/tenant-provisioning";
-import { recordPlatformAudit, requireSuperadmin } from "@/lib/superadmin/server";
+import { requireSuperadmin } from "@/lib/superadmin/server";
+
+type OrganizationRpcClient = {
+  rpc: (name: string, args: Record<string, unknown>) => Promise<{
+    data: unknown;
+    error: { code?: string; message: string } | null;
+  }>;
+};
+
+function validUuid(value: unknown) {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function requestId(request: NextRequest) {
+  const supplied = request.headers.get("x-request-id")?.trim();
+  return validUuid(supplied) ? supplied as string : crypto.randomUUID();
+}
+
+function rpcStatus(code?: string) {
+  if (code === "42501") return 403;
+  if (code === "P0002" || code === "23503") return 404;
+  if (code === "23505" || code === "40001") return 409;
+  if (["22023", "23514", "23502"].includes(code || "")) return 400;
+  return 500;
+}
 
 function normalizeSlug(value: string) {
   const normalized = value
@@ -104,44 +128,38 @@ export async function POST(request: NextRequest) {
   const name = String(body.name || "").trim();
   const rawSlug = String(body.slug || body.name || "");
   const status = normalizeStatus(String(body.status || "Active"));
+  const commandId = body.command_id;
 
-  if (!name) {
-    return NextResponse.json({ message: "Organization name is required." }, { status: 400 });
+  if (name.length < 2) {
+    return NextResponse.json({ message: "Organization name must contain at least two characters." }, { status: 400 });
+  }
+  if (!validUuid(commandId)) {
+    return NextResponse.json({ message: "A valid command id is required." }, { status: 400 });
   }
 
   const admin = createAdminClient();
-  const createResult = await admin
-    .from("organizations")
-    .insert({
+  const command = await (admin as unknown as OrganizationRpcClient).rpc("execute_organization_command", {
+    p_actor_user_id: auth.user.id,
+    p_request_id: requestId(request),
+    p_command_id: commandId,
+    p_action: "platform_create",
+    p_target_org_id: null,
+    p_expected_org_version: 0,
+    p_expected_settings_version: 0,
+    p_payload: {
       name,
       slug: normalizeSlug(rawSlug),
       status,
-    } as never)
-    .select()
-    .single();
-
-  if (createResult.error) {
-    return NextResponse.json({ message: createResult.error.message }, { status: 500 });
-  }
-
-  const organization = createResult.data as Record<string, unknown> | null;
-  const provisionResult = await provisionOrganizationDefaults(admin, String(organization?.id || ""), auth.user.id);
-  if (provisionResult.error) {
-    return NextResponse.json({ message: provisionResult.error.message }, { status: 500 });
-  }
-
-  await recordPlatformAudit({
-    actorUserId: auth.user.id,
-    action: "organization.created",
-    targetOrgId: String(organization?.id || ""),
-    targetType: "organization",
-    targetId: String(organization?.id || ""),
-    metadata: {
-      name,
-      slug: String(organization?.slug || ""),
-      status,
     },
   });
+  if (command.error) {
+    return NextResponse.json(
+      { message: command.error.message },
+      { status: rpcStatus(command.error.code) }
+    );
+  }
+
+  const organization = command.data as Record<string, unknown> | null;
 
   return NextResponse.json({
     data: {
@@ -164,30 +182,28 @@ export async function PATCH(request: NextRequest) {
   const name = typeof body.name === "string" ? body.name.trim() : undefined;
   const slug = typeof body.slug === "string" ? body.slug.trim() : undefined;
   const status = typeof body.status === "string" ? body.status.trim() : undefined;
+  const commandId = body.command_id;
 
   if (!id) {
     return NextResponse.json({ message: "Organization id is required." }, { status: 400 });
   }
+  if (!validUuid(commandId)) {
+    return NextResponse.json({ message: "A valid command id is required." }, { status: 400 });
+  }
 
-  const updateValues: Record<string, unknown> = {
-    updated_at: new Date().toISOString(),
-  };
+  const updateValues: Record<string, unknown> = {};
 
   if (name) updateValues.name = name;
   if (slug !== undefined) updateValues.slug = normalizeSlug(slug || name || id);
   if (status) updateValues.status = normalizeStatus(status);
-  if (updateValues.status === "Deleted") {
-    updateValues.deleted_at = new Date().toISOString();
-    updateValues.deletion_requested_at = updateValues.deleted_at;
-    updateValues.deletion_requested_by = auth.user.id;
-  } else if (updateValues.status === "Active") {
-    updateValues.deleted_at = null;
+  if (Object.keys(updateValues).length === 0) {
+    return NextResponse.json({ message: "No supported updates were provided." }, { status: 400 });
   }
 
   const admin = createAdminClient();
   const currentResult = await admin
     .from("organizations")
-    .select("status")
+    .select("version")
     .eq("id", id)
     .maybeSingle();
 
@@ -195,15 +211,25 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ message: currentResult.error.message }, { status: 500 });
   }
 
-  const updateResult = await admin
-    .from("organizations")
-    .update(updateValues as never)
-    .eq("id", id)
-    .select()
-    .single();
+  if (!currentResult.data) {
+    return NextResponse.json({ message: "Organization was not found." }, { status: 404 });
+  }
 
-  if (updateResult.error) {
-    return NextResponse.json({ message: updateResult.error.message }, { status: 500 });
+  const command = await (admin as unknown as OrganizationRpcClient).rpc("execute_organization_command", {
+    p_actor_user_id: auth.user.id,
+    p_request_id: requestId(request),
+    p_command_id: commandId,
+    p_action: "platform_update",
+    p_target_org_id: id,
+    p_expected_org_version: Number(currentResult.data.version ?? 0),
+    p_expected_settings_version: null,
+    p_payload: updateValues,
+  });
+  if (command.error) {
+    return NextResponse.json(
+      { message: command.error.message },
+      { status: rpcStatus(command.error.code) }
+    );
   }
 
   const summaryResult = await getOrganizationSummaries();
@@ -215,29 +241,5 @@ export async function PATCH(request: NextRequest) {
     (organization) => String((organization as Record<string, unknown>).id ?? "") === id
   );
 
-  const previousStatus = String((currentResult.data as Record<string, unknown> | null)?.status || "");
-  const nextStatus = String(updateValues.status || previousStatus);
-  const statusChanged = status && previousStatus.toLowerCase() !== nextStatus.toLowerCase();
-  const action = statusChanged
-    ? nextStatus.toLowerCase() === "suspended"
-      ? "organization.suspended"
-      : nextStatus.toLowerCase() === "deleted"
-        ? "organization.deleted"
-      : "organization.activated"
-    : "organization.updated";
-
-  await recordPlatformAudit({
-    actorUserId: auth.user.id,
-    action,
-    targetOrgId: id,
-    targetType: "organization",
-    targetId: id,
-    metadata: {
-      updates: updateValues,
-      previous_status: previousStatus || null,
-      next_status: nextStatus || null,
-    },
-  });
-
-  return NextResponse.json({ data: updatedSummary ?? updateResult.data });
+  return NextResponse.json({ data: updatedSummary ?? command.data });
 }

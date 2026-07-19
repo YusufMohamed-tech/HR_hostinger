@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +13,6 @@ import { LogOut, Shield, User, Building2, Mail, Key, Save, CheckCircle, UserPlus
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
-import { createClient } from "@/lib/supabase/client";
 import { getOrganizations, updateOrganization } from "@/lib/services/organizations";
 import { getOrgMembers } from "@/lib/services/members";
 import { createManagedUser, type ManagedOrgRole } from "@/lib/services/admin-users";
@@ -161,13 +161,16 @@ export default function SettingsPage() {
               <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 space-y-2 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-700">التحقق بعاملين</span>
-                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">مخطط</Badge>
+                  <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">متاح</Badge>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-700">سياسة كلمة المرور</span>
-                  <span className="text-gray-900 font-medium">قياسية</span>
+                  <span className="text-gray-900 font-medium">12 حرفاً ومعقدة</span>
                 </div>
               </div>
+              <Button asChild variant="outline" className="w-full">
+                <Link href="/settings/security">إدارة التحقق والجلسات</Link>
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -205,19 +208,11 @@ function UserManagementCard() {
   const [form, setForm] = useState({
     full_name: "",
     email: "",
-    password: "",
-    role: "hr_admin" as ManagedOrgRole,
+    role: "admin" as ManagedOrgRole,
   });
 
   const roleOptions: Array<{ value: ManagedOrgRole; label: string }> = [
     { value: "admin", label: "مسؤول منظمة" },
-    { value: "hr_admin", label: "مدير الموارد البشرية" },
-    { value: "hr_recruitment", label: "مسؤول التوظيف" },
-    { value: "onground_agent_manager", label: "مدير المندوبين الميدانيين" },
-    { value: "promoter", label: "مروج مبيعات" },
-    { value: "finance_manager", label: "مدير المالية" },
-    { value: "accountant", label: "محاسب" },
-    { value: "finance_viewer", label: "مشاهد المالية" },
   ];
 
   const roleLabels: Record<string, string> = {
@@ -264,8 +259,8 @@ function UserManagementCard() {
       return;
     }
 
-    setMessage("تم إنشاء الحساب وتحديث الصلاحية.");
-    setForm({ full_name: "", email: "", password: "", role: "hr_admin" });
+    setMessage("تم إرسال دعوة مسؤول المنظمة.");
+    setForm({ full_name: "", email: "", role: "admin" });
     await loadMembers();
     setTimeout(() => {
       setMessage("");
@@ -288,7 +283,7 @@ function UserManagementCard() {
             <DialogContent className="sm:max-w-[460px]">
               <DialogHeader>
                 <DialogTitle>إنشاء مستخدم مُدار</DialogTitle>
-                <DialogDescription>إنشاء حساب إداري أو مالي داخل هذه المنظمة.</DialogDescription>
+                <DialogDescription>إرسال دعوة لمسؤول منظمة. أدوار الموظفين تُنشأ من دورة تهيئة الموظف لدى HR.</DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="space-y-2">
@@ -298,10 +293,6 @@ function UserManagementCard() {
                 <div className="space-y-2">
                   <Label>البريد الإلكتروني</Label>
                   <Input type="email" value={form.email} onChange={(event) => set("email", event.target.value)} placeholder="hr@tatwir.sa" />
-                </div>
-                <div className="space-y-2">
-                  <Label>كلمة المرور</Label>
-                  <Input type="password" value={form.password} onChange={(event) => set("password", event.target.value)} placeholder="8 أحرف على الأقل" />
                 </div>
                 <div className="space-y-2">
                   <Label>الدور</Label>
@@ -314,7 +305,7 @@ function UserManagementCard() {
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-gray-500">
-                    أدوار المالية تمنح المستخدم صلاحيات داخل وحدة المالية والمحاسبة حسب مستوى الدور.
+                    سيصل رابط دعوة إلى البريد. لا يتم إنشاء أو تغيير كلمة مرور ضمن هذه العملية.
                   </p>
                 </div>
                 {error && <p className="text-sm text-red-600">{error}</p>}
@@ -479,12 +470,12 @@ function EditProfileButton() {
   const [form, setForm] = useState({
     full_name: currentUser?.name || "",
     phone: "",
-    title: "",
   });
 
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   // Sync name from context when it changes
   React.useEffect(() => {
@@ -494,19 +485,18 @@ function EditProfileButton() {
   const handleSave = async () => {
     if (!currentUser?.id) return;
     setSubmitting(true);
-    const supabase = createClient();
-    
-    await supabase.from("profiles").update({ full_name: form.full_name } as never).eq("user_id", currentUser.id);
-    
-    if (currentUser.employeeId) {
-      await supabase.from("employees").update({ 
-        full_name: form.full_name,
-        phone: form.phone || null,
-        job_title: form.title || null
-      } as never).eq("id", currentUser.employeeId);
-    }
-    
+    setError("");
+    const response = await fetch("/api/hr/profile", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name: form.full_name, phone: form.phone || null }),
+    });
+    const body = await response.json().catch(() => ({}));
     setSubmitting(false);
+    if (!response.ok) {
+      setError(String(body.message || "تعذر تحديث الملف الشخصي."));
+      return;
+    }
     setSaved(true);
     setTimeout(() => { setSaved(false); setOpen(false); }, 1200);
   };
@@ -530,10 +520,8 @@ function EditProfileButton() {
             <Label>الهاتف</Label>
             <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+966..." />
           </div>
-          <div className="space-y-2">
-            <Label>المسمى الوظيفي</Label>
-            <Input value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="مدير موارد بشرية" />
-          </div>
+          <p className="text-xs text-gray-500">المسمى الوظيفي والبيانات الرسمية يعدّلها HR من ملف الموظف.</p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>

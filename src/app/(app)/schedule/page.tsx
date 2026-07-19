@@ -111,7 +111,7 @@ export default function SchedulePage() {
                             confirmLabel="حذف"
                             destructive
                             onConfirm={async () => {
-                              await deleteShift(shiftId);
+                              await deleteShift(shiftId, Number(shiftRecord.version || 1));
                               refetchShifts();
                               refetchAssignments();
                             }}
@@ -198,7 +198,7 @@ export default function SchedulePage() {
                           confirmLabel="حذف"
                           destructive
                           onConfirm={async () => {
-                            await removeEmployeeShift(assignmentId);
+                            await removeEmployeeShift(assignmentId, Number(assignmentRecord.version || 1));
                             refetchAssignments();
                           }}
                         >
@@ -276,6 +276,7 @@ function EditShiftDialog({
       start_time: form.start_time,
       end_time: form.end_time,
       location_id: form.location_id || null,
+      expected_version: Number(shift.version || 1),
     });
 
     if (err) {

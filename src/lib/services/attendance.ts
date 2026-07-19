@@ -34,91 +34,66 @@ export async function getEmployeeAttendance(orgId: string, employeeId: string, w
 }
 
 export async function createCheckIn(values: Record<string, unknown>) {
-  const supabase = createClient();
-  const orgId = values.org_id as string;
-  const employeeId = values.employee_id as string;
-  const currentDevice = values.device_fingerprint as string || values.check_in_device as string;
-
-  const workDate = String(values.work_date || new Date().toISOString().split("T")[0]);
-  const empRes = await supabase
-    .from("employees")
-    .select("registered_device_id, can_multi_checkin")
-    .eq("org_id", orgId)
-    .eq("id", employeeId)
-    .single();
-  const employee = empRes.data as { registered_device_id?: string | null; can_multi_checkin?: boolean | null } | null;
-  const registeredDevice = employee?.registered_device_id;
-  const canMultiCheckin = Boolean(employee?.can_multi_checkin);
-
-  if (!canMultiCheckin) {
-    const existing = await supabase
-      .from("attendance_records")
-      .select("id")
-      .eq("org_id", orgId)
-      .eq("employee_id", employeeId)
-      .eq("work_date", workDate)
-      .limit(1);
-
-    if (existing.error) return { data: null, error: { message: existing.error.message } };
-    if ((existing.data || []).length > 0) {
-      return { data: null, error: { message: "You have already checked in for today." } };
-    }
-  }
-
-  if (registeredDevice && registeredDevice !== currentDevice) {
-    return { data: null, error: { message: "Attendance locked to your registered device. Please use your primary device." } };
-  } else if (!registeredDevice) {
-    await supabase.from("employees").update({
-      registered_device_id: currentDevice,
-      registered_device_name: values.check_in_device || "Registered mobile device",
-    } as never).eq("org_id", orgId).eq("id", employeeId);
-  }
-
-  values.is_registered_device = true;
-
-  const result = await supabase
-    .from("attendance_records")
-    .insert(values as never)
-    .select()
-    .single();
-
-  if (result.error && result.error.code === "23505") { // unique constraint violation
-    return { data: null, error: { message: "You have already checked in for today." } };
-  }
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+  const key = `attendance:check-in:${String(values.org_id || "")}:${String(values.employee_id || "")}:${String(values.work_date || "today")}`;
+  const requestId = attendanceRequestId(key, values.request_id);
+  return attendanceCommand("/api/attendance/check-in", {
+    requestId,
+    latitude: Number(values.check_in_lat),
+    longitude: Number(values.check_in_lng),
+    accuracyMeters: numericOrNull(values.check_in_accuracy_meters || values.accuracy_meters),
+    deviceLabel: String(values.check_in_device || "").slice(0, 500) || null,
+    deviceSignal: String(values.device_fingerprint || "").slice(0, 500) || null,
+    photoPath: String(values.check_in_photo_path || "").slice(0, 1500) || null,
+  });
 }
 
 export async function updateCheckOut(orgId: string, employeeId: string, id: string, values: Record<string, unknown>) {
-  const supabase = createClient();
-  const currentDevice = values.device_fingerprint as string | undefined;
+  const key = `attendance:check-out:${orgId}:${employeeId}:${id}`;
+  const requestId = attendanceRequestId(key, values.request_id);
+  return attendanceCommand("/api/attendance/check-out", {
+    attendanceId: id,
+    requestId,
+    latitude: Number(values.check_out_lat),
+    longitude: Number(values.check_out_lng),
+    accuracyMeters: numericOrNull(values.check_out_accuracy_meters || values.accuracy_meters),
+    deviceLabel: String(values.check_out_device || "").slice(0, 500) || null,
+    deviceSignal: String(values.device_fingerprint || "").slice(0, 500) || null,
+  });
+}
 
-  if (currentDevice) {
-    const recordResult = await supabase
-      .from("attendance_records")
-      .select("employee_id, employee:employee_id(registered_device_id)")
-      .eq("org_id", orgId)
-      .eq("employee_id", employeeId)
-      .eq("id", id)
-      .single();
+function numericOrNull(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
 
-    const record = recordResult.data as { employee?: { registered_device_id?: string | null } | null } | null;
-    const registeredDevice = record?.employee?.registered_device_id;
-    if (registeredDevice && registeredDevice !== currentDevice) {
-      return { data: null, error: { message: "Checkout must be recorded from the registered device." } };
+function attendanceRequestId(key: string, supplied: unknown) {
+  if (typeof supplied === "string" && supplied) return supplied;
+  if (typeof window === "undefined") return crypto.randomUUID();
+  const existing = window.sessionStorage.getItem(key);
+  if (existing) return existing;
+  const created = crypto.randomUUID();
+  window.sessionStorage.setItem(key, created);
+  return created;
+}
+
+async function attendanceCommand(path: string, body: Record<string, unknown>) {
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { data: null, error: { message: String(data.message || "Unable to record attendance.") } };
     }
+    return { data: (data.record ?? null) as Record<string, unknown> | null, error: null };
+  } catch (error) {
+    return {
+      data: null,
+      error: { message: error instanceof Error ? error.message : "Unable to connect to attendance service." },
+    };
   }
-
-  const result = await supabase
-    .from("attendance_records")
-    .update(values as never)
-    .eq("org_id", orgId)
-    .eq("employee_id", employeeId)
-    .eq("id", id)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
 export async function notifyMissingAttendanceLocation(action: "check_in" | "check_out") {
@@ -134,23 +109,4 @@ export async function notifyMissingAttendanceLocation(action: "check_in" | "chec
   } catch (error) {
     return { data: null, error: { message: error instanceof Error ? error.message : "تعذر الاتصال بالخادم." } };
   }
-}
-
-export async function uploadAttendanceSelfie(
-  orgId: string,
-  employeeId: string,
-  workDate: string,
-  file: File
-) {
-  const supabase = createClient();
-  const fileExt = file.name.split(".").pop() || "jpg";
-  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`;
-  const filePath = `${orgId}/${employeeId}/${workDate}/${fileName}`;
-
-  const result = await supabase
-    .storage
-    .from("attendance-selfies")
-    .upload(filePath, file, { upsert: true });
-
-  return result as unknown as { data: { path: string } | null; error: { message: string } | null };
 }

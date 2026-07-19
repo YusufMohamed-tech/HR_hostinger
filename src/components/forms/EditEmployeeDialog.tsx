@@ -10,12 +10,8 @@ import {
 } from "@/components/ui/dialog";
 import { Pencil } from "lucide-react";
 import { useDepartments, useLocations, useEmployees } from "@/hooks/use-data";
-import { createEmployeeAccount, replaceEmployeeLocations, updateEmployee, type EmployeeAccountRole } from "@/lib/services/employees";
-import { updateDepartment } from "@/lib/services/departments";
-import { hasUnreturnedAssets } from "@/lib/services/assets";
-import { MessageDialog } from "@/components/ui/feedback-dialog";
+import { createEmployeeAccount, updateEmployee, type EmployeeAccountRole } from "@/lib/services/employees";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { createCareerEvents } from "@/lib/services/career-events";
 import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
 import { getDeductionRuleGroups, type DeductionRuleGroup } from "@/lib/services/deduction-rule-groups";
 import { bankOptions, educationLevelOptions, saudiCityOptions } from "@/lib/hr-options";
@@ -47,7 +43,10 @@ const twoColumnGridClass = "grid grid-cols-1 gap-4 md:grid-cols-2";
 const threeColumnGridClass = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3";
 const accountRoleOptions: Array<{ value: EmployeeAccountRole; label: string }> = [
   { value: "employee", label: "موظف" },
+  { value: "hr_admin", label: "مدير الموارد البشرية" },
+  { value: "hr_recruitment", label: "مسؤول التوظيف" },
   { value: "training_manager", label: "مدير تدريب / موقع" },
+  { value: "onground_agent_manager", label: "مدير المندوبين الميدانيين" },
   { value: "promoter", label: "مروج مبيعات" },
   { value: "finance_manager", label: "مدير المالية" },
   { value: "accountant", label: "محاسب" },
@@ -64,15 +63,12 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
   const [companies, setCompanies] = useState<SalesCompany[]>([]);
   const [deductionGroups, setDeductionGroups] = useState<DeductionRuleGroup[]>([]);
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<EmployeeAccountRole>("employee");
-  const [accountPassword, setAccountPassword] = useState("");
   const [canMultiCheckin, setCanMultiCheckin] = useState(false);
-  const [gosiRegistered, setGosiRegistered] = useState(false);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
   const [primaryLocationId, setPrimaryLocationId] = useState("");
 
@@ -115,7 +111,6 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
     bank_name: "",
     iban: "",
     education_level: "",
-    gosi_number: "",
     carrier_supervisor_id: "",
   });
 
@@ -160,10 +155,8 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
         iban: employee.iban || employee.bank_account || "",
         education_level: employee.education_level || "",
         deduction_rule_group_id: (employee as Record<string, unknown>).deduction_rule_group_id ? String((employee as Record<string, unknown>).deduction_rule_group_id) : "",
-        gosi_number: String((employee as Record<string, unknown>).gosi_number || ""),
         carrier_supervisor_id: String((employee as Record<string, unknown>).carrier_supervisor_id || ""),
       });
-      setGosiRegistered(Boolean((employee as Record<string, unknown>).gosi_registered));
       const managedDepartment = departments.find((department) => {
         const departmentRecord = department as Record<string, unknown>;
         return String(departmentRecord.manager_employee_id || "") === String(employee.id || "");
@@ -171,7 +164,6 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
       setIsDepartmentManager(Boolean(managedDepartment));
       setCreateLoginAccount(false);
       setAccountRole(Boolean(managedDepartment) ? "training_manager" : "employee");
-      setAccountPassword("");
       setCanMultiCheckin(Boolean(employee.can_multi_checkin));
       const employeeLocationRows = Array.isArray(employee.employee_locations) ? employee.employee_locations : [];
       const locationIds = employeeLocationRows
@@ -263,34 +255,15 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
         setError("البريد الإلكتروني مطلوب لإنشاء حساب الدخول.");
         return;
       }
-      if (accountPassword.length < 8) {
-        setError("كلمة مرور حساب الدخول يجب ألا تقل عن 8 أحرف.");
-        return;
-      }
     }
     setSubmitting(true);
     setError("");
 
     const currentStatus = String(employee?.status || "Active");
-    const isChangingToInactive = form.status === "Inactive" && currentStatus !== "Inactive";
-    if (isChangingToInactive) {
-      const orgId = String(employee?.org_id || "");
-      const employeeId = String(employee?.id || "");
-      const assetCheck = orgId && employeeId
-        ? await hasUnreturnedAssets(orgId, employeeId)
-        : { hasAssets: false, error: null };
-
-      if (assetCheck.error) {
-        setError(assetCheck.error.message);
-        setSubmitting(false);
-        return;
-      }
-
-      if (assetCheck.hasAssets) {
-        setMessage("لا يمكن تعطيل هذا الموظف. لديه عهدة لم تُسلّم بعد. يرجى الانتهاء من تسليم العهدة أولاً.");
-        setSubmitting(false);
-        return;
-      }
+    if (form.status !== currentStatus) {
+      setError("تغيير حالة الموظف يتم من إجراءات الإجازة أو إنهاء الخدمة حتى تُحدّث الصلاحيات والتكليفات بأمان.");
+      setSubmitting(false);
+      return;
     }
 
     const payload = {
@@ -327,8 +300,6 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
       leave_balance_manual_adjustment: form.leave_balance_manual_adjustment ? parseFloat(form.leave_balance_manual_adjustment) : undefined,
       leave_accrual_start_date: form.leave_accrual_start_date || form.hiring_date || undefined,
       can_multi_checkin: canMultiCheckin,
-      gosi_registered: gosiRegistered,
-      gosi_number: form.gosi_number || undefined,
       carrier_supervisor_id: form.carrier_supervisor_id || undefined,
       payment_method: form.payment_method || undefined,
       bank_account: form.bank_account || undefined,
@@ -338,32 +309,19 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
       education_level: form.education_level || undefined,
     };
 
-    const effectiveDate = form.hiring_date || new Date().toISOString().split("T")[0];
-    const careerEvents = [
-      { key: "job_title", type: "role_change", label: "تغيير المسمى الوظيفي" },
-      { key: "department_id", type: "department_change", label: "تغيير القسم" },
-      { key: "location_id", type: "location_change", label: "تغيير الموقع الأساسي" },
-      { key: "status", type: "status_change", label: "تغيير الحالة" },
-      { key: "employment_type", type: "role_change", label: "تغيير نوع التوظيف" },
-    ]
-      .filter((item) => String(employee?.[item.key] || "") !== String(form[item.key as keyof typeof form] || ""))
-      .map((item) => ({
-        employee_id: String(employee.id),
-        event_type: item.type,
-        previous_value: { [item.key]: employee?.[item.key] || null },
-        new_value: { [item.key]: form[item.key as keyof typeof form] || null },
-        effective_date: effectiveDate,
-        notes: item.label,
-        created_by: currentUser?.id,
-      }));
-
     if (!currentUser?.orgId) {
       setError("Organization context is required.");
       setSubmitting(false);
       return;
     }
 
-    const { error: err } = await updateEmployee(currentUser.orgId, String(employee.id), payload);
+    const managedDepartmentIds = isDepartmentManager && form.department_id ? [form.department_id] : [];
+    const { error: err } = await updateEmployee(String(employee.id), payload, {
+      expectedVersion: Number(employee.lifecycle_version || 1),
+      locationIds: selectedLocationIds,
+      primaryLocationId: form.location_id || undefined,
+      managedDepartmentIds,
+    });
 
     if (err) {
       setError(err.message);
@@ -371,58 +329,10 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
       return;
     }
 
-    const { error: careerError } = await createCareerEvents(careerEvents);
-    if (careerError) {
-      setError(careerError.message);
-      setSubmitting(false);
-      return;
-    }
-
-    const { error: locationsError } = await replaceEmployeeLocations(
-      currentUser.orgId,
-      String(employee.id),
-      selectedLocationIds,
-      form.location_id
-    );
-    if (locationsError) {
-      setError(locationsError.message);
-      setSubmitting(false);
-      return;
-    }
-
-    const managedDepartments = departments.filter((department) => {
-      const departmentRecord = department as Record<string, unknown>;
-      return String(departmentRecord.manager_employee_id || "") === String(employee.id || "");
-    });
-
-    for (const department of managedDepartments) {
-      const departmentId = String((department as Record<string, unknown>).id || "");
-      if (departmentId && (!isDepartmentManager || departmentId !== form.department_id)) {
-        const { error: clearError } = await updateDepartment(departmentId, { manager_employee_id: null });
-        if (clearError) {
-          setError(clearError.message);
-          setSubmitting(false);
-          return;
-        }
-      }
-    }
-
-    if (isDepartmentManager && form.department_id) {
-      const { error: deptError } = await updateDepartment(form.department_id, {
-        manager_employee_id: employee.id,
-      });
-      if (deptError) {
-        setError(deptError.message);
-        setSubmitting(false);
-        return;
-      }
-    }
-
     if (createLoginAccount && !employee.user_id) {
       const { error: accountError } = await createEmployeeAccount({
         employee_id: String(employee.id),
         email: form.email.trim(),
-        password: accountPassword,
         full_name: form.full_name,
         role: accountRole,
       });
@@ -441,9 +351,7 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
   };
 
   return (
-    <>
-      <MessageDialog open={Boolean(message)} onOpenChange={(nextOpen) => !nextOpen && setMessage("")} description={message} />
-      <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger
         render={
           <Button
@@ -736,7 +644,7 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                 <span>إنشاء حساب دخول لهذا الموظف</span>
               </label>
               {createLoginAccount && (
-                <div className={twoColumnGridClass}>
+                <div className="space-y-2">
                   <div className="space-y-2">
                     <Label>نوع الحساب</Label>
                     <Select value={accountRole} onValueChange={(value) => setAccountRole(value as EmployeeAccountRole)}>
@@ -755,42 +663,16 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                       أدوار المالية تمنح المستخدم صلاحيات داخل وحدة المالية والمحاسبة حسب مستوى الدور.
                     </p>
                   </div>
-                  <div className="space-y-2">
-                    <Label>كلمة المرور المؤقتة *</Label>
-                    <Input
-                      type="password"
-                      value={accountPassword}
-                      onChange={(event) => setAccountPassword(event.target.value)}
-                      placeholder="8 أحرف على الأقل"
-                    />
-                  </div>
+                  <p className="text-xs text-gray-500">سيصل للموظف رابط دعوة آمن لاختيار كلمة المرور بنفسه.</p>
                 </div>
               )}
             </div>
           )}
 
           <div className="space-y-4">
-            <p className="text-sm font-semibold text-slate-700">بيانات فيرجن / فريندي (GOSI)</p>
-            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                className="rounded border-gray-300"
-                checked={gosiRegistered}
-                onChange={(e) => setGosiRegistered(e.target.checked)}
-              />
-              <span>مسجل في نظام التأمينات الاجتماعية (GOSI)</span>
-            </label>
+            <p className="text-sm font-semibold text-slate-700">بيانات فيرجن / فريندي</p>
+            <p className="text-xs text-gray-500">يتم تعديل التسجيل والنسب والأجر الخاضع من شاشة شؤون الموظفين لضمان حفظ إعداد رواتب موثق.</p>
             <div className={twoColumnGridClass}>
-              <div className="space-y-2">
-                <Label>رقم GOSI</Label>
-                <Input
-                  value={form.gosi_number}
-                  onChange={(e) => set("gosi_number", e.target.value)}
-                  dir="ltr"
-                  placeholder="رقم التسجيل في التأمينات"
-                  disabled={!gosiRegistered}
-                />
-              </div>
               <div className="space-y-2">
                 <Label>المشرف (فيرجن / فريندي)</Label>
                 <Select
@@ -873,6 +755,5 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
         </DialogFooter>
       </DialogContent>
       </Dialog>
-    </>
   );
 }

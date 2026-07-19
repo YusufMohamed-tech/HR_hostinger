@@ -8,7 +8,11 @@ export type CandidateApplication = {
   email: string;
   phone: string | null;
   status: string;
-  answers: Record<string, string>;
+  version: number;
+  offer_status: "pending" | "accepted" | "declined" | "withdrawn" | null;
+  offered_at: string | null;
+  offer_responded_at: string | null;
+  answers: Record<string, string | CandidateFileAnswer>;
   cv_url: string | null;
   stage_history: Array<{
     stage: string;
@@ -36,6 +40,17 @@ export type CandidateApplication = {
     location: string | null;
     notes: string | null;
   }>;
+};
+
+export type CandidateFileAnswer = {
+  path: string;
+  filename: string;
+  mime: string;
+  size_bytes: number;
+  sha256: string;
+  scan_status: "clean";
+  scan_engine: string;
+  scanned_at: string;
 };
 
 export type CandidateNotification = {
@@ -71,17 +86,25 @@ export async function submitApplication(values: {
   email?: string;
   phone?: string;
   answers: Record<string, string>;
+  answer_files?: Record<string, File | null>;
   cv_url?: string;
   cv?: File | null;
+  application_id: string;
+  command_id: string;
 }) {
-  if (values.cv) {
+  const answerFiles = Object.entries(values.answer_files || {})
+    .filter((entry): entry is [string, File] => entry[1] instanceof File);
+  if (values.cv || answerFiles.length > 0) {
     const formData = new FormData();
     formData.append("slug", values.slug);
     formData.append("candidate_name", values.candidate_name);
     formData.append("email", values.email || "");
     formData.append("phone", values.phone || "");
     formData.append("answers", JSON.stringify(values.answers || {}));
-    formData.append("cv", values.cv);
+    formData.append("application_id", values.application_id);
+    formData.append("command_id", values.command_id);
+    if (values.cv) formData.append("cv", values.cv);
+    for (const [questionId, file] of answerFiles) formData.append(`answer_file:${questionId}`, file);
 
     try {
       const res = await fetch("/api/candidate/apply", {
@@ -98,7 +121,7 @@ export async function submitApplication(values: {
 
   return apiFetch<{ id: string }>("/api/candidate/apply", {
     method: "POST",
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, cv: undefined, answer_files: undefined }),
   });
 }
 
@@ -113,5 +136,12 @@ export async function getCandidateNotifications() {
 export async function markCandidateNotificationsRead() {
   return apiFetch<{ success: boolean }>("/api/candidate/notifications", {
     method: "PATCH",
+  });
+}
+
+export async function respondToCandidateOffer(applicationId: string, response: "accepted" | "declined") {
+  return apiFetch<CandidateApplication>(`/api/candidate/applications/${applicationId}/offer`, {
+    method: "POST",
+    body: JSON.stringify({ response, command_id: crypto.randomUUID() }),
   });
 }

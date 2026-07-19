@@ -9,13 +9,14 @@ import {
   importSimsSchema,
   recordSaleSchema,
   returnSimSchema,
+  voidSimSaleSchema,
   reviewRequestSchema,
   simBoxImportSchema,
   simRequestSchema,
   updateAgentSchema,
 } from "@/lib/field-agents/schemas";
 import { normalizeProvider, validateSimBoxImportInput } from "@/lib/sim-box-import";
-import { calculateSimPackageCommission } from "@/lib/server/sim-commissions";
+import { inspectUpload } from "@/lib/server/upload-security";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +47,7 @@ type QueryBuilder = {
 
 type UntypedSupabase = {
   from: (table: string) => QueryBuilder;
+  rpc: (fn: string, args: Record<string, unknown>) => Promise<DbResult>;
 };
 
 type AdminAuthClient = {
@@ -55,6 +57,7 @@ type AdminAuthClient = {
         data: { user: { id: string } | null };
         error: { message?: string } | null;
       }>;
+      deleteUser: (userId: string) => Promise<{ error: { message?: string } | null }>;
       listUsers: (params: { page: number; perPage: number }) => Promise<{
         data: { users: Array<{ id: string; email?: string | null }> };
         error: { message?: string } | null;
@@ -81,12 +84,13 @@ type AuthContext = {
   role: string;
   isManager: boolean;
   admin: unknown;
+  requestId: string;
 };
 
 type RouteContext = {
-  params?: {
+  params: Promise<{
     segments?: string[];
-  };
+  }>;
 };
 
 function database(admin: unknown) {
@@ -129,6 +133,14 @@ function message(error: unknown, status = 500) {
   );
 }
 
+function rpcStatus(code?: string) {
+  if (code === "42501") return 403;
+  if (code === "P0002") return 404;
+  if (["22023", "23514"].includes(code || "")) return 400;
+  if (["23505", "40001", "55000"].includes(code || "")) return 409;
+  return 500;
+}
+
 function parseError(error: unknown) {
   if (error && typeof error === "object" && "issues" in error) {
     const issue = (error as { issues?: Array<{ message?: string }> }).issues?.[0];
@@ -137,8 +149,8 @@ function parseError(error: unknown) {
   return error instanceof Error ? error.message : "Invalid input";
 }
 
-function segmentsOf(context: RouteContext) {
-  return context.params?.segments || [];
+async function segmentsOf(context: RouteContext) {
+  return (await context.params).segments || [];
 }
 
 function row(value: unknown) {
@@ -180,6 +192,14 @@ async function readBody(request: NextRequest) {
   return request.json().catch(() => ({}));
 }
 
+function inventoryCommandId(request: NextRequest, value?: string) {
+  const header = request.headers.get("idempotency-key") || "";
+  const candidate = value || header;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate)
+    ? candidate
+    : crypto.randomUUID();
+}
+
 function formString(form: FormData, key: string) {
   const value = form.get(key);
   return typeof value === "string" && value.trim() ? value.trim() : "";
@@ -204,31 +224,10 @@ async function resolveAgentId(auth: AuthContext): Promise<string | null> {
   return asString(row(result.data).id) || null;
 }
 
-async function insertTransfer(
-  auth: AuthContext,
-  values: {
-    sim_unit_id: string;
-    transfer_type: string;
-    from_agent_id?: string | null;
-    to_agent_id?: string | null;
-    notes?: string | null;
-  }
-) {
-  await database(auth.admin).from("sim_transfers").insert({
-    organization_id: auth.orgId,
-    sim_unit_id: values.sim_unit_id,
-    transfer_type: values.transfer_type,
-    from_agent_id: values.from_agent_id ?? null,
-    to_agent_id: values.to_agent_id ?? null,
-    performed_by: auth.user.id,
-    notes: values.notes ?? null,
-  });
-}
-
-async function uploadSimBoxImage(auth: AuthContext, file: File, buffer: Buffer) {
-  const path = `orgs/${auth.orgId}/sales/sim-box-imports/temp/${Date.now()}-${safeFilename(file.name)}`;
+async function uploadSimBoxImage(auth: AuthContext, file: File, buffer: Buffer, contentType: string) {
+  const path = `orgs/${auth.orgId}/sales/sim-box-imports/temp/${auth.requestId}/${crypto.randomUUID()}-${safeFilename(file.name)}`;
   const upload = await storage(auth.admin).storage.from("sim-box-imports").upload(path, buffer, {
-    contentType: file.type || undefined,
+    contentType,
     upsert: false,
   });
   if (upload.error || !upload.data) throw new Error(upload.error?.message || "Unable to upload SIM box image.");
@@ -264,36 +263,6 @@ async function duplicateKitCodes(auth: AuthContext, provider: string, kitCodes: 
   return kitCodes.filter((kitCode) => byKitCode.has(kitCode));
 }
 
-async function validateAssignedAgent(auth: AuthContext, agentId: string, incomingCount: number) {
-  const db = database(auth.admin);
-  const agentResult = await db
-    .from("field_agents")
-    .select("id, status, max_sim_capacity")
-    .eq("organization_id", auth.orgId)
-    .eq("id", agentId)
-    .maybeSingle();
-  if (agentResult.error) throw new Error(agentResult.error.message || "Unable to validate assigned agent.");
-  if (!agentResult.data) return { error: "Assigned agent was not found." };
-  const agent = row(agentResult.data);
-  if (asString(agent.status) === "suspended") return { error: "Cannot assign imported SIMs to a suspended agent." };
-
-  const capacity = agent.max_sim_capacity;
-  if (capacity !== null && capacity !== undefined) {
-    const inHand = await db
-      .from("sim_units")
-      .select("id")
-      .eq("organization_id", auth.orgId)
-      .eq("current_agent_id", agentId)
-      .eq("status", "with_agent");
-    if (inHand.error) throw new Error(inHand.error.message || "Unable to validate agent capacity.");
-    if (rows(inHand.data).length + incomingCount > asNumber(capacity)) {
-      return { error: "Import exceeds the agent SIM capacity." };
-    }
-  }
-
-  return { error: null };
-}
-
 // ---------------------------------------------------------------------------
 // Agents
 // ---------------------------------------------------------------------------
@@ -320,6 +289,19 @@ async function handleAgents(request: NextRequest, auth: AuthContext, segments: s
       if (!parsed.success) return message(parseError(parsed.error), 400);
 
       const email = parsed.data.email.toLowerCase();
+      const commandId = parsed.data.command_id || crypto.randomUUID();
+
+      const commandResult = await db.from("sales_identity_commands").select("identity_type, actor_user_id, status, result_snapshot")
+        .eq("org_id", auth.orgId).eq("command_id", commandId).maybeSingle();
+      if (commandResult.error) return message(commandResult.error.message, 500);
+      if (commandResult.data) {
+        const command = row(commandResult.data);
+        if (command.identity_type !== "field_agent" || command.actor_user_id !== auth.user.id) {
+          return message("Command id was already used for another identity request.", 409);
+        }
+        if (command.status === "completed" && command.result_snapshot) return json(command.result_snapshot);
+        return message("Field-agent provisioning is already processing.", 409);
+      }
 
       // Reject if the email is already in use to avoid altering an existing account.
       const existingUserId = await findAuthUserIdByEmail(auth, email);
@@ -332,58 +314,58 @@ async function handleAgents(request: NextRequest, auth: AuthContext, segments: s
         email,
         password: parsed.data.password,
         email_confirm: true,
-        user_metadata: { full_name: parsed.data.full_name },
+        user_metadata: { full_name: parsed.data.full_name, identity_command_id: commandId },
       });
       if (created.error || !created.data.user) {
         return message(created.error?.message || "تعذر إنشاء الحساب.", 500);
       }
       const userId = created.data.user.id;
-
-      // 2. Profile.
-      const profileResult = await db
-        .from("profiles")
-        .upsert(
-          {
-            user_id: userId,
-            org_id: auth.orgId,
-            full_name: parsed.data.full_name,
-            email,
-            title: "مندوب ميداني",
-            account_status: "active",
-          },
-          { onConflict: "user_id" }
-        );
-      if (profileResult.error) return message(profileResult.error.message, 500);
-
-      // 3. Org membership with the field_agent role.
-      const memberResult = await db
-        .from("org_members")
-        .upsert(
-          {
-            org_id: auth.orgId,
-            user_id: userId,
-            role: "field_agent",
-          },
-          { onConflict: "org_id,user_id" }
-        );
-      if (memberResult.error) return message(memberResult.error.message, 500);
-
-      // 4. Field agent profile.
-      const insertPayload: Record<string, unknown> = {
-        organization_id: auth.orgId,
-        user_id: userId,
-        full_name: parsed.data.full_name,
-        phone: parsed.data.phone,
-        national_id: parsed.data.national_id,
-        commission_rate: parsed.data.commission_rate,
-        sim_price: parsed.data.sim_price,
-        created_by: auth.user.id,
-      };
-      if (parsed.data.region) insertPayload.region = parsed.data.region;
-      if (parsed.data.max_sim_capacity !== undefined) insertPayload.max_sim_capacity = parsed.data.max_sim_capacity;
-
-      const result = await db.from("field_agents").insert(insertPayload).select("*").single();
-      if (result.error) return message(result.error.message, 500);
+      const cleanup = await db.rpc("enqueue_identity_auth_sync_job", {
+        p_org_id: auth.orgId,
+        p_target_user_id: userId,
+        p_action: "delete",
+        p_source_type: "provisioning_safety",
+        p_source_id: commandId,
+        p_reason: "Delete field-agent Auth identity if database provisioning never completes.",
+        p_actor_user_id: auth.user.id,
+        p_request_id: auth.requestId,
+        p_delay_seconds: 600,
+      });
+      if (cleanup.error || !row(cleanup.data).id) {
+        await adminAuth(auth.admin).auth.admin.deleteUser(userId).catch(() => undefined);
+        return message(cleanup.error?.message || "تعذر تأمين عملية إنشاء الحساب.", 500);
+      }
+      const cleanupJobId = String(row(cleanup.data).id);
+      const result = await db.rpc("provision_sales_identity", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_request_id: auth.requestId,
+        p_command_id: commandId,
+        p_user_id: userId,
+        p_identity_type: "field_agent",
+        p_payload: {
+          email,
+          display_name: parsed.data.full_name,
+          phone: parsed.data.phone,
+          national_id: parsed.data.national_id,
+          region: parsed.data.region || null,
+          commission_rate: parsed.data.commission_rate,
+          sim_price: parsed.data.sim_price,
+          max_sim_capacity: parsed.data.max_sim_capacity ?? null,
+        },
+      });
+      if (result.error) {
+        return message(result.error.message, rpcStatus(result.error.code));
+      }
+      const cancellation = await db.rpc("cancel_identity_auth_sync_job", {
+        p_job_id: cleanupJobId,
+        p_reason: "Field-agent identity provisioned successfully.",
+      });
+      if (cancellation.error) {
+        console.error("Field-agent identity cleanup cancellation requires reconciliation.", {
+          cleanupJobId, userId, message: cancellation.error.message,
+        });
+      }
       return json(row(result.data), 201);
     }
 
@@ -578,27 +560,16 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
     const parsed = importSimsSchema.safeParse(body);
     if (!parsed.success) return message(parseError(parsed.error), 400);
 
-    const payload = parsed.data.sims.map((sim) => ({
-      organization_id: auth.orgId,
-      iccid: sim.iccid,
-      provider: sim.provider,
-      sim_type: sim.sim_type,
-      price: sim.price,
-      status: "in_stock",
-      added_by: auth.user.id,
-    }));
-
-    const result = await db.from("sim_units").insert(payload).select("id");
-    if (result.error) return message(result.error.message, 500);
-
-    const inserted = rows(result.data);
-    for (const sim of inserted) {
-      await insertTransfer(auth, {
-        sim_unit_id: asString(sim.id),
-        transfer_type: "initial_import",
-      });
-    }
-    return json({ imported: inserted.length }, 201);
+    const result = await db.rpc("execute_sim_inventory_command", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_request_id: auth.requestId,
+      p_command_id: inventoryCommandId(request, parsed.data.command_id),
+      p_action: "inventory_import",
+      p_payload: { sims: parsed.data.sims },
+    });
+    if (result.error) return message(result.error.message, rpcStatus(result.error.code));
+    return json(row(result.data), 201);
   }
 
   // POST /sims/box-preview  (manager)
@@ -627,18 +598,20 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       if (!form) return message("Multipart form data is required.", 400);
       const file = form.get("image");
       if (file instanceof File && file.size > 0) {
-        if (!file.type.startsWith("image/")) return message("Only image files are supported.", 400);
-        if (file.size > 10 * 1024 * 1024) return message("Image must be 10MB or smaller.", 400);
         try {
-          imagePath = await uploadSimBoxImage(auth, file, Buffer.from(await file.arrayBuffer()));
+          const inspected = await inspectUpload(file, {
+            allowedMimeTypes: new Set(["image/jpeg", "image/png", "image/webp"]),
+            maxBytes: 10 * 1024 * 1024,
+          });
+          imagePath = await uploadSimBoxImage(auth, file, Buffer.from(inspected.bytes), inspected.detectedMime);
         } catch (error) {
-          const detail = error instanceof Error ? error.message : "storage upload failed";
-          storageWarnings.push(
-            `SIM box image was not saved to storage (${detail}). Preview can continue, but this import batch will not keep an image path until the sim-box-imports bucket is available.`
-          );
+          return message(error, 422);
         }
       }
       imagePath = imagePath || formString(form, "image_path");
+      if (imagePath && !imagePath.startsWith(`orgs/${auth.orgId}/sales/sim-box-imports/`)) {
+        return message("SIM box image path is not tenant scoped.", 403);
+      }
       provider = formString(form, "provider");
       orderNumber = formString(form, "order_number");
       batchNumber = formString(form, "batch_number");
@@ -751,41 +724,14 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
     });
     if (!validation.isValid) return message(validation.errors.join(" "), 400);
 
-    let duplicates: string[] = [];
-    try {
-      duplicates = await duplicateKitCodes(auth, normalizedProvider, validation.kitCodes);
-    } catch (error) {
-      return message(error, 500);
-    }
-    if (duplicates.length > 0 && parsed.data.import_duplicate_strategy !== "skip") {
-      return NextResponse.json(
-        { message: "Duplicate kit codes found.", duplicates },
-        { status: 409 }
-      );
-    }
-
-    const nonDuplicateKitCodes = validation.kitCodes.filter((kitCode) => !duplicates.includes(kitCode));
     const assignedAgentId = asString(parsed.data.assigned_agent_id) || null;
-    if (assignedAgentId) {
-      try {
-        const agentCheck = await validateAssignedAgent(auth, assignedAgentId, nonDuplicateKitCodes.length);
-        if (agentCheck.error) return message(agentCheck.error, 400);
-      } catch (error) {
-        return message(error, 500);
-      }
-    }
-
-    const generatedPreview = validation.kitCodes.map((kitCode, index) => ({
-      sequence: index + 1,
-      kit_code: kitCode,
-      is_duplicate: duplicates.includes(kitCode),
-    }));
-
-    const now = new Date().toISOString();
-    const batchResult = await db
-      .from("sim_import_batches")
-      .insert({
-        organization_id: auth.orgId,
+    const result = await db.rpc("execute_sim_inventory_command", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_request_id: auth.requestId,
+      p_command_id: inventoryCommandId(request, parsed.data.command_id),
+      p_action: "inventory_box_import",
+      p_payload: {
         provider: normalizedProvider,
         order_number: parsed.data.order_number || null,
         batch_number: parsed.data.batch_number || null,
@@ -798,71 +744,13 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
         step: validation.step,
         image_path: parsed.data.image_path || null,
         extracted_json: parsed.data.extracted_json || {},
-        generated_preview: generatedPreview,
-        status: "confirmed",
-        imported_count: nonDuplicateKitCodes.length,
-        duplicate_count: duplicates.length,
         assigned_agent_id: assignedAgentId,
-        created_by: auth.user.id,
-        confirmed_by: auth.user.id,
-        confirmed_at: now,
-      })
-      .select("*")
-      .single();
-    if (batchResult.error) return message(batchResult.error.message, 500);
-
-    const batch = row(batchResult.data);
-    const insertPayload = nonDuplicateKitCodes.map((kitCode) => ({
-      organization_id: auth.orgId,
-      iccid: kitCode,
-      kit_code: kitCode,
-      provider: normalizedProvider,
-      sim_type: "prepaid",
-      price: 0,
-      status: assignedAgentId ? "with_agent" : "in_stock",
-      current_agent_id: assignedAgentId,
-      assigned_at: assignedAgentId ? now : null,
-      current_merchant_id: null,
-      import_batch_id: asString(batch.id),
-      dealer_box_number: parsed.data.dealer_box_number ?? null,
-      box_sequence: validation.kitCodes.indexOf(kitCode) + 1,
-      import_source: "box_ocr",
-      added_by: auth.user.id,
-    }));
-
-    let inserted: Record<string, unknown>[] = [];
-    if (insertPayload.length > 0) {
-      const simResult = await db.from("sim_units").insert(insertPayload).select("id");
-      if (simResult.error) {
-        const status = simResult.error.code === "23505" ? 409 : 500;
-        return message(simResult.error.message, status);
-      }
-      inserted = rows(simResult.data);
-    }
-
-    for (const sim of inserted) {
-      const simId = asString(sim.id);
-      await insertTransfer(auth, {
-        sim_unit_id: simId,
-        transfer_type: "initial_import",
-        notes: `SIM box import ${asString(batch.id)}`,
-      });
-      if (assignedAgentId) {
-        await insertTransfer(auth, {
-          sim_unit_id: simId,
-          transfer_type: "assign_to_agent",
-          to_agent_id: assignedAgentId,
-          notes: `Direct assignment from SIM box import ${asString(batch.id)}`,
-        });
-      }
-    }
-
-    return json({
-      batch,
-      inserted_count: inserted.length,
-      skipped_duplicates: duplicates,
-      assigned_agent_id: assignedAgentId,
-    }, 201);
+        kit_codes: validation.kitCodes,
+        skip_duplicates: parsed.data.import_duplicate_strategy === "skip",
+      },
+    });
+    if (result.error) return message(result.error.message, rpcStatus(result.error.code));
+    return json(row(result.data), 201);
   }
 
   // GET /sims/import-batches and /sims/import-batches/[batchId]
@@ -929,276 +817,97 @@ async function handleSims(request: NextRequest, auth: AuthContext, segments: str
       return message(parseError(parsed?.error || quantityParsed.error), 400);
     }
 
-    let agentId = "";
-    let notes: string | null = null;
-    let simIds: string[] = [];
+    let commandId: string | undefined;
+    let payload: Record<string, unknown>;
     if (quantityParsed.success) {
-      agentId = quantityParsed.data.agent_id;
-      notes = quantityParsed.data.notes ?? null;
-    } else if (parsed?.success) {
-      agentId = parsed.data.agent_id;
-      notes = parsed.data.notes ?? null;
-      simIds = parsed.data.sim_ids;
+      commandId = quantityParsed.data.command_id;
+      payload = {
+        agent_id: quantityParsed.data.agent_id,
+        quantity: quantityParsed.data.quantity,
+        provider: quantityParsed.data.provider,
+        sim_type: quantityParsed.data.sim_type || null,
+        notes: quantityParsed.data.notes || null,
+      };
+    } else {
+      if (!parsed?.success) return message("Invalid SIM assignment.", 400);
+      commandId = parsed.data.command_id;
+      payload = {
+        agent_id: parsed.data.agent_id,
+        sim_ids: parsed.data.sim_ids,
+        notes: parsed.data.notes || null,
+      };
     }
-
-    // Confirm target agent belongs to the org.
-    const agentResult = await db
-      .from("field_agents")
-      .select("id, status, max_sim_capacity")
-      .eq("organization_id", auth.orgId)
-      .eq("id", agentId)
-      .maybeSingle();
-    if (agentResult.error) return message(agentResult.error.message, 500);
-    if (!agentResult.data) return message("Agent not found.", 404);
-    if (asString(row(agentResult.data).status) === "suspended") {
-      return message("Cannot assign SIMs to a suspended agent.", 400);
-    }
-
-    if (quantityParsed.success) {
-      let availableQuery = db
-        .from("sim_units")
-        .select("id")
-        .eq("organization_id", auth.orgId)
-        .eq("status", "in_stock")
-        .eq("provider", quantityParsed.data.provider)
-        .order("created_at", { ascending: true })
-        .limit(quantityParsed.data.quantity);
-      if (quantityParsed.data.sim_type) {
-        availableQuery = availableQuery.eq("sim_type", quantityParsed.data.sim_type);
-      }
-      const available = await availableQuery;
-      if (available.error) return message(available.error.message, 500);
-      const selected = rows(available.data);
-      if (selected.length < quantityParsed.data.quantity) {
-        return message("Not enough SIMs available in stock for this quantity.", 400);
-      }
-      simIds = selected.map((sim) => asString(sim.id));
-    }
-
-    // Confirm all SIMs are in stock and belong to the org.
-    const simsResult = await db
-      .from("sim_units")
-      .select("id, status")
-      .eq("organization_id", auth.orgId)
-      .in("id", simIds);
-    if (simsResult.error) return message(simsResult.error.message, 500);
-    const found = rows(simsResult.data);
-    if (found.length !== simIds.length) {
-      return message("Some SIMs were not found.", 400);
-    }
-    if (found.some((sim) => asString(sim.status) !== "in_stock")) {
-      return message("All SIMs must be in stock to assign.", 400);
-    }
-
-    // Enforce capacity if configured.
-    const capacity = row(agentResult.data).max_sim_capacity;
-    if (capacity !== null && capacity !== undefined) {
-      const inHand = await db
-        .from("sim_units")
-        .select("id")
-        .eq("organization_id", auth.orgId)
-        .eq("current_agent_id", agentId)
-        .eq("status", "with_agent");
-      const current = rows(inHand.data).length;
-      if (current + simIds.length > asNumber(capacity)) {
-        return message("Assignment exceeds the agent SIM capacity.", 400);
-      }
-    }
-
-    const update = await db
-      .from("sim_units")
-      .update({
-        status: "with_agent",
-        current_agent_id: agentId,
-        assigned_at: new Date().toISOString(),
-      })
-      .eq("organization_id", auth.orgId)
-      .in("id", simIds)
-      .select("id");
-    if (update.error) return message(update.error.message, 500);
-
-    for (const simId of simIds) {
-      await insertTransfer(auth, {
-        sim_unit_id: simId,
-        transfer_type: "assign_to_agent",
-        to_agent_id: agentId,
-        notes,
-      });
-    }
-    return json({ assigned: simIds.length });
+    const result = await db.rpc("execute_sim_inventory_command", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_request_id: auth.requestId,
+      p_command_id: inventoryCommandId(request, commandId),
+      p_action: "inventory_assign",
+      p_payload: payload,
+    });
+    if (result.error) return message(result.error.message, rpcStatus(result.error.code));
+    return json(row(result.data));
   }
 
   // POST /sims/sell  (agent or manager)
   if (action === "sell") {
     if (request.method !== "POST") return message("Method not allowed", 405);
-
     const body = await readBody(request);
     const parsed = recordSaleSchema.safeParse(body);
     if (!parsed.success) return message(parseError(parsed.error), 400);
-
-    const simResult = await db
-      .from("sim_units")
-      .select("*")
-      .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.sim_unit_id)
-      .maybeSingle();
-    if (simResult.error) return message(simResult.error.message, 500);
-    if (!simResult.data) return message("SIM not found.", 404);
-
-    const sim = row(simResult.data);
-    if (asString(sim.status) !== "with_agent") {
-      return message("Only SIMs held by an agent can be sold.", 400);
-    }
-
-    const sellingAgentId = asString(sim.current_agent_id);
-    if (!auth.isManager) {
-      const myAgentId = await resolveAgentId(auth);
-      if (!myAgentId || myAgentId !== sellingAgentId) {
-        return message("You can only sell SIMs assigned to you.", 403);
-      }
-    }
-
-    const packageResult = await db
-      .from("sim_packages")
-      .select("*")
-      .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.package_id)
-      .eq("status", "active")
-      .maybeSingle();
-    if (packageResult.error) return message(packageResult.error.message, 500);
-    if (!packageResult.data) return message("Package not found.", 404);
-    const simPackage = row(packageResult.data);
-    if (asString(sim.provider || "virgin") !== asString(simPackage.provider || "virgin")) {
-      return message("Package provider must match the SIM provider.", 400);
-    }
-    const salePrice = asNumber(simPackage.sale_price);
-    let commission;
-    try {
-      commission = calculateSimPackageCommission({
-        saleType: "agent_direct",
-        salePrice,
-        packageRow: simPackage,
-      });
-    } catch (error) {
-      return message(error, 400);
-    }
-    const directAgentRule = commission.ruleSnapshot.rules.directAgent;
-
-    const update = await db
-      .from("sim_units")
-      .update({
-        status: "sold",
-        sold_at: new Date().toISOString(),
-        sold_by_agent_id: sellingAgentId,
-        sold_price: salePrice,
-        sold_package_id: parsed.data.package_id,
-        sold_package_name: asString(simPackage.package_name),
-        customer_name: parsed.data.customer_name ?? null,
-      })
-      .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.sim_unit_id)
-      .select("*")
-      .single();
-    if (update.error) return message(update.error.message, 500);
-
-    await insertTransfer(auth, {
-      sim_unit_id: parsed.data.sim_unit_id,
-      transfer_type: "sold",
-      from_agent_id: sellingAgentId,
+    const rpc = await db.rpc("record_sim_sale", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_command_id: parsed.data.command_id || crypto.randomUUID(),
+      p_request_id: auth.requestId,
+      p_sim_unit_id: parsed.data.sim_unit_id,
+      p_package_id: parsed.data.package_id,
+      p_seller_type: "agent",
+      p_customer: { customer_name: parsed.data.customer_name ?? null },
     });
-
-    const saleInsert = await db.from("sim_sales").insert({
-      organization_id: auth.orgId,
-      sim_unit_id: parsed.data.sim_unit_id,
-      package_id: parsed.data.package_id,
-      seller_type: "agent",
-      agent_id: sellingAgentId,
-      merchant_id: null,
-      sale_price: salePrice,
-      customer_name: parsed.data.customer_name ?? null,
-      commission_currency: commission.currency,
-      total_commission_amount: commission.totalCommissionAmount,
-      agent_commission_type: directAgentRule.type,
-      agent_commission_value: directAgentRule.value,
-      agent_commission_amount: commission.agentCommissionAmount,
-      merchant_commission_type: null,
-      merchant_commission_value: null,
-      merchant_commission_amount: 0,
-      direct_agent_commission_amount: commission.directAgentCommissionAmount,
-      commission_rule_snapshot: commission.ruleSnapshot,
-      created_by: auth.user.id,
-    }).select("id").single();
-    if (saleInsert.error) return message(saleInsert.error.message, 500);
-    const saleId = asString(row(saleInsert.data).id);
-
-    const agentCommissionInsert = await db.from("agent_commissions").insert({
-      organization_id: auth.orgId,
-      agent_id: sellingAgentId,
-      sim_unit_id: parsed.data.sim_unit_id,
-      sim_package_id: parsed.data.package_id,
-      sale_id: saleId || null,
-      sale_price: salePrice,
-      commission_currency: commission.currency,
-      commission_type: directAgentRule.type,
-      commission_rate: directAgentRule.value,
-      commission_amount: commission.agentCommissionAmount,
-    });
-    if (agentCommissionInsert.error) return message(agentCommissionInsert.error.message, 500);
-
-    return json(row(update.data));
+    if (rpc.error) return message(rpc.error.message, rpcStatus(rpc.error.code));
+    const result = await db.from("sim_units").select("*")
+      .eq("organization_id", auth.orgId).eq("id", parsed.data.sim_unit_id).single();
+    if (result.error) return message(result.error.message, 500);
+    return json(row(result.data));
   }
 
   // POST /sims/return  (agent or manager)
   if (action === "return") {
     if (request.method !== "POST") return message("Method not allowed", 405);
-
     const body = await readBody(request);
     const parsed = returnSimSchema.safeParse(body);
     if (!parsed.success) return message(parseError(parsed.error), 400);
-
-    const simResult = await db
-      .from("sim_units")
-      .select("*")
-      .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.sim_unit_id)
-      .maybeSingle();
-    if (simResult.error) return message(simResult.error.message, 500);
-    if (!simResult.data) return message("SIM not found.", 404);
-
-    const sim = row(simResult.data);
-    if (asString(sim.status) !== "with_agent") {
-      return message("Only SIMs held by an agent can be returned.", 400);
-    }
-
-    const holdingAgentId = asString(sim.current_agent_id);
-    if (!auth.isManager) {
-      const myAgentId = await resolveAgentId(auth);
-      if (!myAgentId || myAgentId !== holdingAgentId) {
-        return message("You can only return SIMs assigned to you.", 403);
-      }
-    }
-
-    const update = await db
-      .from("sim_units")
-      .update({
-        status: "in_stock",
-        current_agent_id: null,
-        assigned_at: null,
-      })
-      .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.sim_unit_id)
-      .select("*")
-      .single();
-    if (update.error) return message(update.error.message, 500);
-
-    await insertTransfer(auth, {
-      sim_unit_id: parsed.data.sim_unit_id,
-      transfer_type: "return_to_stock",
-      from_agent_id: holdingAgentId,
-      notes: parsed.data.notes ?? null,
+    const rpc = await db.rpc("return_sim_unit", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_command_id: parsed.data.command_id || crypto.randomUUID(),
+      p_request_id: auth.requestId,
+      p_sim_unit_id: parsed.data.sim_unit_id,
+      p_notes: parsed.data.notes ?? null,
     });
+    if (rpc.error) return message(rpc.error.message, rpcStatus(rpc.error.code));
+    return json(row(rows(rpc.data)[0]));
+  }
 
-    return json(row(update.data));
+  // POST /sims/void — manager-only immutable sale reversal.
+  if (action === "void") {
+    if (request.method !== "POST") return message("Method not allowed", 405);
+    if (!auth.isManager) return message("Field agent manager access is required.", 403);
+    const body = await readBody(request);
+    const parsed = voidSimSaleSchema.safeParse(body);
+    if (!parsed.success) return message(parseError(parsed.error), 400);
+    const rpc = await db.rpc("void_sim_sale", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_command_id: parsed.data.command_id || crypto.randomUUID(),
+      p_request_id: auth.requestId,
+      p_sale_id: parsed.data.sale_id,
+      p_expected_version: parsed.data.expected_version,
+      p_reason: parsed.data.reason,
+    });
+    if (rpc.error) return message(rpc.error.message, rpcStatus(rpc.error.code));
+    return json(row(rows(rpc.data)[0]));
   }
 
   return message("Field agent route was not found.", 404);
@@ -1235,16 +944,21 @@ async function handleCollect(request: NextRequest, auth: AuthContext) {
   const parsed = collectCashSchema.safeParse(body);
   if (!parsed.success) return message(parseError(parsed.error), 400);
 
-  const result = await database(auth.admin)
-    .from("agent_cash_collections")
-    .insert({
-      ...parsed.data,
-      organization_id: auth.orgId,
-      collected_by: auth.user.id,
-    })
-    .select("*")
-    .single();
-  if (result.error) return message(result.error.message, 500);
+  const result = await database(auth.admin).rpc("record_sales_cash_collection", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_command_id: parsed.data.command_id || crypto.randomUUID(),
+    p_collection_id: parsed.data.collection_id || crypto.randomUUID(),
+    p_collection_type: "agent",
+    p_subject_id: parsed.data.agent_id,
+    p_amount: parsed.data.amount,
+    p_payment_method: parsed.data.payment_method,
+    p_collection_date: parsed.data.collection_date,
+    p_notes: parsed.data.notes || null,
+    p_payment_proof_path: null,
+  });
+  if (result.error) return message(result.error.message, rpcStatus(result.error.code));
   return json(row(result.data), 201);
 }
 
@@ -1337,21 +1051,7 @@ async function handleCommissions(request: NextRequest, auth: AuthContext, segmen
   // /commissions/[id]/pay  (manager)
   if (commissionId && segments[2] === "pay") {
     if (request.method !== "PATCH") return message("Method not allowed", 405);
-    if (!auth.isManager) return message("Field agent manager access is required.", 403);
-
-    const result = await db
-      .from("agent_commissions")
-      .update({
-        is_paid: true,
-        paid_at: new Date().toISOString(),
-        paid_by: auth.user.id,
-      })
-      .eq("organization_id", auth.orgId)
-      .eq("id", commissionId)
-      .select("*")
-      .single();
-    if (result.error) return message(result.error.message, 500);
-    return json(row(result.data));
+    return message("Commission payments must be posted by Finance through an immutable settlement batch.", 410);
   }
 
   // /commissions  (list)
@@ -1528,7 +1228,7 @@ async function handleStock(request: NextRequest, auth: AuthContext, segments: st
 // Dispatch
 // ---------------------------------------------------------------------------
 async function dispatch(request: NextRequest, auth: AuthContext, context: RouteContext) {
-  const segments = segmentsOf(context);
+  const segments = await segmentsOf(context);
   const resource = segments[0] || "";
 
   if (resource === "sims") return handleSims(request, auth, segments);
@@ -1544,7 +1244,7 @@ async function dispatch(request: NextRequest, auth: AuthContext, context: RouteC
 }
 
 async function authorize(request: NextRequest, context: RouteContext) {
-  const auth = await requireFieldAgentAccess();
+  const auth = await requireFieldAgentAccess(undefined, request);
   if ("error" in auth) return auth.error;
   return dispatch(request, auth, context);
 }

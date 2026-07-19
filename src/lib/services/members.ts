@@ -39,36 +39,3 @@ export async function getOrgMembers(orgId: string) {
     error: null,
   };
 }
-
-export async function addOrgMember(values: Record<string, unknown>) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("org_members")
-    .insert(values as never)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
-}
-
-export async function updateOrgMemberRole(id: string, role: string) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("org_members")
-    .update({ role } as never)
-    .eq("id", id)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
-}
-
-export async function removeOrgMember(id: string) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("org_members")
-    .delete()
-    .eq("id", id);
-
-  return result as unknown as { error: { message: string } | null };
-}

@@ -94,6 +94,8 @@ export function SalesShiftMonitor() {
     setBusy(true);
     setError("");
     const result = await respondSalesShiftPrompt({
+      prompt_id: prompt.id,
+      expected_version: prompt.version,
       prompt_type: prompt.type,
       prompt_key: prompt.key,
       company_id: prompt.company_id,

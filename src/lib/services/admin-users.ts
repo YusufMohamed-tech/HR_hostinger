@@ -11,14 +11,18 @@ export type ManagedOrgRole =
 export async function createManagedUser(values: {
   full_name: string;
   email: string;
-  password: string;
   role: ManagedOrgRole;
   target_org_id?: string;
 }) {
+  const fingerprint = JSON.stringify(values);
+  const scope = `hrms-command:platform-user-create:${fingerprint}`;
+  const existing = typeof window !== "undefined" ? window.sessionStorage.getItem(scope) : null;
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(scope, commandId);
   const response = await fetch("/api/superadmin/users", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, command_id: commandId }),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -30,6 +34,8 @@ export async function createManagedUser(values: {
     };
   }
 
+  if (typeof window !== "undefined") window.sessionStorage.removeItem(scope);
+
   return { data: payload.user as Record<string, unknown>, error: null };
 }
 
@@ -40,10 +46,15 @@ export async function updateManagedUser(values: {
   password?: string;
   role?: ManagedOrgRole;
 }) {
+  const fingerprint = JSON.stringify(values);
+  const scope = `hrms-command:platform-user:${values.user_id}:${fingerprint}`;
+  const existing = typeof window !== "undefined" ? window.sessionStorage.getItem(scope) : null;
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(scope, commandId);
   const response = await fetch("/api/superadmin/users", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, command_id: commandId }),
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -54,6 +65,8 @@ export async function updateManagedUser(values: {
       error: { message: String(payload.message || "Unable to update user.") },
     };
   }
+
+  if (typeof window !== "undefined") window.sessionStorage.removeItem(scope);
 
   return { data: payload.user as Record<string, unknown>, error: null };
 }

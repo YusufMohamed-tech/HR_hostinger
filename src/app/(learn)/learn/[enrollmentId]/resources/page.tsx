@@ -1,5 +1,6 @@
 import { ResourcesView } from "@/components/lms/classroom/ClassroomExtras";
 
-export default function ClassroomResourcesPage({ params }: { params: { enrollmentId: string } }) {
-  return <ResourcesView enrollmentId={params.enrollmentId} />;
+export default async function ClassroomResourcesPage({ params }: { params: Promise<{ enrollmentId: string }> }) {
+  const { enrollmentId } = await params;
+  return <ResourcesView enrollmentId={enrollmentId} />;
 }

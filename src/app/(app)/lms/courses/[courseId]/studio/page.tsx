@@ -1,5 +1,6 @@
 import { CourseStudio } from "@/components/lms/builder/CourseStudio";
 
-export default function CourseStudioPage({ params }: { params: { courseId: string } }) {
-  return <CourseStudio courseId={params.courseId} />;
+export default async function CourseStudioPage({ params }: { params: Promise<{ courseId: string }> }) {
+  const { courseId } = await params;
+  return <CourseStudio courseId={courseId} />;
 }

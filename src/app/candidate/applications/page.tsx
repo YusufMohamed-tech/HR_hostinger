@@ -129,7 +129,7 @@ export default function CandidateApplicationsPage() {
         ) : (
           <div className="space-y-3">
             {applications.map((app) => (
-              <ApplicationCard key={app.id} application={app} />
+              <ApplicationCard key={app.id} application={app} onUpdated={load} />
             ))}
           </div>
         )}

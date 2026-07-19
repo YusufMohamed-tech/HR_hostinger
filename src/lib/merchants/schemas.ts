@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const createMerchantSchema = z.object({
   email: z.string().trim().email(),
-  password: z.string().min(8),
+  password: z.string().min(12).max(128).regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/),
+  command_id: z.string().uuid().optional(),
   business_name: z.string().trim().min(2).max(160),
   owner_name: z.string().trim().max(160).optional(),
   phone: z.string().trim().max(40).optional(),
@@ -31,12 +32,14 @@ export const updateMerchantSchema = z.object({
 });
 
 export const assignSimsToMerchantSchema = z.object({
+  command_id: z.string().uuid().optional(),
   merchant_id: z.string().uuid(),
   sim_ids: z.array(z.string().uuid()).min(1),
   notes: z.string().trim().max(500).optional(),
 });
 
 export const assignSimsToMerchantByQuantitySchema = z.object({
+  command_id: z.string().uuid().optional(),
   merchant_id: z.string().uuid(),
   quantity: z.coerce.number().int().positive(),
   sim_type: z.string().trim().max(40).optional(),
@@ -60,14 +63,18 @@ export const merchantRecordSaleSchema = z.object({
   marketer_name: z.string().trim().max(160).optional(),
   national_address: z.string().trim().min(2).max(160),
   supervisor_name: z.string().trim().min(2).max(160),
+  command_id: z.string().uuid().optional(),
 });
 
 export const merchantReturnSimSchema = z.object({
   sim_unit_id: z.string().uuid(),
   notes: z.string().trim().max(500).optional(),
+  command_id: z.string().uuid().optional(),
 });
 
 export const collectMerchantCashSchema = z.object({
+  collection_id: z.string().uuid().optional(),
+  command_id: z.string().uuid().optional(),
   merchant_id: z.string().uuid(),
   amount: z.coerce.number().positive(),
   payment_method: z.enum(["cash", "bank_transfer", "visa", "electronic"]).default("cash"),
@@ -77,6 +84,8 @@ export const collectMerchantCashSchema = z.object({
 });
 
 export const confirmMerchantPaymentSchema = z.object({
+  command_id: z.string().uuid().optional(),
+  expected_version: z.coerce.number().int().positive(),
   status: z.enum(["confirmed", "rejected"]),
   rejection_reason: z.string().trim().max(500).optional(),
 });

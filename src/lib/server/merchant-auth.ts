@@ -6,8 +6,8 @@ const agentRoles = new Set(["field_agent"]);
 const merchantRoles = new Set(["merchant"]);
 const allRoles = new Set(["admin", "sales_manager", "onground_agent_manager", "field_agent", "merchant"]);
 
-export async function requireMerchantAccess() {
-  const auth = await requireTenantContext({ feature: "sales" });
+export async function requireMerchantAccess(request?: import("next/server").NextRequest) {
+  const auth = await requireTenantContext({ feature: "sales" }, request);
   if ("error" in auth) return auth;
 
   if (!allRoles.has(auth.role)) {
@@ -25,6 +25,7 @@ export async function requireMerchantAccess() {
     employeeId: auth.employeeId,
     role: auth.role,
     admin: auth.admin,
+    requestId: auth.requestId,
     isManager: managerRoles.has(auth.role),
     isAgent: agentRoles.has(auth.role),
     isMerchant: merchantRoles.has(auth.role),

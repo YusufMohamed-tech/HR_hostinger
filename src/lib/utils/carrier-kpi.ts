@@ -32,10 +32,16 @@ export function getShiftType(
   nightStart: string = "16:00"
 ): "morning" | "night" | null {
   if (!activatedAt) return null;
+  const localText = typeof activatedAt === "string"
+    ? /T(\d{2}):(\d{2})/.exec(activatedAt) : null;
+  const [nightHour, nightMin] = nightStart.split(":").map(Number);
+  if (localText && !/[zZ]|[+-]\d{2}:?\d{2}$/u.test(activatedAt as string)) {
+    const totalMinutes = Number(localText[1]) * 60 + Number(localText[2]);
+    return totalMinutes >= nightHour * 60 + nightMin ? "night" : "morning";
+  }
   const date = typeof activatedAt === "string" ? new Date(activatedAt) : activatedAt;
   if (isNaN(date.getTime())) return null;
 
-  const [nightHour, nightMin] = nightStart.split(":").map(Number);
   const totalMinutes = date.getHours() * 60 + date.getMinutes();
   const nightStartMinutes = nightHour * 60 + nightMin;
   return totalMinutes >= nightStartMinutes ? "night" : "morning";

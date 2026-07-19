@@ -94,15 +94,16 @@ import {
   lmsWorkspaceConfigSchema,
 } from "@/lib/validation";
 
-type RouteContext = { params?: { segments?: string[] } };
+type RouteContext = { params?: Promise<{ segments?: string[] }> };
 type Handler = (request: NextRequest, auth: TenantAuthContext, routeContext?: unknown) => Promise<Response>;
 type ValidationResult =
   | { ok: false; error: NextResponse }
   | { ok: true; data: Record<string, unknown> };
 
-function segments(routeContext?: unknown) {
+async function segments(routeContext?: unknown) {
   const context = routeContext as RouteContext | undefined;
-  return context?.params?.segments ?? [];
+  const params = await context?.params;
+  return params?.segments ?? [];
 }
 
 async function jsonBody(request: NextRequest) {
@@ -139,7 +140,7 @@ function errorResponse(error: unknown) {
 
 const getHandler: Handler = async (request, auth, routeContext) => {
   try {
-    const parts = segments(routeContext);
+    const parts = await segments(routeContext);
     const [a, b, c] = parts;
     const search = request.nextUrl.searchParams;
 
@@ -195,7 +196,7 @@ const getHandler: Handler = async (request, auth, routeContext) => {
 
 const postHandler: Handler = async (request, auth, routeContext) => {
   try {
-    const parts = segments(routeContext);
+    const parts = await segments(routeContext);
     const [a, b, c, d, e] = parts;
 
     if (a === "uploads") return response(await uploadLmsFile(auth, await request.formData()));
@@ -316,7 +317,7 @@ const postHandler: Handler = async (request, auth, routeContext) => {
 
 const patchHandler: Handler = async (request, auth, routeContext) => {
   try {
-    const parts = segments(routeContext);
+    const parts = await segments(routeContext);
     const [a, b, c, d] = parts;
     const body = await jsonBody(request);
 
@@ -385,7 +386,7 @@ const patchHandler: Handler = async (request, auth, routeContext) => {
 
 const deleteHandler: Handler = async (_request, auth, routeContext) => {
   try {
-    const parts = segments(routeContext);
+    const parts = await segments(routeContext);
     const [a, b, c, d] = parts;
     if (a === "categories" && b) return response(await archiveLmsCategory(auth, b));
     if (a === "resources" && b) return response(await deleteCourseResource(auth, b));

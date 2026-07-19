@@ -7,13 +7,11 @@ type AuthContext = {
   user: { id: string; email?: string | null };
   orgId: string;
   role: string;
+  timezone: string;
+  requestId: string;
 };
 
 type PromptType = "hourly" | "mid_shift" | "end_shift";
-
-type QueryError = { message: string };
-type SingleResult<T> = { data: T | null; error: QueryError | null };
-type EmptyResult = { error: QueryError | null };
 
 type MonitorContext = {
   organizationId: string;
@@ -33,6 +31,7 @@ type MonitorContext = {
   elapsedMinutes: number;
   durationMinutes: number;
   minutesUntilEnd: number;
+  requestId: string;
 };
 
 function toNumber(value: unknown) {
@@ -44,9 +43,9 @@ function money(value: number) {
   return formatCurrency(value);
 }
 
-function riyadhNow() {
+function organizationNow(timezone: string) {
   const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Riyadh",
+    timeZone: timezone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -116,8 +115,10 @@ function activeEmployeeShift(employee: Record<string, unknown>, today: string) {
     .sort((a, b) => String(b.start_date || "").localeCompare(String(a.start_date || "")))[0] || null;
 }
 
-function promptPayload(type: PromptType, key: string, context: MonitorContext) {
+function promptPayload(type: PromptType, key: string, context: MonitorContext, row: Record<string, unknown>) {
   const base = {
+    id: String(row.id || ""),
+    version: Math.max(1, toNumber(row.version)),
     type,
     key,
     company_id: context.companyId,
@@ -156,60 +157,6 @@ function promptPayload(type: PromptType, key: string, context: MonitorContext) {
   };
 }
 
-async function notifyRecipients(
-  admin: ReturnType<typeof createAdminClient>,
-  context: MonitorContext,
-  values: { title: string; body: string; link?: string; excludeUserId?: string }
-) {
-  const [companyManagersResult, orgManagersResult] = await Promise.all([
-    admin
-      .from("sales_company_assignments")
-      .select("user_id")
-      .eq("organization_id", context.organizationId)
-      .eq("company_id", context.companyId)
-      .eq("assignment_role", "manager")
-      .eq("is_active", true),
-    admin
-      .from("org_members")
-      .select("user_id, role")
-      .eq("org_id", context.organizationId)
-      .in("role", ["hr_admin", "admin"]),
-  ]);
-
-  const recipients = Array.from(new Set([
-    ...(((companyManagersResult.data ?? []) as Record<string, unknown>[]).map((row) => String(row.user_id || ""))),
-    ...(((orgManagersResult.data ?? []) as Record<string, unknown>[]).map((row) => String(row.user_id || ""))),
-  ].filter((userId) => userId && userId !== values.excludeUserId)));
-
-  if (recipients.length === 0) return;
-
-  await admin.from("notifications").insert(recipients.map((userId) => ({
-    org_id: context.organizationId,
-    user_id: userId,
-    title: values.title,
-    body: values.body,
-    type: "sales",
-    link: values.link || `/sales/reports?agent=${context.userId}&company=${context.companyId}&date_from=${context.promptDate}&date_to=${context.promptDate}`,
-    is_read: false,
-  })) as never);
-}
-
-async function notifySalesAgent(
-  admin: ReturnType<typeof createAdminClient>,
-  context: MonitorContext,
-  values: { title: string; body: string; link?: string }
-) {
-  await admin.from("notifications").insert({
-    org_id: context.organizationId,
-    user_id: context.userId,
-    title: values.title,
-    body: values.body,
-    type: "sales",
-    link: values.link || `/sales/log?company_id=${context.companyId}`,
-    is_read: false,
-  } as never);
-}
-
 function shouldSuppressPrompt(row: Record<string, unknown> | null, type: PromptType) {
   if (!row) return false;
   const action = String(row.action || "");
@@ -225,73 +172,28 @@ async function ensurePrompt(
   key: string,
   context: MonitorContext
 ) {
-  const match = {
-    organization_id: context.organizationId,
-    sales_agent_id: context.userId,
-    company_id: context.companyId,
-    prompt_date: context.promptDate,
-    prompt_type: type,
-    prompt_key: key,
-  };
-
-  const existingResult = await admin
-    .from("sales_shift_prompts")
-    .select("*")
-    .match(match)
-    .maybeSingle() as unknown as SingleResult<Record<string, unknown>>;
-
-  if (existingResult.error) throw existingResult.error;
-
-  let row = existingResult.data as Record<string, unknown> | null;
-  const firstTime = !row;
-
-  if (!row) {
-    const insertResult = await admin
-      .from("sales_shift_prompts")
-      .insert({
-        ...match,
-        employee_id: context.employeeId,
-        shift_id: context.shiftId,
-        target_amount: context.targetAmount,
-        achieved_amount: context.achievedAmount,
-        required_percent: type === "mid_shift" ? 40 : type === "end_shift" ? 100 : 0,
-        action: "shown",
-      } as never)
-      .select("*")
-      .single() as unknown as SingleResult<Record<string, unknown>>;
-    if (insertResult.error) throw insertResult.error;
-    row = insertResult.data as Record<string, unknown>;
-  } else {
-    const updateResult = await admin
-      .from("sales_shift_prompts")
-      .update({
-        target_amount: context.targetAmount,
-        achieved_amount: context.achievedAmount,
-        required_percent: type === "mid_shift" ? 40 : type === "end_shift" ? 100 : 0,
-      } as never)
-      .eq("id", String(row.id))
-      .select("*")
-      .single() as unknown as SingleResult<Record<string, unknown>>;
-    if (!updateResult.error && updateResult.data) row = updateResult.data as Record<string, unknown>;
-  }
-
-  if (firstTime && type === "mid_shift") {
-    await notifySalesAgent(admin, context, {
-      title: "تنبيه هدف المبيعات",
-      body: `لم تصل إلى 40% من هدف ${context.companyName}. الحالي ${context.progressPercent}%.`,
-    });
-  }
-
-  if (firstTime && type === "end_shift") {
-    await notifyRecipients(admin, context, {
-      title: `لم يحقق ${context.agentName} هدف المبيعات`,
-      body: `حقق ${money(context.achievedAmount)} من أصل ${money(context.targetAmount)} قبل نهاية الوردية.`,
-      excludeUserId: context.userId,
-    });
-  }
+  const { data, error } = await admin.rpc("ensure_sales_shift_prompt_atomic", {
+    p_org_id: context.organizationId,
+    p_actor_user_id: context.userId,
+    p_request_id: context.requestId,
+    p_company_id: context.companyId,
+    p_employee_id: context.employeeId,
+    p_shift_id: context.shiftId,
+    p_prompt_date: context.promptDate,
+    p_prompt_type: type,
+    p_prompt_key: key,
+    p_target_amount: context.targetAmount,
+    p_achieved_amount: context.achievedAmount,
+    p_required_percent: type === "mid_shift" ? 40 : type === "end_shift" ? 100 : 0,
+  });
+  if (error) throw new Error(error.message);
+  const row = data && typeof data === "object" && !Array.isArray(data)
+    ? data as Record<string, unknown>
+    : null;
+  if (!row?.id) throw new Error("Shift prompt command returned no prompt.");
 
   if (shouldSuppressPrompt(row, type)) return null;
-  return promptPayload(type, key, context);
+  return promptPayload(type, key, context, row);
 }
 
 function getDailyTarget(assignment: Record<string, unknown>) {
@@ -300,7 +202,7 @@ function getDailyTarget(assignment: Record<string, unknown>) {
 }
 
 async function buildMonitorData(request: NextRequest, auth: AuthContext) {
-  const now = riyadhNow();
+  const now = organizationNow(auth.timezone);
   const admin = createAdminClient();
 
   if (auth.role !== "sales" && auth.role !== "sales_manager") {
@@ -417,6 +319,7 @@ async function buildMonitorData(request: NextRequest, auth: AuthContext) {
     achievedAmount,
     progressPercent,
     remainingAmount,
+    requestId: auth.requestId,
     ...window,
   };
 
@@ -460,7 +363,7 @@ async function buildMonitorData(request: NextRequest, auth: AuthContext) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireSalesAccess();
+  const auth = await requireSalesAccess(undefined, request);
   if ("error" in auth) return auth.error;
 
   try {
@@ -472,7 +375,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSalesAccess();
+  const auth = await requireSalesAccess(undefined, request);
   if ("error" in auth) return auth.error;
   if (auth.role !== "sales" && auth.role !== "sales_manager") {
     return NextResponse.json({ message: "هذا الإجراء متاح لفريق المبيعات فقط." }, { status: 403 });
@@ -482,11 +385,15 @@ export async function POST(request: NextRequest) {
   const promptType = String(body.prompt_type || "") as PromptType;
   const promptKey = String(body.prompt_key || "").trim();
   const companyId = String(body.company_id || "").trim();
+  const promptId = String(body.prompt_id || "").trim();
+  const commandId = String(body.command_id || "").trim();
+  const expectedVersion = Number(body.expected_version || 0);
   const action = String(body.action || "").trim();
   const reason = String(body.reason || "").trim();
-  const now = riyadhNow();
 
-  if (!["hourly", "mid_shift", "end_shift"].includes(promptType) || !promptKey || !companyId) {
+  if (!["hourly", "mid_shift", "end_shift"].includes(promptType) || !promptKey || !companyId
+      || !/^[0-9a-f-]{36}$/i.test(promptId) || !/^[0-9a-f-]{36}$/i.test(commandId)
+      || !Number.isInteger(expectedVersion) || expectedVersion < 1) {
     return NextResponse.json({ message: "بيانات التنبيه غير مكتملة." }, { status: 400 });
   }
 
@@ -494,69 +401,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message: "اكتب سببًا واضحًا قبل الإرسال." }, { status: 400 });
   }
 
-  const admin = createAdminClient();
-  const promptResult = await admin
-    .from("sales_shift_prompts")
-    .select("*")
-    .eq("organization_id", auth.orgId)
-    .eq("sales_agent_id", auth.user.id)
-    .eq("company_id", companyId)
-    .eq("prompt_date", now.date)
-    .eq("prompt_type", promptType)
-    .eq("prompt_key", promptKey)
-    .maybeSingle() as unknown as SingleResult<Record<string, unknown>>;
-
-  if (promptResult.error) return NextResponse.json({ message: promptResult.error.message }, { status: 500 });
-  if (!promptResult.data) return NextResponse.json({ message: "لم يتم العثور على التنبيه." }, { status: 404 });
-
-  const updateValues: Record<string, unknown> = {};
-  if (action === "snooze") {
-    updateValues.action = "snoozed";
-    updateValues.snoozed_until = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-  } else if (action === "submit_reason") {
-    updateValues.action = "submitted_reason";
-    updateValues.reason = reason;
-    updateValues.reason_submitted_at = new Date().toISOString();
-    updateValues.snoozed_until = null;
-  } else {
-    updateValues.action = "acknowledged";
-    updateValues.snoozed_until = null;
-  }
-
-  const updateResult = await admin
-    .from("sales_shift_prompts")
-    .update(updateValues as never)
-    .eq("id", String((promptResult.data as Record<string, unknown>).id)) as unknown as EmptyResult;
-
-  if (updateResult.error) return NextResponse.json({ message: updateResult.error.message }, { status: 500 });
-
-  if (action === "submit_reason") {
-    const fakeRequest = new NextRequest(new URL(`/api/sales/shift-monitor?company_id=${companyId}`, request.url));
-    const data = await buildMonitorData(fakeRequest, auth);
-    const context: MonitorContext = {
-      organizationId: auth.orgId,
-      userId: auth.user.id,
-      employeeId: null,
-      agentName: String(auth.user.email || "Sales"),
-      companyId,
-      companyName: data.company?.name || "شركة المبيعات",
-      company: data.company as unknown as Record<string, unknown>,
-      shiftId: data.shift?.id || null,
-      shift: data.shift as unknown as Record<string, unknown> | null,
-      promptDate: now.date,
-      targetAmount: data.target_amount,
-      achievedAmount: data.achieved_amount,
-      progressPercent: data.progress_percent,
-      remainingAmount: data.remaining_amount,
-      elapsedMinutes: 0,
-      durationMinutes: 0,
-      minutesUntilEnd: 0,
-    };
-    await notifyRecipients(admin, context, {
-      title: `سبب عدم تحقيق هدف المبيعات`,
-      body: reason,
-      excludeUserId: auth.user.id,
-    });
+  const { error } = await auth.admin.rpc("respond_sales_shift_prompt_atomic", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_command_id: commandId,
+    p_prompt_id: promptId,
+    p_expected_version: expectedVersion,
+    p_action: action,
+    p_reason: reason || null,
+    p_snooze_minutes: 15,
+  });
+  if (error) {
+    const status = error.code === "P0002" ? 404
+      : error.code === "40001" || error.code === "23505" || error.code === "55000" ? 409
+        : error.code === "42501" ? 403 : error.code === "22023" || error.code === "23514" ? 400 : 500;
+    return NextResponse.json({ message: error.message, requestId: auth.requestId }, { status });
   }
 
   const nextData = await buildMonitorData(request, auth);

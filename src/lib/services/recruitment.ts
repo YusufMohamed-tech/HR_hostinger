@@ -84,13 +84,28 @@ export type JobApplication = {
   phone: string | null;
   resume_url: string | null;
   cv_url: string | null;
-  answers: Record<string, string>;
+  answers: Record<string, string | RecruitmentFileAnswer>;
   status: string;
+  version: number;
+  offer_status: "pending" | "accepted" | "declined" | "withdrawn" | null;
+  offered_at: string | null;
+  offer_responded_at: string | null;
   stage_history: StageHistoryEntry[];
   recruiter_notes: string | null;
   score: number | null;
   applied_at: string;
   updated_at: string;
+};
+
+export type RecruitmentFileAnswer = {
+  path: string;
+  filename: string;
+  mime: string;
+  size_bytes: number;
+  sha256: string;
+  scan_status: "clean";
+  scan_engine: string;
+  scanned_at: string;
 };
 
 export type Interview = {
@@ -117,8 +132,8 @@ async function apiFetch<T>(
       ...options,
       headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
     });
-    const json = (await res.json()) as { data?: T; error?: string };
-    if (!res.ok) return { data: null, error: json.error ?? "خطأ غير متوقع" };
+    const json = (await res.json()) as { data?: T; error?: string; message?: string };
+    if (!res.ok) return { data: null, error: json.message ?? json.error ?? "خطأ غير متوقع" };
     return { data: json.data ?? null, error: null };
   } catch (e) {
     return { data: null, error: e instanceof Error ? e.message : "خطأ في الاتصال" };
@@ -185,15 +200,16 @@ export async function updateApplication(
   });
 }
 
-export async function updateApplicationStage(id: string, stage: string, note?: string) {
+export async function updateApplicationStage(id: string, stage: string, expectedVersion: number, note?: string) {
   return apiFetch<JobApplication>(`/api/recruitment/applications/${id}/stage`, {
     method: "POST",
-    body: JSON.stringify({ stage, note }),
+    body: JSON.stringify({ stage, note, expected_version: expectedVersion, command_id: crypto.randomUUID() }),
   });
 }
 
 export async function scheduleInterview(data: {
   application_id: string;
+  expected_version: number;
   scheduled_at: string;
   type: string;
   location?: string;
@@ -201,7 +217,7 @@ export async function scheduleInterview(data: {
 }) {
   return apiFetch<Interview>("/api/recruitment/interviews", {
     method: "POST",
-    body: JSON.stringify(data),
+    body: JSON.stringify({ ...data, command_id: crypto.randomUUID(), scheduled_at: new Date(data.scheduled_at).toISOString() }),
   });
 }
 
@@ -210,9 +226,15 @@ export async function getInterviews(applicationId: string) {
 }
 
 export async function hireCandidate(applicationId: string) {
+  const scope = `hrms-command:recruitment-hire:${applicationId}`;
+  const existing = typeof window !== "undefined" ? window.sessionStorage.getItem(scope) : null;
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(scope, commandId);
   return apiFetch<{ employee_id: string }>("/api/recruitment/hire", {
     method: "POST",
-    body: JSON.stringify({ application_id: applicationId }),
+    body: JSON.stringify({ application_id: applicationId, command_id: commandId }),
+  }).then((result) => {
+    if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(scope);
+    return result;
   });
 }
-

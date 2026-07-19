@@ -12,34 +12,26 @@ export async function getLocations(orgId: string) {
 }
 
 export async function createLocation(values: Record<string, unknown>) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("locations")
-    .insert(values as never)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+  return structureCommand("save_location", crypto.randomUUID(), null, values);
 }
 
 export async function updateLocation(id: string, values: Record<string, unknown>) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("locations")
-    .update(values as never)
-    .eq("id", id)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+  return structureCommand("save_location", id, Number(values.expected_version), values);
 }
 
-export async function deleteLocation(id: string) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("locations")
-    .delete()
-    .eq("id", id);
+export async function deleteLocation(id: string, expectedVersion: number) {
+  return structureCommand("delete_location", id, expectedVersion, {});
+}
 
-  return result as unknown as { error: { message: string } | null };
+async function structureCommand(action: string, targetId: string, expectedVersion: number | null, payload: Record<string, unknown>) {
+  try {
+    const response = await fetch("/api/hr/structure", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, command_id: crypto.randomUUID(), target_id: targetId,
+        expected_version: Number.isFinite(expectedVersion) ? expectedVersion : null, payload }) });
+    const body = await response.json().catch(() => ({}));
+    return response.ok ? { data: body.data || null, error: null }
+      : { data: null, error: { message: String(body.message || "Unable to update location.") } };
+  } catch {
+    return { data: null, error: { message: "Unable to connect to location service." } };
+  }
 }

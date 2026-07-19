@@ -4,8 +4,7 @@ import React, { useState } from "react";
 import { Trash2, Layers as LayersIcon, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionButton } from "@/components/ui/feedback-dialog";
-import { deleteDepartment, updateDepartment } from "@/lib/services/departments";
-import { updateEmployee } from "@/lib/services/employees";
+import { deleteDepartment, setDepartmentMembers } from "@/lib/services/departments";
 import { EditDepartmentDialog } from "@/components/forms/EditDepartmentDialog";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -115,7 +114,7 @@ export default function DepartmentsPage() {
                             confirmLabel="حذف"
                             destructive
                             onConfirm={async () => {
-                              await deleteDepartment(deptId);
+                              await deleteDepartment(deptId, Number(deptRecord.version || 1));
                               refetch();
                             }}
                           >
@@ -193,50 +192,16 @@ function ManageDepartmentMembersDialog({
     const finalMembers = new Set(selectedEmployeeIds);
     if (resolvedManagerId) finalMembers.add(resolvedManagerId);
 
-    const departmentResult = await updateDepartment(departmentId, {
-      manager_employee_id: resolvedManagerId || null,
-    });
-
-    if (departmentResult.error) {
-      setError(departmentResult.error.message);
-      setSubmitting(false);
-      return;
-    }
-
     if (!orgId) {
       setError("Organization context is required.");
       setSubmitting(false);
       return;
     }
 
-    const updates = employees
-      .filter((employee) => {
-        const employeeId = String(employee.id || "");
-        return finalMembers.has(employeeId) || String(employee.department_id || "") === departmentId;
-      })
-      .map((employee) => {
-        const employeeId = String(employee.id || "");
-        const shouldBelongToDepartment = finalMembers.has(employeeId);
-        const isDepartmentManager = resolvedManagerId && employeeId === resolvedManagerId;
-        const currentManager = String(employee.manager_id || "");
-        const shouldClearManager = !shouldBelongToDepartment && currentManager === resolvedManagerId;
-
-        return updateEmployee(orgId, employeeId, {
-          department_id: shouldBelongToDepartment ? departmentId : null,
-          manager_id: shouldBelongToDepartment
-            ? isDepartmentManager
-              ? null
-              : resolvedManagerId || null
-            : shouldClearManager
-              ? null
-              : currentManager || null,
-        });
-      });
-
-    const results = await Promise.all(updates);
-    const failed = results.find((result) => result.error);
-    if (failed?.error) {
-      setError(failed.error.message);
+    const result = await setDepartmentMembers(departmentId, Number(department.version || 1),
+      resolvedManagerId || null, [...finalMembers]);
+    if (result.error) {
+      setError(result.error.message);
       setSubmitting(false);
       return;
     }

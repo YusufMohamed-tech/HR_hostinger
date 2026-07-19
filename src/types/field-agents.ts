@@ -114,6 +114,10 @@ export interface AgentCashCollection {
   collected_by: string;
   collection_date: string;
   notes: string | null;
+  version: number;
+  accounting_status: "pending" | "posted" | "failed";
+  accounting_journal_entry_id: string | null;
+  accounting_error: string | null;
   created_at: string;
   updated_at: string;
 }
