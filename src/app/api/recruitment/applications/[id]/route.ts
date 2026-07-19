@@ -31,8 +31,9 @@ function canAccessApplication(auth: { role: string; userId: string }, applicatio
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const auth = await authorizeRecruiter();
   if (!auth) return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
 
@@ -40,7 +41,7 @@ export async function GET(
   const { data, error } = await admin
     .from("job_applications")
     .select("*, job:job_posting_id(created_by)")
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("org_id", auth.orgId)
     .maybeSingle();
 
@@ -54,8 +55,9 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const auth = await authorizeRecruiter();
   if (!auth) return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
 
@@ -65,7 +67,7 @@ export async function PATCH(
   const { data: currentApplication } = await admin
     .from("job_applications")
     .select("id, job:job_posting_id(created_by)")
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("org_id", auth.orgId)
     .maybeSingle();
   if (!canAccessApplication(auth, currentApplication as Record<string, unknown> | null)) {
@@ -75,12 +77,11 @@ export async function PATCH(
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if ("recruiter_notes" in body) update.recruiter_notes = body.recruiter_notes;
   if ("score" in body) update.score = body.score;
-  if ("status" in body) update.status = body.status;
 
   const { data, error } = await admin
     .from("job_applications")
     .update(update as never)
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("org_id", auth.orgId)
     .select()
     .single();

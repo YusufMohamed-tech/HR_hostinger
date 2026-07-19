@@ -91,6 +91,7 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
       longitude: parsed.data.longitude,
       radius_meters: parsed.data.radius_meters,
       manager_employee_id: parsed.data.manager_employee_id,
+      expected_version: Number(location.version || 1),
     });
 
     if (err) {

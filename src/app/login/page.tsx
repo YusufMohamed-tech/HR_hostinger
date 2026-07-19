@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Network, Eye, EyeOff } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
@@ -134,6 +135,12 @@ export default function LoginPage() {
                 {submitting ? "جار تسجيل الدخول..." : "تسجيل الدخول"}
               </Button>
 
+              <div className="text-center">
+                <Link href="/forgot-password" className="text-sm font-medium text-brand hover:text-brand-dark">
+                  نسيت كلمة المرور؟
+                </Link>
+              </div>
+
               {message && (
                 <p className={`text-sm text-center ${message.includes("successful") || message.includes("نجاح") ? "text-brand-dark" : "text-red-600"}`}>
                   {message}
@@ -150,4 +157,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

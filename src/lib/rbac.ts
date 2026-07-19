@@ -69,7 +69,15 @@ export function getDefaultPathForRole(role: Role): string {
 
 export function isPublicPath(pathname: string): boolean {
   return (
+    pathname === "/api/health" ||
+    pathname === "/api/ready" ||
+    pathname === "/api/internal/outbox" ||
+    pathname === "/api/internal/compliance" ||
+    pathname === "/api/internal/file-retention" ||
+    pathname.startsWith("/api/auth/") ||
     pathname === "/login" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
     pathname === "/suspended" ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/apply/") ||
@@ -175,6 +183,8 @@ export function canAccessPath(role: Role, pathname: string): boolean {
       normalizedPath.startsWith("/learn") ||
       normalizedPath.startsWith("/api/learn") ||
       normalizedPath.startsWith("/payroll") ||
+      normalizedPath.startsWith("/balances") ||
+      normalizedPath.startsWith("/api/advance-requests") ||
       normalizedPath.startsWith("/notifications") ||
       normalizedPath.startsWith("/settings")
     );

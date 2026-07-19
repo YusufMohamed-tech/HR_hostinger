@@ -1,9 +1,158 @@
-import * as XLSX from "xlsx";
+import { Buffer } from "node:buffer";
+import { createHash, randomUUID } from "node:crypto";
+import { readSheet } from "read-excel-file/node";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getBundleCategory, getShiftType, DEFAULT_BUNDLE_CATEGORIES } from "@/lib/utils/carrier-kpi";
 import { runVerification } from "@/lib/services/carrier-verification";
+import { zonedDateTimeToUtc } from "@/lib/business-time";
 
 const BATCH_SIZE = 500;
+export const MAX_CARRIER_IMPORT_BYTES = 10 * 1024 * 1024;
+const MAX_CARRIER_IMPORT_ROWS = 50_000;
+const CARRIER_COLUMN_COUNT = 36;
+export const CARRIER_CONTRACT_VERSION = "virgin-friendi-activation-v1";
+
+const EXPECTED_HEADERS = [
+  "activation_count",
+  "bundle_type",
+  "activation_month",
+  "activation_date",
+  "region",
+  "city",
+  "distributor_name",
+  "channel",
+  "dealer_name",
+  "dealer_code",
+  "key_account_manager",
+  "account_manager",
+  "team_leader",
+  "sales_champion",
+  "segment_brand",
+  "segment_group",
+  "customer_nationality",
+  "customer_id_type",
+  "latitude",
+  "longitude",
+  "activated_at",
+  "cas_location_id",
+  "cas_location_name",
+  "bundle_description",
+  "fpe_count",
+  "ibr_value",
+  "ibr_value_excl_vat",
+  "first_recharge_value",
+  "second_recharge_value",
+  "uid_percent",
+  "first_bundle_qty",
+  "first_bundle_revenue",
+  "lifetime_recharge",
+  "initial_balance_total",
+  "dealer_partner",
+  "subscription_type",
+] as const;
+
+function normalizeHeader(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "");
+}
+
+function columnName(index: number): string {
+  let value = index + 1;
+  let name = "";
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    value = Math.floor((value - 1) / 26);
+  }
+  return name;
+}
+
+function validateHeaders(headerRow: unknown[]) {
+  if (headerRow.length < CARRIER_COLUMN_COUNT) {
+    throw new Error(`Carrier workbook must contain ${CARRIER_COLUMN_COUNT} columns (A–AJ); found ${headerRow.length}.`);
+  }
+
+  const mismatches: string[] = [];
+  for (let index = 0; index < CARRIER_COLUMN_COUNT; index++) {
+    const actual = normalizeHeader(headerRow[index]);
+    const expected = normalizeHeader(EXPECTED_HEADERS[index]);
+    if (actual !== expected) {
+      mismatches.push(`${columnName(index)}: expected ${EXPECTED_HEADERS[index]}, found ${String(headerRow[index] ?? "blank")}`);
+    }
+  }
+
+  if (mismatches.length > 0) {
+    throw new Error(`Carrier workbook headers do not match the v1 contract. ${mismatches.slice(0, 8).join("; ")}`);
+  }
+}
+
+function excelSerialToParts(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const wholeDays = Math.floor(value);
+  const milliseconds = Math.round((value - wholeDays) * 86_400_000);
+  const date = new Date(Date.UTC(1899, 11, 30 + wholeDays) + milliseconds);
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    hour: date.getUTCHours(),
+    minute: date.getUTCMinutes(),
+    second: date.getUTCSeconds(),
+  };
+}
+
+function dateParts(value: unknown) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return {
+      year: value.getFullYear(),
+      month: value.getMonth() + 1,
+      day: value.getDate(),
+      hour: value.getHours(),
+      minute: value.getMinutes(),
+      second: value.getSeconds(),
+    };
+  }
+  if (typeof value === "number") return excelSerialToParts(value);
+
+  const text = String(value ?? "").trim();
+  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/u.exec(text);
+  if (iso) {
+    return {
+      year: Number(iso[1]),
+      month: Number(iso[2]),
+      day: Number(iso[3]),
+      hour: Number(iso[4] ?? 0),
+      minute: Number(iso[5] ?? 0),
+      second: Number(iso[6] ?? 0),
+    };
+  }
+
+  const dayFirst = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/u.exec(text);
+  if (dayFirst) {
+    return {
+      year: Number(dayFirst[3]),
+      month: Number(dayFirst[2]),
+      day: Number(dayFirst[1]),
+      hour: Number(dayFirst[4] ?? 0),
+      minute: Number(dayFirst[5] ?? 0),
+      second: Number(dayFirst[6] ?? 0),
+    };
+  }
+  return null;
+}
+
+function validParts(parts: ReturnType<typeof dateParts>) {
+  if (!parts) return false;
+  const instant = new Date(Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second));
+  return instant.getUTCFullYear() === parts.year
+    && instant.getUTCMonth() + 1 === parts.month
+    && instant.getUTCDate() === parts.day
+    && parts.hour >= 0 && parts.hour <= 23
+    && parts.minute >= 0 && parts.minute <= 59
+    && parts.second >= 0 && parts.second <= 59;
+}
 
 // ---------------------------------------------------------------------------
 // Excel column → field mapping (0-indexed columns A=0 … AJ=35)
@@ -15,31 +164,22 @@ function parseRow(row: unknown[]): RawActivationRow {
   }
   function num(v: unknown): number {
     const n = parseFloat(String(v));
-    return isFinite(n) ? n : 0;
+    return Number.isFinite(n) ? n : Number.NaN;
   }
   function int(v: unknown): number {
     return Math.round(num(v));
   }
   function dateStr(v: unknown): string | null {
     if (!v) return null;
-    if (typeof v === "number") {
-      // Excel serial date
-      const d = XLSX.SSF.parse_date_code(v);
-      if (!d) return null;
-      return `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}`;
-    }
-    const s = String(v).trim();
-    return s || null;
+    const parts = dateParts(v);
+    if (!validParts(parts) || !parts) return null;
+    return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
   }
   function tsStr(v: unknown): string | null {
     if (!v) return null;
-    if (typeof v === "number") {
-      const d = XLSX.SSF.parse_date_code(v);
-      if (!d) return null;
-      return new Date(Date.UTC(d.y, d.m - 1, d.d, d.H ?? 0, d.M ?? 0, d.S ?? 0)).toISOString();
-    }
-    const s = String(v).trim();
-    return s || null;
+    const parts = dateParts(v);
+    if (!validParts(parts) || !parts) return null;
+    return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}T${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}:${String(parts.second).padStart(2, "0")}`;
   }
 
   return {
@@ -121,6 +261,61 @@ interface RawActivationRow {
   subscription_type: string | null;
 }
 
+function validateActivationRows(rows: RawActivationRow[]) {
+  const errorsByRow = rows.map(() => [] as string[]);
+  const allowedChannels = new Set(["Direct Sales", "Modern trade"]);
+  const allowedBrands = new Set(["Virgin Mobile", "FRiENDi mobile"]);
+  const nonnegativeFields: Array<keyof RawActivationRow> = [
+    "activation_count",
+    "fpe_count",
+    "ibr_value",
+    "ibr_value_excl_vat",
+    "first_recharge_value",
+    "second_recharge_value",
+    "uid_percent",
+    "first_bundle_qty",
+    "first_bundle_revenue",
+    "lifetime_recharge",
+    "initial_balance_total",
+  ];
+
+  for (const [index, row] of rows.entries()) {
+    const rowErrors = errorsByRow[index];
+    if (!row.activation_date) rowErrors.push("activation_date is required and must be a valid date");
+    if (!row.activated_at) rowErrors.push("activated_at is required and must be a valid timestamp");
+    if (!row.dealer_code || row.dealer_code.length > 128) rowErrors.push("dealer_code is required and must be at most 128 characters");
+    if (!Number.isInteger(row.activation_count) || row.activation_count <= 0 || row.activation_count > 1_000_000) {
+      rowErrors.push("activation_count must be an integer between 1 and 1,000,000");
+    }
+    if (row.channel && !allowedChannels.has(row.channel)) rowErrors.push(`unsupported channel: ${row.channel}`);
+    if (row.segment_brand && !allowedBrands.has(row.segment_brand)) rowErrors.push(`unsupported segment_brand: ${row.segment_brand}`);
+    if (row.latitude !== null && (row.latitude < -90 || row.latitude > 90)) rowErrors.push("latitude must be between -90 and 90");
+    if (row.longitude !== null && (row.longitude < -180 || row.longitude > 180)) rowErrors.push("longitude must be between -180 and 180");
+
+    for (const field of nonnegativeFields) {
+      const value = Number(row[field]);
+      if (!Number.isFinite(value) || value < 0 || value > 1_000_000_000) {
+        rowErrors.push(`${field} must be between 0 and 1,000,000,000`);
+      }
+    }
+
+    if (row.activation_date) {
+      const businessMonth = row.activation_date.slice(0, 7);
+      if (row.activation_month && row.activation_month.slice(0, 7) !== businessMonth) {
+        rowErrors.push("activation_month does not match activation_date");
+      }
+      row.activation_month = `${businessMonth}-01`;
+    }
+  }
+
+  const months = new Set(rows.map((row) => row.activation_date.slice(0, 7)).filter((month) => /^\d{4}-\d{2}$/u.test(month)));
+  if (months.size > 1) {
+    const error = `Workbook contains multiple activation months: ${Array.from(months).join(", ")}`;
+    for (const rowErrors of errorsByRow) rowErrors.push(error);
+  }
+  return errorsByRow;
+}
+
 // ---------------------------------------------------------------------------
 // Dealer code → employee lookup cache
 // ---------------------------------------------------------------------------
@@ -190,10 +385,11 @@ function matchEmployee(
 // ---------------------------------------------------------------------------
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function loadConfig(admin: any, orgId: string): Promise<Record<string, string>> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("carrier_dashboard_config")
     .select("config_key, config_value")
     .eq("organization_id", orgId);
+  if (error) throw error;
   const cfg: Record<string, string> = {
     shift_night_start: "16:00",
   };
@@ -203,14 +399,26 @@ async function loadConfig(admin: any, orgId: string): Promise<Record<string, str
   return cfg;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function loadOrganizationTimezone(admin: any, orgId: string) {
+  const { data, error } = await admin.from("organization_settings").select("timezone")
+    .eq("org_id", orgId).maybeSingle();
+  if (error) throw error;
+  return String(data?.timezone || "UTC");
+}
+
 // ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 export interface ImportResult {
   importId: string;
+  status: string;
+  contractVersion: string;
+  fileSha256: string;
   totalRows: number;
   newRows: number;
   duplicateRows: number;
+  rejectedRows: number;
   matchedRows: number;
   unmatchedRows: number;
   unmatchedCodes: string[];
@@ -218,184 +426,166 @@ export interface ImportResult {
   dateRangeEnd: string;
 }
 
+function deterministicUuid(scope: string) {
+  const hash = createHash("sha256").update(scope).digest("hex").slice(0, 32);
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20)}`;
+}
+
+function firstRecord(value: unknown) {
+  const record = Array.isArray(value) ? value[0] : value;
+  if (!record || typeof record !== "object") throw new Error("Carrier import command returned no record.");
+  return record as Record<string, unknown>;
+}
+
+function resultFromImport(record: Record<string, unknown>, unmatchedCodes: string[] = []): ImportResult {
+  return {
+    importId: String(record.id),
+    status: String(record.status),
+    contractVersion: String(record.contract_version || CARRIER_CONTRACT_VERSION),
+    fileSha256: String(record.file_sha256 || ""),
+    totalRows: Number(record.total_rows || 0),
+    newRows: Number(record.new_rows || 0),
+    duplicateRows: Number(record.duplicate_rows || 0),
+    rejectedRows: Number(record.rejected_rows || 0),
+    matchedRows: Number(record.matched_rows || 0),
+    unmatchedRows: Number(record.unmatched_rows || 0),
+    unmatchedCodes,
+    dateRangeStart: String(record.date_range_start || ""),
+    dateRangeEnd: String(record.date_range_end || ""),
+  };
+}
+
 export async function processCarrierExcel(
   fileBuffer: ArrayBuffer,
   fileName: string,
   orgId: string,
-  uploadedBy: string
+  uploadedBy: string,
+  options: { commandId?: string; requestId?: string } = {}
 ): Promise<ImportResult> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any;
 
-  // Parse workbook
-  const workbook = XLSX.read(fileBuffer, { type: "array", cellDates: false });
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  const rawRows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+  if (fileBuffer.byteLength > MAX_CARRIER_IMPORT_BYTES) {
+    throw new Error(`Carrier workbook exceeds the ${MAX_CARRIER_IMPORT_BYTES / 1024 / 1024} MB limit.`);
+  }
+
+  const parsedWorkbook = await readSheet(Buffer.from(fileBuffer));
+  const rawRows = parsedWorkbook as unknown[][];
+  if (rawRows.length === 0) throw new Error("Carrier workbook does not contain a worksheet.");
+  validateHeaders(rawRows[0]);
 
   // Skip header row
   const dataRows = rawRows.slice(1).filter((r) => r && (r as unknown[]).some((c) => c !== null));
   if (dataRows.length === 0) throw new Error("No data rows found in Excel file");
+  if (dataRows.length > MAX_CARRIER_IMPORT_ROWS) {
+    throw new Error(`Carrier workbook exceeds the ${MAX_CARRIER_IMPORT_ROWS.toLocaleString()} row limit.`);
+  }
 
   const rows = dataRows.map((r) => parseRow(r as unknown[]));
+  const validationErrors = validateActivationRows(rows);
+  const syntacticallyValidDates = rows.map((row) => row.activation_date)
+    .filter((date) => /^\d{4}-\d{2}-\d{2}$/u.test(date));
+  const fallbackDate = new Date().toISOString().slice(0, 10);
+  const firstDate = syntacticallyValidDates[0] || fallbackDate;
+  const activationMonthKey = firstDate.slice(0, 7);
+  const contractDates = syntacticallyValidDates.filter((date) => date.startsWith(`${activationMonthKey}-`));
+  const dateRangeStart = contractDates.length > 0 ? contractDates.reduce((a, b) => (a < b ? a : b)) : firstDate;
+  const dateRangeEnd = contractDates.length > 0 ? contractDates.reduce((a, b) => (a > b ? a : b)) : firstDate;
+  const activationMonth = `${activationMonthKey}-01`;
+  const fileSha256 = createHash("sha256").update(Buffer.from(fileBuffer)).digest("hex");
+  const commandId = options.commandId || randomUUID();
+  const requestId = options.requestId || randomUUID();
+  const publishCommandId = deterministicUuid(`${commandId}:publish`);
+  const failCommandId = deterministicUuid(`${commandId}:fail`);
 
-  // Collect all activation dates for building the dealer-code map
-  const allDates = Array.from(new Set(rows.map((r) => r.activation_date).filter(Boolean))) as string[];
-  const dateRangeStart = allDates.reduce((a, b) => (a < b ? a : b));
-  const dateRangeEnd = allDates.reduce((a, b) => (a > b ? a : b));
+  const begin = await admin.rpc("begin_carrier_import", {
+    p_org_id: orgId,
+    p_actor_user_id: uploadedBy,
+    p_command_id: commandId,
+    p_request_id: requestId,
+    p_file_name: fileName,
+    p_file_sha256: fileSha256,
+    p_contract_version: CARRIER_CONTRACT_VERSION,
+    p_activation_month: activationMonth,
+    p_date_range_start: dateRangeStart,
+    p_date_range_end: dateRangeEnd,
+    p_total_rows: rows.length,
+  });
+  if (begin.error) throw begin.error;
+  const importRecord = firstRecord(begin.data);
+  const importId = String(importRecord.id);
+  if (String(importRecord.status) !== "processing") return resultFromImport(importRecord);
 
-  // Derive activation month from first date
-  const activationMonth = dateRangeStart.slice(0, 7) + "-01";
-
-  // Create import record
-  const { data: importRec, error: importErr } = await admin
-    .from("carrier_activation_imports")
-    .insert({
-      organization_id: orgId,
-      file_name: fileName,
-      activation_month: activationMonth,
-      date_range_start: dateRangeStart,
-      date_range_end: dateRangeEnd,
-      total_rows: rows.length,
-      status: "processing",
-      uploaded_by: uploadedBy,
-    })
-    .select("id")
-    .single();
-  if (importErr) throw importErr;
-  const importId = importRec.id as string;
-
-  // Load config + build dealer code map
-  const [config, dealerCodeMap] = await Promise.all([
-    loadConfig(admin, orgId),
-    buildDealerCodeMap(admin, orgId, allDates),
-  ]);
-  const nightStart = config.shift_night_start ?? "16:00";
-
-  // Process rows in batches
-  let newRows = 0;
-  let duplicateRows = 0;
-  let matchedRows = 0;
-  const unmatchedCodeSet = new Set<string>();
-
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-
-    const insertRows = batch.map((row) => {
-      const { employeeId, supervisorId } = matchEmployee(
+  try {
+    const validDates = rows.filter((_, index) => validationErrors[index].length === 0)
+      .map((row) => row.activation_date);
+    const [config, dealerCodeMap, organizationTimezone] = await Promise.all([
+      loadConfig(admin, orgId),
+      validDates.length > 0 ? buildDealerCodeMap(admin, orgId, validDates) : Promise.resolve(new Map()),
+      loadOrganizationTimezone(admin, orgId),
+    ]);
+    const nightStart = config.shift_night_start ?? "16:00";
+    const unmatchedCodeSet = new Set<string>();
+    const stagedRows = rows.map((row, index) => {
+      const isValid = validationErrors[index].length === 0;
+      const match = isValid ? matchEmployee(
         dealerCodeMap as Map<string, { employeeId: string; supervisorId: string | null; startDate: string; endDate: string | null }[]>,
         row.dealer_code,
         row.activation_date
-      );
-      if (employeeId) {
-        matchedRows++;
-      } else {
-        unmatchedCodeSet.add(row.dealer_code);
-      }
-
-      const bundleCategory = getBundleCategory(row.ibr_value_excl_vat, DEFAULT_BUNDLE_CATEGORIES);
-      const shiftType = getShiftType(row.activated_at, nightStart);
-
+      ) : { employeeId: null, supervisorId: null };
+      if (isValid && !match.employeeId) unmatchedCodeSet.add(row.dealer_code);
+      const sourcePayload = JSON.parse(JSON.stringify(row)) as Record<string, unknown>;
+      const payload = {
+        ...row,
+        activated_at: isValid && row.activated_at
+          ? zonedDateTimeToUtc(row.activated_at, organizationTimezone).toISOString() : row.activated_at,
+        bundle_category: isValid ? getBundleCategory(row.ibr_value_excl_vat, DEFAULT_BUNDLE_CATEGORIES) : null,
+        shift_type: isValid ? getShiftType(row.activated_at, nightStart) : null,
+      };
+      const sanitizedPayload = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
       return {
         organization_id: orgId,
         import_id: importId,
-        activation_count: row.activation_count,
-        bundle_type: row.bundle_type,
-        activation_month: row.activation_month,
-        activation_date: row.activation_date,
-        region: row.region,
-        city: row.city,
-        distributor_name: row.distributor_name,
-        channel: row.channel,
-        dealer_name: row.dealer_name,
-        dealer_code: row.dealer_code,
-        key_account_manager: row.key_account_manager,
-        account_manager: row.account_manager,
-        team_leader: row.team_leader,
-        sales_champion: row.sales_champion,
-        segment_brand: row.segment_brand,
-        segment_group: row.segment_group,
-        customer_nationality: row.customer_nationality,
-        customer_id_type: row.customer_id_type,
-        latitude: row.latitude,
-        longitude: row.longitude,
-        activated_at: row.activated_at,
-        cas_location_id: row.cas_location_id,
-        cas_location_name: row.cas_location_name,
-        bundle_description: row.bundle_description,
-        fpe_count: row.fpe_count,
-        ibr_value: row.ibr_value,
-        ibr_value_excl_vat: row.ibr_value_excl_vat,
-        first_recharge_value: row.first_recharge_value,
-        second_recharge_value: row.second_recharge_value,
-        uid_percent: row.uid_percent,
-        first_bundle_qty: row.first_bundle_qty,
-        first_bundle_revenue: row.first_bundle_revenue,
-        lifetime_recharge: row.lifetime_recharge,
-        initial_balance_total: row.initial_balance_total,
-        dealer_partner: row.dealer_partner,
-        subscription_type: row.subscription_type,
-        matched_employee_id: employeeId,
-        matched_supervisor_id: supervisorId,
-        bundle_category: bundleCategory,
-        shift_type: shiftType,
-        is_duplicate: false,
+        row_number: index + 2,
+        source_row_hash: createHash("sha256").update(JSON.stringify(sourcePayload)).digest("hex"),
+        payload: sanitizedPayload,
+        validation_errors: validationErrors[index],
+        matched_employee_id: match.employeeId,
+        matched_supervisor_id: match.supervisorId,
       };
     });
-
-    const { error: insertErr, count } = await admin
-      .from("carrier_activations")
-      .upsert(insertRows, { onConflict: "organization_id,dealer_code,activated_at", ignoreDuplicates: true })
-      .select("id");
-
-    if (insertErr) {
-      // Update import as failed
-      await admin
-        .from("carrier_activation_imports")
-        .update({ status: "failed", error_message: insertErr.message, updated_at: new Date().toISOString() })
-        .eq("id", importId);
-      throw insertErr;
+    for (let index = 0; index < stagedRows.length; index += BATCH_SIZE) {
+      const { error } = await admin.from("carrier_import_staging")
+        .upsert(stagedRows.slice(index, index + BATCH_SIZE), { onConflict: "import_id,row_number" });
+      if (error) throw error;
     }
+    const published = await admin.rpc("publish_carrier_import", {
+      p_org_id: orgId,
+      p_actor_user_id: uploadedBy,
+      p_command_id: publishCommandId,
+      p_request_id: requestId,
+      p_import_id: importId,
+    });
+    if (published.error) throw published.error;
+    const publishedRecord = firstRecord(published.data);
 
-    const inserted = count ?? 0;
-    newRows += inserted;
-    duplicateRows += batch.length - inserted;
+    if (["completed", "partial"].includes(String(publishedRecord.status))) {
+      await runVerification(orgId, importId, uploadedBy, requestId);
+    }
+    return resultFromImport(publishedRecord, Array.from(unmatchedCodeSet).sort());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Carrier import failed.";
+    const failed = await admin.rpc("fail_carrier_import", {
+      p_org_id: orgId,
+      p_actor_user_id: uploadedBy,
+      p_command_id: failCommandId,
+      p_request_id: requestId,
+      p_import_id: importId,
+      p_error_message: message,
+    });
+    if (failed.error && !String(failed.error.message || "").includes("no longer processing")) throw failed.error;
+    throw error;
   }
-
-  const unmatchedRows = rows.filter((r) => unmatchedCodeSet.has(r.dealer_code)).length;
-
-  // Update import record
-  await admin
-    .from("carrier_activation_imports")
-    .update({
-      total_rows: rows.length,
-      new_rows: newRows,
-      duplicate_rows: duplicateRows,
-      matched_rows: matchedRows,
-      unmatched_rows: unmatchedRows,
-      status: "completed",
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", importId);
-
-  // Run verification engine (non-blocking — failures don't fail the import)
-  try {
-    await runVerification(orgId, importId, dateRangeStart, dateRangeEnd);
-  } catch {
-    // Verification errors are logged but do not fail the import
-  }
-
-  return {
-    importId,
-    totalRows: rows.length,
-    newRows,
-    duplicateRows,
-    matchedRows,
-    unmatchedRows,
-    unmatchedCodes: Array.from(unmatchedCodeSet),
-    dateRangeStart,
-    dateRangeEnd,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -403,46 +593,19 @@ export async function processCarrierExcel(
 // ---------------------------------------------------------------------------
 export async function rematchActivations(
   orgId: string,
-  month: string
+  month: string,
+  actorUserId: string,
+  requestId: string
 ): Promise<{ updated: number }> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const admin = createAdminClient() as any;
 
-  const { data: unmatched, error } = await admin
-    .from("carrier_activations")
-    .select("id, dealer_code, activation_date")
-    .eq("organization_id", orgId)
-    .is("matched_employee_id", null)
-    .gte("activation_date", month + "-01")
-    .lt("activation_date", nextMonth(month) + "-01");
-
-  if (error) throw error;
-  if (!unmatched || unmatched.length === 0) return { updated: 0 };
-
-  const dates = Array.from(new Set((unmatched as { activation_date: string }[]).map((r) => r.activation_date)));
-  const dealerCodeMap = await buildDealerCodeMap(admin, orgId, dates);
-
-  let updated = 0;
-  for (const row of unmatched) {
-    const { employeeId, supervisorId } = matchEmployee(
-      dealerCodeMap as Map<string, { employeeId: string; supervisorId: string | null; startDate: string; endDate: string | null }[]>,
-      row.dealer_code as string,
-      row.activation_date as string
-    );
-    if (!employeeId) continue;
-
-    await admin
-      .from("carrier_activations")
-      .update({ matched_employee_id: employeeId, matched_supervisor_id: supervisorId })
-      .eq("id", row.id as string);
-    updated++;
-  }
-
-  return { updated };
-}
-
-function nextMonth(yyyyMm: string): string {
-  const [y, m] = yyyyMm.split("-").map(Number);
-  if (m === 12) return `${y + 1}-01`;
-  return `${y}-${String(m + 1).padStart(2, "0")}`;
+  const { data, error } = await admin.rpc("rematch_carrier_activations", {
+    p_org_id: orgId,
+    p_actor_user_id: actorUserId,
+    p_request_id: requestId,
+    p_month: `${month}-01`,
+  });
+  if (error) throw new Error(error.message);
+  return { updated: Number(data || 0) };
 }

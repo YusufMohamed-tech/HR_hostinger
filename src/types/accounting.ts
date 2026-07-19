@@ -68,6 +68,7 @@ export interface AccountingJournalEntry {
   total_credit: number;
   reversal_of: string | null;
   notes: string | null;
+  version: number;
   created_at: string;
   updated_at: string;
   lines?: AccountingJournalLine[];
@@ -102,6 +103,7 @@ export interface AccountingTaxRate {
 
 export interface AccountingCustomer extends AccountingVendor {
   sales_company_id: string | null;
+  version: number;
 }
 
 export interface AccountingInvoiceLine {
@@ -134,6 +136,7 @@ export interface AccountingInvoice {
   balance_due: number;
   currency: string;
   journal_entry_id: string | null;
+  version: number;
   lines?: AccountingInvoiceLine[];
 }
 
@@ -156,6 +159,7 @@ export interface AccountingExpense {
   rejection_reason?: string | null;
   attachment_url?: string | null;
   journal_entry_id: string | null;
+  version: number;
 }
 
 export interface AccountingPayment {
@@ -174,13 +178,17 @@ export interface AccountingPayment {
   attachment_url?: string | null;
   status: AccountingPaymentStatus;
   journal_entry_id: string | null;
+  version: number;
 }
 
 export type PayrollAccountingStatusValue = "not_generated" | "draft_created" | "posted" | "paid";
 
 export interface PayrollAccountingStatus {
   month: string;
-  payroll_id: string;
+  payroll_id: string | null;
+  payroll_run_status: "draft" | "approved" | "paid" | "void" | null;
+  formula_version: string | null;
+  payroll_run_version: number | null;
   status: PayrollAccountingStatusValue;
   payslip_count: number;
   total_net: number;
@@ -211,6 +219,8 @@ export interface AccountingSettings {
   default_asset_account_id: string | null;
   default_depreciation_expense_id: string | null;
   default_accumulated_depreciation_id: string | null;
+  default_commission_expense_id: string | null;
+  default_commission_payable_id: string | null;
   // Phase 7: GOSI
   default_gosi_payable_id: string | null;
   default_gosi_expense_id: string | null;
@@ -319,5 +329,7 @@ export interface CommissionSettlementPayload {
   payment_method: CommissionPaymentMethod;
   payment_reference?: string;
   finance_notes?: string;
-  create_accounting_entry?: boolean;
+  payment_date?: string;
+  account_id?: string;
+  command_id?: string;
 }

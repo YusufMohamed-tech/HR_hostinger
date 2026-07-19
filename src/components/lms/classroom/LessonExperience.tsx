@@ -19,6 +19,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { safeExternalUrl, sanitizeRichTextHtml } from "@/lib/rich-text";
 import {
   completeClassroomLesson,
   createLearnerBookmark,
@@ -90,9 +91,10 @@ export function LessonExperience({ enrollmentId, lessonId }: { enrollmentId: str
   const previous = R(navigation.previous);
   const next = R(navigation.next);
   const lessonType = S(lesson.lesson_type);
-  const contentUrl = S(lesson.content_url);
+  const contentUrl = safeExternalUrl(S(lesson.content_url));
   const signedUrl = S(lesson.signed_url);
   const embed = contentUrl ? embedUrl(contentUrl) : null;
+  const safeContent = sanitizeRichTextHtml(S(lesson.content));
 
   const markComplete = async () => {
     setBusy(true);
@@ -163,10 +165,10 @@ export function LessonExperience({ enrollmentId, lessonId }: { enrollmentId: str
       ) : null}
 
       {/* Rich text content */}
-      {S(lesson.content) ? (
+      {safeContent ? (
         <div
           className="prose prose-sm max-w-none rounded-xl border border-border bg-card p-5 leading-relaxed dark:prose-invert"
-          dangerouslySetInnerHTML={{ __html: S(lesson.content) }}
+          dangerouslySetInnerHTML={{ __html: safeContent }}
         />
       ) : null}
 

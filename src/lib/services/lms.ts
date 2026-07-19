@@ -24,6 +24,28 @@ function jsonInit(method: string, body?: Record<string, unknown>): RequestInit {
   return { method, body: body ? JSON.stringify(body) : undefined };
 }
 
+function commandFingerprint(value: string) {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ (code + index), 0x85ebca6b);
+  }
+  return `${(first >>> 0).toString(16).padStart(8, "0")}${(second >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+function commandMutation<T>(path: string, values: Record<string, unknown>) {
+  const scope = `hrms-command:lms:${commandFingerprint(`${path}:${JSON.stringify(values)}`)}`;
+  const existing = typeof window !== "undefined" ? window.sessionStorage.getItem(scope) : null;
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(scope, commandId);
+  return apiFetch<T>(path, jsonInit("POST", { ...values, command_id: commandId })).then((result) => {
+    if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(scope);
+    return result;
+  });
+}
+
 export function getLmsDashboard() {
   return apiFetch<LmsLearnerDashboard>("/api/lms/my");
 }
@@ -117,7 +139,7 @@ export function getLmsInstructors(courseId: string) {
 }
 
 export function assignLmsCourse(values: Record<string, unknown>) {
-  return apiFetch<LmsRecord>("/api/lms/assignments", jsonInit("POST", values));
+  return commandMutation<LmsRecord>("/api/lms/assignments", values);
 }
 
 export function completeLmsLesson(enrollmentId: string, lessonId: string) {
@@ -133,7 +155,7 @@ export function submitLmsTask(enrollmentId: string, taskId: string, values: Reco
 }
 
 export function reviewLmsSubmission(submissionId: string, values: Record<string, unknown>) {
-  return apiFetch<LmsRecord>(`/api/lms/submissions/${submissionId}/review`, jsonInit("POST", values));
+  return commandMutation<LmsRecord>(`/api/lms/submissions/${submissionId}/review`, values);
 }
 
 export function getLmsTaskSubmissions(taskId: string) {

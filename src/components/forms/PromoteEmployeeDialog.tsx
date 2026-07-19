@@ -16,11 +16,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
-import { useRoleContext } from "@/providers/RoleProvider";
 import { useDepartments, useEmployees } from "@/hooks/use-data";
-import { updateDepartment } from "@/lib/services/departments";
-import { updateEmployee } from "@/lib/services/employees";
-import { createCareerEvent } from "@/lib/services/career-events";
+import { promoteEmployee } from "@/lib/services/employees";
 
 interface Props {
   employee: Record<string, unknown>;
@@ -39,7 +36,6 @@ function getRecordName(value: unknown, fallback: string | null = "-") {
 }
 
 export function PromoteEmployeeDialog({ employee, onSuccess, compact = false }: Props) {
-  const { currentUser } = useRoleContext();
   const { data: departments } = useDepartments();
   const { data: employees } = useEmployees();
   const [open, setOpen] = useState(false);
@@ -57,8 +53,6 @@ export function PromoteEmployeeDialog({ employee, onSuccess, compact = false }: 
 
   const employeeId = String(employee.id || "");
   const employeeName = getRecordName(employee.full_name || employee.name, "الموظف") || "الموظف";
-  const currentDepartment = employee.department as Record<string, unknown> | null;
-  const currentManager = employee.manager as Record<string, unknown> | null;
 
   const departmentOptions = useMemo(() => departments || [], [departments]);
   const managerOptions = useMemo(
@@ -93,34 +87,14 @@ export function PromoteEmployeeDialog({ employee, onSuccess, compact = false }: 
     setSubmitting(true);
     setError("");
 
-    const selectedDepartment = departmentOptions.find((department) => String(department.id || "") === form.department_id);
-    const selectedManager = managerOptions.find((manager) => String(manager.id || "") === form.manager_id);
-    const previousValue = {
-      job_title: employee.job_title || null,
-      department_id: employee.department_id || null,
-      department_name: getRecordName(currentDepartment, null),
-      manager_id: employee.manager_id || null,
-      manager_name: getRecordName(currentManager, null),
-    };
-    const newValue = {
-      job_title: form.job_title.trim(),
-      department_id: form.department_id || null,
-      department_name: selectedDepartment ? getRecordName(selectedDepartment) : null,
-      manager_id: form.manager_id || null,
-      manager_name: selectedManager ? getRecordName(selectedManager) : null,
-      assigned_as_department_manager: form.assign_department_manager,
-    };
-
-    if (!currentUser?.orgId) {
-      setSubmitting(false);
-      setError("Organization context is required.");
-      return;
-    }
-
-    const updateResult = await updateEmployee(currentUser.orgId, employeeId, {
+    const updateResult = await promoteEmployee(employeeId, {
+      expected_version: Number(employee.lifecycle_version || 1),
       job_title: form.job_title.trim(),
       department_id: form.department_id || null,
       manager_id: form.manager_id || null,
+      effective_date: form.effective_date,
+      notes: form.notes.trim() || `ترقية ${employeeName} إلى ${form.job_title.trim()}`,
+      assign_department_manager: form.assign_department_manager,
     });
 
     if (updateResult.error) {
@@ -129,33 +103,7 @@ export function PromoteEmployeeDialog({ employee, onSuccess, compact = false }: 
       return;
     }
 
-    if (form.assign_department_manager && form.department_id) {
-      const departmentResult = await updateDepartment(form.department_id, {
-        manager_employee_id: employeeId,
-      });
-      if (departmentResult.error) {
-        setSubmitting(false);
-        setError(departmentResult.error.message);
-        return;
-      }
-    }
-
-    const eventResult = await createCareerEvent({
-      employee_id: employeeId,
-      event_type: "promoted",
-      previous_value: previousValue,
-      new_value: newValue,
-      effective_date: form.effective_date,
-      notes: form.notes.trim() || `ترقية ${employeeName} إلى ${form.job_title.trim()}`,
-      created_by: currentUser?.id,
-    });
-
     setSubmitting(false);
-    if (eventResult.error) {
-      setError(eventResult.error.message);
-      return;
-    }
-
     setOpen(false);
     setMessage("تم حفظ الترقية وتسجيلها في المسيرة الوظيفية.");
     onSuccess();

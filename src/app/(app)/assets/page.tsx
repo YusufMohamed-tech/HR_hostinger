@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowRightLeft, Boxes, Package, PenLine, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { AlertTriangle, Boxes, Package, PenLine, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -79,8 +79,8 @@ export default function AssetsPage() {
     loadAssets();
   }, [loadAssets]);
 
-  const handleStatusChange = async (assetId: string, newStatus: string) => {
-    await updateAssetAssignment(assetId, { status: newStatus });
+  const handleStatusChange = async (assetId: string, version: number, newStatus: string) => {
+    await updateAssetAssignment(assetId, { status: newStatus, expected_version: version });
     loadAssets();
   };
 
@@ -164,6 +164,7 @@ export default function AssetsPage() {
                   <TableHead>النوع</TableHead>
                   <TableHead>الرقم التسلسلي</TableHead>
                   <TableHead>المكتب</TableHead>
+                  <TableHead>قيمة الشراء</TableHead>
                   <TableHead>الحالة</TableHead>
                 </TableRow>
               </TableHeader>
@@ -177,6 +178,7 @@ export default function AssetsPage() {
                       <TableCell>{String(item.asset_type || "-")}</TableCell>
                       <TableCell>{String(item.serial_number || "-")}</TableCell>
                       <TableCell>{String(office?.name || "-")}</TableCell>
+                      <TableCell>{Number(item.purchase_price || 0).toLocaleString("ar-SA", { minimumFractionDigits: 2 })} ر.س</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={assetStatusColors[status] || "bg-gray-50 text-gray-700"}>
                           {assetStatusLabels[status] || (status === "available" ? "متاح" : status)}
@@ -235,7 +237,7 @@ export default function AssetsPage() {
                       {asset.acknowledgment_signature_url ? (
                         <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">تم التوقيع</Badge>
                       ) : isActive ? (
-                        <AcknowledgeAssetDialog assetId={String(asset.id)} onSuccess={loadAssets} />
+                        <AcknowledgeAssetDialog assetId={String(asset.id)} version={Number(asset.version || 1)} onSuccess={loadAssets} />
                       ) : "-"}
                     </TableCell>
                     {isAdmin && (
@@ -246,16 +248,13 @@ export default function AssetsPage() {
                               تغيير الحالة
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem className="text-gray-700" onClick={() => handleStatusChange(String(asset.id), "returned")}>
+                              <DropdownMenuItem className="text-gray-700" onClick={() => handleStatusChange(String(asset.id), Number(asset.version || 1), "returned")}>
                                 <RotateCcw className="h-4 w-4 ml-2" /> استعادة
                               </DropdownMenuItem>
-                              <DropdownMenuItem className="text-purple-600" onClick={() => handleStatusChange(String(asset.id), "transferred")}>
-                                <ArrowRightLeft className="h-4 w-4 ml-2" /> تحويل
-                              </DropdownMenuItem>
-                              <DropdownMenuItem className="text-red-600" onClick={() => handleStatusChange(String(asset.id), "damaged")}>
+                              <DropdownMenuItem className="text-red-600" onClick={() => handleStatusChange(String(asset.id), Number(asset.version || 1), "damaged")}>
                                 <AlertTriangle className="h-4 w-4 ml-2" /> تالف
                               </DropdownMenuItem>
-                              <DropdownMenuItem className="text-orange-600" onClick={() => handleStatusChange(String(asset.id), "lost")}>
+                              <DropdownMenuItem className="text-orange-600" onClick={() => handleStatusChange(String(asset.id), Number(asset.version || 1), "lost")}>
                                 <Trash2 className="h-4 w-4 ml-2" /> مفقود
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -297,7 +296,7 @@ function EmptyState({ title }: { title: string }) {
   );
 }
 
-function AcknowledgeAssetDialog({ assetId, onSuccess }: { assetId: string; onSuccess: () => void }) {
+function AcknowledgeAssetDialog({ assetId, version, onSuccess }: { assetId: string; version: number; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [signature, setSignature] = useState("");
   const [error, setError] = useState("");
@@ -323,7 +322,7 @@ function AcknowledgeAssetDialog({ assetId, onSuccess }: { assetId: string; onSuc
             disabled={!signature.trim()}
             onClick={async () => {
               setError("");
-              const result = await acknowledgeAssetAssignment(assetId, signature.trim());
+              const result = await acknowledgeAssetAssignment(assetId, version, signature.trim());
               if (result.error) {
                 setError(result.error.message);
                 return;
@@ -353,6 +352,10 @@ function AddInventoryDialog({ locations, onSuccess }: { locations: Record<string
     serial_number: "",
     office_location_id: "",
     purchase_date: "",
+    purchase_price: "",
+    salvage_value: "0",
+    useful_life_months: "60",
+    paid_immediately: false,
     notes: "",
   });
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
@@ -371,6 +374,10 @@ function AddInventoryDialog({ locations, onSuccess }: { locations: Record<string
       serial_number: form.serial_number.trim(),
       office_location_id: form.office_location_id || undefined,
       purchase_date: form.purchase_date || undefined,
+      purchase_price: Number(form.purchase_price || 0),
+      salvage_value: Number(form.salvage_value || 0),
+      useful_life_months: Number(form.useful_life_months || 60),
+      paid_immediately: form.paid_immediately,
       notes: form.notes.trim() || undefined,
     });
     setSubmitting(false);
@@ -379,7 +386,8 @@ function AddInventoryDialog({ locations, onSuccess }: { locations: Record<string
       return;
     }
     setOpen(false);
-    setForm({ asset_name: "", asset_type: "جوال", serial_number: "", office_location_id: "", purchase_date: "", notes: "" });
+    setForm({ asset_name: "", asset_type: "جوال", serial_number: "", office_location_id: "", purchase_date: "",
+      purchase_price: "", salvage_value: "0", useful_life_months: "60", paid_immediately: false, notes: "" });
     onSuccess();
   };
 
@@ -409,6 +417,28 @@ function AddInventoryDialog({ locations, onSuccess }: { locations: Record<string
               </Select>
             </div>
           </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label>قيمة الشراء (ر.س)</Label>
+              <Input type="number" min="0" step="0.01" value={form.purchase_price}
+                onChange={(event) => set("purchase_price", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>القيمة التخريدية</Label>
+              <Input type="number" min="0" step="0.01" value={form.salvage_value}
+                onChange={(event) => set("salvage_value", event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>العمر الإنتاجي (شهر)</Label>
+              <Input type="number" min="1" max="600" value={form.useful_life_months}
+                onChange={(event) => set("useful_life_months", event.target.value)} />
+            </div>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input type="checkbox" checked={form.paid_immediately}
+              onChange={(event) => setForm((previous) => ({ ...previous, paid_immediately: event.target.checked }))} />
+            تم دفع قيمة الأصل فورًا (نقدًا/بنك)
+          </label>
           <div className="space-y-2">
             <Label>الرقم التسلسلي *</Label>
             <Input value={form.serial_number} onChange={(event) => set("serial_number", event.target.value)} dir="ltr" />

@@ -3,10 +3,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { getPayslips, generatePayslip, updatePayslipStatus, type ManualAdjustment } from "@/lib/services/payroll";
+import { getPayslips, recalculatePayslip, runPayroll, transitionPayrollRun, type ManualAdjustment, type PayrollRun } from "@/lib/services/payroll";
 import { createPayrollDraftEntry, getPayrollAccountingStatus, postJournalEntry, recordPayrollPayment } from "@/lib/services/accounting";
 import type { PayrollAccountingStatus } from "@/types/accounting";
-import { useEmployees } from "@/hooks/use-data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
@@ -18,18 +17,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { formatCurrency } from "@/lib/utils/currency";
 import { printHtmlReport } from "@/lib/utils/print-report";
-import { Calendar, Download, Calculator, CheckCircle, Banknote, RefreshCw, Plus, ChevronDown, ChevronUp, Trash2, AlertTriangle } from "lucide-react";
+import { Calendar, Download, Calculator, CheckCircle, RefreshCw, Plus, ChevronDown, ChevronUp, Trash2, AlertTriangle } from "lucide-react";
 
 const statusLabels: Record<string, string> = {
   draft: "مسودة",
   approved: "معتمد",
   paid: "مدفوع",
+  void: "ملغى",
 };
 
 const statusColors: Record<string, string> = {
   draft: "bg-orange-50 text-orange-700 border-orange-200",
   approved: "bg-blue-50 text-blue-700 border-blue-200",
   paid: "bg-green-50 text-green-700 border-green-200",
+  void: "bg-gray-100 text-gray-700 border-gray-200",
 };
 
 const accountingStatusLabels: Record<string, string> = {
@@ -150,8 +151,8 @@ type AdjustForm = { type: "bonus" | "deduction"; amount: string; reason: string 
 
 export default function PayrollPage() {
   const { currentUser } = useRoleContext();
-  const { data: employees } = useEmployees();
   const [payslips, setPayslips] = useState<Record<string, unknown>[]>([]);
+  const [payrollRun, setPayrollRun] = useState<PayrollRun | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [accountingBusy, setAccountingBusy] = useState(false);
@@ -181,6 +182,7 @@ export default function PayrollPage() {
       canViewAccountingStatus ? getPayrollAccountingStatus(monthParam) : Promise.resolve({ data: null, error: null }),
     ]);
     setPayslips(payslipsResult.data || []);
+    setPayrollRun(payslipsResult.run || null);
     if (accountingResult.data) setAccountingStatus(accountingResult.data);
     else setAccountingStatus(null);
     setLoading(false);
@@ -191,31 +193,30 @@ export default function PayrollPage() {
   const handleRunPayroll = async () => {
     if (!currentUser?.orgId) return;
     setGenerating(true);
-    for (const emp of employees) {
-      if (payslips.find((p) => p.employee_id === emp.id && p.status === "paid")) continue;
-      await generatePayslip(currentUser.orgId, String(emp.id), monthParam);
-    }
-    await loadPayslips();
+    const result = await runPayroll(monthParam);
+    if (result.error) setMessage(result.error.message);
+    else await loadPayslips();
     setGenerating(false);
   };
 
   const handleRecalculate = async (slip: Record<string, unknown>) => {
     const slipId = String(slip.id);
     setRecalculating(slipId);
-    const res = await fetch("/api/payroll/recalculate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ employee_id: slip.employee_id, month: monthParam }),
-    });
-    const json = await res.json();
-    if (!res.ok) setMessage(json.message || "فشل إعادة الحساب.");
+    const result = await recalculatePayslip(String(slip.employee_id), monthParam);
+    if (result.error) setMessage(result.error.message);
     else await loadPayslips();
     setRecalculating(null);
   };
 
-  const handleStatusChange = async (payslipId: string, newStatus: "draft" | "approved" | "paid") => {
-    await updatePayslipStatus(payslipId, newStatus);
-    setPayslips((prev) => prev.map((p) => (p.id === payslipId ? { ...p, status: newStatus } : p)));
+  const handleApproveRun = async () => {
+    if (!payrollRun) return;
+    const result = await transitionPayrollRun({
+      payrollRunId: payrollRun.id,
+      expectedVersion: Number(payrollRun.version),
+      targetStatus: "approved",
+    });
+    if (result.error) setMessage(result.error.message);
+    else await loadPayslips();
   };
 
   const openAdjustDialog = (slip: Record<string, unknown>) => {
@@ -235,7 +236,7 @@ export default function PayrollPage() {
     const res = await fetch("/api/payroll/adjust", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payslip_id: adjustDialog.payslipId, type: adjustForm.type, amount, reason: adjustForm.reason }),
+      body: JSON.stringify({ payslip_id: adjustDialog.payslipId, command_id: crypto.randomUUID(), type: adjustForm.type, amount, reason: adjustForm.reason }),
     });
     const json = await res.json();
     setAdjustSubmitting(false);
@@ -245,7 +246,8 @@ export default function PayrollPage() {
   };
 
   const handleRemoveAdjustment = async (payslipId: string, adjustmentId: string) => {
-    const res = await fetch(`/api/payroll/adjust/${adjustmentId}?payslipId=${payslipId}`, { method: "DELETE" });
+    const commandId = crypto.randomUUID();
+    const res = await fetch(`/api/payroll/adjust/${adjustmentId}?payslipId=${payslipId}&commandId=${commandId}`, { method: "DELETE" });
     if (res.ok) await loadPayslips();
     else { const json = await res.json(); setMessage(json.message || "فشل حذف التسوية."); }
   };
@@ -344,7 +346,12 @@ export default function PayrollPage() {
           {canRunPayroll && (
             <>
               <Button variant="outline" onClick={handleExportPayroll}><Download className="w-4 h-4 ml-2" /> تصدير PDF</Button>
-              <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleRunPayroll} disabled={generating}>
+              {payrollRun?.status === "draft" && payslips.length > 0 && (
+                <Button variant="outline" onClick={handleApproveRun} disabled={generating}>
+                  <CheckCircle className="w-4 h-4 ml-2" /> اعتماد المسير بالكامل
+                </Button>
+              )}
+              <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleRunPayroll} disabled={generating || Boolean(payrollRun && payrollRun.status !== "draft")}>
                 <Calculator className="w-4 h-4 ml-2" /> {generating ? "جار الحساب..." : "تشغيل رواتب الشهر"}
               </Button>
             </>
@@ -374,8 +381,9 @@ export default function PayrollPage() {
         </Card>
         <Card className="border-none shadow-sm">
           <CardContent className="py-4">
-            <p className="text-xs text-gray-500">المعتمدون / الإجمالي</p>
-            <p className="text-xl font-semibold text-blue-600">{approvedCount} / {payslips.length}</p>
+              <p className="text-xs text-gray-500">المعتمدون / الإجمالي</p>
+              <p className="text-xl font-semibold text-blue-600">{approvedCount} / {payslips.length}</p>
+              {payrollRun && <p className="mt-1 text-xs text-gray-400">المسير: {statusLabels[payrollRun.status] || payrollRun.status} · {payrollRun.formula_version}</p>}
           </CardContent>
         </Card>
       </div>
@@ -402,7 +410,7 @@ export default function PayrollPage() {
               {accountingStatus?.payment_journal_entry_id && (
                 <Button asChild variant="outline" size="sm"><Link href={`/accounting/journal-entries/${accountingStatus.payment_journal_entry_id}`}>عرض قيد السداد</Link></Button>
               )}
-              {canGenerateAccountingDraft && accountingStatus?.status === "not_generated" && Number(accountingStatus?.payslip_count || 0) > 0 && (
+              {canGenerateAccountingDraft && payrollRun?.status === "approved" && accountingStatus?.status === "not_generated" && Number(accountingStatus?.payslip_count || 0) > 0 && (
                 <Button variant="outline" size="sm" onClick={handleGenerateAccountingDraft} disabled={accountingBusy}>إنشاء مسودة محاسبية</Button>
               )}
               {canPostPayrollAccounting && accountingStatus?.status === "draft_created" && (
@@ -451,7 +459,7 @@ export default function PayrollPage() {
                   const status = String(slip.status || "draft");
                   const slipId = String(slip.id);
                   const isExpanded = expandedRows.has(slipId);
-                  const isPaid = status === "paid";
+                  const isFrozen = status !== "draft";
                   const isRecalculating = recalculating === slipId;
                   const adjustments = Array.isArray(slip.manual_adjustments) ? (slip.manual_adjustments as ManualAdjustment[]) : [];
                   const manualTotal = Number(slip.manual_adjustments_total || 0);
@@ -508,30 +516,19 @@ export default function PayrollPage() {
                         {canRunPayroll && (
                           <TableCell className="text-right">
                             <div className="flex gap-1 justify-end flex-wrap">
-                              {!isPaid && (
+                              {!isFrozen && (
                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500" title="إعادة الحساب"
                                   onClick={() => handleRecalculate(slip)} disabled={isRecalculating}>
                                   <RefreshCw className={`w-3.5 h-3.5 ${isRecalculating ? "animate-spin" : ""}`} />
                                 </Button>
                               )}
-                              {!isPaid && (
+                              {!isFrozen && (
                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-gray-500" title="إضافة تسوية"
                                   onClick={() => openAdjustDialog(slip)}>
                                   <Plus className="w-3.5 h-3.5" />
                                 </Button>
                               )}
-                              {status === "draft" && (
-                                <Button variant="outline" size="sm" onClick={() => handleStatusChange(slipId, "approved")}>
-                                  <CheckCircle className="h-3.5 w-3.5 ml-1" /> اعتماد
-                                </Button>
-                              )}
-                              {status === "approved" && (
-                                <Button variant="outline" size="sm" className="text-green-700 border-green-300 hover:bg-green-50"
-                                  onClick={() => handleStatusChange(slipId, "paid")}>
-                                  <Banknote className="h-3.5 w-3.5 ml-1" /> مدفوع
-                                </Button>
-                              )}
-                              {isPaid && <span className="text-xs text-gray-400">مكتمل</span>}
+                              {isFrozen && <span className="text-xs text-gray-400">مقفل ضمن المسير</span>}
                             </div>
                           </TableCell>
                         )}
@@ -574,7 +571,7 @@ export default function PayrollPage() {
                                           <span className="font-medium">{formatCurrency(adj.amount)}</span>
                                           <span className="text-gray-500 truncate">{adj.reason}</span>
                                         </div>
-                                        {!isPaid && canRunPayroll && (
+                                        {!isFrozen && canRunPayroll && (
                                           <Button variant="ghost" size="icon" className="h-5 w-5 text-red-400 hover:text-red-600 hover:bg-red-50 shrink-0"
                                             onClick={() => handleRemoveAdjustment(slipId, adj.id)}>
                                             <Trash2 className="w-3 h-3" />
@@ -607,4 +604,3 @@ export default function PayrollPage() {
     </div>
   );
 }
-

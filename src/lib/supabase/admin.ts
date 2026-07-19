@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { Database } from "@/types/database";
+import type { SupabaseDatabase } from "@/types/database";
 
 /**
  * Admin Supabase client using the service_role key.
@@ -21,7 +21,7 @@ export function createAdminClient() {
     );
   }
 
-  return createClient<Database>(url, key, {
+  return createClient<SupabaseDatabase>(url, key, {
     auth: {
       autoRefreshToken: false,
       persistSession: false,

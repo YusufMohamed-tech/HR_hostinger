@@ -1,5 +1,6 @@
 import { LmsCommunityScreen } from "@/components/lms/LmsScreens";
 
-export default function LmsCourseCommunityPage({ params }: { params: { courseId: string } }) {
-  return <LmsCommunityScreen courseId={params.courseId} />;
+export default async function LmsCourseCommunityPage({ params }: { params: Promise<{ courseId: string }> }) {
+  const { courseId } = await params;
+  return <LmsCommunityScreen courseId={courseId} />;
 }

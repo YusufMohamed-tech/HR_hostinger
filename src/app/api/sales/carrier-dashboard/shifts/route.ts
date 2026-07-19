@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSalesAccess } from "@/lib/server/sales-auth";
-import { getShiftDistribution } from "@/lib/services/carrier-dashboard";
+import { getCarrierDashboardSnapshot } from "@/lib/services/carrier-dashboard";
 import type { DashboardFilters } from "@/lib/services/carrier-dashboard";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireSalesAccess({ managerOnly: true });
+  const auth = await requireSalesAccess({ managerOnly: true }, request);
   if ("error" in auth) return auth.error;
 
   const sp = request.nextUrl.searchParams;
@@ -18,8 +18,8 @@ export async function GET(request: NextRequest) {
   };
 
   try {
-    const data = await getShiftDistribution(filters);
-    return NextResponse.json({ data });
+    const snapshot = await getCarrierDashboardSnapshot(filters);
+    return NextResponse.json({ data: snapshot.shifts, completeness: snapshot.completeness, requestId: auth.requestId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load shift data";
     return NextResponse.json({ message }, { status: 500 });

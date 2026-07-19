@@ -41,20 +41,22 @@ type QueryBuilder = {
 
 type UntypedSupabase = {
   from: (table: string) => QueryBuilder;
+  rpc: (name: string, args: Record<string, unknown>) => Promise<DbResult>;
 };
 
 type AuthContext = {
   user: User;
   orgId: string;
   role: string;
+  requestId: string;
   isManager: boolean;
   admin: unknown;
 };
 
 type RouteContext = {
-  params?: {
+  params: Promise<{
     segments?: string[];
-  };
+  }>;
 };
 
 const managerRoles = new Set(["admin", "hr_admin", "sales_manager"]);
@@ -83,8 +85,8 @@ function parseError(error: unknown) {
   return error instanceof Error ? error.message : "Invalid input";
 }
 
-function segmentsOf(context: RouteContext) {
-  return context.params?.segments || [];
+async function segmentsOf(context: RouteContext) {
+  return (await context.params).segments || [];
 }
 
 function row(value: unknown) {
@@ -102,6 +104,19 @@ function asString(value: unknown) {
 function asNumber(value: unknown) {
   const number = Number(value ?? 0);
   return Number.isFinite(number) ? number : 0;
+}
+
+function validUuid(value: unknown) {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function rpcStatus(code?: string) {
+  if (code === "42501") return 403;
+  if (code === "P0002" || code === "23503") return 404;
+  if (code === "23505" || code === "40001") return 409;
+  if (["22023", "23514", "23502"].includes(code || "")) return 400;
+  return 500;
 }
 
 function dateFilter(value: string | null) {
@@ -155,6 +170,40 @@ async function readBody(request: NextRequest) {
   return request.json().catch(() => ({}));
 }
 
+function configurationCommandId(request: NextRequest, body: unknown) {
+  const candidate = row(body).command_id || request.headers.get("idempotency-key");
+  return validUuid(candidate) ? String(candidate) : crypto.randomUUID();
+}
+
+async function executeConfigurationCommand(
+  request: NextRequest,
+  auth: AuthContext,
+  values: {
+    entityType: "offer" | "reference" | "campaign" | "settings";
+    entityId?: string | null;
+    expectedVersion?: number;
+    operation?: "save" | "deactivate";
+    body: unknown;
+    payload: Record<string, unknown>;
+  }
+) {
+  const result = await database(auth.admin).rpc("execute_promoter_configuration_command", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_command_id: configurationCommandId(request, values.body),
+    p_entity_type: values.entityType,
+    p_entity_id: values.entityId || null,
+    p_expected_version: values.expectedVersion || 0,
+    p_operation: values.operation || "save",
+    p_payload: values.payload,
+  });
+  if (result.error) throw Object.assign(new Error(result.error.message), { code: result.error.code });
+  const output = row(Array.isArray(result.data) ? result.data[0] : result.data);
+  if (!output.id) throw new Error("Promoter configuration command returned no record.");
+  return output;
+}
+
 async function loadSettings(auth: AuthContext, companyId?: string | null): Promise<PromoterSettings> {
   let query = database(auth.admin)
     .from("promoter_settings")
@@ -178,29 +227,6 @@ async function loadSettings(auth: AuthContext, companyId?: string | null): Promi
     created_at: asString(settings.created_at),
     updated_at: asString(settings.updated_at),
   };
-}
-
-async function insertLeadEvent(auth: AuthContext, leadId: string, eventType: string, meta?: Record<string, unknown>) {
-  await database(auth.admin).from("promoter_lead_events").insert({
-    organization_id: auth.orgId,
-    lead_id: leadId,
-    event_type: eventType,
-    actor_id: auth.user.id,
-    meta: meta || {},
-  });
-}
-
-async function notifyAgent(auth: AuthContext, assignedAgentId: string, leadId: string, fullName: string) {
-  if (!assignedAgentId) return;
-  await database(auth.admin).from("notifications").insert({
-    org_id: auth.orgId,
-    user_id: assignedAgentId,
-    title: "عميل ترويجي جديد",
-    body: fullName,
-    type: "sales",
-    link: `/sales/leads?lead=${encodeURIComponent(leadId)}`,
-    is_read: false,
-  });
 }
 
 async function handleOffers(request: NextRequest, auth: AuthContext, segments: string[]) {
@@ -233,13 +259,13 @@ async function handleOffers(request: NextRequest, auth: AuthContext, segments: s
     });
     if (!parsed.success) return message(parseError(parsed.error), 400);
 
-    const result = await db.from("telecom_offers").insert({
-      ...parsed.data,
-      organization_id: auth.orgId,
-      created_by: auth.user.id,
-    }).select("*").single();
-    if (result.error) return message(result.error.message, 500);
-    return json(result.data, 201);
+    try {
+      return json(await executeConfigurationCommand(request, auth, {
+        entityType: "offer", body, payload: parsed.data,
+      }), 201);
+    } catch (error) {
+      return message(error, rpcStatus((error as { code?: string }).code));
+    }
   }
 
   if (!offerId) return message("Offer id is required.", 400);
@@ -253,27 +279,43 @@ async function handleOffers(request: NextRequest, auth: AuthContext, segments: s
       benefits_en: "benefits_en" in row(body) ? parseListText(row(body).benefits_en) : undefined,
     });
     if (!parsed.success) return message(parseError(parsed.error), 400);
-    const result = await db
+    const current = await db
       .from("telecom_offers")
-      .update(parsed.data)
+      .select("id, version")
       .eq("organization_id", auth.orgId)
       .eq("id", offerId)
-      .select("*")
-      .single();
-    if (result.error) return message(result.error.message, 500);
-    return json(result.data);
+      .maybeSingle();
+    if (current.error) return message(current.error.message, 500);
+    if (!current.data) return message("Offer was not found.", 404);
+    try {
+      return json(await executeConfigurationCommand(request, auth, {
+        entityType: "offer", entityId: offerId,
+        expectedVersion: asNumber(row(current.data).version), body, payload: parsed.data,
+      }));
+    } catch (error) {
+      return message(error, rpcStatus((error as { code?: string }).code));
+    }
   }
 
   if (request.method === "DELETE") {
-    const result = await db
+    const body = await readBody(request);
+    const current = await db
       .from("telecom_offers")
-      .update({ is_active: false })
+      .select("id, version")
       .eq("organization_id", auth.orgId)
       .eq("id", offerId)
-      .select("id")
-      .single();
-    if (result.error) return message(result.error.message, 500);
-    return json(result.data);
+      .maybeSingle();
+    if (current.error) return message(current.error.message, 500);
+    if (!current.data) return message("Offer was not found.", 404);
+    try {
+      return json(await executeConfigurationCommand(request, auth, {
+        entityType: "offer", entityId: offerId,
+        expectedVersion: asNumber(row(current.data).version), operation: "deactivate",
+        body, payload: {},
+      }));
+    } catch (error) {
+      return message(error, rpcStatus((error as { code?: string }).code));
+    }
   }
 
   return message("Method not allowed", 405);
@@ -303,26 +345,34 @@ async function handleReference(request: NextRequest, auth: AuthContext) {
   if (!parsed.success) return message(parseError(parsed.error), 400);
 
   if (request.method === "POST") {
-    const result = await db.from("promoter_reference_values").insert({
-      ...parsed.data,
-      organization_id: auth.orgId,
-    }).select("*").single();
-    if (result.error) return message(result.error.message, 500);
-    return json(result.data, 201);
+    try {
+      return json(await executeConfigurationCommand(request, auth, {
+        entityType: "reference", body, payload: parsed.data,
+      }), 201);
+    } catch (error) {
+      return message(error, rpcStatus((error as { code?: string }).code));
+    }
   }
 
   if (request.method === "PATCH") {
     if (!parsed.data.id) return message("Reference id is required.", 400);
     const { id, ...values } = parsed.data;
-    const result = await db
+    const current = await db
       .from("promoter_reference_values")
-      .update(values)
+      .select("id, version")
       .eq("organization_id", auth.orgId)
       .eq("id", id)
-      .select("*")
-      .single();
-    if (result.error) return message(result.error.message, 500);
-    return json(result.data);
+      .maybeSingle();
+    if (current.error) return message(current.error.message, 500);
+    if (!current.data) return message("Reference was not found.", 404);
+    try {
+      return json(await executeConfigurationCommand(request, auth, {
+        entityType: "reference", entityId: id,
+        expectedVersion: asNumber(row(current.data).version), body, payload: values,
+      }));
+    } catch (error) {
+      return message(error, rpcStatus((error as { code?: string }).code));
+    }
   }
 
   return message("Method not allowed", 405);
@@ -339,16 +389,16 @@ async function handleSettings(request: NextRequest, auth: AuthContext) {
   if (request.method !== "PATCH") return message("Method not allowed", 405);
   if (!auth.isManager) return message("Promoter manager access is required.", 403);
 
-  const parsed = promoterSettingsSchema.safeParse(await readBody(request));
+  const body = await readBody(request);
+  const parsed = promoterSettingsSchema.safeParse(body);
   if (!parsed.success) return message(parseError(parsed.error), 400);
   const nextCompanyId = parsed.data.company_id || null;
-  let current = db.from("promoter_settings").select("id").eq("organization_id", auth.orgId).limit(1);
+  let current = db.from("promoter_settings").select("id, version").eq("organization_id", auth.orgId).limit(1);
   current = nextCompanyId ? current.eq("company_id", nextCompanyId) : current.is("company_id", null);
   const currentResult = await current.maybeSingle();
   if (currentResult.error) return message(currentResult.error.message, 500);
 
   const payload = {
-    organization_id: auth.orgId,
     company_id: nextCompanyId,
     weights: parsed.data.weights,
     consent_version: parsed.data.consent_version,
@@ -356,11 +406,15 @@ async function handleSettings(request: NextRequest, auth: AuthContext) {
     consent_text_en: parsed.data.consent_text_en || null,
   };
 
-  const result = currentResult.data
-    ? await db.from("promoter_settings").update(payload).eq("id", asString(row(currentResult.data).id)).select("*").single()
-    : await db.from("promoter_settings").insert(payload).select("*").single();
-  if (result.error) return message(result.error.message, 500);
-  return json(result.data);
+  try {
+    return json(await executeConfigurationCommand(request, auth, {
+      entityType: "settings", entityId: asString(row(currentResult.data).id) || null,
+      expectedVersion: asNumber(row(currentResult.data).version),
+      body, payload,
+    }));
+  } catch (error) {
+    return message(error, rpcStatus((error as { code?: string }).code));
+  }
 }
 
 async function handleCampaigns(request: NextRequest, auth: AuthContext) {
@@ -382,30 +436,39 @@ async function handleCampaigns(request: NextRequest, auth: AuthContext) {
   }
 
   if (!auth.isManager) return message("Promoter manager access is required.", 403);
-  const parsed = promoterCampaignSchema.safeParse(await readBody(request));
+  const body = await readBody(request);
+  const parsed = promoterCampaignSchema.safeParse(body);
   if (!parsed.success) return message(parseError(parsed.error), 400);
 
   if (request.method === "POST") {
-    const result = await db.from("promoter_campaigns").insert({
-      ...parsed.data,
-      organization_id: auth.orgId,
-    }).select("*").single();
-    if (result.error) return message(result.error.message, 500);
-    return json(result.data, 201);
+    try {
+      return json(await executeConfigurationCommand(request, auth, {
+        entityType: "campaign", body, payload: parsed.data,
+      }), 201);
+    } catch (error) {
+      return message(error, rpcStatus((error as { code?: string }).code));
+    }
   }
 
   if (request.method === "PATCH") {
     if (!parsed.data.id) return message("Campaign id is required.", 400);
     const { id, ...values } = parsed.data;
-    const result = await db
+    const current = await db
       .from("promoter_campaigns")
-      .update(values)
+      .select("id, version")
       .eq("organization_id", auth.orgId)
       .eq("id", id)
-      .select("*")
-      .single();
-    if (result.error) return message(result.error.message, 500);
-    return json(result.data);
+      .maybeSingle();
+    if (current.error) return message(current.error.message, 500);
+    if (!current.data) return message("Campaign was not found.", 404);
+    try {
+      return json(await executeConfigurationCommand(request, auth, {
+        entityType: "campaign", entityId: id,
+        expectedVersion: asNumber(row(current.data).version), body, payload: values,
+      }));
+    } catch (error) {
+      return message(error, rpcStatus((error as { code?: string }).code));
+    }
   }
 
   return message("Method not allowed", 405);
@@ -484,7 +547,10 @@ async function handleLeads(request: NextRequest, auth: AuthContext, segments: st
   }
 
   if (request.method === "POST") {
-    const parsed = promoterLeadCaptureSchema.safeParse(await readBody(request));
+    const body = await readBody(request);
+    const commandId = row(body).command_id;
+    if (!validUuid(commandId)) return message("A valid command id is required.", 400);
+    const parsed = promoterLeadCaptureSchema.safeParse(body);
     if (!parsed.success) return message(parseError(parsed.error), 400);
 
     const settings = await loadSettings(auth, parsed.data.company_id);
@@ -499,38 +565,37 @@ async function handleLeads(request: NextRequest, auth: AuthContext, segments: st
     const recommendation = recommendOffer(parsed.data, offers, settings.weights);
     const snapshot = recommendationSnapshot(recommendation);
     const manualOffer = parsed.data.pushed_offer_id || null;
-    const selectedOfferId = manualOffer || recommendation.best?.offer.id || null;
     const estimatedSavings = recommendation.best?.estimatedSavings || 0;
 
-    const result = await db.from("promoter_leads").insert({
-      ...parsed.data,
-      organization_id: auth.orgId,
-      promoter_id: auth.user.id,
-      recommended_offer_id: recommendation.best?.offer.id || null,
-      pushed_offer_id: manualOffer,
-      estimated_savings: estimatedSavings,
-      recommendation_source: manualOffer ? "manual" : "auto",
-      recommendation_snapshot: snapshot,
-      status: selectedOfferId ? (parsed.data.assigned_agent_id ? "sent_to_agent" : "recommended") : "captured",
-      consent_version: parsed.data.consent_version || settings.consent_version,
-      consent_at: new Date().toISOString(),
-    }).select("*").single();
-    if (result.error) return message(result.error.message, 500);
-
-    const lead = row(result.data);
-    await insertLeadEvent(auth, asString(lead.id), "captured", { selected_offer_id: selectedOfferId });
-    if (selectedOfferId) await insertLeadEvent(auth, asString(lead.id), manualOffer ? "manual_offer_pushed" : "recommended", snapshot);
-    if (parsed.data.assigned_agent_id) {
-      await insertLeadEvent(auth, asString(lead.id), "sent_to_agent", { assigned_agent_id: parsed.data.assigned_agent_id });
-      await notifyAgent(auth, parsed.data.assigned_agent_id, asString(lead.id), parsed.data.full_name);
-    }
-
+    const result = await db.rpc("save_promoter_lead_atomic", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_request_id: auth.requestId,
+      p_command_id: commandId,
+      p_lead_id: null,
+      p_expected_version: 0,
+      p_payload: {
+        ...parsed.data,
+        recommended_offer_id: recommendation.best?.offer.id || null,
+        pushed_offer_id: manualOffer,
+        estimated_savings: estimatedSavings,
+        recommendation_source: manualOffer ? "manual" : "auto",
+        recommendation_snapshot: snapshot,
+        consent_version: parsed.data.consent_version || settings.consent_version,
+      },
+    });
+    if (result.error) return message(result.error.message, rpcStatus(result.error.code));
+    const lead = row(Array.isArray(result.data) ? result.data[0] : result.data);
+    if (!lead.id) return message("Promoter lead command returned no lead.", 500);
     return json(lead, 201);
   }
 
   if (request.method === "PATCH") {
     if (!leadId) return message("Lead id is required.", 400);
-    const parsed = promoterLeadPatchSchema.safeParse(await readBody(request));
+    const body = await readBody(request);
+    const commandId = row(body).command_id;
+    if (!validUuid(commandId)) return message("A valid command id is required.", 400);
+    const parsed = promoterLeadPatchSchema.safeParse(body);
     if (!parsed.success) return message(parseError(parsed.error), 400);
 
     const currentResult = await db
@@ -550,21 +615,18 @@ async function handleLeads(request: NextRequest, auth: AuthContext, segments: st
       values.agent_reviewed_at = parsed.data.agent_reviewed_at || new Date().toISOString();
     }
 
-    const result = await db
-      .from("promoter_leads")
-      .update(values)
-      .eq("organization_id", auth.orgId)
-      .eq("id", leadId)
-      .select("*")
-      .single();
-    if (result.error) return message(result.error.message, 500);
-
-    const next = row(result.data);
-    const eventType = asString(parsed.data.status) || (parsed.data.assigned_agent_id ? "sent_to_agent" : "updated");
-    await insertLeadEvent(auth, leadId, eventType, values);
-    if (parsed.data.assigned_agent_id && parsed.data.assigned_agent_id !== current.assigned_agent_id) {
-      await notifyAgent(auth, parsed.data.assigned_agent_id, leadId, asString(next.full_name));
-    }
+    const result = await db.rpc("save_promoter_lead_atomic", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_request_id: auth.requestId,
+      p_command_id: commandId,
+      p_lead_id: leadId,
+      p_expected_version: asNumber(current.version),
+      p_payload: values,
+    });
+    if (result.error) return message(result.error.message, rpcStatus(result.error.code));
+    const next = row(Array.isArray(result.data) ? result.data[0] : result.data);
+    if (!next.id) return message("Promoter lead command returned no lead.", 500);
     return json(next);
   }
 
@@ -603,7 +665,7 @@ async function handleDashboard(request: NextRequest, auth: AuthContext) {
 }
 
 async function dispatch(request: NextRequest, auth: AuthContext, context: RouteContext) {
-  const segments = segmentsOf(context);
+  const segments = await segmentsOf(context);
   const resource = segments[0] || "dashboard";
 
   if (resource === "offers") return handleOffers(request, auth, segments);
@@ -616,7 +678,7 @@ async function dispatch(request: NextRequest, auth: AuthContext, context: RouteC
 }
 
 async function authorize(request: NextRequest, context: RouteContext) {
-  const segments = segmentsOf(context);
+  const segments = await segmentsOf(context);
   const resource = segments[0] || "dashboard";
   const method = request.method;
   const managerOnly = resource === "dashboard"
@@ -626,8 +688,8 @@ async function authorize(request: NextRequest, context: RouteContext) {
     || resource === "campaigns" && method !== "GET";
 
   const auth = managerOnly
-    ? await requirePromoterAdmin()
-    : await requirePromoterAccess({ captureOnly: resource === "leads" && method === "POST" });
+    ? await requirePromoterAdmin(request)
+    : await requirePromoterAccess({ captureOnly: resource === "leads" && method === "POST" }, request);
   if ("error" in auth) return auth.error;
   return dispatch(request, auth, context);
 }

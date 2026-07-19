@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { User } from "@supabase/supabase-js";
 import { requireMerchantAccess } from "@/lib/server/merchant-auth";
+import { inspectUpload, removeUploadedPaths } from "@/lib/server/upload-security";
 import {
   assignSimsToMerchantByQuantitySchema,
   assignSimsToMerchantSchema,
@@ -15,7 +16,6 @@ import {
   updateMerchantSchema,
   updateSimPackageSchema,
 } from "@/lib/merchants/schemas";
-import { calculateSimPackageCommission } from "@/lib/server/sim-commissions";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +42,10 @@ type QueryBuilder = {
   then: PromiseLike<DbResult>["then"];
 };
 
-type UntypedSupabase = { from: (table: string) => QueryBuilder };
+type UntypedSupabase = {
+  from: (table: string) => QueryBuilder;
+  rpc: (fn: string, args: Record<string, unknown>) => Promise<DbResult>;
+};
 
 type AdminAuthClient = {
   auth: {
@@ -51,6 +54,7 @@ type AdminAuthClient = {
         data: { user: { id: string } | null };
         error: { message?: string } | null;
       }>;
+      deleteUser: (userId: string) => Promise<{ error: { message?: string } | null }>;
       listUsers: (params: { page: number; perPage: number }) => Promise<{
         data: { users: Array<{ id: string; email?: string | null }> };
         error: { message?: string } | null;
@@ -64,10 +68,12 @@ type StorageClient = {
     from: (bucket: string) => {
       upload: (
         path: string,
-        file: File,
+        file: File | Uint8Array,
         options?: { contentType?: string; upsert?: boolean }
       ) => Promise<{ data: { path: string } | null; error: { message?: string } | null }>;
       getPublicUrl: (path: string) => { data: { publicUrl: string } };
+      createSignedUrl: (path: string, expiresIn: number) => Promise<{ data: { signedUrl?: string } | null; error: { message?: string } | null }>;
+      remove: (paths: string[]) => Promise<{ error: { message?: string } | null }>;
     };
   };
 };
@@ -80,9 +86,10 @@ type AuthContext = {
   isAgent: boolean;
   isMerchant: boolean;
   admin: unknown;
+  requestId: string;
 };
 
-type RouteContext = { params?: { segments?: string[] } };
+type RouteContext = { params: Promise<{ segments?: string[] }> };
 
 function database(admin: unknown) {
   return admin as UntypedSupabase;
@@ -102,6 +109,13 @@ function message(error: unknown, status = 500) {
     { status }
   );
 }
+function rpcStatus(code?: string) {
+  if (code === "42501") return 403;
+  if (code === "P0002") return 404;
+  if (["22023", "23514"].includes(code || "")) return 400;
+  if (["23505", "40001", "55000"].includes(code || "")) return 409;
+  return 500;
+}
 function parseError(error: unknown) {
   if (error && typeof error === "object" && "issues" in error) {
     const issue = (error as { issues?: Array<{ message?: string }> }).issues?.[0];
@@ -109,8 +123,8 @@ function parseError(error: unknown) {
   }
   return error instanceof Error ? error.message : "Invalid input";
 }
-function segmentsOf(context: RouteContext) {
-  return context.params?.segments || [];
+async function segmentsOf(context: RouteContext) {
+  return (await context.params).segments || [];
 }
 function row(value: unknown) {
   return (value || {}) as Record<string, unknown>;
@@ -177,6 +191,13 @@ async function readBody(request: NextRequest) {
   return request.json().catch(() => ({}));
 }
 
+function inventoryCommandId(request: NextRequest, value?: string) {
+  const candidate = value || request.headers.get("idempotency-key") || "";
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate)
+    ? candidate
+    : crypto.randomUUID();
+}
+
 function safeFilename(name: string) {
   return name.replace(/[^\w.\-]+/g, "-").replace(/-+/g, "-").slice(0, 120) || "upload";
 }
@@ -200,15 +221,42 @@ async function readPayload(request: NextRequest, fileField: string) {
   return { body, file };
 }
 
-async function uploadPublicFile(auth: AuthContext, bucket: string, folder: string, file: File | null) {
+const merchantImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const merchantPaymentTypes = new Set([...merchantImageTypes, "application/pdf"]);
+const maxMerchantUploadBytes = 10 * 1024 * 1024;
+
+async function uploadMerchantFile(auth: AuthContext, bucket: string, folder: string, file: File | null, isPublic: boolean) {
   if (!file) return null;
-  const path = `${auth.orgId}/${folder}/${Date.now()}-${safeFilename(file.name)}`;
-  const upload = await storage(auth.admin).storage.from(bucket).upload(path, file, {
-    contentType: file.type || undefined,
+  const inspected = await inspectUpload(file, {
+    allowedMimeTypes: bucket === "merchant-payment-proofs" ? merchantPaymentTypes : merchantImageTypes,
+    maxBytes: maxMerchantUploadBytes,
+  });
+  const path = `${auth.orgId}/${folder}/${auth.requestId}/${crypto.randomUUID()}-${safeFilename(file.name)}`;
+  const upload = await storage(auth.admin).storage.from(bucket).upload(path, inspected.bytes, {
+    contentType: inspected.detectedMime,
     upsert: false,
   });
   if (upload.error || !upload.data) throw new Error(upload.error?.message || "Unable to upload file.");
-  return storage(auth.admin).storage.from(bucket).getPublicUrl(upload.data.path).data.publicUrl;
+  return {
+    path: upload.data.path,
+    value: isPublic ? storage(auth.admin).storage.from(bucket).getPublicUrl(upload.data.path).data.publicUrl : upload.data.path,
+  };
+}
+
+async function signPaymentProof(auth: AuthContext, value: unknown) {
+  const path = asString(value);
+  if (!path || /^https?:\/\//i.test(path)) return path || null;
+  if (!path.startsWith(`${auth.orgId}/payments/`)) return null;
+  const signed = await storage(auth.admin).storage.from("merchant-payment-proofs").createSignedUrl(path, 600);
+  if (signed.error) throw new Error(signed.error.message || "Unable to sign payment proof.");
+  return signed.data?.signedUrl || null;
+}
+
+async function signPaymentRows(auth: AuthContext, values: Record<string, unknown>[]) {
+  return Promise.all(values.map(async (value) => ({
+    ...value,
+    payment_proof_url: await signPaymentProof(auth, value.payment_proof_url),
+  })));
 }
 
 async function resolveAgentId(auth: AuthContext): Promise<string | null> {
@@ -257,31 +305,6 @@ async function findAuthUserIdByEmail(auth: AuthContext, email: string): Promise<
     page += 1;
   }
   return null;
-}
-
-async function insertTransfer(
-  auth: AuthContext,
-  values: {
-    sim_unit_id: string;
-    transfer_type: string;
-    from_agent_id?: string | null;
-    to_agent_id?: string | null;
-    from_merchant_id?: string | null;
-    to_merchant_id?: string | null;
-    notes?: string | null;
-  }
-) {
-  await database(auth.admin).from("sim_transfers").insert({
-    organization_id: auth.orgId,
-    sim_unit_id: values.sim_unit_id,
-    transfer_type: values.transfer_type,
-    from_agent_id: values.from_agent_id ?? null,
-    to_agent_id: values.to_agent_id ?? null,
-    from_merchant_id: values.from_merchant_id ?? null,
-    to_merchant_id: values.to_merchant_id ?? null,
-    performed_by: auth.user.id,
-    notes: values.notes ?? null,
-  });
 }
 
 // Confirms the merchant belongs to the current agent (or the caller is a manager).
@@ -410,66 +433,95 @@ async function handleMerchants(request: NextRequest, auth: AuthContext, segments
       if (!agentId) return message("A valid owning agent is required.", 400);
 
       const email = parsed.data.email.toLowerCase();
+      const commandId = parsed.data.command_id || crypto.randomUUID();
+      const commandResult = await db.from("sales_identity_commands").select("identity_type, actor_user_id, status, result_snapshot")
+        .eq("org_id", auth.orgId).eq("command_id", commandId).maybeSingle();
+      if (commandResult.error) return message(commandResult.error.message, 500);
+      if (commandResult.data) {
+        const command = row(commandResult.data);
+        if (command.identity_type !== "merchant" || command.actor_user_id !== auth.user.id) {
+          return message("Command id was already used for another identity request.", 409);
+        }
+        if (command.status === "completed" && command.result_snapshot) return json(command.result_snapshot);
+        return message("Merchant provisioning is already processing.", 409);
+      }
       const existing = await findAuthUserIdByEmail(auth, email);
       if (existing) return message("البريد الإلكتروني مستخدم بالفعل.", 400);
+
+      let placePhotoUrl: string | null = null;
+      let placePhotoPath = "";
+      try {
+        const uploaded = await uploadMerchantFile(auth, "merchant-place-photos", "places", file, true);
+        placePhotoUrl = uploaded?.value || null;
+        placePhotoPath = uploaded?.path || "";
+      } catch (error) {
+        return message(error, 422);
+      }
 
       const created = await adminAuth(auth.admin).auth.admin.createUser({
         email,
         password: parsed.data.password,
         email_confirm: true,
-        user_metadata: { full_name: parsed.data.business_name },
+        user_metadata: { full_name: parsed.data.business_name, identity_command_id: commandId },
       });
       if (created.error || !created.data.user) {
+        if (placePhotoPath) await removeUploadedPaths(auth.admin, "merchant-place-photos", [placePhotoPath]).catch(() => undefined);
         return message(created.error?.message || "تعذر إنشاء الحساب.", 500);
       }
       const userId = created.data.user.id;
-
-      const profileResult = await db.from("profiles").upsert(
-        {
-          user_id: userId,
-          org_id: auth.orgId,
-          full_name: parsed.data.business_name,
-          email,
-          title: "تاجر",
-          account_status: "active",
-        },
-        { onConflict: "user_id" }
-      );
-      if (profileResult.error) return message(profileResult.error.message, 500);
-
-      const memberResult = await db.from("org_members").upsert(
-        { org_id: auth.orgId, user_id: userId, role: "merchant" },
-        { onConflict: "org_id,user_id" }
-      );
-      if (memberResult.error) return message(memberResult.error.message, 500);
-
-      let placePhotoUrl: string | null = null;
-      try {
-        placePhotoUrl = await uploadPublicFile(auth, "merchant-place-photos", "places", file);
-      } catch (error) {
-        return message(error, 500);
+      const cleanup = await db.rpc("enqueue_identity_auth_sync_job", {
+        p_org_id: auth.orgId,
+        p_target_user_id: userId,
+        p_action: "delete",
+        p_source_type: "provisioning_safety",
+        p_source_id: commandId,
+        p_reason: "Delete merchant Auth identity if database provisioning never completes.",
+        p_actor_user_id: auth.user.id,
+        p_request_id: auth.requestId,
+        p_delay_seconds: 600,
+      });
+      if (cleanup.error || !row(cleanup.data).id) {
+        if (placePhotoPath) await removeUploadedPaths(auth.admin, "merchant-place-photos", [placePhotoPath]).catch(() => undefined);
+        await adminAuth(auth.admin).auth.admin.deleteUser(userId).catch(() => undefined);
+        return message(cleanup.error?.message || "تعذر تأمين عملية إنشاء الحساب.", 500);
       }
-
-      const insertPayload: Record<string, unknown> = {
-        organization_id: auth.orgId,
-        agent_id: agentId,
-        user_id: userId,
-        business_name: parsed.data.business_name,
-        sim_price: parsed.data.sim_price,
-        commission_rate: parsed.data.commission_rate,
-        created_by: auth.user.id,
-      };
-      if (parsed.data.owner_name) insertPayload.owner_name = parsed.data.owner_name;
-      if (parsed.data.phone) insertPayload.phone = parsed.data.phone;
-      if (parsed.data.location) insertPayload.location = parsed.data.location;
-      if (parsed.data.city) insertPayload.city = parsed.data.city;
-      if (parsed.data.region) insertPayload.region = parsed.data.region;
-      if (parsed.data.latitude !== undefined) insertPayload.latitude = parsed.data.latitude;
-      if (parsed.data.longitude !== undefined) insertPayload.longitude = parsed.data.longitude;
-      if (placePhotoUrl) insertPayload.place_photo_url = placePhotoUrl;
-
-      const result = await db.from("merchants").insert(insertPayload).select("*").single();
-      if (result.error) return message(result.error.message, 500);
+      const cleanupJobId = String(row(cleanup.data).id);
+      const result = await db.rpc("provision_sales_identity", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_request_id: auth.requestId,
+        p_command_id: commandId,
+        p_user_id: userId,
+        p_identity_type: "merchant",
+        p_payload: {
+          email,
+          display_name: parsed.data.business_name,
+          agent_id: agentId,
+          owner_name: parsed.data.owner_name || null,
+          phone: parsed.data.phone || null,
+          location: parsed.data.location || null,
+          city: parsed.data.city || null,
+          region: parsed.data.region || null,
+          latitude: parsed.data.latitude ?? null,
+          longitude: parsed.data.longitude ?? null,
+          place_photo_url: placePhotoUrl,
+          sim_price: parsed.data.sim_price,
+          commission_rate: parsed.data.commission_rate,
+        },
+      });
+      if (result.error) {
+        if (placePhotoPath) await removeUploadedPaths(auth.admin, "merchant-place-photos", [placePhotoPath]).catch(() => undefined);
+        return message(result.error.message, rpcStatus(result.error.code));
+      }
+      const cancellation = await db.rpc("cancel_identity_auth_sync_job", {
+        p_job_id: cleanupJobId,
+        p_reason: "Merchant identity provisioned successfully.",
+      });
+      if (cancellation.error) {
+        console.error("Merchant identity cleanup cancellation requires reconciliation.", {
+          cleanupJobId, userId, message: cancellation.error.message,
+        });
+      }
       return json(row(result.data), 201);
     }
 
@@ -488,7 +540,7 @@ async function handleMerchants(request: NextRequest, auth: AuthContext, segments
       .eq("merchant_id", merchantId)
       .order("collection_date", { ascending: false });
     if (result.error) return message(result.error.message, 500);
-    return json(rows(result.data));
+    return json(await signPaymentRows(auth, rows(result.data)));
   }
 
   // /merchants/[id]
@@ -504,9 +556,11 @@ async function handleMerchants(request: NextRequest, auth: AuthContext, segments
     const body = await readBody(request);
     const parsed = updateMerchantSchema.safeParse(body);
     if (!parsed.success) return message(parseError(parsed.error), 400);
+    const safeUpdate = { ...parsed.data };
+    delete safeUpdate.place_photo_url;
     const result = await db
       .from("merchants")
-      .update(parsed.data)
+      .update(safeUpdate)
       .eq("organization_id", auth.orgId)
       .eq("id", merchantId)
       .select("*")
@@ -619,233 +673,65 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
       return message(parseError(parsed?.error || quantityParsed.error), 400);
     }
 
-    let merchantId = "";
-    if (quantityParsed.success) {
-      merchantId = quantityParsed.data.merchant_id;
-    } else if (parsed?.success) {
-      merchantId = parsed.data.merchant_id;
-    }
-    const merchant = await merchantForCaller(auth, merchantId);
-    if (!merchant) return message("Merchant not found.", 404);
-    if (asString(merchant.status) === "suspended") {
-      return message("Cannot assign SIMs to a suspended merchant.", 400);
-    }
-    const ownerAgentId = asString(merchant.agent_id);
+    let commandId: string | undefined;
+    let merchantId: string;
     let simIds: string[] = [];
+    let quantity = 0;
+    let provider = "virgin";
+    let simType: string | null = null;
     let notes: string | null = null;
-
     if (quantityParsed.success) {
-      const selection = await autoSelectMerchantSims(quantityParsed.data);
-      if (selection.error) return message(selection.error.message, selection.error.status);
-      simIds = selection.sims.map((sim) => asString(sim.id)).filter(Boolean);
-      notes = quantityParsed.data.notes ?? null;
-    } else if (parsed?.success) {
+      commandId = quantityParsed.data.command_id;
+      merchantId = quantityParsed.data.merchant_id;
+      quantity = quantityParsed.data.quantity;
+      provider = quantityParsed.data.provider;
+      simType = quantityParsed.data.sim_type || null;
+      notes = quantityParsed.data.notes || null;
+    } else {
+      if (!parsed?.success) return message("Invalid merchant SIM assignment.", 400);
+      commandId = parsed.data.command_id;
+      merchantId = parsed.data.merchant_id;
       simIds = parsed.data.sim_ids;
-      notes = parsed.data.notes ?? null;
+      notes = parsed.data.notes || null;
     }
-
-    const simsResult = await db
-      .from("sim_units")
-      .select("id, status, current_agent_id")
-      .eq("organization_id", auth.orgId)
-      .in("id", simIds);
-    if (simsResult.error) return message(simsResult.error.message, 500);
-    const found = rows(simsResult.data);
-    if (found.length !== simIds.length) return message("Some SIMs were not found.", 400);
-    if (found.some((sim) => asString(sim.status) !== "with_agent")) {
-      return message("All SIMs must be held by the agent to hand over.", 400);
-    }
-    if (found.some((sim) => asString(sim.current_agent_id) !== ownerAgentId)) {
-      return message("You can only hand over SIMs that you hold.", 403);
-    }
-
-    const update = await db
-      .from("sim_units")
-      .update({
-        status: "with_merchant",
-        current_merchant_id: merchantId,
-        merchant_assigned_at: new Date().toISOString(),
-      })
-      .eq("organization_id", auth.orgId)
-      .in("id", simIds)
-      .select("id");
-    if (update.error) return message(update.error.message, 500);
-
-    for (const simId of simIds) {
-      await insertTransfer(auth, {
-        sim_unit_id: simId,
-        transfer_type: "assign_to_merchant",
-        from_agent_id: ownerAgentId,
-        to_merchant_id: merchantId,
-        notes,
-      });
-    }
-    return json({ assigned: simIds.length });
+    const result = await db.rpc("assign_sim_inventory_to_merchant", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_request_id: auth.requestId,
+      p_command_id: inventoryCommandId(request, commandId),
+      p_merchant_id: merchantId,
+      p_sim_ids: simIds,
+      p_quantity: quantity,
+      p_provider: provider,
+      p_sim_type: simType,
+      p_notes: notes,
+    });
+    if (result.error) return message(result.error.message, rpcStatus(result.error.code));
+    return json(row(result.data));
   }
 
   // POST /sims/sell — merchant records a sale
   if (action === "sell") {
     if (request.method !== "POST") return message("Method not allowed", 405);
-
     const body = await readBody(request);
     const parsed = merchantRecordSaleSchema.safeParse(body);
     if (!parsed.success) return message(parseError(parsed.error), 400);
-
-    const simResult = await db
-      .from("sim_units")
-      .select("*")
-      .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.sim_unit_id)
-      .maybeSingle();
-    if (simResult.error) return message(simResult.error.message, 500);
-    if (!simResult.data) return message("SIM not found.", 404);
-    const sim = row(simResult.data);
-    if (asString(sim.status) !== "with_merchant") {
-      return message("Only SIMs held by a merchant can be sold.", 400);
-    }
-
-    const sellingMerchantId = asString(sim.current_merchant_id);
-    if (auth.isMerchant) {
-      const myMerchantId = await resolveMerchantId(auth);
-      if (!myMerchantId || myMerchantId !== sellingMerchantId) {
-        return message("You can only sell SIMs assigned to you.", 403);
-      }
-    } else {
-      const merchant = await merchantForCaller(auth, sellingMerchantId);
-      if (!merchant) return message("Merchant not found.", 404);
-    }
-
-    const merchantResult = await db
-      .from("merchants")
-      .select("agent_id, status")
-      .eq("organization_id", auth.orgId)
-      .eq("id", sellingMerchantId)
-      .maybeSingle();
-    if (merchantResult.error) return message(merchantResult.error.message, 500);
-    const merchant = row(merchantResult.data);
-    if (asString(merchant.status) === "suspended") {
-      return message("Cannot record sales for a suspended merchant.", 400);
-    }
-    const ownerAgentId = asString(merchant.agent_id);
-    const packageResult = await db
-      .from("sim_packages")
-      .select("*")
-      .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.package_id)
-      .eq("status", "active")
-      .maybeSingle();
-    if (packageResult.error) return message(packageResult.error.message, 500);
-    if (!packageResult.data) return message("Package not found.", 404);
-    const simPackage = row(packageResult.data);
-    if (asString(sim.provider || "virgin") !== asString(simPackage.provider || "virgin")) {
-      return message("Package provider must match the SIM provider.", 400);
-    }
-    const salePrice = asNumber(simPackage.sale_price);
-    let commission;
-    try {
-      commission = calculateSimPackageCommission({
-        saleType: "merchant_sale",
-        salePrice,
-        packageRow: simPackage,
-      });
-    } catch (error) {
-      return message(error, 400);
-    }
-    const agentChainRule = commission.ruleSnapshot.rules.agentChain;
-    const merchantRule = commission.ruleSnapshot.rules.merchant;
-
-    const update = await db
-      .from("sim_units")
-      .update({
-        status: "sold",
-        sold_at: new Date().toISOString(),
-        sold_by_merchant_id: sellingMerchantId,
-        sold_by_agent_id: ownerAgentId,
-        sold_price: salePrice,
-        sold_package_id: parsed.data.package_id,
-        sold_package_name: asString(simPackage.package_name),
-        customer_name: parsed.data.customer_name ?? null,
-      })
-      .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.sim_unit_id)
-      .select("*")
-      .single();
-    if (update.error) return message(update.error.message, 500);
-
-    await insertTransfer(auth, {
-      sim_unit_id: parsed.data.sim_unit_id,
-      transfer_type: "sold",
-      from_merchant_id: sellingMerchantId,
+    const { command_id, ...customer } = parsed.data;
+    const rpc = await db.rpc("record_sim_sale", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_command_id: command_id || crypto.randomUUID(),
+      p_request_id: auth.requestId,
+      p_sim_unit_id: parsed.data.sim_unit_id,
+      p_package_id: parsed.data.package_id,
+      p_seller_type: "merchant",
+      p_customer: customer,
     });
-
-    const saleInsert = await db.from("sim_sales").insert({
-      organization_id: auth.orgId,
-      sim_unit_id: parsed.data.sim_unit_id,
-      package_id: parsed.data.package_id,
-      seller_type: "merchant",
-      agent_id: ownerAgentId,
-      merchant_id: sellingMerchantId,
-      sale_price: salePrice,
-      customer_name: parsed.data.customer_name,
-      customer_national_id: parsed.data.customer_national_id,
-      customer_absher_mobile: parsed.data.customer_absher_mobile,
-      customer_birth_date_hijri: parsed.data.customer_birth_date_hijri,
-      customer_id_expiry_hijri: parsed.data.customer_id_expiry_hijri,
-      customer_email: parsed.data.customer_email,
-      customer_nationality: parsed.data.customer_nationality,
-      package_reference: parsed.data.package_reference,
-      device_serial: parsed.data.device_serial,
-      city_district: parsed.data.city_district,
-      marketer_name: parsed.data.marketer_name ?? null,
-      national_address: parsed.data.national_address,
-      supervisor_name: parsed.data.supervisor_name,
-      commission_currency: commission.currency,
-      total_commission_amount: commission.totalCommissionAmount,
-      agent_commission_type: agentChainRule.type,
-      agent_commission_value: agentChainRule.value,
-      agent_commission_amount: commission.agentCommissionAmount,
-      merchant_commission_type: merchantRule.type,
-      merchant_commission_value: merchantRule.value,
-      merchant_commission_amount: commission.merchantCommissionAmount,
-      direct_agent_commission_amount: 0,
-      commission_rule_snapshot: commission.ruleSnapshot,
-      created_by: auth.user.id,
-    }).select("id").single();
-    if (saleInsert.error) return message(saleInsert.error.message, 500);
-    const saleId = asString(row(saleInsert.data).id);
-
-    // Merchant reward (paid by agent).
-    const merchantCommissionInsert = await db.from("merchant_commissions").insert({
-      organization_id: auth.orgId,
-      merchant_id: sellingMerchantId,
-      agent_id: ownerAgentId,
-      sim_unit_id: parsed.data.sim_unit_id,
-      sim_package_id: parsed.data.package_id,
-      sale_id: saleId || null,
-      sale_price: salePrice,
-      commission_currency: commission.currency,
-      commission_type: merchantRule.type,
-      commission_rate: merchantRule.value,
-      commission_amount: commission.merchantCommissionAmount,
-    });
-    if (merchantCommissionInsert.error) return message(merchantCommissionInsert.error.message, 500);
-
-    // Agent reward (paid by the organization).
-    const agentCommissionInsert = await db.from("agent_commissions").insert({
-      organization_id: auth.orgId,
-      agent_id: ownerAgentId,
-      sim_unit_id: parsed.data.sim_unit_id,
-      sim_package_id: parsed.data.package_id,
-      sale_id: saleId || null,
-      sale_price: salePrice,
-      commission_currency: commission.currency,
-      commission_type: agentChainRule.type,
-      commission_rate: agentChainRule.value,
-      commission_amount: commission.agentCommissionAmount,
-    });
-    if (agentCommissionInsert.error) return message(agentCommissionInsert.error.message, 500);
-
-    return json(row(update.data));
+    if (rpc.error) return message(rpc.error.message, rpcStatus(rpc.error.code));
+    const result = await db.from("sim_units").select("*")
+      .eq("organization_id", auth.orgId).eq("id", parsed.data.sim_unit_id).single();
+    if (result.error) return message(result.error.message, 500);
+    return json(row(result.data));
   }
 
   // POST /sims/return — merchant returns a SIM to its agent
@@ -856,51 +742,16 @@ async function handleMerchantSims(request: NextRequest, auth: AuthContext, segme
     const parsed = merchantReturnSimSchema.safeParse(body);
     if (!parsed.success) return message(parseError(parsed.error), 400);
 
-    const simResult = await db
-      .from("sim_units")
-      .select("*")
-      .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.sim_unit_id)
-      .maybeSingle();
-    if (simResult.error) return message(simResult.error.message, 500);
-    if (!simResult.data) return message("SIM not found.", 404);
-    const sim = row(simResult.data);
-    if (asString(sim.status) !== "with_merchant") {
-      return message("Only SIMs held by a merchant can be returned.", 400);
-    }
-    const holdingMerchantId = asString(sim.current_merchant_id);
-    if (auth.isMerchant) {
-      const myMerchantId = await resolveMerchantId(auth);
-      if (!myMerchantId || myMerchantId !== holdingMerchantId) {
-        return message("You can only return SIMs assigned to you.", 403);
-      }
-    } else {
-      const merchant = await merchantForCaller(auth, holdingMerchantId);
-      if (!merchant) return message("Merchant not found.", 404);
-    }
-
-    const update = await db
-      .from("sim_units")
-      .update({
-        status: "with_agent",
-        current_merchant_id: null,
-        merchant_assigned_at: null,
-      })
-      .eq("organization_id", auth.orgId)
-      .eq("id", parsed.data.sim_unit_id)
-      .select("*")
-      .single();
-    if (update.error) return message(update.error.message, 500);
-
-    await insertTransfer(auth, {
-      sim_unit_id: parsed.data.sim_unit_id,
-      transfer_type: "return_from_merchant",
-      from_merchant_id: holdingMerchantId,
-      to_agent_id: asString(sim.current_agent_id) || null,
-      notes: parsed.data.notes ?? null,
+    const rpc = await db.rpc("return_sim_unit", {
+      p_org_id: auth.orgId,
+      p_actor_user_id: auth.user.id,
+      p_command_id: parsed.data.command_id || crypto.randomUUID(),
+      p_request_id: auth.requestId,
+      p_sim_unit_id: parsed.data.sim_unit_id,
+      p_notes: parsed.data.notes ?? null,
     });
-
-    return json(row(update.data));
+    if (rpc.error) return message(rpc.error.message, rpcStatus(rpc.error.code));
+    return json(row(rows(rpc.data)[0]));
   }
 
   return message("Merchant route was not found.", 404);
@@ -925,41 +776,39 @@ async function handleMerchantCollect(request: NextRequest, auth: AuthContext) {
   const merchant = await merchantForCaller(auth, merchantId);
   if (!merchant) return message("Merchant not found.", 404);
 
-  let paymentProofUrl = parsed.data.payment_proof_url ?? null;
+  let paymentProofUrl: string | null = null;
+  let paymentProofPath = "";
   if (file) {
     try {
-      paymentProofUrl = await uploadPublicFile(auth, "merchant-payment-proofs", "payments", file);
+      const uploaded = await uploadMerchantFile(auth, "merchant-payment-proofs", "payments", file, false);
+      paymentProofUrl = uploaded?.value || null;
+      paymentProofPath = uploaded?.path || "";
     } catch (error) {
-      return message(error, 500);
+      return message(error, 422);
     }
   }
 
-  const submittedByMerchant = auth.isMerchant;
-  const status = submittedByMerchant ? "pending" : "confirmed";
-  const confirmedAt = status === "confirmed" ? new Date().toISOString() : null;
-
-  const result = await database(auth.admin)
-    .from("merchant_cash_collections")
-    .insert({
-      organization_id: auth.orgId,
-      merchant_id: merchantId,
-      agent_id: asString(merchant.agent_id),
-      amount: parsed.data.amount,
-      payment_method: parsed.data.payment_method,
-      collection_date: parsed.data.collection_date || new Date().toISOString().slice(0, 10),
-      notes: parsed.data.notes ?? null,
-      collected_by: auth.user.id,
-      submitted_by: auth.user.id,
-      submitted_at: new Date().toISOString(),
-      status,
-      payment_proof_url: paymentProofUrl,
-      confirmed_by: status === "confirmed" ? auth.user.id : null,
-      confirmed_at: confirmedAt,
-    })
-    .select("*")
-    .single();
-  if (result.error) return message(result.error.message, 500);
-  return json(row(result.data), 201);
+  const result = await database(auth.admin).rpc("record_sales_cash_collection", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_command_id: parsed.data.command_id || crypto.randomUUID(),
+    p_collection_id: parsed.data.collection_id || crypto.randomUUID(),
+    p_collection_type: "merchant",
+    p_subject_id: merchantId,
+    p_amount: parsed.data.amount,
+    p_payment_method: parsed.data.payment_method,
+    p_collection_date: parsed.data.collection_date || null,
+    p_notes: parsed.data.notes || null,
+    p_payment_proof_path: paymentProofUrl,
+  });
+  if (result.error) {
+    if (paymentProofPath) await removeUploadedPaths(auth.admin, "merchant-payment-proofs", [paymentProofPath]).catch(() => undefined);
+    return message(result.error.message, rpcStatus(result.error.code));
+  }
+  const saved = row(result.data);
+  saved.payment_proof_url = await signPaymentProof(auth, saved.payment_proof_url);
+  return json(saved, 201);
 }
 
 async function handleMerchantPayments(request: NextRequest, auth: AuthContext, segments: string[]) {
@@ -972,51 +821,20 @@ async function handleMerchantPayments(request: NextRequest, auth: AuthContext, s
   const parsed = confirmMerchantPaymentSchema.safeParse(body);
   if (!parsed.success) return message(parseError(parsed.error), 400);
 
-  const db = database(auth.admin);
-  const paymentResult = await db
-    .from("merchant_cash_collections")
-    .select("*")
-    .eq("organization_id", auth.orgId)
-    .eq("id", paymentId)
-    .maybeSingle();
-  if (paymentResult.error) return message(paymentResult.error.message, 500);
-  if (!paymentResult.data) return message("Payment not found.", 404);
-  const payment = row(paymentResult.data);
-
-  const merchant = await merchantForCaller(auth, asString(payment.merchant_id));
-  if (!merchant) return message("Merchant not found.", 404);
-
-  if (asString(payment.payment_method) !== "cash" && !auth.isManager && parsed.data.status === "confirmed") {
-    return message("Electronic payments must be confirmed by the on-ground manager.", 403);
-  }
-
-  const now = new Date().toISOString();
-  const updatePayload =
-    parsed.data.status === "confirmed"
-      ? {
-          status: "confirmed",
-          confirmed_by: auth.user.id,
-          confirmed_at: now,
-          rejected_by: null,
-          rejected_at: null,
-          rejection_reason: null,
-        }
-      : {
-          status: "rejected",
-          rejected_by: auth.user.id,
-          rejected_at: now,
-          rejection_reason: parsed.data.rejection_reason ?? null,
-        };
-
-  const result = await db
-    .from("merchant_cash_collections")
-    .update(updatePayload)
-    .eq("organization_id", auth.orgId)
-    .eq("id", paymentId)
-    .select("*")
-    .single();
-  if (result.error) return message(result.error.message, 500);
-  return json(row(result.data));
+  const result = await database(auth.admin).rpc("transition_merchant_cash_collection", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_command_id: parsed.data.command_id || crypto.randomUUID(),
+    p_collection_id: paymentId,
+    p_expected_version: parsed.data.expected_version,
+    p_decision: parsed.data.status,
+    p_rejection_reason: parsed.data.rejection_reason || null,
+  });
+  if (result.error) return message(result.error.message, rpcStatus(result.error.code));
+  const saved = row(result.data);
+  saved.payment_proof_url = await signPaymentProof(auth, saved.payment_proof_url);
+  return json(saved);
 }
 
 // ---------------------------------------------------------------------------
@@ -1111,16 +929,7 @@ async function handleMerchantCommissions(request: NextRequest, auth: AuthContext
 
   if (commissionId && segments[2] === "pay") {
     if (request.method !== "PATCH") return message("Method not allowed", 405);
-    if (!auth.isAgent && !auth.isManager) return message("Only agents pay merchant commissions.", 403);
-    const result = await db
-      .from("merchant_commissions")
-      .update({ is_paid: true, paid_at: new Date().toISOString(), paid_by: auth.user.id })
-      .eq("organization_id", auth.orgId)
-      .eq("id", commissionId)
-      .select("*")
-      .single();
-    if (result.error) return message(result.error.message, 500);
-    return json(row(result.data));
+    return message("Commission payments must be posted by Finance through an immutable settlement batch.", 410);
   }
 
   if (!commissionId) {
@@ -1351,7 +1160,7 @@ async function handleMerchantAnalytics(request: NextRequest, auth: AuthContext, 
 // Dispatch
 // ---------------------------------------------------------------------------
 async function dispatch(request: NextRequest, auth: AuthContext, context: RouteContext) {
-  const segments = segmentsOf(context);
+  const segments = await segmentsOf(context);
   const resource = segments[0] || "";
 
   if (resource === "packages") return handlePackages(request, auth, segments);
@@ -1368,7 +1177,7 @@ async function dispatch(request: NextRequest, auth: AuthContext, context: RouteC
 }
 
 async function authorize(request: NextRequest, context: RouteContext) {
-  const auth = await requireMerchantAccess();
+  const auth = await requireMerchantAccess(request);
   if ("error" in auth) return auth.error;
   return dispatch(request, auth as AuthContext, context);
 }

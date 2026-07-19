@@ -37,7 +37,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       return null;
     }
 
-    const [{ data: platformAdmin, error: platformAdminError }, { data: membership }, { data: profile }, { data: employee }] = await Promise.all([
+    const [platformResult, membershipResult, profileResult, employeeResult] = await Promise.all([
       supabase
         .from("platform_admins")
         .select("role, status")
@@ -60,43 +60,70 @@ export function RoleProvider({ children }: { children: ReactNode }) {
         .maybeSingle(),
     ]);
 
+    const { data: platformAdmin, error: platformAdminError } = platformResult;
+    const { data: membership, error: membershipError } = membershipResult;
+    const { data: profile, error: profileError } = profileResult;
+    const { data: employee, error: employeeError } = employeeResult;
+
+    if (membershipError || profileError || employeeError) {
+      console.error("Unable to resolve user workspace context", {
+        membershipCode: membershipError?.code,
+        profileCode: profileError?.code,
+        employeeCode: employeeError?.code,
+      });
+      setCurrentUser(null);
+      setLoading(false);
+      return null;
+    }
+
     const membershipRecord = membership as unknown as Record<string, unknown> | null;
     const rawRole = typeof membershipRecord?.role === "string"
       ? membershipRecord.role as OrgMembershipRole
       : null;
     const platformAdminRecord = platformAdmin as unknown as Record<string, unknown> | null;
-    const platformTableMissing = platformAdminError?.code === "42P01";
     const isPlatformSuperadmin = platformAdminRecord?.role === "superadmin" && platformAdminRecord.status === "active";
     const membershipRole = roleFromOrgRole(rawRole);
     const role = isPlatformSuperadmin
       ? "Superadmin"
-      : !platformTableMissing && rawRole === "super_admin"
+      : rawRole === "super_admin"
         ? null
         : membershipRole;
-    const isSystemSuperadmin = isPlatformSuperadmin || (platformTableMissing && rawRole === "super_admin");
+    const isSystemSuperadmin = isPlatformSuperadmin;
     const systemRole = isSystemSuperadmin ? "Superadmin" : null;
     const workspaceRole: WorkspaceRole | null = systemRole ? null : role as WorkspaceRole;
     const membershipOrgId = String(membershipRecord?.org_id || "");
 
-    if (!role) {
+    if (platformAdminRecord?.status === "suspended" || !role) {
       setCurrentUser(null);
       setLoading(false);
       return null;
     }
 
     if (!isSystemSuperadmin) {
-      const accountStatus = String((profile as unknown as Record<string, unknown>)?.account_status || "active").toLowerCase();
+      const accountStatus = String((profile as unknown as Record<string, unknown>)?.account_status || "").toLowerCase();
       const orgId = String(membershipRecord?.org_id || "");
-      const { data: organization } = orgId
-        ? await supabase.from("organizations").select("status").eq("id", orgId).maybeSingle()
-        : { data: null };
-      const organizationStatus = String((organization as unknown as Record<string, unknown> | null)?.status || "active").toLowerCase();
+      const { data: organization, error: organizationError } = orgId
+        ? await supabase.from("organizations").select("status, deleted_at").eq("id", orgId).maybeSingle()
+        : { data: null, error: null };
+      const organizationRecord = organization as unknown as Record<string, unknown> | null;
+      const organizationStatus = String(organizationRecord?.status || "").toLowerCase();
 
-      if (accountStatus !== "active" || organizationStatus !== "active") {
+      if (
+        !profile
+        || organizationError
+        || !organizationRecord
+        || organizationRecord.deleted_at
+        || accountStatus !== "active"
+        || organizationStatus !== "active"
+      ) {
         setCurrentUser(null);
         setLoading(false);
         return null;
       }
+    }
+
+    if (platformAdminError) {
+      console.error("Platform role lookup failed", { code: platformAdminError.code });
     }
 
     const name = String((profile as unknown as Record<string, unknown>)?.full_name || user.user_metadata?.full_name || user.email || "User");
@@ -138,13 +165,14 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   }, [refresh, supabase]);
 
   const login = async (input: { email: string; password: string }): Promise<{ success: boolean; message: string }> => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email: input.email,
-      password: input.password,
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
     });
-
-    if (error) {
-      return { success: false, message: "البريد الإلكتروني أو كلمة المرور غير صحيحة." };
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      return { success: false, message: String(payload?.message || "البريد الإلكتروني أو كلمة المرور غير صحيحة.") };
     }
 
     const loadedUser = await refresh();

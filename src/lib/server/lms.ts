@@ -1,8 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { TenantAuthContext } from "@/lib/server/tenant-context";
+import { inspectUpload, removeUploadedPaths } from "@/lib/server/upload-security";
+import { safeExternalUrl, sanitizeRichTextHtml } from "@/lib/rich-text";
 
 type Db = {
   from: (table: string) => any;
+  rpc: (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>;
   storage: {
     from: (bucket: string) => any;
   };
@@ -20,11 +23,8 @@ const allowedLmsMimeTypes = new Set([
   "video/mp4",
   "video/webm",
   "application/pdf",
-  "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "text/plain",
 ]);
@@ -216,34 +216,6 @@ async function canParticipateInCourse(auth: LmsAuth, courseId: string) {
 
 async function assertElevated(auth: LmsAuth) {
   if (!isElevated(auth)) throw new Error("Forbidden");
-}
-
-async function notifyUsers(auth: LmsAuth, userIds: string[], title: string, body: string, link: string) {
-  const unique = Array.from(new Set(userIds.filter(Boolean)));
-  if (unique.length === 0) return;
-  const rows = unique.map((userId) => ({
-    org_id: auth.orgId,
-    user_id: userId,
-    title,
-    body,
-    type: "lms",
-    link,
-    is_read: false,
-  }));
-  const result = await db(auth).from("notifications").insert(rows as never);
-  if (result.error) throw new Error(result.error.message);
-}
-
-async function notifyCourseLearners(auth: LmsAuth, courseId: string, title: string, body: string, link: string) {
-  const result = await db(auth)
-    .from("lms_enrollments")
-    .select("employee:employee_id(user_id)")
-    .eq("org_id", auth.orgId)
-    .eq("course_id", courseId)
-    .neq("status", "cancelled");
-  if (result.error) throw new Error(result.error.message);
-  const userIds = asRows(result.data).map((row) => text(asRecord(row.employee).user_id)).filter(Boolean);
-  await notifyUsers(auth, userIds, title, body, link);
 }
 
 export async function listLmsCategories(auth: LmsAuth) {
@@ -487,6 +459,11 @@ export async function upsertCourseSection(auth: LmsAuth, courseId: string, value
 
 export async function upsertCourseLesson(auth: LmsAuth, courseId: string, values: RecordMap, lessonId?: string) {
   await assertManageCourse(auth, courseId, "can_edit_content");
+  const requestedContentUrl = text(values.content_url);
+  const contentUrl = safeExternalUrl(requestedContentUrl);
+  if (requestedContentUrl && !contentUrl) {
+    throw new Error("Lesson content URL must use HTTP or HTTPS.");
+  }
   const payload = {
     org_id: auth.orgId,
     course_id: courseId,
@@ -494,8 +471,8 @@ export async function upsertCourseLesson(auth: LmsAuth, courseId: string, values
     title: text(values.title),
     description: optionalText(values.description),
     lesson_type: text(values.lesson_type) || "text",
-    content: optionalText(values.content),
-    content_url: optionalText(values.content_url),
+    content: optionalText(sanitizeRichTextHtml(text(values.content))),
+    content_url: contentUrl || null,
     storage_path: optionalText(values.storage_path),
     duration_minutes: numberValue(values.duration_minutes, 0),
     sort_order: numberValue(values.sort_order, 0),
@@ -683,47 +660,21 @@ export async function assignLmsLearning(auth: LmsAuth, values: RecordMap) {
   const employees = await loadAssignmentTargets(auth, values);
   if (employees.length === 0) throw new Error("Select at least one active employee for this assignment.");
 
-  const ruleResult = await db(auth).from("lms_assignment_rules").insert({
-    org_id: auth.orgId,
-    course_id: courseId || null,
-    learning_path_id: learningPathId || null,
-    assignment_type: text(values.assignment_type),
-    target_id: optionalText(values.target_id),
-    due_date: optionalText(values.due_date),
-    assigned_by: auth.user.id,
-    is_active: true,
-  } as never).select().single();
-  if (ruleResult.error) throw new Error(ruleResult.error.message);
-
-  const created: RecordMap[] = [];
-  for (const employee of employees) {
-    for (const targetCourseId of courseIds) {
-      const existing = await db(auth)
-        .from("lms_enrollments")
-        .select("id")
-        .eq("org_id", auth.orgId)
-        .eq("course_id", targetCourseId)
-        .eq("employee_id", text(employee.id))
-        .neq("status", "cancelled")
-        .maybeSingle();
-      if (existing.error) throw new Error(existing.error.message);
-      if (existing.data) continue;
-      const enrollment = await db(auth).from("lms_enrollments").insert({
-        org_id: auth.orgId,
-        course_id: targetCourseId,
-        employee_id: text(employee.id),
-        assigned_by: auth.user.id,
-        due_date: optionalText(values.due_date),
-        status: "assigned",
-      } as never).select().single();
-      if (enrollment.error) throw new Error(enrollment.error.message);
-      created.push(asRecord(enrollment.data));
-    }
-  }
-
-  const userIds = employees.map((employee) => text(employee.user_id)).filter(Boolean);
-  await notifyUsers(auth, userIds, "تم إسناد تدريب جديد", "لديك دورة تدريبية جديدة في منصة التعلم.", "/lms/my");
-  return { rule: ruleResult.data, enrollments: created };
+  const result = await db(auth).rpc("assign_lms_learning_atomic", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_command_id: text(values.command_id) || crypto.randomUUID(),
+    p_course_id: courseId || null,
+    p_learning_path_id: learningPathId || null,
+    p_assignment_type: text(values.assignment_type),
+    p_target_id: optionalText(values.target_id),
+    p_due_date: optionalText(values.due_date),
+    p_course_ids: courseIds,
+    p_employee_ids: employees.map((employee) => text(employee.id)).filter(Boolean),
+  });
+  if (result.error) throw new Error(result.error.message);
+  return result.data;
 }
 
 export async function getLearnerDashboard(auth: LmsAuth) {
@@ -797,80 +748,28 @@ export async function getEnrollmentForLearner(auth: LmsAuth, enrollmentId: strin
 }
 
 export async function completeLesson(auth: LmsAuth, enrollmentId: string, lessonId: string) {
-  const enrollment = await getEnrollmentForLearner(auth, enrollmentId);
-  const result = await db(auth).from("lms_lesson_progress").upsert({
-    org_id: auth.orgId,
-    enrollment_id: enrollmentId,
-    lesson_id: lessonId,
-    employee_id: text(enrollment.employee_id),
-    status: "completed",
-    completed_at: new Date().toISOString(),
-  } as never, { onConflict: "org_id,enrollment_id,lesson_id" }).select().single();
+  const result = await db(auth).rpc("complete_lms_lesson", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_enrollment_id: enrollmentId,
+    p_lesson_id: lessonId,
+  });
   if (result.error) throw new Error(result.error.message);
-  const completion = await recalculateEnrollment(auth, enrollmentId);
-  return { progress: result.data, completion };
-}
-
-function normalizeAnswer(value: unknown) {
-  if (Array.isArray(value)) return value.map(String).sort().join("|").trim().toLowerCase();
-  if (value && typeof value === "object") return JSON.stringify(value);
-  return String(value ?? "").trim().toLowerCase();
-}
-
-function answerMatches(question: RecordMap, answer: unknown) {
-  const questionType = text(question.question_type);
-  const expected = question.correct_answer_json;
-  if (questionType === "multiple_choice" && Array.isArray(expected)) {
-    return normalizeAnswer(expected) === normalizeAnswer(Array.isArray(answer) ? answer : [answer]);
-  }
-  return normalizeAnswer(expected) === normalizeAnswer(answer);
+  return result.data;
 }
 
 export async function submitQuizAttempt(auth: LmsAuth, enrollmentId: string, quizId: string, answers: Record<string, unknown>) {
-  const enrollment = await getEnrollmentForLearner(auth, enrollmentId);
-  const quizResult = await db(auth)
-    .from("lms_quizzes")
-    .select("*, questions:lms_quiz_questions(*)")
-    .eq("org_id", auth.orgId)
-    .eq("id", quizId)
-    .eq("course_id", text(enrollment.course_id))
-    .maybeSingle();
-  if (quizResult.error) throw new Error(quizResult.error.message);
-  const quiz = asRecord(quizResult.data);
-  if (!quiz.id) throw new Error("Quiz not found");
-  const attemptsResult = await db(auth)
-    .from("lms_quiz_attempts")
-    .select("id")
-    .eq("org_id", auth.orgId)
-    .eq("enrollment_id", enrollmentId)
-    .eq("quiz_id", quizId);
-  if (attemptsResult.error) throw new Error(attemptsResult.error.message);
-  const attemptNumber = asRows(attemptsResult.data).length + 1;
-  if (attemptNumber > numberValue(quiz.max_attempts, 3)) throw new Error("Maximum quiz attempts reached.");
-
-  const questions = asRows(quiz.questions);
-  const totalPoints = questions.reduce((sum, question) => sum + numberValue(question.points, 1), 0);
-  const earned = questions.reduce((sum, question) => {
-    const id = text(question.id);
-    return sum + (answerMatches(question, answers[id]) ? numberValue(question.points, 1) : 0);
-  }, 0);
-  const score = totalPoints > 0 ? Math.round((earned / totalPoints) * 10000) / 100 : 0;
-  const passed = score >= numberValue(quiz.passing_score, 70);
-
-  const result = await db(auth).from("lms_quiz_attempts").insert({
-    org_id: auth.orgId,
-    enrollment_id: enrollmentId,
-    quiz_id: quizId,
-    employee_id: text(enrollment.employee_id),
-    attempt_number: attemptNumber,
-    answers_json: answers,
-    score,
-    passed,
-    submitted_at: new Date().toISOString(),
-  } as never).select().single();
+  const result = await db(auth).rpc("submit_lms_quiz_attempt", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_enrollment_id: enrollmentId,
+    p_quiz_id: quizId,
+    p_answers: answers,
+  });
   if (result.error) throw new Error(result.error.message);
-  const completion = await recalculateEnrollment(auth, enrollmentId);
-  return { attempt: result.data, completion };
+  return result.data;
 }
 
 export async function submitTask(auth: LmsAuth, enrollmentId: string, taskId: string, values: RecordMap) {
@@ -1091,29 +990,19 @@ export async function reviewSubmission(auth: LmsAuth, submissionId: string, valu
   if (reviewerEmployeeId && reviewerEmployeeId === text(submission.employee_id)) {
     throw new Error("Learners cannot review their own submissions.");
   }
-  const passed = text(values.review_status) === "accepted";
-  const reviewResult = await db(auth).from("lms_task_reviews").insert({
-    org_id: auth.orgId,
-    submission_id: submissionId,
-    task_id: text(submission.task_id),
-    course_id: courseId,
-    reviewer_employee_id: reviewerEmployeeId || null,
-    score: numberValue(values.score, 0),
-    passed,
-    feedback: optionalText(values.feedback),
-    review_status: text(values.review_status),
-  } as never).select().single();
-  if (reviewResult.error) throw new Error(reviewResult.error.message);
-
-  const submissionUpdate = await db(auth).from("lms_task_submissions").update({
-    status: passed ? "accepted" : text(values.review_status),
-  } as never).eq("org_id", auth.orgId).eq("id", submissionId).select().single();
-  if (submissionUpdate.error) throw new Error(submissionUpdate.error.message);
-
-  const employee = await getEmployeeUserId(auth, text(submission.employee_id));
-  await notifyUsers(auth, [text(employee.user_id)], "تمت مراجعة مهمة تدريبية", optionalText(values.feedback) || "راجع ملاحظات المدرب على تسليمك.", `/lms/player/${text(submission.enrollment_id)}`);
-  const completion = await recalculateEnrollment(auth, text(submission.enrollment_id));
-  return { review: reviewResult.data, submission: submissionUpdate.data, completion };
+  const result = await db(auth).rpc("review_lms_submission_atomic", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_command_id: text(values.command_id) || crypto.randomUUID(),
+    p_submission_id: submissionId,
+    p_score: numberValue(values.score, 0),
+    p_feedback: optionalText(values.feedback),
+    p_review_status: text(values.review_status),
+    p_rubric_items: asRows(values.rubric_items),
+  });
+  if (result.error) throw new Error(result.error.message);
+  return result.data;
 }
 
 export async function upsertAnnouncement(auth: LmsAuth, courseId: string, values: RecordMap, announcementId?: string) {
@@ -1132,7 +1021,6 @@ export async function upsertAnnouncement(auth: LmsAuth, courseId: string, values
     : db(auth).from("lms_course_announcements").insert(payload as never);
   const result = await query.select().single();
   if (result.error) throw new Error(result.error.message);
-  await notifyCourseLearners(auth, courseId, "إعلان جديد في الدورة", text(values.title), `/lms/community?course=${encodeURIComponent(courseId)}`);
   return result.data;
 }
 
@@ -1221,10 +1109,6 @@ export async function createCommunityComment(auth: LmsAuth, postId: string, valu
     is_instructor_reply: isInstructorReply,
   } as never).select().single();
   if (result.error) throw new Error(result.error.message);
-  if (text(post.employee_id) !== employeeId) {
-    const employee = await getEmployeeUserId(auth, text(post.employee_id));
-    await notifyUsers(auth, [text(employee.user_id)], "رد جديد في مجتمع الدورة", text(values.body).slice(0, 160), `/lms/community?course=${encodeURIComponent(text(post.course_id))}`);
-  }
   return result.data;
 }
 
@@ -1342,73 +1226,15 @@ export async function getCertificate(auth: LmsAuth, certificateId: string) {
   return certificate;
 }
 
-async function issueCertificateIfNeeded(auth: LmsAuth, enrollment: RecordMap) {
-  const existing = await db(auth)
-    .from("lms_certificates")
-    .select("id")
-    .eq("org_id", auth.orgId)
-    .eq("enrollment_id", text(enrollment.id))
-    .maybeSingle();
-  if (existing.error) throw new Error(existing.error.message);
-  if (existing.data) return existing.data;
-  const number = `LMS-${new Date().getUTCFullYear()}-${text(enrollment.id).slice(0, 8).toUpperCase()}`;
-  const result = await db(auth).from("lms_certificates").insert({
-    org_id: auth.orgId,
-    enrollment_id: text(enrollment.id),
-    course_id: text(enrollment.course_id),
-    employee_id: text(enrollment.employee_id),
-    certificate_number: number,
-    issued_by: auth.user.id,
-  } as never).select().single();
-  if (result.error) throw new Error(result.error.message);
-  const employee = await getEmployeeUserId(auth, text(enrollment.employee_id));
-  await notifyUsers(auth, [text(employee.user_id)], "تم إصدار شهادة تدريب", "تهانينا، تم إصدار شهادة إتمام الدورة.", `/lms/certificates`);
-  return result.data;
-}
-
 export async function recalculateEnrollment(auth: LmsAuth, enrollmentId: string) {
-  const enrollmentResult = await db(auth).from("lms_enrollments").select("*, course:course_id(*)").eq("org_id", auth.orgId).eq("id", enrollmentId).maybeSingle();
-  if (enrollmentResult.error) throw new Error(enrollmentResult.error.message);
-  const enrollment = asRecord(enrollmentResult.data);
-  if (!enrollment.id) throw new Error("Enrollment not found");
-  const course = asRecord(enrollment.course);
-  const courseId = text(enrollment.course_id);
-  const [lessons, progress, quizzes, attempts, tasks, submissions] = await Promise.all([
-    db(auth).from("lms_lessons").select("id, is_required").eq("org_id", auth.orgId).eq("course_id", courseId).eq("is_active", true),
-    db(auth).from("lms_lesson_progress").select("*").eq("org_id", auth.orgId).eq("enrollment_id", enrollmentId),
-    db(auth).from("lms_quizzes").select("id, is_required").eq("org_id", auth.orgId).eq("course_id", courseId).eq("is_active", true),
-    db(auth).from("lms_quiz_attempts").select("*").eq("org_id", auth.orgId).eq("enrollment_id", enrollmentId),
-    db(auth).from("lms_tasks").select("id, is_required").eq("org_id", auth.orgId).eq("course_id", courseId).eq("status", "published"),
-    db(auth).from("lms_task_submissions").select("*").eq("org_id", auth.orgId).eq("enrollment_id", enrollmentId),
-  ]);
-  for (const item of [lessons, progress, quizzes, attempts, tasks, submissions]) {
-    if (item.error) throw new Error(item.error.message);
-  }
-  const requiredLessons = asRows(lessons.data).filter((row) => row.is_required !== false);
-  const completedLessonIds = new Set(asRows(progress.data).filter((row) => row.status === "completed").map((row) => text(row.lesson_id)));
-  const requiredQuizzes = asRows(quizzes.data).filter((row) => row.is_required !== false);
-  const passedQuizIds = new Set(asRows(attempts.data).filter((row) => row.passed === true).map((row) => text(row.quiz_id)));
-  const requiredTasks = asRows(tasks.data).filter((row) => row.is_required !== false);
-  const passedTaskIds = new Set(asRows(submissions.data).filter((row) => row.status === "accepted").map((row) => text(row.task_id)));
-
-  const totalItems = requiredLessons.length + (course.requires_quiz_pass ? requiredQuizzes.length : 0) + (course.requires_task_pass ? requiredTasks.length : 0);
-  const doneItems =
-    requiredLessons.filter((lesson) => completedLessonIds.has(text(lesson.id))).length +
-    (course.requires_quiz_pass ? requiredQuizzes.filter((quiz) => passedQuizIds.has(text(quiz.id))).length : 0) +
-    (course.requires_task_pass ? requiredTasks.filter((task) => passedTaskIds.has(text(task.id))).length : 0);
-  const progressPercent = totalItems === 0 ? 100 : Math.round((doneItems / totalItems) * 10000) / 100;
-  const complete = progressPercent >= 100;
-  const update = {
-    progress_percent: progressPercent,
-    status: complete ? "completed" : progressPercent > 0 ? "in_progress" : "assigned",
-    started_at: progressPercent > 0 && !enrollment.started_at ? new Date().toISOString() : enrollment.started_at || null,
-    completed_at: complete ? (enrollment.completed_at || new Date().toISOString()) : null,
-  };
-  const updated = await db(auth).from("lms_enrollments").update(update as never).eq("org_id", auth.orgId).eq("id", enrollmentId).select().single();
-  if (updated.error) throw new Error(updated.error.message);
-  let certificate = null;
-  if (complete) certificate = await issueCertificateIfNeeded(auth, asRecord(updated.data));
-  return { enrollment: updated.data, certificate };
+  const result = await db(auth).rpc("refresh_lms_enrollment", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: auth.requestId,
+    p_enrollment_id: enrollmentId,
+  });
+  if (result.error) throw new Error(result.error.message);
+  return result.data;
 }
 
 export async function getLmsReports(auth: LmsAuth) {
@@ -1494,9 +1320,6 @@ export async function getLmsReports(auth: LmsAuth) {
 export async function uploadLmsFile(auth: LmsAuth, formData: FormData) {
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) throw new Error("File is required.");
-  if (file.size > maxLmsUploadBytes || !allowedLmsMimeTypes.has(file.type)) {
-    throw new Error("Unsupported file type or file size is larger than 100MB.");
-  }
   let courseId = text(formData.get("course_id"));
   const lessonId = text(formData.get("lesson_id"));
   const taskId = text(formData.get("task_id"));
@@ -1530,16 +1353,24 @@ export async function uploadLmsFile(auth: LmsAuth, formData: FormData) {
   if (submissionId) path = `orgs/${auth.orgId}/lms/courses/${courseId || "general"}/submissions/${submissionId}/${filename}`;
   if (postId || kind === "community") path = `orgs/${auth.orgId}/lms/courses/${courseId || "general"}/community/${postId || "general"}/${filename}`;
 
-  const upload = await db(auth).storage.from("lms-content").upload(path, file, { contentType: file.type, upsert: false });
+  const inspected = await inspectUpload(file, { allowedMimeTypes: allowedLmsMimeTypes, maxBytes: maxLmsUploadBytes });
+  const upload = await db(auth).storage.from("lms-content").upload(path, inspected.bytes, {
+    contentType: inspected.detectedMime,
+    upsert: false,
+  });
   if (upload.error) throw new Error(upload.error.message);
   const signed = await db(auth).storage.from("lms-content").createSignedUrl(path, 60 * 60);
-  if (signed.error) throw new Error(signed.error.message);
+  if (signed.error) {
+    await removeUploadedPaths(auth.admin, "lms-content", [path]).catch(() => undefined);
+    throw new Error(signed.error.message);
+  }
   return {
     bucket: "lms-content",
     path,
     file_name: file.name,
-    mime_type: file.type,
+    mime_type: inspected.detectedMime,
     size_bytes: file.size,
+    sha256: inspected.sha256,
     signed_url: signed.data?.signedUrl || "",
   };
 }

@@ -4,6 +4,9 @@ import "leaflet/dist/leaflet.css";
 import "./globals.css";
 import { RoleProvider } from "@/providers/RoleProvider";
 
+// A request-specific CSP nonce cannot be embedded in statically cached HTML.
+export const dynamic = "force-dynamic";
+
 const arabic = Noto_Sans_Arabic({ subsets: ["arabic"], variable: "--font-inter" });
 
 export const metadata: Metadata = {

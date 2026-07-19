@@ -174,7 +174,7 @@ export function useNotifications() {
     }
 
     setLoading(true);
-    const result = await getNotifications(currentUser.orgId, currentUser.id);
+    const result = await getNotifications();
     setData(result.data || []);
     setLoading(false);
   }, [currentUser?.orgId, currentUser?.id]);

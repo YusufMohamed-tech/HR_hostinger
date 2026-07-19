@@ -1,5 +1,6 @@
 import { AccountingDetailPage } from "@/components/accounting/AccountingScreens";
 
-export default function ExpenseDetailPage({ params }: { params: { id: string } }) {
-  return <AccountingDetailPage entity="expenses" id={params.id} />;
+export default async function ExpenseDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  return <AccountingDetailPage entity="expenses" id={id} />;
 }

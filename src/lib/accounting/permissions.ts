@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import type { NextRequest } from "next/server";
+import { requireTenantContext } from "@/lib/server/tenant-context";
 
 export type AccountingAction = "view" | "manage" | "post" | "settings" | "payroll" | "sales" | "reports";
 
@@ -7,63 +7,47 @@ export type AccountingAuthContext = {
   user: { id: string; email?: string | null };
   orgId: string;
   role: string;
-  isSuperadmin: boolean;
+  isSuperadmin: false;
   canView: boolean;
   canManage: boolean;
   canPost: boolean;
   canManageSettings: boolean;
   canViewReports: boolean;
+  requestId: string;
 };
 
 const viewRoles = new Set(["finance_manager", "accountant", "finance_viewer"]);
 const manageRoles = new Set(["finance_manager", "accountant"]);
 const postRoles = new Set(["finance_manager"]);
 
-export function getAccountingCapabilities(role: string, isSuperadmin = false) {
+export function getAccountingCapabilities(role: string) {
   return {
-    canView: isSuperadmin || viewRoles.has(role),
+    canView: viewRoles.has(role),
     canManage: manageRoles.has(role),
     canPost: postRoles.has(role),
     canManageSettings: postRoles.has(role),
-    canViewPayrollStatus: role === "admin" || role === "hr_admin" || viewRoles.has(role) || isSuperadmin,
-    canViewSalesStatus: role === "sales_manager" || viewRoles.has(role) || isSuperadmin,
-    canViewReports: viewRoles.has(role) || isSuperadmin,
+    canViewPayrollStatus: ["admin", "hr_admin", "finance_manager", "accountant", "finance_viewer"].includes(role),
+    canViewSalesStatus: ["sales_manager", "finance_manager", "accountant", "finance_viewer"].includes(role),
+    canViewReports: viewRoles.has(role),
   };
 }
 
-export async function requireAccountingAccess(action: AccountingAction = "view") {
-  const supabase = await createServerSupabaseClient();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  const user = userData?.user;
+function allowedRoles(action: AccountingAction) {
+  if (action === "post" || action === "settings") return ["finance_manager"] as const;
+  if (action === "manage") return ["finance_manager", "accountant"] as const;
+  if (action === "payroll") return ["admin", "hr_admin", "finance_manager", "accountant", "finance_viewer"] as const;
+  if (action === "sales") return ["sales_manager", "finance_manager", "accountant", "finance_viewer"] as const;
+  return ["finance_manager", "accountant", "finance_viewer"] as const;
+}
 
-  if (userError || !user) {
-    return { error: NextResponse.json({ message: "غير مصرح بالدخول." }, { status: 401 }) };
-  }
+export async function requireAccountingAccess(action: AccountingAction = "view", request?: NextRequest) {
+  const tenant = await requireTenantContext({
+    roles: allowedRoles(action),
+    feature: "accounting",
+  }, request);
+  if ("error" in tenant) return tenant;
 
-  const [{ data: platformAdmin }, { data: membership, error: membershipError }] = await Promise.all([
-    supabase
-      .from("platform_admins")
-      .select("role, status")
-      .eq("user_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("org_members")
-      .select("org_id, role")
-      .eq("user_id", user.id)
-      .maybeSingle(),
-  ]);
-
-  const platform = platformAdmin as Record<string, unknown> | null;
-  const isSuperadmin = platform?.role === "superadmin" && platform?.status === "active";
-  const member = membership as Record<string, unknown> | null;
-  const orgId = String(member?.org_id || "");
-  const role = String(member?.role || "");
-  const capabilities = getAccountingCapabilities(role, isSuperadmin);
-
-  if (membershipError || (!isSuperadmin && (!orgId || !role))) {
-    return { error: NextResponse.json({ message: "لا توجد صلاحية منظمة." }, { status: 403 }) };
-  }
-
+  const capabilities = getAccountingCapabilities(tenant.role);
   const allowed =
     action === "view" ? capabilities.canView :
     action === "manage" ? capabilities.canManage :
@@ -74,19 +58,17 @@ export async function requireAccountingAccess(action: AccountingAction = "view")
     action === "reports" ? capabilities.canViewReports :
     false;
 
-  if (!allowed) {
-    return { error: NextResponse.json({ message: "ليست لديك صلاحية للوصول إلى المالية والمحاسبة." }, { status: 403 }) };
-  }
-
-  if (isSuperadmin && action !== "view" && action !== "payroll" && action !== "sales" && action !== "reports") {
-    return { error: NextResponse.json({ message: "المشرف العام لديه وصول قراءة فقط لسجلات المحاسبة التشغيلية." }, { status: 403 }) };
-  }
+  if (!allowed) return { error: new Response(JSON.stringify({ message: "ليست لديك صلاحية للوصول إلى المالية والمحاسبة." }), {
+    status: 403,
+    headers: { "content-type": "application/json", "x-request-id": tenant.requestId },
+  }) };
 
   return {
-    user: { id: user.id, email: user.email },
-    orgId,
-    role,
-    isSuperadmin,
+    user: { id: tenant.user.id, email: tenant.user.email },
+    orgId: tenant.orgId,
+    role: tenant.role,
+    isSuperadmin: false,
     ...capabilities,
+    requestId: tenant.requestId,
   } satisfies AccountingAuthContext;
 }

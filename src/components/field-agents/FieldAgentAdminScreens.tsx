@@ -221,8 +221,8 @@ function CreateAgentDialog({ onCreated }: { onCreated: () => void }) {
   const submit = async () => {
     setSubmitting(true);
     setError(null);
-    if (form.password.length < 8) {
-      setError("كلمة المرور يجب أن تكون 8 أحرف على الأقل.");
+    if (form.password.length < 12 || !/[a-z]/.test(form.password) || !/[A-Z]/.test(form.password) || !/\d/.test(form.password)) {
+      setError("كلمة المرور يجب أن تكون 12 حرفًا وتحتوي على حرف كبير وصغير ورقم.");
       setSubmitting(false);
       return;
     }
@@ -265,7 +265,7 @@ function CreateAgentDialog({ onCreated }: { onCreated: () => void }) {
           </div>
           <div className="space-y-2">
             <Label>كلمة المرور</Label>
-            <Input dir="ltr" type="text" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder="8 أحرف على الأقل" />
+            <Input dir="ltr" type="password" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder="12 حرفًا + كبير وصغير ورقم" />
           </div>
           <div className="space-y-2">
             <Label>الاسم الكامل</Label>
@@ -989,6 +989,45 @@ function pickColumn(headers: string[], candidates: string[]) {
   return headers.find((header) => candidates.some((candidate) => header.includes(candidate)));
 }
 
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index];
+    if (quoted) {
+      if (char === '"' && text[index + 1] === '"') {
+        cell += '"';
+        index++;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        cell += char;
+      }
+    } else if (char === '"') {
+      quoted = true;
+    } else if (char === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (char === "\n") {
+      row.push(cell.replace(/\r$/u, ""));
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+
+  if (cell.length > 0 || row.length > 0) {
+    row.push(cell.replace(/\r$/u, ""));
+    rows.push(row);
+  }
+  return rows;
+}
+
 function ImportSimsDialog({ onDone }: { onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -1009,37 +1048,57 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
     setError(null);
     setFileName(file.name);
     try {
-      const XLSX = await import("xlsx");
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      if (!sheet) {
-        setError("الملف لا يحتوي على أوراق عمل.");
+      if (file.size <= 0 || file.size > 5 * 1024 * 1024) {
+        setError("يجب ألا يتجاوز حجم الملف 5 ميجابايت.");
         return;
       }
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
-      if (rows.length === 0) {
+
+      const normalizedName = file.name.toLowerCase();
+      let rows: unknown[][];
+      if (normalizedName.endsWith(".csv")) {
+        rows = parseCsv(await file.text());
+      } else if (normalizedName.endsWith(".xlsx")) {
+        const { readSheet } = await import("read-excel-file/browser");
+        rows = await readSheet(file) as unknown[][];
+      } else {
+        setError("الصيغ المدعومة هي XLSX وCSV فقط.");
+        return;
+      }
+
+      if (rows.length < 2) {
         setError("الملف فارغ.");
         return;
       }
+      if (rows.length > 10_001) {
+        setError("الحد الأقصى هو 10,000 شريحة في الملف الواحد.");
+        return;
+      }
 
-      const headerMap = new Map<string, string>();
-      Object.keys(rows[0]).forEach((key) => headerMap.set(normalizeHeader(key), key));
-      const headers = Array.from(headerMap.keys());
-
-      const iccidKey = headerMap.get(pickColumn(headers, ["iccid", "رقم", "الشريحة", "sim", "serial"]) || "");
-      const typeKey = headerMap.get(pickColumn(headers, ["type", "نوع"]) || "");
-      const providerKey = headerMap.get(pickColumn(headers, ["provider", "مزود", "شركة"]) || "");
-      const rawKeys = Object.keys(rows[0]);
+      const headers = rows[0].map(normalizeHeader);
+      const iccidHeader = pickColumn(headers, ["iccid", "رقم", "الشريحة", "sim", "serial"]);
+      const typeHeader = pickColumn(headers, ["type", "نوع"]);
+      const providerHeader = pickColumn(headers, ["provider", "مزود", "شركة"]);
+      const iccidIndex = iccidHeader ? headers.indexOf(iccidHeader) : 0;
+      const typeIndex = typeHeader ? headers.indexOf(typeHeader) : -1;
+      const providerIndex = providerHeader ? headers.indexOf(providerHeader) : -1;
 
       const result: ParsedSim[] = [];
-      for (const rowData of rows) {
+      const invalidRows: number[] = [];
+      for (const [index, rowData] of rows.slice(1).entries()) {
         // Fall back to positional column A when headers are unlabeled.
-        const iccidRaw = iccidKey ? rowData[iccidKey] : rowData[rawKeys[0]];
-        const typeRaw = typeKey ? rowData[typeKey] : "";
-        const providerRaw = providerKey ? rowData[providerKey] : "";
+        const iccidRaw = rowData[iccidIndex];
+        const typeRaw = typeIndex >= 0 ? rowData[typeIndex] : "";
+        const providerRaw = providerIndex >= 0 ? rowData[providerIndex] : "";
+        if (typeof iccidRaw === "number" && !Number.isSafeInteger(iccidRaw)) {
+          invalidRows.push(index + 2);
+          continue;
+        }
         const iccid = String(iccidRaw ?? "").trim();
         if (!iccid) continue;
+        if (!/^\d{18,22}$/u.test(iccid)) {
+          invalidRows.push(index + 2);
+          continue;
+        }
         result.push({
           iccid,
           sim_type: String(typeRaw ?? "").trim() || defaultType,
@@ -1047,6 +1106,10 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
         });
       }
 
+      if (invalidRows.length > 0) {
+        setError(`أرقام ICCID غير صالحة في الصفوف: ${invalidRows.slice(0, 10).join("، ")}. نسّق عمود ICCID كنص من 18–22 رقمًا.`);
+        return;
+      }
       if (result.length === 0) {
         setError("لم يتم العثور على أرقام ICCID في الملف. تأكد من عمود ICCID.");
         return;
@@ -1057,16 +1120,14 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
     }
   };
 
-  const downloadTemplate = async () => {
-    const XLSX = await import("xlsx");
-    const worksheet = XLSX.utils.aoa_to_sheet([
-      ["ICCID", "provider", "type"],
-      ["8996000000000000001", "virgin", "prepaid"],
-      ["8996000000000000002", "virgin", "prepaid"],
-    ]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "SIMs");
-    XLSX.writeFile(workbook, "sim-import-template.xlsx");
+  const downloadTemplate = () => {
+    const csv = "\uFEFFICCID,provider,type\r\n8996000000000000001,virgin,prepaid\r\n8996000000000000002,virgin,prepaid\r\n";
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "sim-import-template.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   const submit = async () => {
@@ -1121,7 +1182,7 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
             </ul>
             <Button variant="outline" size="sm" className="mt-3" onClick={downloadTemplate}>
               <FileDown className="ml-2 h-4 w-4" />
-              تنزيل نموذج Excel
+              تنزيل نموذج CSV
             </Button>
           </div>
 
@@ -1155,7 +1216,7 @@ function ImportSimsDialog({ onDone }: { onDone: () => void }) {
               <Label>ملف Excel / CSV</Label>
               <Input
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".xlsx,.csv"
                 onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
               />
             </div>
@@ -2486,8 +2547,10 @@ export function StockManagementScreen() {
   };
 
   const updateMerchantPayment = async (id: string, status: "confirmed" | "rejected") => {
+    const collection = merchantCollections.find((item) => item.id === id);
     const result = await confirmMerchantPayment(id, {
       status,
+      expected_version: collection?.version || 1,
       rejection_reason: status === "rejected" ? "رفض من مدير المناديب" : undefined,
     });
     if (result.error) setMessage({ tone: "error", text: result.error.message });

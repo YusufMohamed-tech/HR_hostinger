@@ -34,15 +34,16 @@ import {
   lmsWorkspaceStateSchema,
 } from "@/lib/validation";
 
-type RouteContext = { params?: { segments?: string[] } };
+type RouteContext = { params?: Promise<{ segments?: string[] }> };
 type Handler = (request: NextRequest, auth: TenantAuthContext, routeContext?: unknown) => Promise<Response>;
 type ValidationResult =
   | { ok: false; error: NextResponse }
   | { ok: true; data: Record<string, unknown> };
 
-function segments(routeContext?: unknown) {
+async function segments(routeContext?: unknown) {
   const context = routeContext as RouteContext | undefined;
-  return context?.params?.segments ?? [];
+  const params = await context?.params;
+  return params?.segments ?? [];
 }
 
 async function jsonBody(request: NextRequest) {
@@ -79,7 +80,7 @@ function errorResponse(error: unknown) {
 
 const getHandler: Handler = async (_request, auth, routeContext) => {
   try {
-    const [a, b, c] = segments(routeContext);
+    const [a, b, c] = await segments(routeContext);
     if (!a) return response(await getLearnerHome(auth));
     if (a && !b) return response(await getClassroomDashboard(auth, a));
     if (a && b === "syllabus") return response(await getClassroomSyllabus(auth, a));
@@ -100,7 +101,7 @@ const getHandler: Handler = async (_request, auth, routeContext) => {
 
 const postHandler: Handler = async (request, auth, routeContext) => {
   try {
-    const [a, b, c, d] = segments(routeContext);
+    const [a, b, c, d] = await segments(routeContext);
     const body = await jsonBody(request);
 
     if (a && b === "lesson" && c && d === "complete") return response(await completeClassroomLesson(auth, a, c));
@@ -135,7 +136,7 @@ const postHandler: Handler = async (request, auth, routeContext) => {
 
 const patchHandler: Handler = async (request, auth, routeContext) => {
   try {
-    const [a, b, c] = segments(routeContext);
+    const [a, b, c] = await segments(routeContext);
     const body = await jsonBody(request);
 
     if (a && b === "workspace-state") {
@@ -156,7 +157,7 @@ const patchHandler: Handler = async (request, auth, routeContext) => {
 
 const deleteHandler: Handler = async (_request, auth, routeContext) => {
   try {
-    const [a, b, c] = segments(routeContext);
+    const [a, b, c] = await segments(routeContext);
     if (a && b === "notes" && c) return response(await deleteLearnerNote(auth, c));
     if (a && b === "bookmarks" && c) return response(await deleteLearnerBookmark(auth, c));
     return NextResponse.json({ message: "Learning endpoint not found." }, { status: 404 });

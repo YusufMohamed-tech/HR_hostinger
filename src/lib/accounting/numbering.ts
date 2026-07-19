@@ -2,32 +2,28 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-const tableColumn: Record<string, string> = {
-  accounting_journal_entries: "entry_no",
-  accounting_invoices: "invoice_no",
-  accounting_expenses: "expense_no",
-  accounting_payments: "payment_no",
+const documentType = {
+  accounting_journal_entries: "journal",
+  accounting_invoices: "invoice",
+  accounting_expenses: "expense",
+  accounting_payments: "payment",
 };
 
 export async function generateAccountingNumber(
   admin: AdminClient,
-  table: keyof typeof tableColumn,
+  table: keyof typeof documentType,
   organizationId: string,
   prefix: string,
   date = new Date()
 ) {
-  const column = tableColumn[table];
-  const cleanPrefix = (prefix || "DOC").replace(/[^A-Za-z0-9-]/g, "").toUpperCase() || "DOC";
-  const stamp = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}`;
-  const base = `${cleanPrefix}-${stamp}`;
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await (admin as any)
-    .from(table)
-    .select("id", { count: "exact", head: true })
-    .eq("organization_id", organizationId)
-    .like(column, `${base}-%`);
-
-  const next = (result.count || 0) + 1;
-  return `${base}-${String(next).padStart(4, "0")}`;
+  const result = await (admin as any).rpc("next_accounting_document_number", {
+    p_org_id: organizationId,
+    p_document_type: documentType[table],
+    p_prefix: prefix,
+    p_document_date: date.toISOString().slice(0, 10),
+  });
+  if (result.error) throw new Error(result.error.message);
+  if (typeof result.data !== "string" || !result.data) throw new Error("Accounting number allocation failed.");
+  return result.data;
 }

@@ -1,15 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { recordPlatformAudit, requireSuperadmin } from "@/lib/superadmin/server";
+import { requireSuperadmin } from "@/lib/superadmin/server";
+
+type OrganizationRpcClient = {
+  rpc: (name: string, args: Record<string, unknown>) => Promise<{
+    data: unknown;
+    error: { code?: string; message: string } | null;
+  }>;
+};
+
+function validUuid(value: unknown) {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function rpcStatus(code?: string) {
+  if (code === "42501") return 403;
+  if (code === "P0002" || code === "23503") return 404;
+  if (code === "23505" || code === "40001") return 409;
+  if (["22023", "23514", "23502"].includes(code || "")) return 400;
+  return 500;
+}
 
 export async function GET(
   _request: Request,
-  { params }: { params: { orgId: string } }
+  { params }: { params: Promise<{ orgId: string }> }
 ) {
+  const { orgId: rawOrgId } = await params;
   const auth = await requireSuperadmin();
   if ("error" in auth) return auth.error;
 
-  const orgId = String(params.orgId || "").trim();
+  const orgId = String(rawOrgId || "").trim();
   if (!orgId) {
     return NextResponse.json({ message: "Organization id is required." }, { status: 400 });
   }
@@ -90,12 +111,13 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { orgId: string } }
+  { params }: { params: Promise<{ orgId: string }> }
 ) {
+  const { orgId: rawOrgId } = await params;
   const auth = await requireSuperadmin();
   if ("error" in auth) return auth.error;
 
-  const orgId = String(params.orgId || "").trim();
+  const orgId = String(rawOrgId || "").trim();
   if (!orgId) {
     return NextResponse.json({ message: "Organization id is required." }, { status: 400 });
   }
@@ -104,43 +126,40 @@ export async function DELETE(
   const reason = typeof (body as Record<string, unknown>).reason === "string"
     ? String((body as Record<string, unknown>).reason).trim()
     : "";
-  const now = new Date().toISOString();
+  const commandId = (body as Record<string, unknown>).command_id;
+  if (!validUuid(commandId)) {
+    return NextResponse.json({ message: "A valid command id is required." }, { status: 400 });
+  }
   const admin = createAdminClient();
 
-  const updateResult = await admin
+  const currentResult = await admin
     .from("organizations")
-    .update({
-      status: "Deleted",
-      deleted_at: now,
-      deletion_requested_at: now,
-      deletion_requested_by: auth.user.id,
-      deletion_reason: reason || null,
-      updated_at: now,
-    } as never)
+    .select("version, deleted_at")
     .eq("id", orgId)
-    .is("deleted_at", null)
-    .select()
     .maybeSingle();
 
-  if (updateResult.error) {
-    return NextResponse.json({ message: updateResult.error.message }, { status: 500 });
+  if (currentResult.error) {
+    return NextResponse.json({ message: currentResult.error.message }, { status: 500 });
   }
-
-  if (!updateResult.data) {
+  if (!currentResult.data || currentResult.data.deleted_at) {
     return NextResponse.json({ message: "Organization was not found or is already deleted." }, { status: 404 });
   }
 
-  await recordPlatformAudit({
-    actorUserId: auth.user.id,
-    action: "organization.deleted",
-    targetOrgId: orgId,
-    targetType: "organization",
-    targetId: orgId,
-    metadata: {
-      reason: reason || null,
-      soft_delete: true,
-    },
+  const command = await (admin as unknown as OrganizationRpcClient).rpc("execute_organization_command", {
+    p_actor_user_id: auth.user.id,
+    p_request_id: validUuid(request.headers.get("x-request-id"))
+      ? request.headers.get("x-request-id")!
+      : crypto.randomUUID(),
+    p_command_id: commandId,
+    p_action: "platform_update",
+    p_target_org_id: orgId,
+    p_expected_org_version: Number(currentResult.data.version ?? 0),
+    p_expected_settings_version: null,
+    p_payload: { status: "Deleted", deletion_reason: reason || null },
   });
+  if (command.error) {
+    return NextResponse.json({ message: command.error.message }, { status: rpcStatus(command.error.code) });
+  }
 
-  return NextResponse.json({ data: updateResult.data });
+  return NextResponse.json({ data: command.data });
 }

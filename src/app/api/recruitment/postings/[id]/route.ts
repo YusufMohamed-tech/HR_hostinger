@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { recruitmentFormSchema } from "@/lib/recruitment-form";
 
 async function authorizeRecruiter() {
   const supabase = await createServerSupabaseClient();
@@ -31,8 +32,9 @@ function generateSlug(): string {
 
 export async function GET(
   _request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const auth = await authorizeRecruiter();
   if (!auth) return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
 
@@ -40,7 +42,7 @@ export async function GET(
   let query = admin
     .from("job_postings")
     .select("*, department:department_id(name), location:location_id(name)")
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("org_id", auth.orgId);
   if (isRecruiterOnly(auth.role)) query = query.eq("created_by", auth.userId);
   const { data, error } = await query.maybeSingle();
@@ -52,12 +54,19 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const auth = await authorizeRecruiter();
   if (!auth) return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
 
   const body = (await request.json()) as Record<string, unknown>;
+  const formSchema = "form_schema" in body
+    ? recruitmentFormSchema.safeParse(body.form_schema)
+    : null;
+  if (formSchema && !formSchema.success) {
+    return NextResponse.json({ error: "نموذج التقديم يحتوي أسئلة أو خيارات غير صالحة" }, { status: 400 });
+  }
   const admin = createAdminClient();
 
   let slugUpdate: Record<string, string> = {};
@@ -65,7 +74,7 @@ export async function PATCH(
     let currentQuery = admin
       .from("job_postings")
       .select("public_slug")
-      .eq("id", params.id);
+      .eq("id", id);
     if (isRecruiterOnly(auth.role)) currentQuery = currentQuery.eq("created_by", auth.userId);
     const { data: current } = await currentQuery.maybeSingle();
     if (!(current as Record<string, unknown> | null)?.public_slug) {
@@ -101,11 +110,12 @@ export async function PATCH(
   for (const key of allowed) {
     if (key in body) update[key] = body[key] ?? null;
   }
+  if (formSchema?.success) update.form_schema = formSchema.data;
 
   let updateQuery = admin
     .from("job_postings")
     .update(update as never)
-    .eq("id", params.id)
+    .eq("id", id)
     .eq("org_id", auth.orgId);
   if (isRecruiterOnly(auth.role)) updateQuery = updateQuery.eq("created_by", auth.userId);
   const { data, error } = await updateQuery.select().single();

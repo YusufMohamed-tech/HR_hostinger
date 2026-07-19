@@ -35,7 +35,7 @@ const STAGE_COLORS: Record<string, string> = {
 };
 
 const STAGES = [
-  "submitted", "screening", "shortlisted", "interview", "technical_test", "offer", "hired", "rejected",
+  "screening", "shortlisted", "interview", "technical_test", "offer", "rejected",
 ];
 
 const INTERVIEW_TYPES = [
@@ -43,6 +43,14 @@ const INTERVIEW_TYPES = [
   { value: "video", label: "عن بُعد (فيديو)" },
   { value: "phone", label: "هاتفي" },
 ];
+
+function fileAnswer(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const path = String(record.path || "");
+  const filename = String(record.filename || "");
+  return path && filename ? { path, filename } : null;
+}
 
 type Props = {
   application: JobApplication;
@@ -104,7 +112,7 @@ export function ApplicationPanel({ application, posting, onClose, onUpdated }: P
   const handleStageUpdate = async () => {
     if (selectedStage === application.status) return;
     setUpdatingStage(true);
-    const { error } = await updateApplicationStage(application.id, selectedStage, stageNote || undefined);
+    const { error } = await updateApplicationStage(application.id, selectedStage, application.version, stageNote || undefined);
     setUpdatingStage(false);
     if (error) {
       setMessage(error);
@@ -118,6 +126,7 @@ export function ApplicationPanel({ application, posting, onClose, onUpdated }: P
     if (!interviewForm.scheduled_at || !interviewForm.type) return;
     const { error } = await scheduleInterview({
       application_id: application.id,
+      expected_version: application.version,
       scheduled_at: interviewForm.scheduled_at,
       type: interviewForm.type,
       location: interviewForm.location || undefined,
@@ -145,7 +154,7 @@ export function ApplicationPanel({ application, posting, onClose, onUpdated }: P
   };
 
   const cvUrl = application.cv_url || application.resume_url;
-  const canHire = ["offer", "hired"].includes(application.status);
+  const canHire = application.status === "offer" && application.offer_status === "accepted";
 
   return (
     <div className="fixed inset-0 z-50 flex" dir="rtl">
@@ -209,9 +218,22 @@ export function ApplicationPanel({ application, posting, onClose, onUpdated }: P
               {questions.map((q) => (
                 <div key={q.id} className="text-sm">
                   <p className="text-xs text-muted-foreground mb-0.5">{q.label}</p>
-                  <p className="text-gray-800 bg-muted/40 rounded px-2 py-1">
-                    {application.answers?.[q.id] || <span className="italic text-muted-foreground">لا يوجد</span>}
-                  </p>
+                  <div className="text-gray-800 bg-muted/40 rounded px-2 py-1">
+                    {q.type === "file" && fileAnswer(application.answers?.[q.id]) ? (
+                      <AttachmentLink
+                        bucket="recruitment"
+                        attachment={{ path: fileAnswer(application.answers?.[q.id])?.path }}
+                        className="inline-flex items-center gap-1 font-medium text-brand hover:underline"
+                      >
+                        <FileText className="h-3.5 w-3.5" />
+                        {fileAnswer(application.answers?.[q.id])?.filename}
+                      </AttachmentLink>
+                    ) : typeof application.answers?.[q.id] === "string" && application.answers[q.id] ? (
+                      application.answers[q.id] as string
+                    ) : (
+                      <span className="italic text-muted-foreground">لا يوجد</span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

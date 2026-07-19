@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CalendarDays, Check, Search, X } from "lucide-react";
+import { Ban, CalendarDays, Check, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,12 +26,12 @@ import { useEmployees, useLeaveRequests, useLeaveBalances } from "@/hooks/use-da
 import {
   adjustLeaveBalance,
   advanceLeaveApproval,
+  cancelLeaveRequest,
   createLeaveRequest,
   ensureEmployeeLeaveBalance,
   getLeaveApprovalManagerId,
   getLeaveBalanceTransactions,
 } from "@/lib/services/leaves";
-import { notifyLeaveDecision } from "@/lib/services/notification-triggers";
 import { PageSkeleton } from "@/components/Skeletons";
 import { AttachmentLink } from "@/components/AttachmentLink";
 import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
@@ -41,12 +41,14 @@ const statusStyle: Record<string, string> = {
   pending: "bg-amber-50 text-amber-700 border-amber-200",
   approved: "bg-green-50 text-green-700 border-green-200",
   rejected: "bg-red-50 text-red-700 border-red-200",
+  cancelled: "bg-gray-100 text-gray-600 border-gray-200",
 };
 
 const statusLabels: Record<string, string> = {
   pending: "بانتظار الاعتماد",
   approved: "معتمدة",
   rejected: "مرفوضة",
+  cancelled: "ملغاة",
 };
 
 function getWorkflowStageLabel(request: Record<string, unknown>) {
@@ -56,6 +58,7 @@ function getWorkflowStageLabel(request: Record<string, unknown>) {
   const hrStatus = typeof request.hr_approval_status === "string" ? request.hr_approval_status : "pending";
 
   if (status === "approved") return "تم الاعتماد";
+  if (status === "cancelled") return "تم الإلغاء";
   if (status === "rejected") {
     if (managerStatus === "rejected") return "مرفوض من المدير";
     if (hrStatus === "rejected") return "مرفوض من HR";
@@ -79,6 +82,7 @@ export default function LeavePage() {
   const isSelfServiceView = !isApprover || ((isHRAdmin || isTrainingManager || isSalesManager) && searchParams.get("view") === "mine");
   const { data: balances, refetch: refetchBalances } = useLeaveBalances(isSelfServiceView ? currentUser?.employeeId : undefined);
   const canApprove = isApprover && !isSelfServiceView;
+  const canCancelApproved = !isSelfServiceView && ["Superadmin", "Admin", "HR_Admin"].includes(role);
   const isOwnRequest = (req: Record<string, unknown>) => String(req.employee_id ?? "") === currentUser?.employeeId;
   const isManagedRequest = (req: Record<string, unknown>) => {
     const employee = (req.employee ?? null) as Record<string, unknown> | null;
@@ -198,6 +202,10 @@ export default function LeavePage() {
       if (firstPending !== secondPending) return secondPending - firstPending;
       return String(first.full_name || first.name || "").localeCompare(String(second.full_name || second.name || ""), "ar");
     });
+  const refetchLeaveWorkflow = () => {
+    void refetch();
+    void refetchBalances();
+  };
 
   if (loading) return <PageSkeleton />;
 
@@ -276,8 +284,9 @@ export default function LeavePage() {
           searchValue={employeeSearch}
           onSearchChange={setEmployeeSearch}
           canApprove={canApprove}
+          canCancelApproved={canCancelApproved}
           canReviewRequest={canReviewLeaveRequest}
-          onDecisionSuccess={refetch}
+          onDecisionSuccess={refetchLeaveWorkflow}
         />
       )}
 
@@ -312,7 +321,7 @@ export default function LeavePage() {
                 <TableHead className="font-semibold text-gray-600">مرحلة الاعتماد</TableHead>
                 <TableHead className="font-semibold text-gray-600">الحالة</TableHead>
                 <TableHead className="font-semibold text-gray-600">السبب</TableHead>
-                {canApprove && <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>}
+                <TableHead className="text-right font-semibold text-gray-600">الإجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -358,26 +367,29 @@ export default function LeavePage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-gray-600">{reason}</TableCell>
-                    {canApprove && (
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        {canApprove && (
+                          <>
                           <LeaveDecisionDialog
                             reqRecord={reqRecord}
                             decision="approved"
-                            leaveType={leaveType}
                             disabled={status !== "pending" || !canReviewRequest}
-                            onSuccess={refetch}
+                            onSuccess={refetchLeaveWorkflow}
                           />
                           <LeaveDecisionDialog
                             reqRecord={reqRecord}
                             decision="rejected"
-                            leaveType={leaveType}
                             disabled={status !== "pending" || !canReviewRequest}
-                            onSuccess={refetch}
+                            onSuccess={refetchLeaveWorkflow}
                           />
-                        </div>
-                      </TableCell>
-                    )}
+                          </>
+                        )}
+                        {isOwnRequest(reqRecord) && status === "pending" && (
+                          <LeaveCancelDialog requestId={reqId} onSuccess={refetchLeaveWorkflow} />
+                        )}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -405,6 +417,7 @@ function EmployeeLeaveDirectory({
   searchValue,
   onSearchChange,
   canApprove,
+  canCancelApproved,
   canReviewRequest,
   onDecisionSuccess,
 }: {
@@ -414,6 +427,7 @@ function EmployeeLeaveDirectory({
   searchValue: string;
   onSearchChange: (value: string) => void;
   canApprove: boolean;
+  canCancelApproved: boolean;
   canReviewRequest: (request: Record<string, unknown>) => boolean;
   onDecisionSuccess: () => void;
 }) {
@@ -448,6 +462,7 @@ function EmployeeLeaveDirectory({
                 requests={requests}
                 balance={balance}
                 canApprove={canApprove}
+                canCancelApproved={canCancelApproved}
                 canReviewRequest={canReviewRequest}
                 onDecisionSuccess={onDecisionSuccess}
               />
@@ -470,6 +485,7 @@ function EmployeeLeaveCard({
   requests,
   balance,
   canApprove,
+  canCancelApproved,
   canReviewRequest,
   onDecisionSuccess,
 }: {
@@ -477,6 +493,7 @@ function EmployeeLeaveCard({
   requests: Record<string, unknown>[];
   balance: Record<string, unknown>;
   canApprove: boolean;
+  canCancelApproved: boolean;
   canReviewRequest: (request: Record<string, unknown>) => boolean;
   onDecisionSuccess: () => void;
 }) {
@@ -547,6 +564,7 @@ function EmployeeLeaveCard({
           requests={requests}
           balance={balance}
           canApprove={canApprove}
+          canCancelApproved={canCancelApproved}
           canReviewRequest={canReviewRequest}
           onDecisionSuccess={onDecisionSuccess}
         />
@@ -560,6 +578,7 @@ function EmployeeLeaveProfileDialog({
   requests,
   balance,
   canApprove,
+  canCancelApproved,
   canReviewRequest,
   onDecisionSuccess,
 }: {
@@ -567,6 +586,7 @@ function EmployeeLeaveProfileDialog({
   requests: Record<string, unknown>[];
   balance: Record<string, unknown>;
   canApprove: boolean;
+  canCancelApproved: boolean;
   canReviewRequest: (request: Record<string, unknown>) => boolean;
   onDecisionSuccess: () => void;
 }) {
@@ -640,7 +660,7 @@ function EmployeeLeaveProfileDialog({
                     <TableHead>الحالة</TableHead>
                     <TableHead>المرفق</TableHead>
                     <TableHead>السبب</TableHead>
-                    {canApprove && <TableHead className="text-right">الإجراءات</TableHead>}
+                    {(canApprove || canCancelApproved) && <TableHead className="text-right">الإجراءات</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -670,23 +690,28 @@ function EmployeeLeaveProfileDialog({
                           ) : "لا يوجد"}
                         </TableCell>
                         <TableCell className="max-w-[220px] whitespace-normal text-gray-600">{getText(request.reason, "-")}</TableCell>
-                        {canApprove && (
+                        {(canApprove || canCancelApproved) && (
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <LeaveDecisionDialog
-                                reqRecord={request}
-                                decision="approved"
-                                leaveType={leaveType}
-                                disabled={status !== "pending" || !reviewable}
-                                onSuccess={onDecisionSuccess}
-                              />
-                              <LeaveDecisionDialog
-                                reqRecord={request}
-                                decision="rejected"
-                                leaveType={leaveType}
-                                disabled={status !== "pending" || !reviewable}
-                                onSuccess={onDecisionSuccess}
-                              />
+                              {canApprove && (
+                                <>
+                                  <LeaveDecisionDialog
+                                    reqRecord={request}
+                                    decision="approved"
+                                    disabled={status !== "pending" || !reviewable}
+                                    onSuccess={onDecisionSuccess}
+                                  />
+                                  <LeaveDecisionDialog
+                                    reqRecord={request}
+                                    decision="rejected"
+                                    disabled={status !== "pending" || !reviewable}
+                                    onSuccess={onDecisionSuccess}
+                                  />
+                                </>
+                              )}
+                              {canCancelApproved && (status === "pending" || status === "approved") && (
+                                <LeaveCancelDialog requestId={requestId} onSuccess={onDecisionSuccess} />
+                              )}
                             </div>
                           </TableCell>
                         )}
@@ -936,7 +961,62 @@ function transactionTypeLabel(type: string) {
   if (type === "accrual") return "استحقاق تلقائي";
   if (type === "manual_adjustment") return "تعديل يدوي";
   if (type === "leave_deduction") return "خصم إجازة";
+  if (type === "leave_reversal") return "عكس خصم إجازة";
   return type || "-";
+}
+
+function LeaveCancelDialog({ requestId, onSuccess }: { requestId: string; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (reason.trim().length < 3) {
+      setError("سبب الإلغاء مطلوب ويجب أن يكون واضحًا.");
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    const result = await cancelLeaveRequest(requestId, reason.trim());
+    setSubmitting(false);
+    if (result.error) {
+      setError(result.error.message);
+      return;
+    }
+    setReason("");
+    setOpen(false);
+    onSuccess();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={
+        <Button variant="ghost" size="sm" className="text-gray-500 hover:text-red-700" aria-label="إلغاء طلب الإجازة" />
+      }>
+        <Ban className="h-4 w-4" />
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-[420px]">
+        <DialogHeader>
+          <DialogTitle>إلغاء طلب الإجازة</DialogTitle>
+          <DialogDescription>
+            إذا كان الطلب معتمدًا فسيُعاد الرصيد المخصوم تلقائيًا بحركة عكس مستقلة.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-4">
+          <Label>سبب الإلغاء *</Label>
+          <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="اكتب سبب الإلغاء" />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)} disabled={submitting}>رجوع</Button>
+          <Button variant="destructive" onClick={submit} disabled={submitting}>
+            {submitting ? "جار الإلغاء..." : "تأكيد الإلغاء"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function LeaveBalanceAdjustDialog({
@@ -1033,17 +1113,14 @@ function LeaveBalanceAdjustDialog({
 function LeaveDecisionDialog({
   reqRecord,
   decision,
-  leaveType,
   disabled,
   onSuccess,
 }: {
   reqRecord: Record<string, unknown>;
   decision: "approved" | "rejected";
-  leaveType: string;
   disabled: boolean;
   onSuccess: () => void;
 }) {
-  const { currentUser } = useRoleContext();
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -1054,10 +1131,9 @@ function LeaveDecisionDialog({
   const handleDecide = async () => {
     setSubmitting(true);
     setError("");
-    const { data, error: decisionError } = await advanceLeaveApproval(
+    const { error: decisionError } = await advanceLeaveApproval(
       reqRecord,
       decision,
-      { userId: currentUser?.id, employeeId: currentUser?.employeeId, role: currentUser?.role },
       note
     );
     setSubmitting(false);
@@ -1065,21 +1141,6 @@ function LeaveDecisionDialog({
     if (decisionError) {
       setError(decisionError.message);
       return;
-    }
-
-    if (currentUser?.orgId && reqRecord.employee_id) {
-      const finalStatus = String(data?.status || "");
-      const nextStep = Number(data?.current_step || reqRecord.current_step || 1);
-      if (decision === "approved" && finalStatus === "pending" && nextStep >= 2) {
-        await fetch("/api/leave-requests/notifications", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ event: "manager_approved", requestId: reqRecord.id }),
-        });
-      }
-      if (finalStatus === "approved" || decision === "rejected") {
-        await notifyLeaveDecision(currentUser.orgId, String(reqRecord.employee_id), leaveType, decision);
-      }
     }
 
     setNote("");
@@ -1247,4 +1308,3 @@ function CreateLeaveDialog({
     </Dialog>
   );
 }
-

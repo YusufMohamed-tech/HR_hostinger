@@ -31,10 +31,12 @@ function QuestionField({
   q,
   value,
   onChange,
+  onFileChange,
 }: {
   q: FormQuestion;
   value: string;
   onChange: (v: string) => void;
+  onFileChange?: (file: File | null) => void;
 }) {
   const base = "w-full rounded-md border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30";
   if (q.type === "textarea") {
@@ -66,6 +68,17 @@ function QuestionField({
   if (q.type === "number") {
     return <input type="number" className={base} required={q.required} value={value} onChange={(e) => onChange(e.target.value)} />;
   }
+  if (q.type === "file") {
+    return (
+      <input
+        type="file"
+        className={base}
+        required={q.required}
+        accept={q.accept || ".pdf,.docx,.xlsx,.jpg,.jpeg,.png"}
+        onChange={(event) => onFileChange?.(event.target.files?.[0] || null)}
+      />
+    );
+  }
   return <input type="text" className={base} required={q.required} value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
@@ -83,7 +96,12 @@ export default function PublicApplyPage() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answerFiles, setAnswerFiles] = useState<Record<string, File | null>>({});
   const [cvFile, setCvFile] = useState<File | null>(null);
+  const [submissionIds] = useState(() => ({
+    application_id: crypto.randomUUID(),
+    command_id: crypto.randomUUID(),
+  }));
 
   useEffect(() => {
     fetch(`/api/candidate/posting?slug=${slug}`)
@@ -111,7 +129,9 @@ export default function PublicApplyPage() {
       email,
       phone: phone || undefined,
       answers,
+      answer_files: answerFiles,
       cv: cvFile,
+      ...submissionIds,
     });
 
     setSubmitting(false);
@@ -235,7 +255,7 @@ export default function PublicApplyPage() {
                 <Label>السيرة الذاتية</Label>
                 <input
                   type="file"
-                  accept=".pdf,.doc,.docx"
+                  accept=".pdf,.docx"
                   onChange={(e) => setCvFile(e.target.files?.[0] || null)}
                   className="mt-1 block w-full rounded-md border border-border px-3 py-2 text-sm text-gray-700"
                 />
@@ -252,6 +272,7 @@ export default function PublicApplyPage() {
                       q={q}
                       value={answers[q.id] || ""}
                       onChange={(value) => setAnswers((previous) => ({ ...previous, [q.id]: value }))}
+                      onFileChange={(file) => setAnswerFiles((previous) => ({ ...previous, [q.id]: file }))}
                     />
                   </div>
                 </div>

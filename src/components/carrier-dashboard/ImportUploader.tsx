@@ -23,6 +23,16 @@ export function ImportUploader({ onSuccess }: { onSuccess?: (result: ImportResul
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function upload(file: File) {
+    if (!file.name.toLowerCase().endsWith(".xlsx")) {
+      setErrorMsg("Only .xlsx workbooks are accepted.");
+      setState("error");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg("The workbook exceeds the 10 MB limit.");
+      setState("error");
+      return;
+    }
     setState("uploading");
     setErrorMsg("");
     const form = new FormData();
@@ -59,7 +69,7 @@ export function ImportUploader({ onSuccess }: { onSuccess?: (result: ImportResul
         <input
           ref={inputRef}
           type="file"
-          accept=".xlsx,.xls"
+          accept=".xlsx"
           className="hidden"
           onChange={(e) => handleFiles(e.target.files)}
         />

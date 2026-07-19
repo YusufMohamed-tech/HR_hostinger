@@ -1,5 +1,6 @@
 import { LmsSubmissionsScreen } from "@/components/lms/LmsScreens";
 
-export default function LmsCourseSubmissionsPage({ params }: { params: { courseId: string } }) {
-  return <LmsSubmissionsScreen courseId={params.courseId} />;
+export default async function LmsCourseSubmissionsPage({ params }: { params: Promise<{ courseId: string }> }) {
+  const { courseId } = await params;
+  return <LmsSubmissionsScreen courseId={courseId} />;
 }

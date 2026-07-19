@@ -1,12 +1,10 @@
+import { inspectUpload, removeUploadedPaths, UploadSecurityError } from "@/lib/server/upload-security";
+
 const allowedAttachmentTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "application/pdf",
+  "image/jpeg", "image/png", "image/gif", "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]);
-
 const maxAttachmentBytes = 10 * 1024 * 1024;
 
 export function getFormFiles(formData: FormData, key = "attachments") {
@@ -26,57 +24,51 @@ function safeFilename(name: string) {
   return name.replace(/[^\w.\-()[\]\u0600-\u06FF ]+/g, "_").slice(0, 160) || "attachment";
 }
 
+export async function uploadTaskAttachments(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  admin: any,
+  values: { orgId: string; taskId: string; uploadScopeId: string; files: File[] }
+) {
+  const attachments: Record<string, unknown>[] = [];
+  const paths: string[] = [];
+  try {
+    for (const file of values.files) {
+      const inspected = await inspectUpload(file, { allowedMimeTypes: allowedAttachmentTypes, maxBytes: maxAttachmentBytes });
+      const filename = safeFilename(file.name);
+      const path = `${values.orgId}/${values.taskId}/${values.uploadScopeId}/${crypto.randomUUID()}-${filename}`;
+      const upload = await admin.storage.from("task-attachments").upload(path, inspected.bytes, {
+        contentType: inspected.detectedMime, upsert: false,
+      });
+      if (upload.error) throw new Error("فشل رفع الملف. يرجى المحاولة مرة أخرى.");
+      paths.push(path);
+      const signedUrl = await admin.storage.from("task-attachments").createSignedUrl(path, 3600);
+      attachments.push({ bucket: "task-attachments", path, filename, url: signedUrl.data?.signedUrl || "",
+        type: inspected.detectedMime, size_bytes: file.size, sha256: inspected.sha256,
+        scan_status: inspected.scanStatus, scan_engine: inspected.engine, scanned_at: inspected.scannedAt });
+    }
+    return { data: attachments, paths, error: null };
+  } catch (error) {
+    await removeUploadedPaths(admin, "task-attachments", paths).catch(() => undefined);
+    return { data: null, paths: [], error: { message: error instanceof UploadSecurityError
+      ? error.message : error instanceof Error ? error.message : "فشل رفع الملف. يرجى المحاولة مرة أخرى." } };
+  }
+}
+
 export async function uploadTaskUpdateAttachments(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   admin: any,
-  values: {
-    orgId: string;
-    taskId: string;
-    updateId: string;
-    files: File[];
-  }
+  values: { orgId: string; taskId: string; updateId: string; files: File[] }
 ) {
-  const attachments: Record<string, unknown>[] = [];
-
-  for (const file of values.files) {
-    const filename = safeFilename(file.name);
-    const path = `${values.orgId}/${values.taskId}/${values.updateId}/${Date.now()}-${filename}`;
-    const upload = await admin.storage
-      .from("task-attachments")
-      .upload(path, file, { contentType: file.type, upsert: false });
-
-    if (upload.error) {
-      return {
-        data: null,
-        error: { message: "فشل رفع الملف. يرجى المحاولة مرة أخرى." },
-      };
-    }
-
-    const signedUrl = await admin.storage.from("task-attachments").createSignedUrl(path, 60 * 60);
-    attachments.push({
-      bucket: "task-attachments",
-      path,
-      filename,
-      url: signedUrl.data?.signedUrl || "",
-      type: file.type,
-      size_bytes: file.size,
-    });
-  }
-
-  if (attachments.length === 0) {
-    return { data: [], error: null };
-  }
-
-  const updateResult = await admin
-    .from("task_updates")
-    .update({ attachments } as never)
-    .eq("id", values.updateId)
-    .select()
-    .single();
-
+  const upload = await uploadTaskAttachments(admin, {
+    orgId: values.orgId, taskId: values.taskId, uploadScopeId: values.updateId, files: values.files,
+  });
+  if (upload.error || !upload.data) return { data: null, error: upload.error };
+  if (upload.data.length === 0) return { data: [], error: null };
+  const updateResult = await admin.from("task_updates").update({ attachments: upload.data } as never)
+    .eq("id", values.updateId).select().single();
   if (updateResult.error) {
+    await removeUploadedPaths(admin, "task-attachments", upload.paths).catch(() => undefined);
     return { data: null, error: updateResult.error };
   }
-
-  return { data: attachments, error: null };
+  return { data: upload.data, error: null };
 }

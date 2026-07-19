@@ -1,16 +1,16 @@
 # Tatwir Talent HRMS
 
-AI-driven HR and workforce management platform for deskless teams. This repo includes a full mock UI and a production-ready Supabase schema with RLS policies.
+Multi-tenant HR and workforce management platform for deskless teams. The application and Supabase database are implemented together, with tenant-scoped authorization, row-level security, replay-safe workflow commands, durable events, and operational workers.
 
 ## Features
 - Multi-tenant org management with role-based access
 - Employee, department, location, contract, and hierarchy modules
-- Shift scheduling with conflict placeholders
+- Shift scheduling with overlap, effective-date, and assignment conflict controls
 - Event stream tracking (check-in, movement, sales)
-- KPI analytics and payroll previews
+- KPI analytics, authoritative payroll runs, payslips, and accounting integration
 - Professional LMS module for internal corporate learning
 - On-ground SIM distribution with editable package commission rules and Finance commission settlements
-- AI insights and audit logs (mocked)
+- Immutable business events, operational audit logs, notification outbox, compliance jobs, and managed-file retention
 
 ## Local Setup
 1. Install dependencies
@@ -36,17 +36,21 @@ NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-For production or any database that contains real data, apply only the needed migration:
+Verify the canonical migration manifest before database work:
 ```bash
-npm run apply:migration -- db/schema_v12_safe_saves_and_policy_fix.sql
+npm run db:verify-migrations
+npm run db:migrate -- --dry-run
 ```
 
-`npm run apply:schema` is a full reset command for local/staging only. It runs `db/schema-production-clean.sql`, which drops and recreates application tables. It is protected and will refuse to run unless you explicitly set `ALLOW_DESTRUCTIVE_SCHEMA_APPLY=true`.
+For a new empty local/staging database, apply the tracked baseline and every ordered migration:
 
-For an intentional local/staging reset only:
 ```bash
-ALLOW_DESTRUCTIVE_SCHEMA_APPLY=true npm run apply:schema
+npm run db:migrate -- --fresh
 ```
+
+For an existing environment, first follow [docs/DATABASE_MIGRATIONS.md](docs/DATABASE_MIGRATIONS.md). The runner refuses to guess an untracked database's migration level. Single-file migration application is disabled because it bypasses ordering and checksums.
+
+`npm run apply:schema` remains a protected legacy reset command and must not be used for production.
 
 For production, create the first admin through the Supabase Admin API:
 ```bash
@@ -66,15 +70,7 @@ npm run seed:demo
 ## LMS Module v43
 The LMS module is implemented as a private, multi-tenant HRMS module for employee learning. It includes course categories, courses, sections, text/video/document/link lessons, quizzes, tasks, submissions, instructor review, course community, announcements, learner progress, assignments, certificates, reports, and private `lms-content` storage.
 
-Apply the additive LMS migration:
-```bash
-npm run apply:migration -- db/schema_v43_lms_module.sql
-```
-
-If the direct database host `db.<project-ref>.supabase.co` fails on a network without working IPv6/direct DB access, use the Supabase Management API fallback:
-```bash
-npm run apply:supabase-sql -- db/schema_v43_lms_module.sql
-```
+The LMS migrations are included in the canonical manifest after the accounting v43 migration. Use `npm run db:migrate`; do not apply the duplicate historical v43 filenames by lexical order.
 
 Keep `SUPABASE_ACCESS_TOKEN` only in local/secure environment configuration. Do not print it in logs or commit it. Prefer a Supabase pooler URL if direct PostgreSQL connectivity is required.
 
@@ -86,10 +82,7 @@ npm run verify:lms
 ## On-Ground SIM Commissions v53
 The SIM package catalog now stores editable commission rules. Defaults are 15 SAR total commission per package sale: trader sale pays 5 SAR to the field-agent chain and 10 SAR to the trader, while a direct field-agent activation pays 15 SAR to the field agent and no trader commission. Sale records snapshot the package rule used at sale time, so later package edits do not recalculate old commissions.
 
-Apply the additive commission/finance migration after v47-v52:
-```bash
-npm run apply:migration -- db/schema_v53_editable_sim_commission_rules_finance.sql
-```
+The commission/finance migration is ordered after v47-v52 in the canonical manifest and is applied with `npm run db:migrate`.
 
 Run the focused calculation check after commission rule changes:
 ```bash
@@ -99,8 +92,9 @@ npm run test:sim-commissions
 Finance users can review and settle sales commissions under `/accounting/commissions`. Settlement marks commission ledger rows paid with payment method, reference, and notes; it does not change the original sale snapshot.
 
 ## Deployment (Vercel)
-- Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in Vercel.
-- Deploy from GitHub.
+- Follow [docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md); do not deploy from this short README alone.
+- Set every production-required value documented in `.env.example`, including the worker, malware-scanner, audit-evidence, and rate-limit secrets.
+- Run `npm run verify:ci`, rehearse migration/rollback and backup/restore on staging, then obtain the launch sign-offs tracked in `docs/PRE_LAUNCH_AUDIT.md`.
 
 ## Documentation
-See the [documentations](documentations) directory for architecture, database, backend, frontend, and presentation details.
+See [docs](docs) for the current migration, security, operational, governance, role, payroll, and launch evidence documents. The [documentations](documentations) directory contains the earlier architecture and product references.

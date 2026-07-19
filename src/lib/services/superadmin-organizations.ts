@@ -5,6 +5,7 @@ export interface SuperadminOrganization {
   status: string;
   created_at: string;
   updated_at: string;
+  version: number;
   memberCount: number;
   employeeCount: number;
   adminCount: number;
@@ -112,6 +113,23 @@ export interface SuperadminDashboardData {
 
 type Result<T> = { data: T | null; error: { message: string } | null };
 
+function commandFingerprint(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function organizationCommand(scope: string, values: Record<string, unknown>) {
+  const key = `hrms-command:platform-organization:${scope}:${commandFingerprint(JSON.stringify(values))}`;
+  const existing = typeof window === "undefined" ? null : window.sessionStorage.getItem(key);
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(key, commandId);
+  return { key, commandId };
+}
+
 async function parseResponse<T>(response: Response, fallbackMessage: string): Promise<Result<T>> {
   const payload = await response.json().catch(() => null);
 
@@ -173,24 +191,30 @@ export async function createSuperadminOrganization(values: {
   slug?: string;
   status?: string;
 }) {
+  const command = organizationCommand("create", values);
   const response = await fetch("/api/superadmin/organizations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, command_id: command.commandId }),
   });
 
-  return parseResponse<SuperadminOrganization>(response, "Unable to create organization.");
+  const result = await parseResponse<SuperadminOrganization>(response, "Unable to create organization.");
+  if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(command.key);
+  return result;
 }
 
 export async function updateSuperadminOrganization(
   id: string,
   values: { name?: string; slug?: string; status?: string }
 ) {
+  const command = organizationCommand(`update:${id}`, values);
   const response = await fetch("/api/superadmin/organizations", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id, ...values }),
+    body: JSON.stringify({ id, ...values, command_id: command.commandId }),
   });
 
-  return parseResponse<SuperadminOrganization>(response, "Unable to update organization.");
+  const result = await parseResponse<SuperadminOrganization>(response, "Unable to update organization.");
+  if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(command.key);
+  return result;
 }

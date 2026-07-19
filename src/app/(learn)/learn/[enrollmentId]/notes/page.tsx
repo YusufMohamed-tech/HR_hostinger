@@ -1,5 +1,6 @@
 import { NotesView } from "@/components/lms/classroom/ClassroomExtras";
 
-export default function ClassroomNotesPage({ params }: { params: { enrollmentId: string } }) {
-  return <NotesView enrollmentId={params.enrollmentId} />;
+export default async function ClassroomNotesPage({ params }: { params: Promise<{ enrollmentId: string }> }) {
+  const { enrollmentId } = await params;
+  return <NotesView enrollmentId={enrollmentId} />;
 }

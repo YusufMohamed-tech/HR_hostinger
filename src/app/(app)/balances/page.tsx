@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { PenLine, Plus, WalletCards } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,12 +20,10 @@ import {
   acknowledgeFinancialBalance,
   createFinancialBalance,
   createAdvanceRequest,
+  disburseAdvanceRequest,
   getFinancialBalances,
   getAdvanceRequests,
   reviewAdvanceRequest,
-  updateFinancialBalance,
-  uploadBalanceAttachment,
-  uploadBalanceSignature,
 } from "@/lib/services/financial";
 import { formatCurrency } from "@/lib/utils/currency";
 
@@ -34,19 +33,22 @@ export default function BalancesPage() {
   const [balances, setBalances] = useState<Record<string, unknown>[]>([]);
   const [advanceRequests, setAdvanceRequests] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
-  const isAdmin = currentUser?.role !== "Employee";
+  const isEmployee = currentUser?.role === "Employee";
+  const canReviewAdvances = ["Admin", "HR_Admin"].includes(currentUser?.role || "");
+  const canDisburseAdvances = currentUser?.role === "Finance_Manager";
+  const canManageBalances = canReviewAdvances;
 
   const loadBalances = useCallback(async () => {
     if (!currentUser?.orgId) return;
     setLoading(true);
     const [{ data }, requestsResult] = await Promise.all([
-      getFinancialBalances(currentUser.orgId, isAdmin ? undefined : currentUser.employeeId),
+      getFinancialBalances(currentUser.orgId, isEmployee ? currentUser.employeeId : undefined),
       getAdvanceRequests(),
     ]);
     setBalances(data || []);
     setAdvanceRequests(requestsResult.data || []);
     setLoading(false);
-  }, [currentUser?.employeeId, currentUser?.orgId, isAdmin]);
+  }, [currentUser?.employeeId, currentUser?.orgId, isEmployee]);
 
   useEffect(() => {
     loadBalances();
@@ -62,8 +64,8 @@ export default function BalancesPage() {
           <p className="text-sm text-gray-500">متابعة العجز والسلف والقروض والإقرارات الإلكترونية للموظفين.</p>
         </div>
         <div className="flex gap-2">
-          {!isAdmin && <RequestAdvanceDialog onSuccess={loadBalances} />}
-          {isAdmin && <CreateBalanceDialog employees={employees} onSuccess={loadBalances} />}
+          {isEmployee && <RequestAdvanceDialog onSuccess={loadBalances} />}
+          {canManageBalances && <CreateBalanceDialog employees={employees} onSuccess={loadBalances} />}
         </div>
       </div>
 
@@ -129,7 +131,7 @@ export default function BalancesPage() {
                       {balance.acknowledgment_signature_url ? (
                         <Badge variant="outline" className="bg-green-50 text-green-700">تم التوقيع</Badge>
                       ) : (
-                        <AcknowledgeDialog balanceId={String(balance.id)} onSuccess={loadBalances} />
+                        <AcknowledgeDialog balanceId={String(balance.id)} version={Number(balance.version || 1)} onSuccess={loadBalances} />
                       )}
                     </TableCell>
                   </TableRow>
@@ -148,7 +150,12 @@ export default function BalancesPage() {
         </TabsContent>
 
         <TabsContent value="advance-requests">
-          <AdvanceRequestsTable requests={advanceRequests} isAdmin={isAdmin} onSuccess={loadBalances} />
+          <AdvanceRequestsTable
+            requests={advanceRequests}
+            canReview={canReviewAdvances}
+            canDisburse={canDisburseAdvances}
+            onSuccess={loadBalances}
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -171,29 +178,17 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
     }
     setSubmitting(true);
     setError("");
-    const { data, error: err } = await createFinancialBalance({
+    const { error: err } = await createFinancialBalance({
       org_id: currentUser.orgId,
       employee_id: form.employee_id,
       balance_type: form.balance_type,
       amount: Number(form.amount),
       description: form.description.trim() || undefined,
-      status: "unpaid",
-    });
+    }, attachment);
     if (err) {
       setSubmitting(false);
       setError(err.message);
       return;
-    }
-    if (attachment && data?.id) {
-      const { data: uploadData, error: uploadError } = await uploadBalanceAttachment(currentUser.orgId, String(data.id), attachment);
-      if (uploadError) {
-        setSubmitting(false);
-        setError(uploadError.message);
-        return;
-      }
-      if (uploadData?.path) {
-        await updateFinancialBalance(currentUser.orgId, String(data.id), { attachment_url: uploadData.path });
-      }
     }
     setSubmitting(false);
     setOpen(false);
@@ -265,8 +260,7 @@ function CreateBalanceDialog({ employees, onSuccess }: { employees: Record<strin
   );
 }
 
-function AcknowledgeDialog({ balanceId, onSuccess }: { balanceId: string; onSuccess: () => void }) {
-  const { currentUser } = useRoleContext();
+function AcknowledgeDialog({ balanceId, version, onSuccess }: { balanceId: string; version: number; onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [signature, setSignature] = useState("");
 
@@ -288,12 +282,10 @@ function AcknowledgeDialog({ balanceId, onSuccess }: { balanceId: string; onSucc
           <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
           <Button
             className="bg-brand hover:bg-brand-dark text-white"
-            disabled={!signature.trim() || !currentUser?.orgId}
+            disabled={!signature.trim()}
             onClick={async () => {
-              if (!currentUser?.orgId) return;
-              const { data: uploadData, error: uploadError } = await uploadBalanceSignature(currentUser.orgId, balanceId, signature.trim());
-              if (uploadError || !uploadData?.path) return;
-              await acknowledgeFinancialBalance(currentUser.orgId, balanceId, uploadData.path);
+              const { error } = await acknowledgeFinancialBalance(balanceId, signature.trim(), version);
+              if (error) return;
               setOpen(false);
               setSignature("");
               onSuccess();
@@ -400,29 +392,53 @@ function SignaturePad({ value, onChange }: { value: string; onChange: (value: st
   );
 }
 
+function nextCalendarMonth() {
+  const today = new Date();
+  const targetMonthIndex = today.getMonth() + 1;
+  const year = today.getFullYear() + Math.floor(targetMonthIndex / 12);
+  const month = (targetMonthIndex % 12) + 1;
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
 function RequestAdvanceDialog({ onSuccess }: { onSuccess: () => void }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ requested_amount: "", reason: "" });
+  const [form, setForm] = useState({
+    requested_amount: "",
+    reason: "",
+    installment_count: "1",
+    first_deduction_month: nextCalendarMonth(),
+  });
   const [signature, setSignature] = useState("");
   const [error, setError] = useState("");
+  const [commandId, setCommandId] = useState(() => crypto.randomUUID());
 
   const submit = async () => {
     const amount = Number(form.requested_amount);
+    const installmentCount = Number(form.installment_count);
     if (amount <= 0) { setError("مبلغ السلفة مطلوب."); return; }
+    if (!Number.isInteger(installmentCount) || installmentCount < 1 || installmentCount > 60) {
+      setError("عدد الأقساط يجب أن يكون بين 1 و60.");
+      return;
+    }
+    if (!form.first_deduction_month) { setError("شهر أول خصم مطلوب."); return; }
     if (!signature) { setError("التوقيع الإلكتروني مطلوب."); return; }
     setSubmitting(true);
     setError("");
     const result = await createAdvanceRequest({
+      command_id: commandId,
       requested_amount: amount,
       reason: form.reason.trim() || undefined,
       employee_signature_data: signature,
+      installment_count: installmentCount,
+      first_deduction_month: `${form.first_deduction_month}-01`,
     });
     setSubmitting(false);
     if (result.error) { setError(result.error.message); return; }
     setOpen(false);
-    setForm({ requested_amount: "", reason: "" });
+    setForm({ requested_amount: "", reason: "", installment_count: "1", first_deduction_month: nextCalendarMonth() });
     setSignature("");
+    setCommandId(crypto.randomUUID());
     onSuccess();
   };
 
@@ -445,6 +461,26 @@ function RequestAdvanceDialog({ onSuccess }: { onSuccess: () => void }) {
             <Label>السبب</Label>
             <Input value={form.reason} onChange={(event) => setForm((prev) => ({ ...prev, reason: event.target.value }))} />
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>عدد الأقساط *</Label>
+              <Input
+                type="number"
+                min="1"
+                max="60"
+                value={form.installment_count}
+                onChange={(event) => setForm((prev) => ({ ...prev, installment_count: event.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>شهر أول خصم *</Label>
+              <Input
+                type="month"
+                value={form.first_deduction_month}
+                onChange={(event) => setForm((prev) => ({ ...prev, first_deduction_month: event.target.value }))}
+              />
+            </div>
+          </div>
           <div className="space-y-2">
             <Label>التوقيع الإلكتروني *</Label>
             <SignaturePad value={signature} onChange={setSignature} />
@@ -462,7 +498,31 @@ function RequestAdvanceDialog({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-function AdvanceRequestsTable({ requests, isAdmin, onSuccess }: { requests: Record<string, unknown>[]; isAdmin: boolean; onSuccess: () => void }) {
+function advanceStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    pending: "قيد المراجعة",
+    approved: "موافق عليه",
+    partial_approved: "موافقة جزئية",
+    rejected: "مرفوض",
+    disbursed: "تم الصرف",
+    repaying: "قيد السداد",
+    repaid: "تم السداد",
+    cancelled: "ملغي",
+  };
+  return labels[status] || status;
+}
+
+function AdvanceRequestsTable({
+  requests,
+  canReview,
+  canDisburse,
+  onSuccess,
+}: {
+  requests: Record<string, unknown>[];
+  canReview: boolean;
+  canDisburse: boolean;
+  onSuccess: () => void;
+}) {
   return (
     <Card className="border-none shadow-sm">
       <CardContent className="p-0">
@@ -472,10 +532,12 @@ function AdvanceRequestsTable({ requests, isAdmin, onSuccess }: { requests: Reco
               <TableHead>الموظف</TableHead>
               <TableHead>المبلغ المطلوب</TableHead>
               <TableHead>المبلغ المعتمد</TableHead>
+              <TableHead>المتبقي</TableHead>
+              <TableHead>الأقساط</TableHead>
               <TableHead>السبب</TableHead>
               <TableHead>الحالة</TableHead>
               <TableHead>التوقيع</TableHead>
-              {isAdmin && <TableHead>الإجراءات</TableHead>}
+              {(canReview || canDisburse) && <TableHead>الإجراءات</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -488,16 +550,35 @@ function AdvanceRequestsTable({ requests, isAdmin, onSuccess }: { requests: Reco
                   <TableCell className="font-medium">{String(employee?.full_name || "أنا")}</TableCell>
                   <TableCell>{formatCurrency(request.requested_amount)}</TableCell>
                   <TableCell>{request.approved_amount ? formatCurrency(request.approved_amount) : "-"}</TableCell>
+                  <TableCell>{request.approved_amount ? formatCurrency(request.outstanding_amount) : "-"}</TableCell>
+                  <TableCell>{String(request.installment_count || 1)}</TableCell>
                   <TableCell>{String(request.reason || "-")}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className={status === "pending" ? "bg-amber-50 text-amber-700" : status === "rejected" ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"}>
-                      {status === "pending" ? "قيد المراجعة" : status === "rejected" ? "مرفوض" : status === "partial_approved" ? "موافقة جزئية" : "موافق عليه"}
+                      {advanceStatusLabel(status)}
                     </Badge>
                   </TableCell>
-                  <TableCell>{signature ? <img src={signature} alt="signature" className="h-12 rounded border bg-white" /> : "-"}</TableCell>
-                  {isAdmin && (
+                  <TableCell>
+                    {signature ? (
+                      <Image
+                        src={signature}
+                        alt="signature"
+                        width={160}
+                        height={48}
+                        unoptimized
+                        className="h-12 w-auto rounded border bg-white"
+                      />
+                    ) : "-"}
+                  </TableCell>
+                  {(canReview || canDisburse) && (
                     <TableCell>
-                      {status === "pending" ? <ReviewAdvanceDialog request={request} onSuccess={onSuccess} /> : <span className="text-xs text-gray-500">تمت المراجعة</span>}
+                      {canReview && status === "pending" && <ReviewAdvanceDialog request={request} onSuccess={onSuccess} />}
+                      {canDisburse && ["approved", "partial_approved"].includes(status) && (
+                        <DisburseAdvanceDialog request={request} onSuccess={onSuccess} />
+                      )}
+                      {!((canReview && status === "pending") || (canDisburse && ["approved", "partial_approved"].includes(status))) && (
+                        <span className="text-xs text-gray-500">لا يوجد إجراء متاح</span>
+                      )}
                     </TableCell>
                   )}
                 </TableRow>
@@ -523,6 +604,7 @@ function ReviewAdvanceDialog({ request, onSuccess }: { request: Record<string, u
   const [approvedAmount, setApprovedAmount] = useState("");
   const [hrNotes, setHrNotes] = useState("");
   const [error, setError] = useState("");
+  const [commandId, setCommandId] = useState(() => crypto.randomUUID());
 
   const decide = async (status: "approved" | "partial_approved" | "rejected") => {
     const finalAmount = status === "approved" ? requestedAmount : Number(approvedAmount);
@@ -540,6 +622,8 @@ function ReviewAdvanceDialog({ request, onSuccess }: { request: Record<string, u
     setError("");
     const result = await reviewAdvanceRequest({
       id: String(request.id),
+      command_id: commandId,
+      expected_version: Number(request.version || 0),
       status,
       approved_amount: status === "rejected" ? undefined : finalAmount,
       hr_notes: hrNotes.trim() || undefined,
@@ -547,6 +631,7 @@ function ReviewAdvanceDialog({ request, onSuccess }: { request: Record<string, u
     setSubmitting(false);
     if (result.error) { setError(result.error.message); return; }
     setOpen(false);
+    setCommandId(crypto.randomUUID());
     onSuccess();
   };
 
@@ -582,6 +667,86 @@ function ReviewAdvanceDialog({ request, onSuccess }: { request: Record<string, u
           <Button variant="outline" disabled={submitting} onClick={() => decide("rejected")}>رفض</Button>
           <Button variant="outline" disabled={submitting} onClick={() => decide("partial_approved")}>موافقة جزئية</Button>
           <Button className="bg-brand hover:bg-brand-dark text-white" disabled={submitting} onClick={() => decide("approved")}>موافقة كاملة</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DisburseAdvanceDialog({ request, onSuccess }: { request: Record<string, unknown>; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [commandId, setCommandId] = useState(() => crypto.randomUUID());
+  const [form, setForm] = useState({
+    payment_date: new Date().toISOString().slice(0, 10),
+    method: "bank_transfer",
+    reference_no: "",
+  });
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError("");
+    const result = await disburseAdvanceRequest({
+      id: String(request.id),
+      command_id: commandId,
+      expected_version: Number(request.version || 0),
+      payment_date: form.payment_date,
+      method: form.method,
+      reference_no: form.reference_no.trim() || undefined,
+    });
+    setSubmitting(false);
+    if (result.error) { setError(result.error.message); return; }
+    setOpen(false);
+    setCommandId(crypto.randomUUID());
+    onSuccess();
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="outline" size="sm" />}>صرف السلفة</DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>صرف السلفة المعتمدة</DialogTitle>
+          <DialogDescription>
+            سيُنشئ الصرف دفعة وقيدًا محاسبيًا وجدول خصم رواتب بقيمة {formatCurrency(request.approved_amount)}.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="space-y-2">
+            <Label>تاريخ الصرف</Label>
+            <Input
+              type="date"
+              value={form.payment_date}
+              onChange={(event) => setForm((prev) => ({ ...prev, payment_date: event.target.value }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>طريقة الصرف</Label>
+            <Select value={form.method} onValueChange={(value) => setForm((prev) => ({ ...prev, method: value || "" }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bank_transfer">تحويل بنكي</SelectItem>
+                <SelectItem value="cash">نقدي</SelectItem>
+                <SelectItem value="cheque">شيك</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>المرجع</Label>
+            <Input
+              value={form.reference_no}
+              onChange={(event) => setForm((prev) => ({ ...prev, reference_no: event.target.value }))}
+              placeholder="رقم التحويل أو الشيك"
+            />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
+          <Button className="bg-brand hover:bg-brand-dark text-white" disabled={submitting || !form.payment_date} onClick={submit}>
+            {submitting ? "جارٍ الصرف..." : "تأكيد الصرف"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

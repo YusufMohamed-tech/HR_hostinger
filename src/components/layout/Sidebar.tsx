@@ -111,6 +111,7 @@ export function SidebarContent() {
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
     const financeCore: NavLink[] = [
+      { name: "الأرصدة والسلف", href: "/balances", icon: WalletCards },
       ...lmsLearnerOps,
       { name: "الشات", href: "/chat", icon: MessageCircle },
       { name: "الإشعارات", href: "/notifications", icon: Bell },

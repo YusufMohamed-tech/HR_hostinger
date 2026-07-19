@@ -16,73 +16,32 @@ export async function getFinancialBalances(orgId: string, employeeId?: string) {
   return result as unknown as { data: Record<string, unknown>[] | null; error: { message: string } | null };
 }
 
-export async function createFinancialBalance(values: Record<string, unknown>) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("financial_balances")
-    .insert(values as never)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+export async function createFinancialBalance(values: Record<string, unknown>, attachment?: File | null) {
+  const form = new FormData();
+  form.set("command_id", crypto.randomUUID());
+  form.set("balance_id", crypto.randomUUID());
+  for (const [key, value] of Object.entries(values)) {
+    if (key === "org_id" || value === undefined || value === null || value === "") continue;
+    form.set(key, String(value));
+  }
+  if (attachment) form.set("attachment", attachment);
+  const response = await fetch("/api/financial-balances", { method: "POST", body: form });
+  const payload = await response.json().catch(() => null);
+  return response.ok
+    ? { data: (payload?.data || null) as Record<string, unknown> | null, error: null }
+    : { data: null, error: { message: String(payload?.message || "Unable to create financial balance.") } };
 }
 
-export async function updateFinancialBalance(orgId: string, id: string, values: Record<string, unknown>) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("financial_balances")
-    .update(values as never)
-    .eq("org_id", orgId)
-    .eq("id", id)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
-}
-
-export async function uploadBalanceAttachment(orgId: string, balanceId: string, file: File) {
-  const supabase = createClient();
-  const extension = file.name.split(".").pop() || "bin";
-  const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`;
-  const filePath = `${orgId}/${balanceId}/${fileName}`;
-
-  const result = await supabase.storage
-    .from("balance-attachments")
-    .upload(filePath, file, { upsert: false });
-
-  return result as unknown as { data: { path: string } | null; error: { message: string } | null };
-}
-
-export async function uploadBalanceSignature(orgId: string, balanceId: string, signatureData: string) {
-  const supabase = createClient();
-  const bytes = new TextEncoder().encode(signatureData);
-  const filePath = `${orgId}/${balanceId}/signature-${Date.now()}.txt`;
-
-  const result = await supabase.storage
-    .from("balance-attachments")
-    .upload(filePath, bytes, {
-      contentType: "text/plain",
-      upsert: false,
-    });
-
-  return result as unknown as { data: { path: string } | null; error: { message: string } | null };
-}
-
-export async function acknowledgeFinancialBalance(orgId: string, id: string, signaturePath: string) {
-  const supabase = createClient();
-  const result = await supabase
-    .from("financial_balances")
-    .update({
-      acknowledgment_signature_url: signaturePath,
-      status: "acknowledged",
-      updated_at: new Date().toISOString(),
-    } as never)
-    .eq("org_id", orgId)
-    .eq("id", id)
-    .select()
-    .single();
-
-  return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
+export async function acknowledgeFinancialBalance(id: string, typedName: string, expectedVersion: number) {
+  const response = await fetch(`/api/financial-balances/${encodeURIComponent(id)}/acknowledge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ command_id: crypto.randomUUID(), expected_version: expectedVersion, typed_name: typedName }),
+  });
+  const payload = await response.json().catch(() => null);
+  return response.ok
+    ? { data: (payload?.data || null) as Record<string, unknown> | null, error: null }
+    : { data: null, error: { message: String(payload?.message || "Unable to acknowledge financial balance.") } };
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit) {
@@ -103,16 +62,46 @@ export async function getAdvanceRequests() {
   return apiFetch<Record<string, unknown>[]>("/api/advance-requests");
 }
 
-export async function createAdvanceRequest(values: { requested_amount: number; reason?: string; employee_signature_data: string }) {
+export async function createAdvanceRequest(values: {
+  command_id: string;
+  requested_amount: number;
+  reason?: string;
+  employee_signature_data: string;
+  installment_count: number;
+  first_deduction_month: string;
+}) {
   return apiFetch<Record<string, unknown>>("/api/advance-requests", {
     method: "POST",
     body: JSON.stringify(values),
   });
 }
 
-export async function reviewAdvanceRequest(values: { id: string; status: "approved" | "partial_approved" | "rejected"; approved_amount?: number; hr_notes?: string }) {
+export async function reviewAdvanceRequest(values: {
+  id: string;
+  command_id: string;
+  expected_version: number;
+  status: "approved" | "partial_approved" | "rejected";
+  approved_amount?: number;
+  hr_notes?: string;
+}) {
   return apiFetch<Record<string, unknown>>("/api/advance-requests", {
     method: "PATCH",
     body: JSON.stringify(values),
+  });
+}
+
+export async function disburseAdvanceRequest(values: {
+  id: string;
+  command_id: string;
+  expected_version: number;
+  payment_date?: string;
+  account_id?: string | null;
+  method?: string;
+  reference_no?: string;
+}) {
+  const { id, ...body } = values;
+  return apiFetch<Record<string, unknown>>(`/api/advance-requests/${id}/disburse`, {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }

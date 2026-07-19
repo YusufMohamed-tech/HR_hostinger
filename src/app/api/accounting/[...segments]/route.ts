@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAccountingAccess, type AccountingAction } from "@/lib/accounting/permissions";
-import { generateAccountingNumber } from "@/lib/accounting/numbering";
 import { createJournalEntry, getAccountingSettings, initializeAccountingDefaults, postJournalEntry, reverseJournalEntry, updateDraftJournalEntry } from "@/lib/accounting/posting";
 import {
   getAccountingDashboard,
@@ -30,9 +29,8 @@ import {
 } from "@/lib/accounting/reports/index";
 import { reportToCSV } from "@/lib/accounting/reports/export/csv";
 import { parseDate, requireText, roundMoney, type JournalLineInput } from "@/lib/accounting/validation";
-import { writeAuditLog } from "@/lib/utils/audit";
 
-type RouteContext = { params: { segments?: string[] } };
+type RouteContext = { params: Promise<{ segments?: string[] }> };
 
 function db(admin: ReturnType<typeof createAdminClient>) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -44,11 +42,20 @@ function json(data: unknown, status = 200) {
 }
 
 function message(error: unknown, status = 500) {
-  return NextResponse.json({ message: error instanceof Error ? error.message : String(error || "حدث خطأ غير متوقع.") }, { status });
+  const code = error && typeof error === "object" && "code" in error ? String(error.code || "") : "";
+  const resolvedStatus = status !== 500 ? status
+    : code === "42501" ? 403
+      : code === "P0002" ? 404
+        : ["23505", "40001", "55000"].includes(code) ? 409
+          : ["22023", "23514"].includes(code) ? 400 : 500;
+  return NextResponse.json(
+    { message: error instanceof Error ? error.message : String(error || "حدث خطأ غير متوقع.") },
+    { status: resolvedStatus }
+  );
 }
 
-function segments(context: RouteContext) {
-  return context.params.segments || [];
+async function segments(context: RouteContext) {
+  return (await context.params).segments || [];
 }
 
 function getQueryDates(request: NextRequest) {
@@ -59,48 +66,131 @@ function getQueryDates(request: NextRequest) {
   };
 }
 
-function deterministicUuid(seed: string) {
-  const hash = createHash("sha1").update(seed).digest();
-  const bytes = Buffer.from(hash.subarray(0, 16));
-  bytes[6] = (bytes[6] & 0x0f) | 0x50;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = bytes.toString("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+function uuidOrNull(value: unknown) {
+  const text = String(value || "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text) ? text : null;
+}
+
+function accountingCommandContext(request: NextRequest, body: Record<string, unknown>) {
+  return {
+    commandId: uuidOrNull(body.command_id) || uuidOrNull(request.headers.get("idempotency-key")) || randomUUID(),
+    requestId: uuidOrNull(body.request_id) || uuidOrNull(request.headers.get("x-request-id")) || randomUUID(),
+  };
+}
+
+async function accountingRpcRecord(
+  admin: ReturnType<typeof createAdminClient>,
+  name: string,
+  args: Record<string, unknown>
+) {
+  const { data, error } = await db(admin).rpc(name, args);
+  if (error) throw Object.assign(new Error(error.message), { code: error.code });
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") throw new Error(`Accounting command ${name} returned no record.`);
+  return row as Record<string, unknown>;
+}
+
+function budgetCommandPayload(body: Record<string, unknown>, current?: Record<string, unknown>) {
+  const lines = Array.isArray(body.lines)
+    ? (body.lines as Record<string, unknown>[]).map((line) => ({
+        accountId: line.account_id,
+        costCenterId: line.cost_center_id || null,
+        month: Number(line.month || 0),
+        amount: Number(line.amount || 0),
+        notes: requireText(line.notes) || null,
+      }))
+    : Array.isArray(current?.lines)
+      ? (current.lines as Record<string, unknown>[]).map((line) => ({
+          accountId: line.account_id,
+          costCenterId: line.cost_center_id || null,
+          month: Number(line.month || 0),
+          amount: Number(line.amount || 0),
+          notes: requireText(line.notes) || null,
+        }))
+      : [];
+  return {
+    name: requireText(body.name, String(current?.name || "")),
+    fiscalYear: Number(body.fiscal_year ?? current?.fiscal_year ?? 0),
+    lines,
+  };
+}
+
+function customerCommandPayload(body: Record<string, unknown>, current?: Record<string, unknown>) {
+  return {
+    name_ar: requireText(body.name_ar, String(current?.name_ar || "")),
+    name_en: body.name_en === undefined ? current?.name_en ?? null : requireText(body.name_en) || null,
+    vat_number: body.vat_number === undefined ? current?.vat_number ?? null : requireText(body.vat_number) || null,
+    commercial_registration: body.commercial_registration === undefined
+      ? current?.commercial_registration ?? null
+      : requireText(body.commercial_registration) || null,
+    phone: body.phone === undefined ? current?.phone ?? null : requireText(body.phone) || null,
+    email: body.email === undefined ? current?.email ?? null : requireText(body.email) || null,
+    address: body.address === undefined ? current?.address ?? null : requireText(body.address) || null,
+    city: body.city === undefined ? current?.city ?? null : requireText(body.city) || null,
+    country: body.country === undefined ? current?.country ?? "Saudi Arabia" : requireText(body.country, "Saudi Arabia"),
+    payment_terms: body.payment_terms === undefined ? current?.payment_terms ?? null : requireText(body.payment_terms) || null,
+    sales_company_id: body.sales_company_id === undefined ? current?.sales_company_id ?? null : body.sales_company_id || null,
+    is_active: body.is_active === undefined ? current?.is_active ?? true : Boolean(body.is_active),
+  };
+}
+
+function invoiceCommandPayload(body: Record<string, unknown>, current?: Record<string, unknown>) {
+  return {
+    customerId: body.customer_id ?? current?.customer_id ?? null,
+    invoiceDate: parseDate(body.invoice_date ?? current?.invoice_date),
+    dueDate: body.due_date === undefined ? current?.due_date ?? null : body.due_date || null,
+    sourceModule: requireText(body.source_module, String(current?.source_module || "manual")),
+    sourceId: body.source_id === undefined ? current?.source_id ?? null : body.source_id || null,
+    notes: body.notes === undefined ? current?.notes ?? null : requireText(body.notes) || null,
+    lines: Array.isArray(body.lines) ? body.lines : Array.isArray(current?.lines) ? current.lines : [],
+  };
+}
+
+function expenseCommandPayload(body: Record<string, unknown>, current?: Record<string, unknown>) {
+  return {
+    vendorId: body.vendor_id ?? current?.vendor_id ?? null,
+    employeeId: body.employee_id ?? current?.employee_id ?? null,
+    expenseDate: parseDate(body.expense_date ?? current?.expense_date),
+    categoryAccountId: body.category_account_id ?? current?.category_account_id ?? null,
+    paymentAccountId: body.payment_account_id ?? current?.payment_account_id ?? null,
+    costCenterId: body.cost_center_id ?? current?.cost_center_id ?? null,
+    description: requireText(body.description, String(current?.description || "")),
+    amountBeforeVat: body.amount_before_vat ?? current?.amount_before_vat ?? 0,
+    vatAmount: body.vat_amount ?? current?.vat_amount ?? 0,
+    status: body.status === "pending_approval" || current?.status === "pending_approval" ? "pending_approval" : "draft",
+    paymentMethod: body.payment_method === undefined ? current?.payment_method ?? null : requireText(body.payment_method) || null,
+    attachmentUrl: body.attachment_url === undefined ? current?.attachment_url ?? null : requireText(body.attachment_url) || null,
+  };
+}
+
+function paymentCommandPayload(body: Record<string, unknown>, current?: Record<string, unknown>) {
+  return {
+    paymentDate: parseDate(body.payment_date ?? current?.payment_date),
+    type: requireText(body.type, String(current?.type || "manual")),
+    direction: requireText(body.direction, String(current?.direction || "outbound")),
+    amount: body.amount ?? current?.amount ?? 0,
+    accountId: body.account_id ?? current?.account_id ?? null,
+    counterpartAccountId: body.counterpart_account_id ?? current?.counterpart_account_id ?? null,
+    costCenterId: body.cost_center_id ?? current?.cost_center_id ?? null,
+    customerId: body.customer_id ?? current?.customer_id ?? null,
+    vendorId: body.vendor_id ?? current?.vendor_id ?? null,
+    employeeId: body.employee_id ?? current?.employee_id ?? null,
+    invoiceId: body.invoice_id ?? current?.invoice_id ?? null,
+    expenseId: body.expense_id ?? current?.expense_id ?? null,
+    advanceRequestId: body.advance_request_id ?? current?.advance_request_id ?? null,
+    payrollId: body.payroll_id ?? current?.payroll_id ?? null,
+    description: body.description === undefined ? current?.description ?? null : requireText(body.description) || null,
+    referenceNo: body.reference_no === undefined ? current?.reference_no ?? null : requireText(body.reference_no) || null,
+    method: body.method === undefined ? current?.method ?? null : requireText(body.method) || null,
+    notes: body.notes === undefined ? current?.notes ?? null : requireText(body.notes) || null,
+    attachmentUrl: body.attachment_url === undefined ? current?.attachment_url ?? null : requireText(body.attachment_url) || null,
+  };
 }
 
 function normalizeMonth(value: unknown) {
   const text = requireText(value);
   if (/^\d{4}-\d{2}$/.test(text)) return `${text}-01`;
   return parseDate(text);
-}
-
-function parseJsonArray(value: unknown): Record<string, unknown>[] {
-  if (Array.isArray(value)) return value as Record<string, unknown>[];
-  if (typeof value === "string" && value.trim()) {
-    try {
-      const parsed = JSON.parse(value) as unknown;
-      return Array.isArray(parsed) ? parsed as Record<string, unknown>[] : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
-}
-
-function sumAdvanceDeductions(payslips: Record<string, unknown>[]) {
-  return roundMoney(payslips.reduce((sum, slip) => {
-    const deductions = parseJsonArray(slip.deductions_details);
-    const advanceAmount = deductions.reduce((deductionSum, deduction) => {
-      const label = String(deduction.label || deduction.type || deduction.name || "").toLowerCase();
-      const isAdvance = label.includes("advance") || label.includes("سلفة") || label.includes("سلف");
-      return deductionSum + (isAdvance ? Number(deduction.amount || 0) : 0);
-    }, 0);
-    return sum + advanceAmount;
-  }, 0));
-}
-
-function payrollSourceId(orgId: string, month: string) {
-  return deterministicUuid(`payroll:${orgId}:${month}`);
 }
 
 function actionFor(method: string, parts: string[]): AccountingAction {
@@ -112,40 +202,12 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "assets" && (parts[1] === "capitalize" || parts[1] === "run-depreciation")) return "post";
   if (parts[0] === "eosb" && (parts[1] === "run-accrual" || parts[1] === "settle")) return "post";
   if (parts[0] === "gosi" && parts[1] === "record-payment") return "post";
+  if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
   return "manage";
-}
-
-async function audit(admin: ReturnType<typeof createAdminClient>, orgId: string, userId: string, action: string, entity: string, entityId?: string | null, values?: Record<string, unknown>) {
-  await writeAuditLog(admin, {
-    org_id: orgId,
-    actor_user_id: userId,
-    action,
-    entity,
-    entity_id: entityId || null,
-    new_values: values || null,
-  });
-}
-
-async function notifyFinance(admin: ReturnType<typeof createAdminClient>, orgId: string, title: string, body: string, link: string) {
-  const { data } = await db(admin)
-    .from("org_members")
-    .select("user_id")
-    .eq("org_id", orgId)
-    .in("role", ["admin", "finance_manager", "accountant"]);
-  const rows = ((data || []) as Record<string, unknown>[]).map((member) => ({
-    org_id: orgId,
-    user_id: String(member.user_id),
-    title,
-    body,
-    type: "accounting",
-    link,
-    is_read: false,
-  }));
-  if (rows.length > 0) await db(admin).from("notifications").insert(rows);
 }
 
 async function listTable(admin: ReturnType<typeof createAdminClient>, table: string, orgId: string, request: NextRequest, orderColumn = "created_at") {
@@ -169,205 +231,32 @@ async function getRecord(admin: ReturnType<typeof createAdminClient>, table: str
   return data as Record<string, unknown>;
 }
 
-async function updateRecord(admin: ReturnType<typeof createAdminClient>, table: string, orgId: string, id: string, values: Record<string, unknown>) {
-  const { data, error } = await db(admin).from(table).update(values).eq("organization_id", orgId).eq("id", id).select("*").single();
-  if (error) throw new Error(error.message);
-  return data as Record<string, unknown>;
-}
-
-async function normalizeInvoiceLines(admin: ReturnType<typeof createAdminClient>, orgId: string, lines: Record<string, unknown>[]) {
-  const taxIds = Array.from(new Set(lines.map((line) => String(line.tax_rate_id || "")).filter(Boolean)));
-  const taxRates = new Map<string, number>();
-  if (taxIds.length > 0) {
-    const { data, error } = await db(admin)
-      .from("accounting_tax_rates")
-      .select("id, rate")
-      .eq("organization_id", orgId)
-      .in("id", taxIds);
-    if (error) throw new Error(error.message);
-    for (const row of (data || []) as Record<string, unknown>[]) taxRates.set(String(row.id), Number(row.rate || 0));
-  }
-
-  return lines.map((line) => {
-    const quantity = roundMoney(line.quantity || 1) || 1;
-    const unitPrice = roundMoney(line.unit_price);
-    const discount = roundMoney(line.discount_amount);
-    const beforeVat = Math.max(0, roundMoney(quantity * unitPrice - discount));
-    const taxRateId = String(line.tax_rate_id || "");
-    const rate = taxRateId ? taxRates.get(taxRateId) ?? 0 : 0;
-    const vat = roundMoney(line.vat_amount ?? (beforeVat * rate / 100));
-    return {
-      organization_id: orgId,
-      product_id: line.product_id || null,
-      description_ar: requireText(line.description_ar, "بند فاتورة"),
-      description_en: requireText(line.description_en) || null,
-      quantity,
-      unit_price: unitPrice,
-      discount_amount: discount,
-      tax_rate_id: taxRateId || null,
-      vat_amount: vat,
-      line_total: roundMoney(beforeVat + vat),
-      revenue_account_id: line.revenue_account_id || null,
-      cost_center_id: line.cost_center_id || null,
-    };
-  });
-}
-
-async function createOrUpdateInvoiceLines(admin: ReturnType<typeof createAdminClient>, orgId: string, invoiceId: string, lines: Record<string, unknown>[]) {
-  const normalized = await normalizeInvoiceLines(admin, orgId, lines);
-  const subtotal = roundMoney(normalized.reduce((sum, line) => sum + (line.quantity * line.unit_price), 0));
-  const discount = roundMoney(normalized.reduce((sum, line) => sum + line.discount_amount, 0));
-  const vat = roundMoney(normalized.reduce((sum, line) => sum + line.vat_amount, 0));
-  const total = roundMoney(normalized.reduce((sum, line) => sum + line.line_total, 0));
-
-  await db(admin).from("accounting_invoice_lines").delete().eq("organization_id", orgId).eq("invoice_id", invoiceId);
-  if (normalized.length > 0) {
-    const rows = normalized.map((line) => ({ ...line, invoice_id: invoiceId }));
-    const result = await db(admin).from("accounting_invoice_lines").insert(rows);
-    if (result.error) throw new Error(result.error.message);
-  }
-
-  await updateRecord(admin, "accounting_invoices", orgId, invoiceId, {
-    subtotal,
-    discount_amount: discount,
-    vat_amount: vat,
-    total_amount: total,
-    balance_due: total,
-  });
-
-  return { subtotal, discount, vat, total };
-}
-
-async function buildInvoiceJournal(admin: ReturnType<typeof createAdminClient>, orgId: string, invoice: Record<string, unknown>, userId: string) {
-  const settings = await getAccountingSettings(admin, orgId);
-  if (!settings?.default_accounts_receivable_id || !settings?.default_sales_revenue_id) {
-    throw new Error("أكمل إعدادات حسابات الذمم المدينة وإيرادات المبيعات أولا.");
-  }
-  const invoiceLines = Array.isArray(invoice.lines) ? invoice.lines as Record<string, unknown>[] : [];
-  const revenueByAccount = new Map<string, number>();
-  if (invoiceLines.length > 0) {
-    for (const line of invoiceLines) {
-      const accountId = String(line.revenue_account_id || settings.default_sales_revenue_id);
-      const amount = roundMoney(Number(line.line_total || 0) - Number(line.vat_amount || 0));
-      revenueByAccount.set(accountId, roundMoney((revenueByAccount.get(accountId) || 0) + amount));
-    }
-  } else {
-    revenueByAccount.set(String(settings.default_sales_revenue_id), roundMoney(Number(invoice.subtotal || 0) - Number(invoice.discount_amount || 0)));
-  }
-  const lines: JournalLineInput[] = [
-    { account_id: String(settings.default_accounts_receivable_id), debit: Number(invoice.total_amount || 0), credit: 0, description: String(invoice.invoice_no) },
-    ...Array.from(revenueByAccount.entries()).map(([accountId, amount]) => ({
-      account_id: accountId,
-      debit: 0,
-      credit: amount,
-      description: String(invoice.invoice_no),
-    })),
-  ];
-  if (Number(invoice.vat_amount || 0) > 0) {
-    if (!settings.default_vat_payable_id) throw new Error("حساب ضريبة القيمة المضافة المستحقة غير محدد.");
-    lines.push({ account_id: String(settings.default_vat_payable_id), debit: 0, credit: Number(invoice.vat_amount), description: String(invoice.invoice_no) });
-  }
-  return createJournalEntry(admin, {
-    orgId,
-    userId,
-    entryDate: String(invoice.invoice_date),
-    description: `إصدار فاتورة ${invoice.invoice_no}`,
-    sourceModule: "invoice",
-    sourceId: String(invoice.id),
-    status: "posted",
-    lines,
-  });
-}
-
-async function buildExpenseJournal(admin: ReturnType<typeof createAdminClient>, orgId: string, expense: Record<string, unknown>, userId: string, paidImmediately = false) {
-  const settings = await getAccountingSettings(admin, orgId);
-  const category = String(expense.category_account_id || "");
-  if (!category) throw new Error("حساب تصنيف المصروف مطلوب.");
-  const creditAccount = paidImmediately
-    ? String(expense.payment_account_id || settings?.default_bank_account_id || settings?.default_cash_account_id || "")
-    : String(settings?.default_accounts_payable_id || "");
-  if (!creditAccount) throw new Error("حساب الدفع أو الذمم الدائنة غير محدد.");
-  const lines: JournalLineInput[] = [
-    { account_id: category, debit: Number(expense.amount_before_vat || 0), credit: 0, description: String(expense.description) },
-  ];
-  if (Number(expense.vat_amount || 0) > 0) {
-    if (!settings?.default_vat_receivable_id) throw new Error("حساب ضريبة القيمة المضافة القابلة للاسترداد غير محدد.");
-    lines.push({ account_id: String(settings.default_vat_receivable_id), debit: Number(expense.vat_amount || 0), credit: 0, description: String(expense.description) });
-  }
-  lines.push({ account_id: creditAccount, debit: 0, credit: Number(expense.total_amount || 0), description: String(expense.description) });
-  return createJournalEntry(admin, {
-    orgId,
-    userId,
-    entryDate: String(expense.expense_date),
-    description: `اعتماد مصروف ${expense.expense_no}`,
-    sourceModule: paidImmediately ? "expense_paid" : "expense",
-    sourceId: String(expense.id),
-    status: "posted",
-    lines,
-  });
-}
-
-async function postPaymentJournal(admin: ReturnType<typeof createAdminClient>, orgId: string, payment: Record<string, unknown>, userId: string) {
-  const settings = await getAccountingSettings(admin, orgId);
-  const bank = String(payment.account_id || settings?.default_bank_account_id || settings?.default_cash_account_id || "");
-  if (!bank) throw new Error("حساب النقدية أو البنك غير محدد.");
-
-  let otherAccount = "";
-  if (payment.type === "customer_receipt") otherAccount = String(settings?.default_accounts_receivable_id || "");
-  if (payment.type === "vendor_payment") otherAccount = String(settings?.default_accounts_payable_id || "");
-  if (payment.type === "payroll_payment") otherAccount = String(settings?.default_salary_payable_id || "");
-  if (payment.type === "employee_advance") otherAccount = String(settings?.default_employee_advances_id || "");
-  if (payment.type === "manual") otherAccount = String(payment.counterpart_account_id || "");
-  if (!otherAccount) throw new Error("إعدادات الحساب المقابل للدفعة غير مكتملة.");
-
-  if (bank === otherAccount) throw new Error("Payment bank/cash account and counterpart account must be different.");
-
-  const inbound = payment.direction === "inbound";
-  const description = requireText(payment.description, requireText(payment.notes, String(payment.payment_no)));
-  const costCenterId = payment.cost_center_id ? String(payment.cost_center_id) : null;
-  const lines: JournalLineInput[] = inbound
-    ? [
-        { account_id: bank, debit: Number(payment.amount || 0), credit: 0, description, cost_center_id: costCenterId },
-        { account_id: otherAccount, debit: 0, credit: Number(payment.amount || 0), description, cost_center_id: costCenterId },
-      ]
-    : [
-        { account_id: otherAccount, debit: Number(payment.amount || 0), credit: 0, description, cost_center_id: costCenterId },
-        { account_id: bank, debit: 0, credit: Number(payment.amount || 0), description, cost_center_id: costCenterId },
-      ];
-
-  return createJournalEntry(admin, {
-    orgId,
-    userId,
-    entryDate: String(payment.payment_date),
-    description: `ترحيل دفعة ${payment.payment_no}`,
-    sourceModule: `payment_${payment.type}`,
-    sourceId: String(payment.id),
-    status: "posted",
-    lines,
-  });
-}
-
 async function getPayrollAccountingStatus(admin: ReturnType<typeof createAdminClient>, orgId: string, monthInput: unknown) {
   const month = normalizeMonth(monthInput);
-  const sourceId = payrollSourceId(orgId, month);
-
-  const payslipsResult = await db(admin)
-    .from("payslips")
-    .select("id, net_salary, deductions_details, status")
+  const runResult = await db(admin)
+    .from("payroll_runs")
+    .select("id, status, formula_version, employee_count, total_net, version")
     .eq("org_id", orgId)
-    .eq("month", month);
-  if (payslipsResult.error) throw new Error(payslipsResult.error.message);
-
-  const payslips = (payslipsResult.data || []) as Record<string, unknown>[];
-  const totalNet = roundMoney(payslips.reduce((sum, row) => sum + Number(row.net_salary || 0), 0));
-  const advanceDeductions = sumAdvanceDeductions(payslips);
+    .eq("month", month)
+    .maybeSingle();
+  if (runResult.error) throw new Error(runResult.error.message);
+  const run = runResult.data as Record<string, unknown> | null;
+  const sourceId = run?.id ? String(run.id) : null;
+  const advanceResult = sourceId ? await db(admin)
+    .from("payslips")
+    .select("advance_deduction")
+    .eq("org_id", orgId)
+    .eq("payroll_run_id", sourceId) : { data: [], error: null };
+  if (advanceResult.error) throw new Error(advanceResult.error.message);
+  const advanceDeductions = roundMoney(((advanceResult.data || []) as Record<string, unknown>[])
+    .reduce((sum, row) => sum + Number(row.advance_deduction || 0), 0));
 
   const sourcePosting = await db(admin)
     .from("accounting_source_postings")
     .select("journal_entry_id, status")
     .eq("organization_id", orgId)
     .eq("source_module", "payroll")
-    .eq("source_id", sourceId)
+    .eq("source_id", sourceId || "00000000-0000-0000-0000-000000000000")
     .maybeSingle();
   if (sourcePosting.error) throw new Error(sourcePosting.error.message);
 
@@ -388,7 +277,7 @@ async function getPayrollAccountingStatus(admin: ReturnType<typeof createAdminCl
     .select("id, payment_no, status, amount, journal_entry_id, posted_at")
     .eq("organization_id", orgId)
     .eq("type", "payroll_payment")
-    .eq("payroll_id", sourceId)
+    .eq("payroll_id", sourceId || "00000000-0000-0000-0000-000000000000")
     .neq("status", "cancelled")
     .order("created_at", { ascending: false })
     .limit(1)
@@ -408,7 +297,7 @@ async function getPayrollAccountingStatus(admin: ReturnType<typeof createAdminCl
   }
 
   const payment = paymentResult.data as Record<string, unknown> | null;
-  const status = payment?.status === "posted"
+  const status = run?.status === "paid" || payment?.status === "posted"
     ? "paid"
     : journal?.status === "posted"
       ? "posted"
@@ -420,8 +309,11 @@ async function getPayrollAccountingStatus(admin: ReturnType<typeof createAdminCl
     month,
     payroll_id: sourceId,
     status,
-    payslip_count: payslips.length,
-    total_net: totalNet,
+    payroll_run_status: run?.status || null,
+    formula_version: run?.formula_version || null,
+    payroll_run_version: run?.version || null,
+    payslip_count: Number(run?.employee_count || 0),
+    total_net: roundMoney(run?.total_net || 0),
     advance_deductions: advanceDeductions,
     journal_entry_id: journal?.id || null,
     journal_entry_no: journal?.entry_no || null,
@@ -570,55 +462,34 @@ async function settleSalesCommissionsFinance(
   ));
   if (commissionIds.length === 0) throw new Error("اختر عمولة واحدة على الأقل للسداد.");
 
-  const paymentMethod = commissionPaymentMethod(body.payment_method);
-  const table = beneficiaryType === "agent" ? "agent_commissions" : "merchant_commissions";
-  const existing = await db(admin)
-    .from(table)
-    .select("id, organization_id, commission_amount, is_paid")
-    .eq("organization_id", orgId)
-    .in("id", commissionIds);
-  if (existing.error) throw new Error(existing.error.message);
-
-  const rows = (existing.data || []) as Record<string, unknown>[];
-  if (rows.length !== commissionIds.length) throw new Error("بعض العمولة المحددة غير موجودة أو خارج المنظمة.");
-  if (rows.some((row) => row.is_paid)) throw new Error("يمكن سداد العمولات غير المدفوعة فقط.");
-
-  const totalAmount = roundMoney(rows.reduce((sum, row) => sum + Number(row.commission_amount || 0), 0));
-  const update = await db(admin)
-    .from(table)
-    .update({
-      is_paid: true,
-      paid_at: new Date().toISOString(),
-      paid_by: userId,
-      payment_method: paymentMethod,
-      payment_reference: requireText(body.payment_reference) || null,
-      finance_notes: requireText(body.finance_notes) || null,
-    })
-    .eq("organization_id", orgId)
-    .eq("is_paid", false)
-    .in("id", commissionIds)
-    .select("*");
-  if (update.error) throw new Error(update.error.message);
-
-  const settledRows = (update.data || []) as Record<string, unknown>[];
-  await audit(admin, orgId, userId, "accounting.sales_commissions_settled", table, null, {
-    beneficiary_type: beneficiaryType,
-    commission_ids: commissionIds,
-    settled_count: settledRows.length,
-    total_amount: totalAmount,
-    payment_method: paymentMethod,
+  const { data, error } = await db(admin).rpc("settle_sim_commissions", {
+    p_org_id: orgId,
+    p_actor_user_id: userId,
+    p_command_id: uuidOrNull(body.command_id) || randomUUID(),
+    p_request_id: uuidOrNull(body.request_id) || randomUUID(),
+    p_beneficiary_type: beneficiaryType,
+    p_commission_ids: commissionIds,
+    p_payment_date: body.payment_date ? parseDate(body.payment_date) : null,
+    p_account_id: uuidOrNull(body.account_id),
+    p_payment_method: commissionPaymentMethod(body.payment_method),
+    p_payment_reference: requireText(body.payment_reference) || null,
+    p_finance_notes: requireText(body.finance_notes) || null,
   });
-
+  if (error) throw Object.assign(new Error(error.message), { code: error.code });
+  const batch = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+  if (!batch) throw new Error("تعذر إنشاء دفعة تسوية العمولات.");
   return {
-    settled_count: settledRows.length,
-    total_amount: totalAmount,
-    commissions: settledRows,
+    settlement_batch_id: batch.id,
+    settled_count: Number(batch.commission_count || 0),
+    total_amount: Number(batch.total_amount || 0),
+    accounting_payment_id: batch.accounting_payment_id,
+    accounting_journal_entry_id: batch.accounting_journal_entry_id,
   };
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
-  const parts = segments(context);
-  const auth = await requireAccountingAccess(actionFor("GET", parts));
+  const parts = await segments(context);
+  const auth = await requireAccountingAccess(actionFor("GET", parts), request);
   if ("error" in auth) return auth.error;
   const admin = createAdminClient();
 
@@ -795,6 +666,15 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const groupBy = (request.nextUrl.searchParams.get("group_by") || "month") as "department" | "employee" | "month";
         return json(await getPayrollSummary(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31", groupBy));
       }
+      if (parts[1] === "reconciliation") {
+        const { data, error } = await db(admin).rpc("accounting_reconciliation_report", {
+          p_org_id: auth.orgId,
+          p_date_from: dateFrom || null,
+          p_date_to: dateTo || null,
+        });
+        if (error) throw Object.assign(new Error(error.message), { code: error.code });
+        return json(data);
+      }
       if (parts[1] === "budget-variance") {
         const budgetId = request.nextUrl.searchParams.get("budget_id");
         if (!budgetId) return message("budget_id is required.", 400);
@@ -825,11 +705,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
 }
 
 export async function POST(request: NextRequest, context: RouteContext) {
-  const parts = segments(context);
-  const auth = await requireAccountingAccess(actionFor("POST", parts));
+  const parts = await segments(context);
+  const auth = await requireAccountingAccess(actionFor("POST", parts), request);
   if ("error" in auth) return auth.error;
   const admin = createAdminClient();
   const body = await request.json().catch(() => ({}));
+  body.request_id ||= auth.requestId;
 
   try {
     if (parts[0] === "init-defaults") {
@@ -843,7 +724,6 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     if (parts[0] === "accounts") {
       const values = {
-        organization_id: auth.orgId,
         code: requireText(body.code),
         name_ar: requireText(body.name_ar),
         name_en: requireText(body.name_en) || null,
@@ -852,35 +732,50 @@ export async function POST(request: NextRequest, context: RouteContext) {
         parent_id: body.parent_id || null,
         normal_balance: requireText(body.normal_balance, body.type === "asset" || body.type === "expense" ? "debit" : "credit"),
         description: requireText(body.description) || null,
-        created_by: auth.user.id,
       };
       if (!values.code || !values.name_ar) return message("رقم الحساب والاسم العربي مطلوبان.", 400);
-      const result = await db(admin).from("accounting_accounts").insert(values).select("*").single();
-      if (result.error) throw new Error(result.error.message);
-      await audit(admin, auth.orgId, auth.user.id, "accounting.account_created", "accounting_accounts", result.data.id, values);
-      return json(result.data, 201);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+        p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
+        p_request_id: command.requestId, p_command_id: command.commandId,
+        p_entity_type: "account", p_entity_id: null, p_expected_version: 0,
+        p_operation: "save", p_payload: values,
+      }), 201);
     }
 
     if (parts[0] === "cost-centers") {
       const values = {
-        organization_id: auth.orgId,
         code: requireText(body.code),
         name_ar: requireText(body.name_ar),
         name_en: requireText(body.name_en) || null,
         type: requireText(body.type, "custom"),
         reference_id: body.reference_id || null,
-        created_by: auth.user.id,
       };
-      const result = await db(admin).from("accounting_cost_centers").insert(values).select("*").single();
-      if (result.error) throw new Error(result.error.message);
-      await audit(admin, auth.orgId, auth.user.id, "accounting.cost_center_created", "accounting_cost_centers", result.data.id, values);
-      return json(result.data, 201);
+      if (!values.code || !values.name_ar) return message("رقم مركز التكلفة والاسم العربي مطلوبان.", 400);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+        p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
+        p_request_id: command.requestId, p_command_id: command.commandId,
+        p_entity_type: "cost_center", p_entity_id: null, p_expected_version: 0,
+        p_operation: "save", p_payload: values,
+      }), 201);
     }
 
-    if (parts[0] === "vendors" || parts[0] === "customers") {
-      const table = parts[0] === "vendors" ? "accounting_vendors" : "accounting_customers";
+    if (parts[0] === "customers") {
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "accounting_save_customer", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_customer_id: null,
+        p_expected_version: 0,
+        p_payload: customerCommandPayload(body),
+      }), 201);
+    }
+
+    if (parts[0] === "vendors") {
       const values: Record<string, unknown> = {
-        organization_id: auth.orgId,
         name_ar: requireText(body.name_ar),
         name_en: requireText(body.name_en) || null,
         vat_number: requireText(body.vat_number) || null,
@@ -891,36 +786,35 @@ export async function POST(request: NextRequest, context: RouteContext) {
         city: requireText(body.city) || null,
         country: requireText(body.country, "Saudi Arabia"),
         payment_terms: requireText(body.payment_terms) || null,
-        created_by: auth.user.id,
       };
-      if (table === "accounting_vendors") {
-        values.bank_name = requireText(body.bank_name) || null;
-        values.iban = requireText(body.iban) || null;
-      } else {
-        values.sales_company_id = body.sales_company_id || null;
-      }
-      const result = await db(admin).from(table).insert(values).select("*").single();
-      if (result.error) throw new Error(result.error.message);
-      if (table === "accounting_customers" && values.sales_company_id) {
-        const companyUpdate = await db(admin)
-          .from("sales_companies")
-          .update({ accounting_customer_id: result.data.id })
-          .eq("organization_id", auth.orgId)
-          .eq("id", values.sales_company_id);
-        if (companyUpdate.error) throw new Error(companyUpdate.error.message);
-      }
-      await audit(admin, auth.orgId, auth.user.id, `accounting.${parts[0].slice(0, -1)}_created`, table, result.data.id, values);
-      return json(result.data, 201);
+      values.bank_name = requireText(body.bank_name) || null;
+      values.iban = requireText(body.iban) || null;
+      if (!values.name_ar) return message("اسم المورد العربي مطلوب.", 400);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+        p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
+        p_request_id: command.requestId, p_command_id: command.commandId,
+        p_entity_type: "vendor", p_entity_id: null, p_expected_version: 0,
+        p_operation: "save", p_payload: values,
+      }), 201);
     }
 
     if (parts[0] === "journal-entries" && parts[1] && parts[2] === "post") {
-      return json(await postJournalEntry(admin, auth.orgId, parts[1], auth.user.id));
+      return json(await postJournalEntry(admin, auth.orgId, parts[1], auth.user.id, accountingCommandContext(request, body)));
     }
     if (parts[0] === "journal-entries" && parts[1] && parts[2] === "reverse") {
-      return json(await reverseJournalEntry(admin, auth.orgId, parts[1], auth.user.id, requireText(body.reason) || undefined));
+      return json(await reverseJournalEntry(
+        admin,
+        auth.orgId,
+        parts[1],
+        auth.user.id,
+        requireText(body.reason) || undefined,
+        accountingCommandContext(request, body)
+      ));
     }
     if (parts[0] === "journal-entries") {
       const lines = Array.isArray(body.lines) ? body.lines as JournalLineInput[] : [];
+      const command = accountingCommandContext(request, body);
       return json(await createJournalEntry(admin, {
         orgId: auth.orgId,
         userId: auth.user.id,
@@ -929,106 +823,87 @@ export async function POST(request: NextRequest, context: RouteContext) {
         notes: requireText(body.notes) || null,
         status: body.status === "pending_approval" ? "pending_approval" : "draft",
         lines,
+        commandId: command.commandId,
+        requestId: command.requestId,
       }), 201);
     }
 
     if (parts[0] === "expenses" && parts[1] && parts[2] === "approve") {
       const expense = await getRecord(admin, "accounting_expenses", auth.orgId, parts[1]);
       if (!["draft", "pending_approval"].includes(String(expense.status))) return message("لا يمكن اعتماد هذا المصروف.", 400);
-      const journal = await buildExpenseJournal(admin, auth.orgId, expense, auth.user.id, Boolean(body.paid_immediately));
-      const next = await updateRecord(admin, "accounting_expenses", auth.orgId, parts[1], {
-        status: body.paid_immediately ? "paid" : "approved",
-        paid_status: body.paid_immediately ? "paid" : "unpaid",
-        approved_by: auth.user.id,
-        approved_at: new Date().toISOString(),
-        paid_at: body.paid_immediately ? new Date().toISOString() : null,
-        journal_entry_id: journal.id,
+      const command = accountingCommandContext(request, body);
+      const next = await accountingRpcRecord(admin, "accounting_transition_expense", {
+        p_org_id: auth.orgId,
+        p_expense_id: parts[1],
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_expected_version: Number(body.expected_version ?? expense.version ?? 0),
+        p_action: "approve",
+        p_reason: null,
+        p_paid_immediately: Boolean(body.paid_immediately),
       });
-      await audit(admin, auth.orgId, auth.user.id, "accounting.expense_approved", "accounting_expenses", parts[1], next);
-      await notifyFinance(admin, auth.orgId, "تم اعتماد مصروف", String(expense.description), `/accounting/expenses/${parts[1]}`);
       return json(next);
     }
     if (parts[0] === "expenses" && parts[1] && parts[2] === "reject") {
       const expense = await getRecord(admin, "accounting_expenses", auth.orgId, parts[1]);
       if (!["draft", "pending_approval"].includes(String(expense.status))) return message("يمكن رفض المصروفات المسودة أو بانتظار الاعتماد فقط.", 400);
-      const next = await updateRecord(admin, "accounting_expenses", auth.orgId, parts[1], {
-        status: "rejected",
-        rejection_reason: requireText(body.reason) || null,
+      const command = accountingCommandContext(request, body);
+      const next = await accountingRpcRecord(admin, "accounting_transition_expense", {
+        p_org_id: auth.orgId,
+        p_expense_id: parts[1],
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_expected_version: Number(body.expected_version ?? expense.version ?? 0),
+        p_action: "reject",
+        p_reason: requireText(body.reason) || null,
+        p_paid_immediately: false,
       });
-      await audit(admin, auth.orgId, auth.user.id, "accounting.expense_rejected", "accounting_expenses", parts[1], next);
-      await notifyFinance(admin, auth.orgId, "تم رفض مصروف", `${String(expense.description || "")}${next.rejection_reason ? ` - ${next.rejection_reason}` : ""}`, `/accounting/expenses/${parts[1]}`);
       return json(next);
     }
     if (parts[0] === "expenses" && parts[1] && parts[2] === "pay") {
       const expense = await getRecord(admin, "accounting_expenses", auth.orgId, parts[1]);
       if (String(expense.status) !== "approved") return message("يمكن سداد المصروفات المعتمدة وغير المسددة فقط.", 400);
-      const paidResult = await db(admin)
-        .from("accounting_payments")
-        .select("amount")
-        .eq("organization_id", auth.orgId)
-        .eq("expense_id", parts[1])
-        .eq("status", "posted");
-      if (paidResult.error) throw new Error(paidResult.error.message);
-      const alreadyPaid = roundMoney(((paidResult.data || []) as Record<string, unknown>[]).reduce((sum, row) => sum + Number(row.amount || 0), 0));
-      const unpaidAmount = roundMoney(Number(expense.total_amount || 0) - alreadyPaid);
-      const amount = roundMoney(body.amount || unpaidAmount);
-      if (amount <= 0 || amount > unpaidAmount) return message("مبلغ السداد يتجاوز الرصيد غير المسدد للمصروف.", 400);
-      const settings = await getAccountingSettings(admin, auth.orgId);
-      const paymentNo = await generateAccountingNumber(admin, "accounting_payments", auth.orgId, String(settings?.payment_prefix || "PAY"));
-      const paymentResult = await db(admin).from("accounting_payments").insert({
-        organization_id: auth.orgId,
-        payment_no: paymentNo,
-        payment_date: parseDate(body.payment_date),
-        type: "vendor_payment",
-        direction: "outbound",
-        amount,
-        account_id: body.account_id || settings?.default_bank_account_id || settings?.default_cash_account_id || null,
-        vendor_id: expense.vendor_id || null,
-        expense_id: parts[1],
-        method: requireText(body.method) || null,
-        created_by: auth.user.id,
-      }).select("*").single();
-      if (paymentResult.error) throw new Error(paymentResult.error.message);
-      const journal = await postPaymentJournal(admin, auth.orgId, paymentResult.data, auth.user.id);
-      await updateRecord(admin, "accounting_payments", auth.orgId, paymentResult.data.id, { status: "posted", posted_by: auth.user.id, posted_at: new Date().toISOString(), journal_entry_id: journal.id });
-      const remaining = roundMoney(unpaidAmount - amount);
-      const next = await updateRecord(admin, "accounting_expenses", auth.orgId, parts[1], {
-        status: remaining === 0 ? "paid" : "approved",
-        paid_status: remaining === 0 ? "paid" : "partially_paid",
-        paid_at: remaining === 0 ? new Date().toISOString() : null,
+      const amount = roundMoney(body.amount || expense.total_amount);
+      const command = accountingCommandContext(request, body);
+      await accountingRpcRecord(admin, "accounting_save_payment", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_payment_id: null,
+        p_expected_version: 0,
+        p_post: true,
+        p_payload: paymentCommandPayload({
+          payment_date: body.payment_date,
+          amount,
+          account_id: body.account_id,
+          method: body.method,
+          reference_no: body.reference_no,
+          notes: body.notes,
+          description: `سداد مصروف ${String(expense.expense_no || "")}`,
+          vendor_id: expense.vendor_id,
+          expense_id: parts[1],
+          type: "vendor_payment",
+          direction: "outbound",
+        }),
       });
-      await audit(admin, auth.orgId, auth.user.id, "accounting.expense_paid", "accounting_expenses", parts[1], next);
-      await notifyFinance(admin, auth.orgId, "تم سداد مصروف", `${String(expense.expense_no || "")} - ${amount}`, `/accounting/expenses/${parts[1]}`);
+      const next = await getRecord(admin, "accounting_expenses", auth.orgId, parts[1]);
       return json(next);
     }
     if (parts[0] === "expenses") {
-      const settings = await getAccountingSettings(admin, auth.orgId);
-      const expenseNo = await generateAccountingNumber(admin, "accounting_expenses", auth.orgId, String(settings?.expense_prefix || "EXP"), new Date(parseDate(body.expense_date)));
-      const amount = roundMoney(body.amount_before_vat);
-      const vat = roundMoney(body.vat_amount);
-      const values = {
-        organization_id: auth.orgId,
-        expense_no: expenseNo,
-        vendor_id: body.vendor_id || null,
-        employee_id: body.employee_id || null,
-        expense_date: parseDate(body.expense_date),
-        category_account_id: body.category_account_id || null,
-        payment_account_id: body.payment_account_id || null,
-        cost_center_id: body.cost_center_id || null,
-        description: requireText(body.description),
-        amount_before_vat: amount,
-        vat_amount: vat,
-        total_amount: roundMoney(amount + vat),
-        status: body.status === "pending_approval" ? "pending_approval" : "draft",
-        payment_method: requireText(body.payment_method) || null,
-        attachment_url: requireText(body.attachment_url) || null,
-        created_by: auth.user.id,
-      };
-      const result = await db(admin).from("accounting_expenses").insert(values).select("*").single();
-      if (result.error) throw new Error(result.error.message);
-      await audit(admin, auth.orgId, auth.user.id, "accounting.expense_created", "accounting_expenses", result.data.id, values);
-      await notifyFinance(admin, auth.orgId, "مصروف جديد", values.description, `/accounting/expenses/${result.data.id}`);
-      return json(result.data, 201);
+      const command = accountingCommandContext(request, body);
+      const result = await accountingRpcRecord(admin, "accounting_save_expense", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_expense_id: null,
+        p_expected_version: 0,
+        p_payload: expenseCommandPayload(body),
+      });
+      return json(result, 201);
     }
 
     if (parts[0] === "invoices" && parts[1] && parts[2] === "issue") {
@@ -1036,86 +911,84 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (invoice.status !== "draft") return message("يمكن إصدار الفواتير المسودة فقط.", 400);
       const lines = Array.isArray(invoice.lines) ? invoice.lines : [];
       if (lines.length === 0) return message("لا يمكن إصدار فاتورة بدون بنود.", 400);
-      const journal = await buildInvoiceJournal(admin, auth.orgId, invoice, auth.user.id);
-      const next = await updateRecord(admin, "accounting_invoices", auth.orgId, parts[1], {
-        status: "issued",
-        issued_by: auth.user.id,
-        issued_at: new Date().toISOString(),
-        journal_entry_id: journal.id,
+      const command = accountingCommandContext(request, body);
+      const next = await accountingRpcRecord(admin, "accounting_issue_invoice", {
+        p_org_id: auth.orgId,
+        p_invoice_id: parts[1],
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_expected_version: Number(body.expected_version ?? invoice.version ?? 0),
       });
-      await audit(admin, auth.orgId, auth.user.id, "accounting.invoice_issued", "accounting_invoices", parts[1], next);
-      await notifyFinance(admin, auth.orgId, "تم إصدار فاتورة", String(invoice.invoice_no), `/accounting/invoices/${parts[1]}`);
       return json(next);
     }
     if (parts[0] === "invoices" && parts[1] && parts[2] === "record-payment") {
       const invoice = await getRecord(admin, "accounting_invoices", auth.orgId, parts[1]);
       if (!["issued", "partially_paid"].includes(String(invoice.status))) return message("يمكن تسجيل السداد للفواتير الصادرة فقط.", 400);
-      const settings = await getAccountingSettings(admin, auth.orgId);
       const amount = roundMoney(body.amount || invoice.balance_due);
       if (amount <= 0 || amount > Number(invoice.balance_due || 0)) return message("مبلغ السداد غير صحيح.", 400);
-      const paymentNo = await generateAccountingNumber(admin, "accounting_payments", auth.orgId, String(settings?.payment_prefix || "PAY"));
-      const paymentResult = await db(admin).from("accounting_payments").insert({
-        organization_id: auth.orgId,
-        payment_no: paymentNo,
-        payment_date: parseDate(body.payment_date),
-        type: "customer_receipt",
-        direction: "inbound",
-        amount,
-        account_id: body.account_id || settings?.default_bank_account_id || settings?.default_cash_account_id || null,
-        customer_id: invoice.customer_id || null,
-        invoice_id: parts[1],
-        method: requireText(body.method) || null,
-        created_by: auth.user.id,
-      }).select("*").single();
-      if (paymentResult.error) throw new Error(paymentResult.error.message);
-      const journal = await postPaymentJournal(admin, auth.orgId, paymentResult.data, auth.user.id);
-      await updateRecord(admin, "accounting_payments", auth.orgId, paymentResult.data.id, { status: "posted", posted_by: auth.user.id, posted_at: new Date().toISOString(), journal_entry_id: journal.id });
-      const paidAmount = roundMoney(Number(invoice.paid_amount || 0) + amount);
-      const balanceDue = roundMoney(Number(invoice.total_amount || 0) - paidAmount);
-      const next = await updateRecord(admin, "accounting_invoices", auth.orgId, parts[1], { paid_amount: paidAmount, balance_due: balanceDue, status: balanceDue === 0 ? "paid" : "partially_paid" });
-      await audit(admin, auth.orgId, auth.user.id, "accounting.payment_received", "accounting_payments", paymentResult.data.id, { invoice_id: parts[1], amount });
-      await notifyFinance(admin, auth.orgId, "تم تسجيل سداد فاتورة", `${String(invoice.invoice_no || "")} - ${amount}`, `/accounting/invoices/${parts[1]}`);
+      const command = accountingCommandContext(request, body);
+      await accountingRpcRecord(admin, "accounting_save_payment", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_payment_id: null,
+        p_expected_version: 0,
+        p_post: true,
+        p_payload: paymentCommandPayload({
+          payment_date: body.payment_date,
+          type: "customer_receipt",
+          direction: "inbound",
+          amount,
+          account_id: body.account_id,
+          customer_id: invoice.customer_id,
+          invoice_id: parts[1],
+          method: body.method,
+          reference_no: body.reference_no,
+          notes: body.notes,
+          description: `سداد فاتورة ${String(invoice.invoice_no || "")}`,
+        }),
+      });
+      const next = await getRecord(admin, "accounting_invoices", auth.orgId, parts[1]);
       return json(next);
     }
     if (parts[0] === "invoices") {
-      const settings = await getAccountingSettings(admin, auth.orgId);
-      const invoiceNo = await generateAccountingNumber(admin, "accounting_invoices", auth.orgId, String(settings?.invoice_prefix || "INV"), new Date(parseDate(body.invoice_date)));
-      const invoiceResult = await db(admin).from("accounting_invoices").insert({
-        organization_id: auth.orgId,
-        customer_id: body.customer_id || null,
-        invoice_no: invoiceNo,
-        invoice_date: parseDate(body.invoice_date),
-        due_date: body.due_date || null,
-        source_module: requireText(body.source_module, "manual"),
-        source_id: body.source_id || null,
-        notes: requireText(body.notes) || null,
-        created_by: auth.user.id,
-      }).select("*").single();
-      if (invoiceResult.error) throw new Error(invoiceResult.error.message);
-      await createOrUpdateInvoiceLines(admin, auth.orgId, invoiceResult.data.id, Array.isArray(body.lines) ? body.lines : []);
-      const invoice = await getRecord(admin, "accounting_invoices", auth.orgId, invoiceResult.data.id, "*, lines:accounting_invoice_lines(*)");
-      await audit(admin, auth.orgId, auth.user.id, "accounting.invoice_created", "accounting_invoices", invoiceResult.data.id, { invoice_no: invoiceNo });
+      const command = accountingCommandContext(request, body);
+      const created = await accountingRpcRecord(admin, "accounting_save_invoice", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_invoice_id: null,
+        p_expected_version: 0,
+        p_payload: invoiceCommandPayload(body),
+      });
+      const invoice = await getRecord(admin, "accounting_invoices", auth.orgId, String(created.id), "*, lines:accounting_invoice_lines(*)");
       return json(invoice, 201);
     }
 
     if (parts[0] === "payments" && parts[1] && parts[2] === "post") {
       const payment = await getRecord(admin, "accounting_payments", auth.orgId, parts[1]);
       if (payment.status !== "draft") return message("يمكن ترحيل الدفعات المسودة فقط.", 400);
-      const journal = await postPaymentJournal(admin, auth.orgId, payment, auth.user.id);
-      const next = await updateRecord(admin, "accounting_payments", auth.orgId, parts[1], { status: "posted", posted_by: auth.user.id, posted_at: new Date().toISOString(), journal_entry_id: journal.id });
-      await audit(admin, auth.orgId, auth.user.id, "accounting.payment_posted", "accounting_payments", parts[1], next);
-      await notifyFinance(admin, auth.orgId, payment.type === "manual" ? "تم ترحيل دفعة يدوية" : "تم ترحيل دفعة", String(payment.description || payment.payment_no || ""), `/accounting/payments/${parts[1]}`);
+      const command = accountingCommandContext(request, body);
+      const next = await accountingRpcRecord(admin, "accounting_save_payment", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_payment_id: parts[1],
+        p_expected_version: Number(body.expected_version ?? payment.version ?? 0),
+        p_post: true,
+        p_payload: paymentCommandPayload(payment),
+      });
       return json(next);
     }
     if (parts[0] === "payments") {
-      const settings = await getAccountingSettings(admin, auth.orgId);
-      const paymentNo = await generateAccountingNumber(admin, "accounting_payments", auth.orgId, String(settings?.payment_prefix || "PAY"), new Date(parseDate(body.payment_date)));
       const paymentType = requireText(body.type, "manual");
       const direction = requireText(body.direction, "outbound");
       const amount = roundMoney(body.amount);
-      const accountId = paymentType === "manual"
-        ? requireText(body.account_id)
-        : body.account_id || settings?.default_bank_account_id || settings?.default_cash_account_id || null;
+      const accountId = requireText(body.account_id) || null;
       const counterpartAccountId = requireText(body.counterpart_account_id) || null;
       const description = requireText(body.description) || requireText(body.notes) || null;
       if (amount <= 0) return message("مبلغ الدفعة يجب أن يكون أكبر من صفر.", 400);
@@ -1126,71 +999,66 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (accountId === counterpartAccountId) return message("حساب البنك أو النقدية يجب أن يختلف عن الحساب المقابل.", 400);
         if (!description) return message("وصف الدفعة اليدوية مطلوب.", 400);
       }
-      const values = {
-        organization_id: auth.orgId,
-        payment_no: paymentNo,
-        payment_date: parseDate(body.payment_date),
-        type: paymentType,
-        direction,
-        amount,
-        account_id: accountId,
-        counterpart_account_id: counterpartAccountId,
-        cost_center_id: body.cost_center_id || null,
-        customer_id: body.customer_id || null,
-        vendor_id: body.vendor_id || null,
-        employee_id: body.employee_id || null,
-        invoice_id: body.invoice_id || null,
-        expense_id: body.expense_id || null,
-        advance_request_id: body.advance_request_id || null,
-        payroll_id: body.payroll_id || null,
-        description,
-        reference_no: requireText(body.reference_no) || null,
-        method: requireText(body.method) || null,
-        notes: requireText(body.notes) || null,
-        attachment_url: requireText(body.attachment_url) || null,
-        created_by: auth.user.id,
-      };
-      const result = await db(admin).from("accounting_payments").insert(values).select("*").single();
-      if (result.error) throw new Error(result.error.message);
-      await audit(admin, auth.orgId, auth.user.id, "accounting.payment_created", "accounting_payments", result.data.id, values);
-      return json(result.data, 201);
+      const command = accountingCommandContext(request, body);
+      const result = await accountingRpcRecord(admin, "accounting_save_payment", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_payment_id: null,
+        p_expected_version: 0,
+        p_post: false,
+        p_payload: paymentCommandPayload({ ...body, type: paymentType, direction, amount, account_id: accountId, counterpart_account_id: counterpartAccountId, description }),
+      });
+      return json(result, 201);
     }
 
     if (parts[0] === "payroll" && parts[1] === "create-draft-entry") {
       const month = normalizeMonth(body.month);
       if (!month) return message("الشهر مطلوب.", 400);
       const settings = await getAccountingSettings(admin, auth.orgId);
-      if (!settings?.default_salary_expense_id || !settings?.default_salary_payable_id) return message("إعدادات حسابات الرواتب غير مكتملة.", 400);
-      const payslipsResult = await db(admin).from("payslips").select("*").eq("org_id", auth.orgId).eq("month", month);
-      if (payslipsResult.error) throw new Error(payslipsResult.error.message);
-      const payslips = (payslipsResult.data || []) as Record<string, unknown>[];
-      if (payslips.length === 0) return message("لا توجد مسيرات رواتب لهذا الشهر.", 404);
-      const totalNet = roundMoney(payslips.reduce((sum, row) => sum + Number(row.net_salary || 0), 0));
-      const advanceDeductions = sumAdvanceDeductions(payslips);
+      if (!settings?.default_salary_expense_id || !settings?.default_salary_payable_id || !settings?.default_gosi_expense_id || !settings?.default_gosi_payable_id) {
+        return message("أكمل حسابات مصروف/مستحق الرواتب ومصروف/مستحق التأمينات أولا.", 400);
+      }
+      const runResult = await db(admin).from("payroll_runs").select("*")
+        .eq("org_id", auth.orgId).eq("month", month).maybeSingle();
+      if (runResult.error) throw new Error(runResult.error.message);
+      const run = runResult.data as Record<string, unknown> | null;
+      if (!run || run.status !== "approved" || run.formula_version !== "sa-payroll-v1") {
+        return message("يجب اعتماد مسير رواتب مكتمل ومحسوب بالصيغة الحالية قبل إنشاء القيد.", 400);
+      }
+      const advanceResult = await db(admin).from("payslips").select("advance_deduction")
+        .eq("org_id", auth.orgId).eq("payroll_run_id", run.id);
+      if (advanceResult.error) throw new Error(advanceResult.error.message);
+      const advanceDeductions = roundMoney(((advanceResult.data || []) as Record<string, unknown>[])
+        .reduce((sum, row) => sum + Number(row.advance_deduction || 0), 0));
       if (advanceDeductions > 0 && !settings.default_employee_advances_id) return message("Employee advances account is required before posting payroll advance deductions.", 400);
-      const salaryCost = roundMoney(totalNet + advanceDeductions);
+      const totalNet = roundMoney(run.total_net);
+      const employeeGosi = roundMoney(run.total_employee_gosi);
+      const employerGosi = roundMoney(run.total_employer_gosi);
+      const salaryCost = roundMoney(totalNet + employeeGosi + advanceDeductions);
       const lines: JournalLineInput[] = [
         { account_id: String(settings.default_salary_expense_id), debit: salaryCost, credit: 0, description: `رواتب ${month}` },
-        { account_id: String(settings.default_salary_payable_id), debit: 0, credit: salaryCost, description: `رواتب مستحقة ${month}` },
+        { account_id: String(settings.default_salary_payable_id), debit: 0, credit: totalNet, description: `رواتب مستحقة ${month}` },
       ];
+      if (employerGosi > 0) lines.push({ account_id: String(settings.default_gosi_expense_id), debit: employerGosi, credit: 0, description: `تأمينات صاحب العمل ${month}` });
+      if (employeeGosi + employerGosi > 0) lines.push({ account_id: String(settings.default_gosi_payable_id), debit: 0, credit: roundMoney(employeeGosi + employerGosi), description: `تأمينات مستحقة ${month}` });
       if (advanceDeductions > 0) {
-        lines.push(
-          { account_id: String(settings.default_salary_payable_id), debit: advanceDeductions, credit: 0, description: `خصم سلف ${month}` },
-          { account_id: String(settings.default_employee_advances_id), debit: 0, credit: advanceDeductions, description: `خصم سلف ${month}` },
-        );
+        lines.push({ account_id: String(settings.default_employee_advances_id), debit: 0, credit: advanceDeductions, description: `خصم سلف ${month}` });
       }
-      const payrollSource = requireText(body.payroll_id) || payrollSourceId(auth.orgId, month);
+      const command = accountingCommandContext(request, body);
       const entry = await createJournalEntry(admin, {
         orgId: auth.orgId,
         userId: auth.user.id,
         entryDate: parseDate(month),
         description: `قيد رواتب ${month}`,
         sourceModule: "payroll",
-        sourceId: payrollSource,
+        sourceId: String(run.id),
         status: "draft",
         lines,
+        commandId: command.commandId,
+        requestId: command.requestId,
       });
-      await notifyFinance(admin, auth.orgId, "تم إنشاء مسودة قيد رواتب", `قيد رواتب ${month} جاهز للمراجعة.`, `/accounting/journal-entries/${entry.id}`);
       return json(entry, 201);
     }
 
@@ -1199,100 +1067,91 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const status = await getPayrollAccountingStatus(admin, auth.orgId, month);
       if (status.status === "not_generated" || status.status === "draft_created") return message("يجب ترحيل قيد الرواتب قبل تسجيل السداد.", 400);
       if (status.payment_id) return message("تم تسجيل دفعة رواتب لهذا الشهر مسبقا.", 400);
-
-      const settings = await getAccountingSettings(admin, auth.orgId);
       const amount = roundMoney(body.amount || status.total_net);
       const totalNet = roundMoney(status.total_net);
       if (amount <= 0 || amount !== totalNet) return message("مبلغ سداد الرواتب يجب أن يساوي صافي الرواتب المستحق للشهر.", 400);
-
-      const paymentNo = await generateAccountingNumber(admin, "accounting_payments", auth.orgId, String(settings?.payment_prefix || "PAY"), new Date(parseDate(body.payment_date)));
-      const paymentResult = await db(admin).from("accounting_payments").insert({
-        organization_id: auth.orgId,
-        payment_no: paymentNo,
-        payment_date: parseDate(body.payment_date),
-        type: "payroll_payment",
-        direction: "outbound",
-        amount,
-        account_id: body.account_id || settings?.default_bank_account_id || settings?.default_cash_account_id || null,
-        payroll_id: status.payroll_id,
-        description: `سداد رواتب ${month}`,
-        reference_no: requireText(body.reference_no) || null,
-        method: requireText(body.method) || null,
-        notes: requireText(body.notes) || null,
-        created_by: auth.user.id,
-      }).select("*").single();
-      if (paymentResult.error) throw new Error(paymentResult.error.message);
-
-      const journal = await postPaymentJournal(admin, auth.orgId, paymentResult.data, auth.user.id);
-      const next = await updateRecord(admin, "accounting_payments", auth.orgId, paymentResult.data.id, {
-        status: "posted",
-        posted_by: auth.user.id,
-        posted_at: new Date().toISOString(),
-        journal_entry_id: journal.id,
+      if (!status.payroll_id) return message("مسير الرواتب غير موجود.", 404);
+      const command = accountingCommandContext(request, body);
+      const payment = await accountingRpcRecord(admin, "accounting_save_payment", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_payment_id: null,
+        p_expected_version: 0,
+        p_post: true,
+        p_payload: paymentCommandPayload({
+          payment_date: body.payment_date,
+          type: "payroll_payment",
+          direction: "outbound",
+          amount,
+          account_id: body.account_id,
+          payroll_id: status.payroll_id,
+          description: `سداد رواتب ${month}`,
+          reference_no: body.reference_no,
+          method: body.method,
+          notes: body.notes,
+        }),
       });
-
-      const payslipUpdate = await db(admin)
-        .from("payslips")
-        .update({ status: "paid" })
-        .eq("org_id", auth.orgId)
-        .eq("month", month);
-      if (payslipUpdate.error) throw new Error(payslipUpdate.error.message);
-
-      await audit(admin, auth.orgId, auth.user.id, "accounting.payroll_paid", "accounting_payments", paymentResult.data.id, { month, amount });
-      await notifyFinance(admin, auth.orgId, "تم سداد الرواتب", `تم تسجيل سداد رواتب ${month}.`, `/accounting/payments/${paymentResult.data.id}`);
-      return json({ payment: next, journal, status: await getPayrollAccountingStatus(admin, auth.orgId, month) }, 201);
+      const journal = payment.journal_entry_id
+        ? await getRecord(admin, "accounting_journal_entries", auth.orgId, String(payment.journal_entry_id))
+        : null;
+      return json({ payment, journal, status: await getPayrollAccountingStatus(admin, auth.orgId, month) }, 201);
     }
 
     if (parts[0] === "budgets" && parts[1] && parts[2] === "approve") {
       const budget = await getRecord(admin, "accounting_budgets", auth.orgId, parts[1]);
-      if (budget.status !== "draft") return message("يمكن اعتماد الموازنات المسودة فقط.", 400);
-      const next = await updateRecord(admin, "accounting_budgets", auth.orgId, parts[1], {
-        status: "approved",
-        approved_by: auth.user.id,
-        approved_at: new Date().toISOString(),
+      const command = accountingCommandContext(request, body);
+      const next = await accountingRpcRecord(admin, "accounting_approve_budget", {
+        p_org_id: auth.orgId,
+        p_budget_id: parts[1],
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_expected_version: Number(body.expected_version ?? budget.version ?? 0),
       });
-      await audit(admin, auth.orgId, auth.user.id, "accounting.budget_approved", "accounting_budgets", parts[1], next);
       return json(next);
     }
     if (parts[0] === "budgets") {
-      const values = {
-        organization_id: auth.orgId,
-        name: requireText(body.name),
-        fiscal_year: Number(body.fiscal_year || new Date().getFullYear()),
-        created_by: auth.user.id,
-      };
-      if (!values.name) return message("اسم الموازنة مطلوب.", 400);
-      const result = await db(admin).from("accounting_budgets").insert(values).select("*").single();
-      if (result.error) throw new Error(result.error.message);
-
-      if (Array.isArray(body.lines) && body.lines.length > 0) {
-        const lineRows = (body.lines as Record<string, unknown>[]).map((line) => ({
-          organization_id: auth.orgId,
-          budget_id: result.data.id,
-          account_id: requireText(line.account_id),
-          cost_center_id: line.cost_center_id || null,
-          month: Number(line.month || 1),
-          amount: roundMoney(line.amount),
-          notes: requireText(line.notes) || null,
-        }));
-        const linesResult = await db(admin).from("accounting_budget_lines").insert(lineRows);
-        if (linesResult.error) throw new Error(linesResult.error.message);
-      }
-
-      await audit(admin, auth.orgId, auth.user.id, "accounting.budget_created", "accounting_budgets", result.data.id, values);
-      return json(result.data, 201);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "accounting_save_budget", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_budget_id: null,
+        p_expected_version: 0,
+        p_payload: budgetCommandPayload(body),
+      }), 201);
     }
 
     if (parts[0] === "periods" && parts[1] && parts[2] === "close") {
       const period = await getRecord(admin, "accounting_periods", auth.orgId, parts[1]);
       if (period.status !== "open") return message("يمكن إغلاق الفترات المفتوحة فقط.", 400);
-      const next = await updateRecord(admin, "accounting_periods", auth.orgId, parts[1], {
-        status: "closed",
-        closed_by: auth.user.id,
-        closed_at: new Date().toISOString(),
+      const command = accountingCommandContext(request, body);
+      const next = await accountingRpcRecord(admin, "accounting_close_period", {
+        p_org_id: auth.orgId,
+        p_period_id: parts[1],
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_expected_version: Number(body.expected_version ?? period.version ?? 0),
       });
-      await audit(admin, auth.orgId, auth.user.id, "accounting.period_closed", "accounting_periods", parts[1], next);
-      await notifyFinance(admin, auth.orgId, "تم إغلاق فترة محاسبية", String(period.name), "/accounting/settings");
+      return json(next);
+    }
+
+    if (parts[0] === "periods" && parts[1] && parts[2] === "reopen") {
+      const period = await getRecord(admin, "accounting_periods", auth.orgId, parts[1]);
+      const command = accountingCommandContext(request, body);
+      const next = await accountingRpcRecord(admin, "accounting_reopen_period", {
+        p_org_id: auth.orgId,
+        p_period_id: parts[1],
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_expected_version: Number(body.expected_version ?? period.version ?? 0),
+        p_reason: requireText(body.reason),
+      });
       return json(next);
     }
 
@@ -1325,112 +1184,26 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const customerId = requireText(body.customer_id);
       if (!companyId || !customerId) return message("شركة المبيعات والعميل المحاسبي مطلوبان.", 400);
 
-      const companyUpdate = await db(admin)
-        .from("sales_companies")
-        .update({ accounting_customer_id: customerId })
-        .eq("organization_id", auth.orgId)
-        .eq("id", companyId)
-        .select("id, name, accounting_customer_id")
-        .single();
-      if (companyUpdate.error) throw new Error(companyUpdate.error.message);
-
-      const customerUpdate = await db(admin)
-        .from("accounting_customers")
-        .update({ sales_company_id: companyId })
-        .eq("organization_id", auth.orgId)
-        .eq("id", customerId)
-        .select("id, name_ar, sales_company_id")
-        .single();
-      if (customerUpdate.error) throw new Error(customerUpdate.error.message);
-
-      await audit(admin, auth.orgId, auth.user.id, "accounting.sales_company_customer_linked", "sales_companies", companyId, { customer_id: customerId });
-      return json({ company: companyUpdate.data, customer: customerUpdate.data });
+      const current = await getRecord(admin, "accounting_customers", auth.orgId, customerId);
+      const command = accountingCommandContext(request, body);
+      const customer = await accountingRpcRecord(admin, "accounting_save_customer", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_customer_id: customerId,
+        p_expected_version: Number(current.version || 0),
+        p_payload: customerCommandPayload({ sales_company_id: companyId }, current),
+      });
+      const company = await getRecord(admin, "sales_companies", auth.orgId, companyId);
+      return json({ company, customer });
     }
 
     if (parts[0] === "sales" && parts[1] === "create-invoice-from-log") {
-      const logId = requireText(body.sales_log_id);
-      const log = await getRecord(admin, "sales_logs", auth.orgId, logId.replace(/[^0-9a-f-]/gi, ""), "*").catch(async () => {
-        const { data, error } = await db(admin).from("sales_logs").select("*").eq("organization_id", auth.orgId).eq("id", logId).maybeSingle();
-        if (error) throw new Error(error.message);
-        if (!data) throw new Error("سجل المبيعات غير موجود.");
-        return data;
-      });
-      const companyId = String(log.company_id || "");
-      let customerId = requireText(body.customer_id);
-      if (!customerId && companyId) {
-        const companyResult = await db(admin)
-          .from("sales_companies")
-          .select("accounting_customer_id")
-          .eq("organization_id", auth.orgId)
-          .eq("id", companyId)
-          .maybeSingle();
-        if (companyResult.error) throw new Error(companyResult.error.message);
-        customerId = requireText(companyResult.data?.accounting_customer_id);
-      }
-      if (!customerId && companyId) {
-        const customerResult = await db(admin)
-          .from("accounting_customers")
-          .select("id")
-          .eq("organization_id", auth.orgId)
-          .eq("sales_company_id", companyId)
-          .eq("is_active", true)
-          .limit(1)
-          .maybeSingle();
-        if (customerResult.error) throw new Error(customerResult.error.message);
-        customerId = requireText(customerResult.data?.id);
-      }
-      if (!customerId) return message("اختر العميل المرتبط بسجل المبيعات.", 400);
-      const existingInvoice = await db(admin)
-        .from("accounting_invoices")
-        .select("id")
-        .eq("organization_id", auth.orgId)
-        .eq("source_module", "sales_log")
-        .eq("source_id", logId)
-        .limit(1)
-        .maybeSingle();
-      if (existingInvoice.error) throw new Error(existingInvoice.error.message);
-      if (existingInvoice.data?.id) return message("تم إنشاء فاتورة لهذا السجل مسبقا.", 400);
-      const items = Array.isArray(log.items) ? log.items as Record<string, unknown>[] : [];
-      const productIds = Array.from(new Set(items.map((item) => String(item.product_id || "")).filter(Boolean)));
-      const revenueByProduct = new Map<string, string | null>();
-      if (productIds.length > 0) {
-        const productsResult = await db(admin)
-          .from("sales_products")
-          .select("id, revenue_account_id")
-          .eq("organization_id", auth.orgId)
-          .in("id", productIds);
-        if (productsResult.error) throw new Error(productsResult.error.message);
-        for (const product of (productsResult.data || []) as Record<string, unknown>[]) {
-          revenueByProduct.set(String(product.id), product.revenue_account_id ? String(product.revenue_account_id) : null);
-        }
-      }
-      body.customer_id = customerId;
-      body.invoice_date = log.log_date || new Date().toISOString().slice(0, 10);
-      body.lines = items.map((item) => ({
-        description_ar: item.product_name,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        discount_amount: item.discount_amount,
-        revenue_account_id: revenueByProduct.get(String(item.product_id || "")) || null,
-      }));
-      const settings = await getAccountingSettings(admin, auth.orgId);
-      const invoiceNo = await generateAccountingNumber(admin, "accounting_invoices", auth.orgId, String(settings?.invoice_prefix || "INV"));
-      const invoiceResult = await db(admin).from("accounting_invoices").insert({
-        organization_id: auth.orgId,
-        customer_id: customerId,
-        invoice_no: invoiceNo,
-        invoice_date: parseDate(body.invoice_date),
-        source_module: "sales_log",
-        source_id: logId,
-        notes: `فاتورة من سجل مبيعات ${logId}`,
-        created_by: auth.user.id,
-      }).select("*").single();
-      if (invoiceResult.error) throw new Error(invoiceResult.error.message);
-      await createOrUpdateInvoiceLines(admin, auth.orgId, invoiceResult.data.id, body.lines);
-      await audit(admin, auth.orgId, auth.user.id, "accounting.sales_invoice_generated", "accounting_invoices", invoiceResult.data.id, { sales_log_id: logId, invoice_no: invoiceNo });
-      await notifyFinance(admin, auth.orgId, "تم إنشاء فاتورة من المبيعات", String(invoiceNo), `/accounting/invoices/${invoiceResult.data.id}`);
-      return json(await getRecord(admin, "accounting_invoices", auth.orgId, invoiceResult.data.id, "*, lines:accounting_invoice_lines(*)"), 201);
+      return message(
+        "تم إيقاف إنشاء الفاتورة من سجل المبيعات لأن كل إصدار يُرحّل تلقائياً؛ إنشاء فاتورة إضافية يكرر الإيراد والذمم.",
+        410
+      );
     }
 
     // Phase 2: Payroll Auto-Post endpoint
@@ -1438,9 +1211,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const month = requireText(body.month);
       if (!/^\d{4}-\d{2}$/.test(month)) return message("الشهر مطلوب بصيغة YYYY-MM.", 400);
       const { autoPostPayrollMonth } = await import("@/lib/accounting/auto-posting");
-      const result = await autoPostPayrollMonth(admin, auth.orgId, auth.user.id, month);
+      const command = accountingCommandContext(request, body);
+      const result = await autoPostPayrollMonth(admin, auth.orgId, auth.user.id, month, command);
       if (!result.success) return message(result.error || "فشل ترحيل الرواتب تلقائيا.", 500);
-      await notifyFinance(admin, auth.orgId, "تم ترحيل قيد رواتب تلقائي", `تم ترحيل رواتب ${month} تلقائيا.`, `/accounting/journal-entries/${result.journalEntryId}`);
       return json({ ...result, month }, 201);
     }
 
@@ -1451,11 +1224,14 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const purchasePrice = roundMoney(body.purchase_price);
       if (!assetId || purchasePrice <= 0) return message("معرف الأصل وسعر الشراء مطلوبان.", 400);
       const { autoCapitalizeAsset } = await import("@/lib/accounting/auto-posting");
+      const command = accountingCommandContext(request, body);
       const result = await autoCapitalizeAsset(admin, auth.orgId, auth.user.id, {
         id: assetId,
         asset_name: assetName || "أصل",
         purchase_price: purchasePrice,
         paid_immediately: Boolean(body.paid_immediately),
+        command_id: command.commandId,
+        request_id: command.requestId,
       });
       if (!result.success) return message(result.error || "فشل رسملة الأصل.", 500);
       return json(result, 201);
@@ -1476,7 +1252,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const month = requireText(body.month);
       if (!/^\d{4}-\d{2}$/.test(month)) return message("الشهر مطلوب بصيغة YYYY-MM.", 400);
       const { runMonthlyEOSBAccrual } = await import("@/lib/accounting/auto-posting");
-      const result = await runMonthlyEOSBAccrual(admin, auth.orgId, auth.user.id, month);
+      const command = accountingCommandContext(request, body);
+      const result = await runMonthlyEOSBAccrual(admin, auth.orgId, auth.user.id, month, command);
       if (!result.success) return message(result.error || "فشل احتساب مخصص نهاية الخدمة.", 500);
       return json(result, 201);
     }
@@ -1489,14 +1266,15 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const eosb = await settleEmployeeEOSB(admin, auth.orgId, auth.user.id, employeeId);
       if (!eosb.success) return message(eosb.error || "فشل تسوية مكافأة نهاية الخدمة.", 500);
 
-      // Phase 6: attempt leave encashment in same termination flow (non-blocking)
-      let leaveEncashment: { success: boolean; journalEntryId?: string; encashmentAmount: number; error?: string } = { success: true, encashmentAmount: 0 };
-      try {
-        leaveEncashment = await calculateAndPostLeaveEncashment(admin, auth.orgId, auth.user.id, employeeId);
-      } catch {
-        // Leave encashment failure must not block EOSB settlement response
+      const leaveEncashment = await calculateAndPostLeaveEncashment(admin, auth.orgId, auth.user.id, employeeId);
+      if (!leaveEncashment.success) {
+        return NextResponse.json({
+          message: leaveEncashment.error || "تم ترحيل مكافأة نهاية الخدمة وتعذر ترحيل تعويض الإجازات؛ أعد المحاولة بأمان.",
+          eosb,
+          leaveEncashment,
+          requestId: auth.requestId,
+        }, { status: 500 });
       }
-
       return json({ eosb, leaveEncashment }, 201);
     }
 
@@ -1529,164 +1307,206 @@ export async function POST(request: NextRequest, context: RouteContext) {
 }
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
-  const parts = segments(context);
-  const auth = await requireAccountingAccess(actionFor("PATCH", parts));
+  const parts = await segments(context);
+  const auth = await requireAccountingAccess(actionFor("PATCH", parts), request);
   if ("error" in auth) return auth.error;
   const admin = createAdminClient();
   const body = await request.json().catch(() => ({}));
+  body.request_id ||= auth.requestId;
 
   try {
     if (parts[0] === "settings") {
-      const values = { ...body, organization_id: auth.orgId };
-      const result = await db(admin).from("accounting_settings").upsert(values, { onConflict: "organization_id" }).select("*").single();
-      if (result.error) throw new Error(result.error.message);
-      await audit(admin, auth.orgId, auth.user.id, "accounting.settings_updated", "accounting_settings", result.data.id, body);
-      await notifyFinance(admin, auth.orgId, "تم تحديث إعدادات المحاسبة", "تم تعديل الحسابات أو الترقيم الافتراضي لوحدة المالية.", "/accounting/settings");
-      return json(result.data);
+      const current = await getAccountingSettings(admin, auth.orgId);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+        p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
+        p_request_id: command.requestId, p_command_id: command.commandId,
+        p_entity_type: "settings", p_entity_id: current?.id || null,
+        p_expected_version: Number(body.expected_version ?? current?.version ?? 0),
+        p_operation: "save", p_payload: body,
+      }));
     }
 
     if (parts[0] === "journal-entries") {
       const id = parts[1] || body.id;
       if (!id) return message("معرف القيد مطلوب.", 400);
-      const current = await getRecord(admin, "accounting_journal_entries", auth.orgId, id);
+      const current = await getRecord(admin, "accounting_journal_entries", auth.orgId, id, "*, lines:accounting_journal_lines(*)");
       if (current.status !== "draft") return message("يمكن تعديل أو إرسال القيود المسودة فقط.", 400);
-
-      if (Array.isArray(body.lines)) {
-        const updated = await updateDraftJournalEntry(admin, {
-          orgId: auth.orgId,
-          userId: auth.user.id,
-          entryId: id,
-          entryDate: parseDate(body.entry_date || current.entry_date),
-          description: requireText(body.description, String(current.description || "")),
-          notes: body.notes === undefined ? (current.notes as string | null) : requireText(body.notes) || null,
-          lines: body.lines as JournalLineInput[],
-        });
-
-        if (body.status !== "pending_approval") return json(updated);
-      } else if (body.status !== "pending_approval") {
+      if (!Array.isArray(body.lines) && body.status !== "pending_approval") {
         return message("أرسل سطور القيد للتعديل أو status=pending_approval للإرسال للاعتماد.", 400);
       }
+      const command = accountingCommandContext(request, body);
+      return json(await updateDraftJournalEntry(admin, {
+        orgId: auth.orgId,
+        userId: auth.user.id,
+        entryId: id,
+        entryDate: parseDate(body.entry_date || current.entry_date),
+        description: requireText(body.description, String(current.description || "")),
+        notes: body.notes === undefined ? (current.notes as string | null) : requireText(body.notes) || null,
+        status: body.status === "pending_approval" ? "pending_approval" : "draft",
+        lines: (Array.isArray(body.lines) ? body.lines : current.lines) as JournalLineInput[],
+        expectedVersion: Number(body.expected_version ?? current.version ?? 0),
+        commandId: command.commandId,
+        requestId: command.requestId,
+      }));
+    }
 
-      await updateRecord(admin, "accounting_journal_entries", auth.orgId, id, {
-        status: "pending_approval",
-        updated_at: new Date().toISOString(),
+    if (parts[0] === "invoices" && parts[1]) {
+      const current = await getRecord(admin, "accounting_invoices", auth.orgId, parts[1], "*, lines:accounting_invoice_lines(*)");
+      if (current.status !== "draft") return message("يمكن تعديل الفواتير المسودة فقط.", 400);
+      const command = accountingCommandContext(request, body);
+      const updated = await accountingRpcRecord(admin, "accounting_save_invoice", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_invoice_id: parts[1],
+        p_expected_version: Number(body.expected_version ?? current.version ?? 0),
+        p_payload: invoiceCommandPayload(body, current),
       });
-      await audit(admin, auth.orgId, auth.user.id, "accounting.journal_submitted", "accounting_journal_entries", id, {
-        previous_status: current.status,
-        status: "pending_approval",
-      });
-      await notifyFinance(admin, auth.orgId, "قيد محاسبي بانتظار الاعتماد", String(current.description || ""), `/accounting/journal-entries/${id}`);
-      return json(await getRecord(admin, "accounting_journal_entries", auth.orgId, id, "*, lines:accounting_journal_lines(*, account:account_id(*), cost_center:cost_center_id(*))"));
+      return json(await getRecord(admin, "accounting_invoices", auth.orgId, String(updated.id), "*, lines:accounting_invoice_lines(*)"));
+    }
+
+    if (parts[0] === "expenses" && parts[1]) {
+      const current = await getRecord(admin, "accounting_expenses", auth.orgId, parts[1]);
+      if (!["draft", "pending_approval"].includes(String(current.status))) return message("لا يمكن تعديل هذا المصروف.", 400);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "accounting_save_expense", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_expense_id: parts[1],
+        p_expected_version: Number(body.expected_version ?? current.version ?? 0),
+        p_payload: expenseCommandPayload(body, current),
+      }));
+    }
+
+    if (parts[0] === "payments" && parts[1]) {
+      const current = await getRecord(admin, "accounting_payments", auth.orgId, parts[1]);
+      if (current.status !== "draft") return message("يمكن تعديل الدفعات المسودة فقط.", 400);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "accounting_save_payment", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_payment_id: parts[1],
+        p_expected_version: Number(body.expected_version ?? current.version ?? 0),
+        p_post: false,
+        p_payload: paymentCommandPayload(body, current),
+      }));
+    }
+
+    if (parts[0] === "customers" && parts[1]) {
+      const current = await getRecord(admin, "accounting_customers", auth.orgId, parts[1]);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "accounting_save_customer", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_customer_id: parts[1],
+        p_expected_version: Number(body.expected_version ?? current.version ?? 0),
+        p_payload: customerCommandPayload(body, current),
+      }));
     }
 
     if (parts[0] === "budgets" && parts[1]) {
       const budget = await getRecord(admin, "accounting_budgets", auth.orgId, parts[1]);
-      if (budget.status === "closed") return message("لا يمكن تعديل موازنة مغلقة.", 400);
-      if (body.name || body.fiscal_year) {
-        await updateRecord(admin, "accounting_budgets", auth.orgId, parts[1], {
-          ...(body.name ? { name: requireText(body.name) } : {}),
-          ...(body.fiscal_year ? { fiscal_year: Number(body.fiscal_year) } : {}),
-          updated_at: new Date().toISOString(),
-        });
-      }
-      if (Array.isArray(body.lines)) {
-        await db(admin).from("accounting_budget_lines").delete().eq("budget_id", parts[1]);
-        if (body.lines.length > 0) {
-          const lineRows = (body.lines as Record<string, unknown>[]).map((line) => ({
-            organization_id: auth.orgId,
-            budget_id: parts[1],
-            account_id: requireText(line.account_id),
-            cost_center_id: line.cost_center_id || null,
-            month: Number(line.month || 1),
-            amount: roundMoney(line.amount),
-            notes: requireText(line.notes) || null,
-          }));
-          const linesResult = await db(admin).from("accounting_budget_lines").insert(lineRows);
-          if (linesResult.error) throw new Error(linesResult.error.message);
-        }
-      }
-      await audit(admin, auth.orgId, auth.user.id, "accounting.budget_updated", "accounting_budgets", parts[1], body);
-      const updated = await getRecord(admin, "accounting_budgets", auth.orgId, parts[1]);
+      const { data: existingLines, error: linesError } = await db(admin)
+        .from("accounting_budget_lines")
+        .select("*")
+        .eq("organization_id", auth.orgId)
+        .eq("budget_id", parts[1]);
+      if (linesError) throw new Error(linesError.message);
+      const command = accountingCommandContext(request, body);
+      const updated = await accountingRpcRecord(admin, "accounting_save_budget", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_budget_id: parts[1],
+        p_expected_version: Number(body.expected_version ?? budget.version ?? 0),
+        p_payload: budgetCommandPayload(body, { ...budget, lines: existingLines || [] }),
+      });
       const { data: lines } = await db(admin).from("accounting_budget_lines").select("*").eq("budget_id", parts[1]);
       return json({ ...updated, lines: lines || [] });
     }
 
-    const map: Record<string, string> = {
-      accounts: "accounting_accounts",
-      "cost-centers": "accounting_cost_centers",
-      vendors: "accounting_vendors",
-      customers: "accounting_customers",
-      expenses: "accounting_expenses",
-      invoices: "accounting_invoices",
-      payments: "accounting_payments",
+    const map: Record<string, { table: string; entity: string }> = {
+      accounts: { table: "accounting_accounts", entity: "account" },
+      "cost-centers": { table: "accounting_cost_centers", entity: "cost_center" },
+      vendors: { table: "accounting_vendors", entity: "vendor" },
     };
-    const table = map[parts[0] || ""];
+    const target = map[parts[0] || ""];
     const id = parts[1] || body.id;
-    if (!table || !id) return message("مسار التحديث غير مدعوم.", 404);
-
-    if (table === "accounting_invoices") {
-      const current = await getRecord(admin, table, auth.orgId, id);
-      if (current.status !== "draft") return message("يمكن تعديل الفواتير المسودة فقط.", 400);
-    }
-    if (table === "accounting_expenses") {
-      const current = await getRecord(admin, table, auth.orgId, id);
-      if (["paid", "rejected", "cancelled"].includes(String(current.status))) return message("لا يمكن تعديل هذا المصروف.", 400);
-    }
-    if (table === "accounting_payments") {
-      const current = await getRecord(admin, table, auth.orgId, id);
-      if (current.status !== "draft") return message("يمكن تعديل الدفعات المسودة فقط.", 400);
-    }
-
-    const values = { ...body };
-    if (table === "accounting_accounts") values.updated_by = auth.user.id;
-    delete values.id;
-    delete values.lines;
-    const data = await updateRecord(admin, table, auth.orgId, id, values);
-
-    if (table === "accounting_invoices" && Array.isArray(body.lines)) {
-      await createOrUpdateInvoiceLines(admin, auth.orgId, id, body.lines);
-      await audit(admin, auth.orgId, auth.user.id, `accounting.${parts[0]}_updated`, table, id, values);
-      return json(await getRecord(admin, table, auth.orgId, id, "*, lines:accounting_invoice_lines(*)"));
-    }
-
-    await audit(admin, auth.orgId, auth.user.id, `accounting.${parts[0]}_updated`, table, id, values);
-    if (["accounting_accounts", "accounting_cost_centers", "accounting_vendors", "accounting_customers"].includes(table)) {
-      await notifyFinance(admin, auth.orgId, "تم تحديث بيانات محاسبية", `تم تحديث ${parts[0]}.`, `/accounting/${parts[0]}`);
-    }
-    return json(data);
+    if (!target || !id) return message("مسار التحديث غير مدعوم.", 404);
+    const current = await getRecord(admin, target.table, auth.orgId, id);
+    const command = accountingCommandContext(request, body);
+    return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+      p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
+      p_request_id: command.requestId, p_command_id: command.commandId,
+      p_entity_type: target.entity, p_entity_id: id,
+      p_expected_version: Number(body.expected_version ?? current.version ?? 0),
+      p_operation: "save", p_payload: body,
+    }));
   } catch (error) {
     return message(error);
   }
 }
 
 export async function DELETE(request: NextRequest, context: RouteContext) {
-  const parts = segments(context);
-  const auth = await requireAccountingAccess("manage");
+  const parts = await segments(context);
+  const auth = await requireAccountingAccess("manage", request);
   if ("error" in auth) return auth.error;
   const admin = createAdminClient();
   const id = parts[1] || request.nextUrl.searchParams.get("id") || "";
+  const body = await request.json().catch(() => ({}));
 
   try {
     if (!id) return message("معرف السجل مطلوب.", 400);
     if (parts[0] === "journal-entries") {
       const entry = await getRecord(admin, "accounting_journal_entries", auth.orgId, id);
       if (["posted", "reversed"].includes(String(entry.status))) return message("لا يمكن حذف أو إلغاء قيد مرحل.", 400);
-      const next = await updateRecord(admin, "accounting_journal_entries", auth.orgId, id, { status: "cancelled" });
-      await audit(admin, auth.orgId, auth.user.id, "accounting.journal_cancelled", "accounting_journal_entries", id, next);
-      return json(next);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+        p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
+        p_request_id: command.requestId, p_command_id: command.commandId,
+        p_entity_type: "journal", p_entity_id: id,
+        p_expected_version: Number(body.expected_version ?? entry.version ?? 0),
+        p_operation: "cancel", p_payload: {},
+      }));
     }
-    const softDeleteTables: Record<string, string> = {
-      accounts: "accounting_accounts",
-      "cost-centers": "accounting_cost_centers",
-      vendors: "accounting_vendors",
-      customers: "accounting_customers",
+    if (parts[0] === "customers") {
+      const current = await getRecord(admin, "accounting_customers", auth.orgId, id);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "accounting_save_customer", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_customer_id: id,
+        p_expected_version: Number(current.version || 0),
+        p_payload: customerCommandPayload({ is_active: false }, current),
+      }));
+    }
+    const softDeleteTables: Record<string, { table: string; entity: string }> = {
+      accounts: { table: "accounting_accounts", entity: "account" },
+      "cost-centers": { table: "accounting_cost_centers", entity: "cost_center" },
+      vendors: { table: "accounting_vendors", entity: "vendor" },
     };
-    const table = softDeleteTables[parts[0] || ""];
-    if (!table) return message("مسار الحذف غير مدعوم.", 404);
-    const data = await updateRecord(admin, table, auth.orgId, id, { is_active: false });
-    await audit(admin, auth.orgId, auth.user.id, `accounting.${parts[0]}_deactivated`, table, id, data);
-    await notifyFinance(admin, auth.orgId, "تم تعطيل سجل محاسبي", `تم تعطيل ${parts[0]}.`, `/accounting/${parts[0]}`);
-    return json(data);
+    const target = softDeleteTables[parts[0] || ""];
+    if (!target) return message("مسار الحذف غير مدعوم.", 404);
+    const current = await getRecord(admin, target.table, auth.orgId, id);
+    const command = accountingCommandContext(request, body);
+    return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+      p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
+      p_request_id: command.requestId, p_command_id: command.commandId,
+      p_entity_type: target.entity, p_entity_id: id,
+      p_expected_version: Number(body.expected_version ?? current.version ?? 0),
+      p_operation: "deactivate", p_payload: {},
+    }));
   } catch (error) {
     return message(error);
   }

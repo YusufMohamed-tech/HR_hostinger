@@ -29,8 +29,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useTasks, useEmployees } from "@/hooks/use-data";
-import { createManagerTask, createTask, assignTask, updateManagerTask, updateMyTaskAssignment, updateTask, updateTaskAssignment, createTaskUpdate, createMyTaskUpdate, sendTaskMessage } from "@/lib/services/tasks";
-import { notifyTaskAssigned } from "@/lib/services/notification-triggers";
+import { createManagerTask, createTask, updateManagerTask, updateMyTaskAssignment, updateTask, createMyTaskUpdate, sendTaskMessage } from "@/lib/services/tasks";
 import { PageSkeleton } from "@/components/Skeletons";
 import { AttachmentLink } from "@/components/AttachmentLink";
 import { getValidationMessage, taskFormSchema } from "@/lib/validation";
@@ -234,6 +233,7 @@ function TasksTable({
                   {myAssignment && (
                     <TaskUpdateButtons
                       assignmentId={String(myAssignment.id ?? "")}
+                      assignmentVersion={Number(myAssignment.version || 1)}
                       onSuccess={refetch}
                     />
                   )}
@@ -373,38 +373,19 @@ function CreateTaskDialog({
           attachments,
         })
       : await createTask({
-          org_id: currentUser.orgId,
           title: parsed.data.title,
           description: parsed.data.description,
           priority: parsed.data.priority,
           due_date: parsed.data.due_date,
-          location_id: null,
-          created_by: currentUser.id,
+          employee_id: parsed.data.employee_id,
+          initial_message: form.initial_message.trim(),
+          attachments,
         });
 
     if (err || !data) {
       setError(err?.message || "فشل إنشاء المهمة");
       setSubmitting(false);
       return;
-    }
-
-    if (!managerMode && parsed.data.employee_id) {
-      await assignTask({
-        org_id: currentUser.orgId,
-        task_id: data.id,
-        employee_id: parsed.data.employee_id,
-        status: "pending",
-      });
-      await createTaskUpdate({
-        org_id: currentUser.orgId,
-        task_id: data.id,
-        employee_id: currentUser.employeeId || undefined,
-        status: "pending",
-        progress: 0,
-        note: form.initial_message.trim() || "تم إسناد المهمة.",
-        attachments,
-      });
-      await notifyTaskAssigned(currentUser.orgId, parsed.data.employee_id, parsed.data.title, String(data.id));
     }
 
     setSubmitting(false);
@@ -519,9 +500,11 @@ function CreateTaskDialog({
 
 function TaskUpdateButtons({
   assignmentId,
+  assignmentVersion,
   onSuccess,
 }: {
   assignmentId: string;
+  assignmentVersion: number;
   onSuccess: () => void;
 }) {
   const [submitting, setSubmitting] = useState(false);
@@ -543,6 +526,7 @@ function TaskUpdateButtons({
 
     const { error: assignmentError } = await updateMyTaskAssignment({
       assignment_id: assignmentId,
+      expected_version: assignmentVersion,
       status: targetStatus,
       note: note.trim(),
       attachments,
@@ -665,6 +649,7 @@ function EditTaskDialog({
           priority: parsed.data.priority,
           due_date: parsed.data.due_date,
           employee_id: parsed.data.employee_id,
+          expected_version: Number(task.version || 1),
           attachments,
         })
       : await updateTask(currentUser.orgId, taskId, {
@@ -672,41 +657,16 @@ function EditTaskDialog({
           description: parsed.data.description,
           priority: parsed.data.priority,
           due_date: parsed.data.due_date,
-          location_id: null,
+          employee_id: parsed.data.employee_id,
+          expected_version: Number(task.version || 1),
+          initial_message: "تم تعديل تفاصيل المهمة.",
+          attachments,
         });
 
     if (taskError) {
       setError(taskError.message);
       setSubmitting(false);
       return;
-    }
-
-    if (!managerMode) {
-      const assignmentId = String(firstAssignment?.id || "");
-      const assignmentError = assignmentId
-        ? (await updateTaskAssignment(currentUser.orgId, assignmentId, { employee_id: parsed.data.employee_id })).error
-        : (await assignTask({
-            org_id: currentUser.orgId,
-            task_id: taskId,
-            employee_id: parsed.data.employee_id,
-            status: "pending",
-          })).error;
-
-      if (assignmentError) {
-        setError(assignmentError.message);
-        setSubmitting(false);
-        return;
-      }
-
-      await createTaskUpdate({
-        org_id: currentUser.orgId,
-        task_id: taskId,
-        employee_id: currentUser.employeeId || undefined,
-        status: String(task.status || "pending"),
-        progress: 0,
-        note: "تم تعديل تفاصيل المهمة.",
-        attachments,
-      });
     }
 
     setSubmitting(false);

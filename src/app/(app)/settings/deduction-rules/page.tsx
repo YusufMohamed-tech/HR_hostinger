@@ -20,7 +20,17 @@ type DeductionRuleGroup = {
   allowed_absent_days: number;
   deduction_per_absent_day: number;
   deduction_per_excess_approved_day: number;
+  version: number;
 };
+
+function policyCommand(scope: string) {
+  const key = `hrms-deduction-policy:${scope}`;
+  const existing = window.sessionStorage.getItem(key);
+  if (existing) return { key, value: existing };
+  const value = crypto.randomUUID();
+  window.sessionStorage.setItem(key, value);
+  return { key, value };
+}
 
 const emptyForm = {
   name: "",
@@ -95,17 +105,23 @@ export default function DeductionRulesPage() {
 
     const url = editing ? `/api/deduction-rule-groups/${editing.id}` : "/api/deduction-rule-groups";
     const method = editing ? "PUT" : "POST";
+    const command = policyCommand(editing
+      ? `save:${editing.id}:${editing.version}`
+      : `create:${form.name.trim().toLowerCase()}`);
 
     const res = await fetch(url, {
       method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({ ...form, command_id: command.value,
+        target_id: editing ? editing.id : command.value,
+        expected_version: editing?.version }),
     });
     const json = await res.json();
     setSubmitting(false);
 
     if (!res.ok) { setError(json.message || "حدث خطأ."); return; }
 
+    window.sessionStorage.removeItem(command.key);
     await load();
     setDialogOpen(false);
   };
@@ -115,12 +131,18 @@ export default function DeductionRulesPage() {
     setSubmitting(true);
     setDeleteError("");
 
-    const res = await fetch(`/api/deduction-rule-groups/${deleting.id}`, { method: "DELETE" });
+    const command = policyCommand(`delete:${deleting.id}:${deleting.version}`);
+    const res = await fetch(`/api/deduction-rule-groups/${deleting.id}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command_id: command.value, expected_version: deleting.version }),
+    });
     const json = await res.json();
     setSubmitting(false);
 
     if (!res.ok) { setDeleteError(json.message || "فشل الحذف."); return; }
 
+    window.sessionStorage.removeItem(command.key);
     await load();
     setDeleteDialogOpen(false);
   };

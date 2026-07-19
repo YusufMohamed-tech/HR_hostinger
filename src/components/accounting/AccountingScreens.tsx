@@ -1244,6 +1244,7 @@ function ReportsIndexPage() {
     ["ap-aging", "أعمار الذمم الدائنة", Receipt],
     ["expenses", "مصروفات حسب المركز", Receipt],
     ["sales-revenue", "إيرادات المبيعات", Receipt],
+    ["reconciliation", "مراقبة المطابقة والترحيل", CheckCircle],
   ] as const;
   return <div className="space-y-6"><AccountingPageHeader title="التقارير المالية" description="تقارير مبنية على القيود المرحلة والعمليات المحاسبية الحقيقية." /><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{reports.map(([key, label, Icon]) => <Link key={key} href={`/accounting/reports/${key}`} className="rounded-lg bg-white p-5 shadow-sm transition hover:shadow-md"><Icon className="mb-3 h-6 w-6 text-brand" /><p className="font-semibold text-gray-950">{label}</p><p className="mt-1 text-sm text-gray-500">عرض وتصفية وتصدير CSV</p></Link>)}</div></div>;
 }
@@ -1275,15 +1276,30 @@ function reportTitle(report: string) {
     revenue: "تحليل الإيرادات",
     "expense-analysis": "تحليل المصروفات",
     "payroll-analysis": "تحليل الرواتب",
+    reconciliation: "مراقبة المطابقة والترحيل",
   };
   return labels[report] || "تقرير مالي";
+}
+
+function reportStatValue(key: string, value: unknown) {
+  if (typeof value === "number") {
+    return /(amount|total|balance|revenue|expense|profit|vat|cost|variance)/i.test(key)
+      ? <MoneyAmount value={value} />
+      : value.toLocaleString("ar-SA");
+  }
+  if (typeof value === "boolean") return value ? "نعم" : "لا";
+  return String(value);
 }
 
 function ReportRenderer({ data }: { data: unknown }) {
   if (!data) return <AccountingEmptyState title="لا توجد بيانات للتقرير" />;
   if (Array.isArray(data)) return <SimpleTable rows={data as Record<string, unknown>[]} emptyTitle="لا توجد بيانات" moneyColumns={["debit", "credit", "balance"]} />;
   const object = data as Record<string, unknown>;
-  return <div className="space-y-4">{Object.entries(object).map(([key, value]) => Array.isArray(value) ? <Card key={key} className="border-none shadow-sm"><CardHeader><CardTitle>{key}</CardTitle></CardHeader><CardContent className="p-0"><SimpleTable rows={value as Record<string, unknown>[]} emptyTitle="لا توجد بيانات" moneyColumns={["debit", "credit", "balance", "amount", "total_amount", "net_salary"]} /></CardContent></Card> : <AccountingStatCard key={key} label={key} value={typeof value === "number" ? <MoneyAmount value={value} /> : String(value)} />)}</div>;
+  return <div className="space-y-4">{Object.entries(object).map(([key, value]) => Array.isArray(value)
+    ? <Card key={key} className="border-none shadow-sm"><CardHeader><CardTitle>{key}</CardTitle></CardHeader><CardContent className="p-0"><SimpleTable rows={value as Record<string, unknown>[]} emptyTitle="لا توجد بيانات" moneyColumns={["debit", "credit", "balance", "amount", "total_amount", "net_salary"]} /></CardContent></Card>
+    : value && typeof value === "object"
+      ? <Card key={key} className="border-none shadow-sm"><CardHeader><CardTitle>{key}</CardTitle></CardHeader><CardContent className="grid gap-4 sm:grid-cols-3">{Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => <AccountingStatCard key={childKey} label={childKey} value={reportStatValue(childKey, childValue)} />)}</CardContent></Card>
+      : <AccountingStatCard key={key} label={key} value={reportStatValue(key, value)} />)}</div>;
 }
 
 function AccountingSettingsPage() {

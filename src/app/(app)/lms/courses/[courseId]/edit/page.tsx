@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
-export default function EditLmsCoursePage({ params }: { params: { courseId: string } }) {
-  redirect(`/lms/courses/${params.courseId}/studio`);
+export default async function EditLmsCoursePage({ params }: { params: Promise<{ courseId: string }> }) {
+  const { courseId } = await params;
+  redirect(`/lms/courses/${courseId}/studio`);
 }

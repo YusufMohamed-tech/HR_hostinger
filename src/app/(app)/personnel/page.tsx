@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -17,14 +18,13 @@ import { useRoleContext } from "@/providers/RoleProvider";
 import {
   createEmployeeContract,
   createPersonnelFile,
+  enqueuePersonnelComplianceReminders,
   getEmployeeContracts,
   getPersonnelFileUrl,
   getPersonnelFiles,
   getSocialInsurance,
-  uploadPersonnelFile,
   upsertSocialInsurance,
 } from "@/lib/services/personnel";
-import { createNotification } from "@/lib/services/notifications";
 import { printHtmlReport } from "@/lib/utils/print-report";
 
 type PersonnelTab = "files" | "insurance" | "contracts";
@@ -79,7 +79,7 @@ export default function PersonnelPage() {
   const [insurance, setInsurance] = useState<Record<string, unknown>[]>([]);
   const [contracts, setContracts] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
-  const [reminderSent, setReminderSent] = useState(false);
+  const [sendingReminders, setSendingReminders] = useState(false);
   const [message, setMessage] = useState("");
   const [activeTab, setActiveTab] = useState<PersonnelTab>("files");
   const isAdmin = currentUser?.role !== "Employee";
@@ -110,31 +110,16 @@ export default function PersonnelPage() {
   });
 
   const handleSendReminders = async () => {
-    if (!currentUser?.orgId || !currentUser?.id) return;
-    for (const file of expiringFiles) {
-      const employee = (file.employee ?? null) as Record<string, unknown> | null;
-      const daysLeft = Math.ceil((new Date(String(file.expiry_date)).getTime() - Date.now()) / 86400000);
-      await createNotification({
-        org_id: currentUser.orgId,
-        user_id: currentUser.id,
-        title: "تنبيه: مستند يقترب من الانتهاء",
-        body: `مستند "${String(file.category || "ملف")}" للموظف ${String(employee?.full_name || "غير معروف")} سينتهي خلال ${daysLeft} يوم.`,
-        type: "expiry_alert",
-        link: "/personnel",
-      });
-    }
-    setReminderSent(true);
-    window.setTimeout(() => setReminderSent(false), 5000);
+    setSendingReminders(true);
+    const { data, error } = await enqueuePersonnelComplianceReminders();
+    setSendingReminders(false);
+    setMessage(error?.message || `تمت جدولة ${data?.alertsEnqueued || 0} تنبيه امتثال جديد للتسليم.`);
   };
 
-  const openStoredFile = async (pathValue: unknown) => {
-    const filePath = String(pathValue || "");
-    if (!filePath) return;
-    if (filePath.startsWith("http")) {
-      window.open(filePath, "_blank", "noopener,noreferrer");
-      return;
-    }
-    const { data, error } = await getPersonnelFileUrl(filePath);
+  const openStoredFile = async (idValue: unknown, ownerType: "personnel_file" | "employee_contract") => {
+    const fileId = String(idValue || "");
+    if (!fileId) return;
+    const { data, error } = await getPersonnelFileUrl(fileId, ownerType);
     if (error || !data?.signedUrl) {
       setMessage(error?.message || "تعذر فتح الملف.");
       return;
@@ -215,10 +200,10 @@ export default function PersonnelPage() {
                 variant="outline"
                 className="border-orange-300 text-orange-700 hover:bg-orange-50"
                 onClick={handleSendReminders}
-                disabled={reminderSent}
+                disabled={sendingReminders}
               >
                 <Bell className="h-4 w-4 ml-2" />
-                {reminderSent ? "تم الإرسال!" : `إرسال تذكيرات (${expiringFiles.length})`}
+                {sendingReminders ? "جارٍ الجدولة..." : `جدولة التذكيرات (${expiringFiles.length})`}
               </Button>
             )}
             <AddFileDialog employees={employees} onSuccess={loadPersonnel} />
@@ -292,7 +277,7 @@ export default function PersonnelPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => openStoredFile(file.file_path || file.file_url)}
+                        onClick={() => openStoredFile(file.id, "personnel_file")}
                       >
                         <Eye className="h-4 w-4 ml-1" />
                         {String(file.file_name || "عرض")}
@@ -360,7 +345,7 @@ export default function PersonnelPage() {
                       <TableCell>{String(contract.start_date || "-")}</TableCell>
                       <TableCell><Badge variant="outline">{String(contract.status || "active")}</Badge></TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="sm" onClick={() => openStoredFile(contract.file_path)}>
+                        <Button variant="ghost" size="sm" onClick={() => openStoredFile(contract.id, "employee_contract")}>
                           <Eye className="h-4 w-4 ml-1" />
                           عرض
                         </Button>
@@ -421,20 +406,13 @@ function AddFileDialog({ employees, onSuccess }: { employees: Record<string, unk
               setError("الموظف والملف مطلوبان.");
               return;
             }
-            const { data: uploadData, error: uploadError } = await uploadPersonnelFile(currentUser.orgId, form.employee_id, file);
-            if (uploadError || !uploadData?.path) {
-              setError(uploadError?.message || "تعذر رفع الملف.");
-              return;
-            }
-            await createPersonnelFile({
+            const result = await createPersonnelFile({
               org_id: currentUser.orgId,
               employee_id: form.employee_id,
               category: form.category || "other",
-              file_name: file.name,
-              file_path: uploadData.path,
-              file_size: file.size,
               expiry_date: form.expiry_date || undefined,
-            });
+            }, file);
+            if (result.error) { setError(result.error.message); return; }
             setOpen(false);
             setFile(null);
             setError("");
@@ -449,22 +427,59 @@ function AddFileDialog({ employees, onSuccess }: { employees: Record<string, unk
 function AddInsuranceDialog({ employees, onSuccess }: { employees: Record<string, unknown>[]; onSuccess: () => void }) {
   const { currentUser } = useRoleContext();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ employee_id: "", gosi_number: "", contribution_rate: "9.75", status: "active" });
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    employee_id: "",
+    gosi_number: "",
+    scheme_code: "",
+    contributory_wage: "",
+    maximum_contributory_wage: "",
+    employee_rate_percent: "",
+    employer_rate_percent: "",
+    effective_from: "",
+    status: "active",
+  });
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="outline" />}>إضافة تأمينات</DialogTrigger>
       <DialogContent>
-        <DialogHeader><DialogTitle>التأمينات الاجتماعية</DialogTitle><DialogDescription>تحديث بيانات التأمينات الاجتماعية.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>التأمينات الاجتماعية</DialogTitle><DialogDescription>إعداد موثق يستخدمه محرك الرواتب؛ راجع التصنيف والأجر والنسب قبل الحفظ.</DialogDescription></DialogHeader>
         <div className="grid gap-4 py-4">
           <EmployeeSelect employees={employees} value={form.employee_id} onChange={(value) => set("employee_id", value)} />
           <Input placeholder="رقم التأمينات" value={form.gosi_number} onChange={(event) => set("gosi_number", event.target.value)} />
-          <Input type="number" value={form.contribution_rate} onChange={(event) => set("contribution_rate", event.target.value)} />
+          <Input placeholder="رمز النظام / التغطية حسب التصنيف المعتمد" value={form.scheme_code} onChange={(event) => set("scheme_code", event.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <Input type="number" min={0} step="0.01" placeholder="الأجر الخاضع المسجل" value={form.contributory_wage} onChange={(event) => set("contributory_wage", event.target.value)} />
+            <Input type="number" min={0} step="0.01" placeholder="الحد الأعلى الخاضع" value={form.maximum_contributory_wage} onChange={(event) => set("maximum_contributory_wage", event.target.value)} />
+            <Input type="number" min={0} max={100} step="0.01" placeholder="نسبة الموظف %" value={form.employee_rate_percent} onChange={(event) => set("employee_rate_percent", event.target.value)} />
+            <Input type="number" min={0} max={100} step="0.01" placeholder="نسبة صاحب العمل %" value={form.employer_rate_percent} onChange={(event) => set("employer_rate_percent", event.target.value)} />
+          </div>
+          <div className="space-y-2"><Label>تاريخ سريان الإعداد</Label><Input type="date" value={form.effective_from} onChange={(event) => set("effective_from", event.target.value)} /></div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
         <DialogFooter>
           <Button onClick={async () => {
             if (!currentUser?.orgId || !form.employee_id) return;
-            await upsertSocialInsurance({ org_id: currentUser.orgId, employee_id: form.employee_id, gosi_number: form.gosi_number || undefined, contribution_rate: Number(form.contribution_rate || 0), status: form.status });
+            if (!form.gosi_number.trim() || !form.scheme_code.trim() || !form.contributory_wage || !form.maximum_contributory_wage || form.employee_rate_percent === "" || form.employer_rate_percent === "" || !form.effective_from) {
+              setError("جميع بيانات التصنيف والأجر والنسب وتاريخ السريان مطلوبة.");
+              return;
+            }
+            const result = await upsertSocialInsurance({
+              org_id: currentUser.orgId,
+              employee_id: form.employee_id,
+              gosi_number: form.gosi_number,
+              scheme_code: form.scheme_code,
+              contributory_wage: Number(form.contributory_wage),
+              maximum_contributory_wage: Number(form.maximum_contributory_wage),
+              employee_rate_percent: Number(form.employee_rate_percent),
+              employer_rate_percent: Number(form.employer_rate_percent),
+              effective_from: form.effective_from,
+              registration_date: form.effective_from,
+              status: form.status,
+            });
+            if (result.error) { setError(result.error.message); return; }
+            setError("");
             setOpen(false);
             onSuccess();
           }}>حفظ</Button>
@@ -501,12 +516,10 @@ function AddContractDialog({ employees, onSuccess }: { employees: Record<string,
               setError("الموظف وتاريخ بداية العقد وملف العقد مطلوبة.");
               return;
             }
-            const { data: uploadData, error: uploadError } = await uploadPersonnelFile(currentUser.orgId, form.employee_id, file);
-            if (uploadError || !uploadData?.path) {
-              setError(uploadError?.message || "تعذر رفع ملف العقد.");
-              return;
-            }
-            await createEmployeeContract({ org_id: currentUser.orgId, ...form, end_date: form.end_date || undefined, salary_at_signing: form.salary_at_signing ? Number(form.salary_at_signing) : undefined, file_path: uploadData.path });
+            const result = await createEmployeeContract({ org_id: currentUser.orgId, ...form,
+              end_date: form.end_date || undefined,
+              salary_at_signing: form.salary_at_signing ? Number(form.salary_at_signing) : undefined }, file);
+            if (result.error) { setError(result.error.message); return; }
             setOpen(false);
             setFile(null);
             setError("");

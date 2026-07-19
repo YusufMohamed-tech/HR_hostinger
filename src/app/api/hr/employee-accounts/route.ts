@@ -1,199 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { z } from "zod";
+import { requireTenantContext } from "@/lib/server/tenant-context";
+import { EmployeeLifecycleError, inviteAndLinkEmployeeIdentity } from "@/lib/server/employee-lifecycle";
+import type { OrgRole } from "@/types/database";
 
-const allowedCreatorRoles = new Set(["admin", "hr_admin"]);
-const allowedEmployeeRoles = new Set(["employee", "training_manager", "promoter", "finance_manager", "accountant", "finance_viewer"]);
-const privilegedRoles = new Set(["admin", "hr_admin", "hr_recruitment", "promoter", "finance_manager", "accountant", "finance_viewer"]);
-
-function titleForRole(role: string, employeeRecord: Record<string, unknown>) {
-  if (role === "training_manager") return "Training Manager";
-  if (role === "promoter") return "Promoter";
-  if (role === "finance_manager") return "Finance Manager";
-  if (role === "accountant") return "Accountant";
-  if (role === "finance_viewer") return "Finance Viewer";
-  return String(employeeRecord.job_title || "Employee");
-}
-
-async function requireHrAccess() {
-  const supabase = await createServerSupabaseClient();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  const user = userData?.user;
-
-  if (userError || !user) {
-    return { error: NextResponse.json({ message: "Unauthorized" }, { status: 401 }) };
-  }
-
-  const { data: membership, error: membershipError } = await supabase
-    .from("org_members")
-    .select("org_id, role")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const membershipRecord = membership as unknown as Record<string, unknown> | null;
-  const role = String(membershipRecord?.role || "");
-
-  if (membershipError || !membershipRecord || !allowedCreatorRoles.has(role)) {
-    return { error: NextResponse.json({ message: "HR Admin access is required." }, { status: 403 }) };
-  }
-
-  return { user, membership: membershipRecord };
-}
-
-async function getAuthUserByEmail(email: string) {
-  const admin = createAdminClient();
-  let page = 1;
-  const perPage = 100;
-
-  while (true) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) throw error;
-
-    const found = data.users.find((candidate) => candidate.email?.toLowerCase() === email.toLowerCase());
-    if (found) return found;
-    if (data.users.length < perPage) return null;
-    page += 1;
-  }
-}
+const accountSchema = z.object({
+  command_id: z.string().uuid(),
+  employee_id: z.string().uuid(),
+  email: z.string().trim().email().max(255),
+  full_name: z.string().trim().min(2).max(160).optional(),
+  role: z.enum(["employee", "hr_admin", "hr_recruitment", "training_manager", "onground_agent_manager", "promoter", "finance_manager", "accountant", "finance_viewer"]),
+});
 
 export async function POST(request: NextRequest) {
-  const auth = await requireHrAccess();
+  const auth = await requireTenantContext({ feature: "hr", capability: "manage_people" }, request);
   if ("error" in auth) return auth.error;
 
-  const body = await request.json().catch(() => ({}));
-  const employeeId = String(body.employee_id || "").trim();
-  const email = String(body.email || "").trim().toLowerCase();
-  const password = String(body.password || "");
-  const role = String(body.role || "employee");
-
-  if (!employeeId) {
-    return NextResponse.json({ message: "Employee is required." }, { status: 400 });
-  }
-  if (!email || !email.includes("@")) {
-    return NextResponse.json({ message: "Valid email is required." }, { status: 400 });
-  }
-  if (password.length < 8) {
-    return NextResponse.json({ message: "Password must be at least 8 characters." }, { status: 400 });
-  }
-  if (!allowedEmployeeRoles.has(role)) {
-    return NextResponse.json({ message: "Only employee, training manager, promoter, and finance accounts can be created here." }, { status: 400 });
+  const parsed = accountSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ message: parsed.error.issues[0]?.message || "Invalid employee account request." }, { status: 400 });
   }
 
-  const admin = createAdminClient();
-  const orgId = String(auth.membership.org_id);
-
-  const { data: employee, error: employeeError } = await admin
+  const employeeResult = await auth.admin
     .from("employees")
-    .select("id, org_id, user_id, full_name, email, phone, job_title")
-    .eq("id", employeeId)
+    .select("full_name")
+    .eq("org_id", auth.orgId)
+    .eq("id", parsed.data.employee_id)
     .maybeSingle();
+  if (employeeResult.error) return NextResponse.json({ message: employeeResult.error.message }, { status: 500 });
+  if (!employeeResult.data) return NextResponse.json({ message: "Employee was not found." }, { status: 404 });
 
-  const employeeRecord = employee as unknown as Record<string, unknown> | null;
-
-  if (employeeError || !employeeRecord) {
-    return NextResponse.json({ message: "Employee was not found." }, { status: 404 });
+  try {
+    const result = await inviteAndLinkEmployeeIdentity(auth.admin, {
+      orgId: auth.orgId,
+      employeeId: parsed.data.employee_id,
+      actorUserId: auth.user.id,
+      commandId: parsed.data.command_id,
+      email: parsed.data.email,
+      fullName: parsed.data.full_name || employeeResult.data.full_name,
+      role: parsed.data.role as OrgRole,
+    });
+    return NextResponse.json({
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        full_name: parsed.data.full_name || employeeResult.data.full_name,
+        role: parsed.data.role,
+      },
+      employee: result.employee,
+      delivery: result.invited ? "invitation_sent" : "existing_account_linked",
+      requestId: auth.requestId,
+    });
+  } catch (error) {
+    const lifecycleError = error instanceof EmployeeLifecycleError ? error : null;
+    return NextResponse.json(
+      { message: lifecycleError?.message || "Unable to invite employee account.", requestId: auth.requestId },
+      { status: lifecycleError?.status || 500 }
+    );
   }
-  if (String(employeeRecord.org_id) !== orgId) {
-    return NextResponse.json({ message: "Employee is outside your organization." }, { status: 403 });
-  }
-  if (employeeRecord.user_id) {
-    return NextResponse.json({ message: "Employee already has a login account." }, { status: 409 });
-  }
-
-  const existing = await getAuthUserByEmail(email);
-
-  if (existing) {
-    const { data: existingMembership, error: existingMembershipError } = await admin
-      .from("org_members")
-      .select("org_id, role")
-      .eq("user_id", existing.id)
-      .maybeSingle();
-
-    const existingMembershipRecord = existingMembership as unknown as Record<string, unknown> | null;
-
-    if (existingMembershipError) {
-      return NextResponse.json({ message: existingMembershipError.message }, { status: 500 });
-    }
-    if (existingMembershipRecord && String(existingMembershipRecord.org_id) !== orgId) {
-      return NextResponse.json({ message: "This email is already attached to another organization." }, { status: 409 });
-    }
-    if (existingMembershipRecord && privilegedRoles.has(String(existingMembershipRecord.role || ""))) {
-      return NextResponse.json({ message: "This email belongs to an admin, recruitment, promoter, or finance account." }, { status: 409 });
-    }
-  }
-
-  const fullName = String(body.full_name || employeeRecord.full_name || "").trim();
-  const authResult = existing
-    ? await admin.auth.admin.updateUserById(existing.id, {
-        password,
-        email_confirm: true,
-        user_metadata: { full_name: fullName },
-      })
-    : await admin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { full_name: fullName },
-      });
-
-  if (authResult.error) {
-    return NextResponse.json({ message: authResult.error.message }, { status: 500 });
-  }
-
-  const authUser = authResult.data.user;
-  if (!authUser) {
-    return NextResponse.json({ message: "Unable to create user." }, { status: 500 });
-  }
-
-  const title = titleForRole(role, employeeRecord);
-
-  const { error: profileError } = await admin.from("profiles").upsert(
-    {
-      user_id: authUser.id,
-      org_id: orgId,
-      full_name: fullName,
-      email,
-      phone: employeeRecord.phone || null,
-      title,
-      account_status: "active",
-    } as never,
-    { onConflict: "user_id" }
-  );
-  if (profileError) {
-    return NextResponse.json({ message: profileError.message }, { status: 500 });
-  }
-
-  const { error: memberError } = await admin.from("org_members").upsert(
-    {
-      org_id: orgId,
-      user_id: authUser.id,
-      role,
-    } as never,
-    { onConflict: "org_id,user_id" }
-  );
-  if (memberError) {
-    return NextResponse.json({ message: memberError.message }, { status: 500 });
-  }
-
-  const { data: updatedEmployee, error: updateError } = await admin
-    .from("employees")
-    .update({ user_id: authUser.id, email } as never)
-    .eq("id", employeeId)
-    .eq("org_id", orgId)
-    .select()
-    .single();
-
-  if (updateError) {
-    return NextResponse.json({ message: updateError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({
-    user: {
-      id: authUser.id,
-      email,
-      full_name: fullName,
-      role,
-    },
-    employee: updatedEmployee,
-  });
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { recruitmentFormSchema } from "@/lib/recruitment-form";
 
 async function authorizeRecruiter() {
   const supabase = await createServerSupabaseClient();
@@ -35,6 +36,10 @@ export async function POST(request: NextRequest) {
   const auth = await authorizeRecruiter();
   if (!auth) return NextResponse.json({ error: "غير مصرح" }, { status: 401 });
   const body = (await request.json()) as Record<string, unknown>;
+  const formSchema = recruitmentFormSchema.safeParse(body.form_schema || []);
+  if (!formSchema.success) {
+    return NextResponse.json({ error: "نموذج التقديم يحتوي أسئلة أو خيارات غير صالحة" }, { status: 400 });
+  }
   const admin = createAdminClient();
 
   const { data, error } = await admin
@@ -45,7 +50,7 @@ export async function POST(request: NextRequest) {
       title: String(body.title || ""),
       description: body.description || null,
       requirements: body.requirements || null,
-      form_schema: body.form_schema || [],
+      form_schema: formSchema.data,
       employment_type: body.employment_type || null,
       department_id: body.department_id || null,
       company_name: body.company_name || null,

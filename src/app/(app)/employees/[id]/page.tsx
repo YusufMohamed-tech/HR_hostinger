@@ -27,7 +27,7 @@ import { useEffect, useState } from "react";
 
 import { getEmployeeAssets } from "@/lib/services/assets";
 import { getFinancialBalances } from "@/lib/services/financial";
-import { ensureEmployeeLeaveBalance, getLeaveBalances } from "@/lib/services/leaves";
+import { getLeaveBalances } from "@/lib/services/leaves";
 import { getEmployeeCareerEvents } from "@/lib/services/career-events";
 import { formatCurrency } from "@/lib/utils/currency";
 
@@ -87,22 +87,9 @@ export default function EmployeeDetailPage() {
         financials: financials.data || [],
         careerEvents: careerEvents.data || []
       });
-      if (employeeRecord) {
-        const ensured = await ensureEmployeeLeaveBalance({
-          orgId: currentUser?.orgId as string,
-          employeeId,
-          hiringDate: typeof employeeRecord.hiring_date === "string" ? employeeRecord.hiring_date : null,
-          accrualStartDate: typeof employeeRecord.leave_accrual_start_date === "string" ? employeeRecord.leave_accrual_start_date : null,
-          manualAdjustment: typeof employeeRecord.leave_balance_manual_adjustment === "number" || typeof employeeRecord.leave_balance_manual_adjustment === "string"
-            ? employeeRecord.leave_balance_manual_adjustment
-            : 0,
-        });
-        const balances = ensured.data
-          ? { data: [ensured.data] }
-          : await getLeaveBalances(currentUser?.orgId as string, employeeId);
-        const balance = (balances.data?.[0] ?? null) as Record<string, unknown> | null;
-        setCurrentLeaveBalance(Number(balance?.vacation_remaining || 0));
-      }
+      const balances = await getLeaveBalances(currentUser?.orgId as string, employeeId);
+      const balance = (balances.data?.[0] ?? null) as Record<string, unknown> | null;
+      setCurrentLeaveBalance(Number(balance?.vacation_remaining || 0));
     }
     fetchDetails();
   }, [currentUser?.orgId, employeeId, employeeRecord, id]);
@@ -428,4 +415,3 @@ export default function EmployeeDetailPage() {
     </div>
   );
 }
-

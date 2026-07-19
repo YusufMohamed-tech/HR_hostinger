@@ -11,16 +11,14 @@ import {
 import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useDepartments, useLocations, useEmployees, useShifts } from "@/hooks/use-data";
-import { createEmployee, createEmployeeAccount, deleteEmployee, replaceEmployeeLocations, type EmployeeAccountRole } from "@/lib/services/employees";
+import { createEmployee, createEmployeeAccount, finalizeEmployeeOnboarding, replaceEmployeeLocations, type EmployeeAccountRole } from "@/lib/services/employees";
 import { assignEmployeeShift } from "@/lib/services/schedule";
 import { updateDepartment } from "@/lib/services/departments";
 import {
   createEmployeeContract,
   createPersonnelFile,
-  uploadPersonnelFile,
   upsertSocialInsurance,
 } from "@/lib/services/personnel";
-import { createCareerEvent } from "@/lib/services/career-events";
 import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
 import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
 import { getDeductionRuleGroups, type DeductionRuleGroup } from "@/lib/services/deduction-rule-groups";
@@ -51,7 +49,10 @@ const threeColumnGridClass = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols
 const todayString = () => new Date().toISOString().split("T")[0];
 const accountRoleOptions: Array<{ value: EmployeeAccountRole; label: string }> = [
   { value: "employee", label: "موظف" },
+  { value: "hr_admin", label: "مدير الموارد البشرية" },
+  { value: "hr_recruitment", label: "مسؤول التوظيف" },
   { value: "training_manager", label: "مدير تدريب / موقع" },
+  { value: "onground_agent_manager", label: "مدير المندوبين الميدانيين" },
   { value: "promoter", label: "مروج مبيعات" },
   { value: "finance_manager", label: "مدير المالية" },
   { value: "accountant", label: "محاسب" },
@@ -74,14 +75,18 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<EmployeeAccountRole>("employee");
-  const [accountPassword, setAccountPassword] = useState("");
   const [officialFile, setOfficialFile] = useState<File | null>(null);
   const [contractFile, setContractFile] = useState<File | null>(null);
   const [personnelForm, setPersonnelForm] = useState({
     file_category: "official",
     file_expiry_date: "",
     gosi_number: "",
-    contribution_rate: "9.75",
+    scheme_code: "",
+    contributory_wage: "",
+    maximum_contributory_wage: "",
+    contribution_rate: "",
+    employer_contribution_rate: "",
+    insurance_effective_from: "",
     contract_type: "permanent",
     contract_start_date: "",
     contract_end_date: "",
@@ -224,10 +229,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
         setError("البريد الإلكتروني مطلوب لإنشاء حساب الدخول.");
         return;
       }
-      if (accountPassword.length < 8) {
-        setError("كلمة مرور حساب الدخول يجب ألا تقل عن 8 أحرف.");
-        return;
-      }
     }
 
     if (!officialFile) {
@@ -238,8 +239,28 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       setError("رقم التأمينات مطلوب قبل إنشاء الموظف.");
       return;
     }
-    if (!isTrainee && (!personnelForm.contribution_rate || Number(personnelForm.contribution_rate) <= 0)) {
-      setError("نسبة التأمينات مطلوبة ويجب أن تكون رقمًا صحيحًا.");
+    if (!isTrainee && !personnelForm.scheme_code.trim()) {
+      setError("رمز نظام التأمينات المطبق مطلوب.");
+      return;
+    }
+    if (!isTrainee && (Number(personnelForm.contributory_wage) < 0 || !personnelForm.contributory_wage)) {
+      setError("الأجر المسجل الخاضع للتأمينات مطلوب.");
+      return;
+    }
+    if (!isTrainee && (!personnelForm.maximum_contributory_wage || Number(personnelForm.maximum_contributory_wage) <= 0)) {
+      setError("الحد الأعلى للأجر الخاضع للتأمينات مطلوب.");
+      return;
+    }
+    if (!isTrainee && (personnelForm.contribution_rate === "" || Number(personnelForm.contribution_rate) < 0)) {
+      setError("نسبة مساهمة الموظف مطلوبة.");
+      return;
+    }
+    if (!isTrainee && (personnelForm.employer_contribution_rate === "" || Number(personnelForm.employer_contribution_rate) < 0)) {
+      setError("نسبة مساهمة صاحب العمل مطلوبة.");
+      return;
+    }
+    if (!isTrainee && !personnelForm.insurance_effective_from) {
+      setError("تاريخ سريان إعداد التأمينات مطلوب.");
       return;
     }
     if (!personnelForm.contract_start_date) {
@@ -271,29 +292,19 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
     if (createdEmployee?.id) {
       const employeeId = String(createdEmployee.id);
-      const rollbackEmployee = async (message: string) => {
-        await deleteEmployee(currentUser.orgId, employeeId);
-        setError(message);
+      const failOnboarding = (message: string) => {
+        setError(`تم حفظ مسودة الموظف بأمان، لكن الإعداد لم يكتمل: ${message}`);
         setSubmitting(false);
       };
-      const { data: officialUpload, error: officialUploadError } = await uploadPersonnelFile(currentUser.orgId, employeeId, officialFile);
-      if (officialUploadError || !officialUpload?.path) {
-        await rollbackEmployee(officialUploadError?.message || "تعذر رفع الملف الرسمي.");
-        return;
-      }
-
       const { error: fileError } = await createPersonnelFile({
         org_id: currentUser.orgId,
         employee_id: employeeId,
         category: personnelForm.file_category || "official",
-        file_name: officialFile.name,
-        file_path: officialUpload.path,
-        file_size: officialFile.size,
         expiry_date: personnelForm.file_expiry_date || undefined,
-      });
+      }, officialFile);
 
       if (fileError) {
-        await rollbackEmployee(fileError.message);
+        failOnboarding(fileError.message);
         return;
       }
 
@@ -302,20 +313,20 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
           org_id: currentUser.orgId,
           employee_id: employeeId,
           gosi_number: personnelForm.gosi_number.trim(),
-          contribution_rate: Number(personnelForm.contribution_rate || 0),
+          scheme_code: personnelForm.scheme_code.trim(),
+          contributory_wage: Number(personnelForm.contributory_wage),
+          maximum_contributory_wage: Number(personnelForm.maximum_contributory_wage),
+          employee_rate_percent: Number(personnelForm.contribution_rate),
+          employer_rate_percent: Number(personnelForm.employer_contribution_rate),
+          effective_from: personnelForm.insurance_effective_from,
+          registration_date: personnelForm.insurance_effective_from,
           status: "active",
         });
 
         if (insuranceError) {
-          await rollbackEmployee(insuranceError.message);
+          failOnboarding(insuranceError.message);
           return;
         }
-      }
-
-      const { data: contractUpload, error: contractUploadError } = await uploadPersonnelFile(currentUser.orgId, employeeId, contractFile);
-      if (contractUploadError || !contractUpload?.path) {
-        await rollbackEmployee(contractUploadError?.message || "تعذر رفع ملف العقد.");
-        return;
       }
 
       const { error: contractError } = await createEmployeeContract({
@@ -325,12 +336,11 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
         start_date: personnelForm.contract_start_date,
         end_date: personnelForm.contract_end_date || undefined,
         salary_at_signing: parsed.data.base_salary ?? undefined,
-        file_path: contractUpload.path,
         status: "active",
-      });
+      }, contractFile);
 
       if (contractError) {
-        await rollbackEmployee(contractError.message);
+        failOnboarding(contractError.message);
         return;
       }
 
@@ -347,27 +357,13 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
         return;
       }
 
-      const initialEventType = parsed.data.employment_type === "intern" ? "hired_as_trainee" : "hired";
-      await createCareerEvent({
-        employee_id: employeeId,
-        event_type: initialEventType,
-        previous_value: null,
-        new_value: {
-          employment_type: parsed.data.employment_type,
-          job_title: parsed.data.job_title,
-          department_id: parsed.data.department_id,
-          location_id: parsed.data.location_id,
-          status: parsed.data.status,
-        },
-        effective_date: parsed.data.hiring_date || todayString(),
-        notes: parsed.data.employment_type === "intern" ? "بدأ كمتدرب" : "تم تعيين الموظف",
-        created_by: currentUser.id,
-      });
     }
 
     if (isDepartmentManager && parsed.data.department_id && createdEmployee?.id) {
       const { error: deptError } = await updateDepartment(parsed.data.department_id, {
         manager_employee_id: String(createdEmployee.id),
+        name: String(departments.find((department) => String(department.id) === parsed.data.department_id)?.name || ""),
+        expected_version: Number(departments.find((department) => String(department.id) === parsed.data.department_id)?.version || 1),
       });
 
       if (deptError) {
@@ -398,13 +394,22 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       const { error: accountError } = await createEmployeeAccount({
         employee_id: String(createdEmployee.id),
         email: parsed.data.email,
-        password: accountPassword,
         full_name: parsed.data.full_name,
         role: accountRole,
       });
 
       if (accountError) {
         setError(`تم حفظ الموظف، لكن فشل إنشاء حساب الدخول: ${accountError.message}`);
+        setSubmitting(false);
+        onSuccess();
+        return;
+      }
+    }
+
+    if (createdEmployee?.id) {
+      const { error: finalizeError } = await finalizeEmployeeOnboarding(String(createdEmployee.id));
+      if (finalizeError) {
+        setError(`تم حفظ إعداد الموظف، لكن تعذر تفعيله: ${finalizeError.message}`);
         setSubmitting(false);
         onSuccess();
         return;
@@ -459,14 +464,18 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     setShiftForm({ shift_id: "", start_date: "", end_date: "" });
     setCreateLoginAccount(false);
     setAccountRole("employee");
-    setAccountPassword("");
     setOfficialFile(null);
     setContractFile(null);
     setPersonnelForm({
       file_category: "official",
       file_expiry_date: "",
       gosi_number: "",
-      contribution_rate: "9.75",
+      scheme_code: "",
+      contributory_wage: "",
+      maximum_contributory_wage: "",
+      contribution_rate: "",
+      employer_contribution_rate: "",
+      insurance_effective_from: "",
       contract_type: "permanent",
       contract_start_date: "",
       contract_end_date: "",
@@ -775,7 +784,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
               <span>إنشاء حساب دخول لهذا الموظف</span>
             </label>
             {createLoginAccount && (
-              <div className={twoColumnGridClass}>
+              <div className="space-y-2">
                 <div className="space-y-2">
                   <Label>نوع الحساب</Label>
                   <Select value={accountRole} onValueChange={(value) => setAccountRole(value as EmployeeAccountRole)}>
@@ -794,15 +803,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                     أدوار المالية تمنح المستخدم صلاحيات داخل وحدة المالية والمحاسبة حسب مستوى الدور.
                   </p>
                 </div>
-                <div className="space-y-2">
-                  <Label>كلمة المرور المؤقتة *</Label>
-                  <Input
-                    type="password"
-                    value={accountPassword}
-                    onChange={(event) => setAccountPassword(event.target.value)}
-                    placeholder="8 أحرف على الأقل"
-                  />
-                </div>
+                <p className="text-xs text-gray-500">سيصل للموظف رابط دعوة آمن لاختيار كلمة المرور بنفسه.</p>
               </div>
             )}
           </div>
@@ -838,12 +839,41 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 </div>
               )}
             </div>
+            {!isTrainee && (
+              <div className={threeColumnGridClass}>
+                <div className="space-y-2">
+                  <Label>رمز النظام / التغطية *</Label>
+                  <Input value={personnelForm.scheme_code} onChange={(event) => setPersonnel("scheme_code", event.target.value)} placeholder="حسب تصنيف GOSI المعتمد" />
+                </div>
+                <div className="space-y-2">
+                  <Label>الأجر الخاضع المسجل *</Label>
+                  <Input type="number" min={0} step="0.01" value={personnelForm.contributory_wage} onChange={(event) => setPersonnel("contributory_wage", event.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>الحد الأعلى الخاضع *</Label>
+                  <Input type="number" min={0} step="0.01" value={personnelForm.maximum_contributory_wage} onChange={(event) => setPersonnel("maximum_contributory_wage", event.target.value)} />
+                </div>
+              </div>
+            )}
+            {!isTrainee && (
+              <div className={threeColumnGridClass}>
+                <div className="space-y-2">
+                  <Label>نسبة الموظف % *</Label>
+                  <Input type="number" min={0} max={100} step="0.01" inputMode="decimal" value={personnelForm.contribution_rate} onChange={(event) => setPersonnel("contribution_rate", event.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>نسبة صاحب العمل % *</Label>
+                  <Input type="number" min={0} max={100} step="0.01" inputMode="decimal" value={personnelForm.employer_contribution_rate} onChange={(event) => setPersonnel("employer_contribution_rate", event.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>سريان الإعداد *</Label>
+                  <Input type="date" value={personnelForm.insurance_effective_from} onChange={(event) => setPersonnel("insurance_effective_from", event.target.value)} />
+                </div>
+              </div>
+            )}
             <div className={threeColumnGridClass}>
               {!isTrainee && (
-                <div className="space-y-2">
-                  <Label>نسبة التأمينات *</Label>
-                  <Input type="number" step="0.01" inputMode="decimal" value={personnelForm.contribution_rate} onChange={(event) => setPersonnel("contribution_rate", event.target.value)} placeholder="9.75" />
-                </div>
+                <p className="self-end text-xs text-amber-700">راجع التصنيف والأجر والنسب مع مسؤول الرواتب قبل الحفظ؛ النظام لا يفترض نسبة قانونية تلقائياً.</p>
               )}
               <div className="space-y-2">
                 <Label>نوع العقد</Label>

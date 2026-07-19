@@ -3,7 +3,7 @@ import { requireSalesAccess } from "@/lib/server/sales-auth";
 import { rematchActivations } from "@/lib/services/carrier-import";
 
 export async function POST(request: NextRequest) {
-  const auth = await requireSalesAccess({ managerOnly: true });
+  const auth = await requireSalesAccess({ managerOnly: true }, request);
   if ("error" in auth) return auth.error;
 
   const { month } = await request.json() as { month?: string };
@@ -12,8 +12,8 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const result = await rematchActivations(auth.orgId, month);
-    return NextResponse.json({ data: result });
+    const result = await rematchActivations(auth.orgId, month, auth.user.id, auth.requestId);
+    return NextResponse.json({ data: result, requestId: auth.requestId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Re-match failed";
     return NextResponse.json({ message }, { status: 500 });

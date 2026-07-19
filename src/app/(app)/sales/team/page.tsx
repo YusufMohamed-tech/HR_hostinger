@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MessageDialog } from "@/components/ui/feedback-dialog";
+import { ConfirmActionButton, MessageDialog } from "@/components/ui/feedback-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
@@ -143,18 +143,22 @@ export default function SalesTeamPage() {
                     <TableCell>
                       <div className="flex items-center justify-end gap-2">
                         <AgentDialog agent={agent} companies={companies} locations={locations} shifts={shifts} onDone={load} onMessage={setMessage} />
-                        <Button
+                        {active && <ConfirmActionButton
                           variant="ghost"
                           size="sm"
-                          className={active ? "text-red-600 hover:bg-red-50" : "text-brand hover:text-brand-dark"}
-                          onClick={async () => {
-                            const result = await updateSalesAgent({ user_id: agent.user_id, status: active ? "inactive" : "active" });
+                          className="text-red-600 hover:bg-red-50"
+                          title="إنهاء خدمة عضو المبيعات"
+                          description="سيتم إيقاف الوصول وإغلاق التعيينات مع الاحتفاظ بالسجل التاريخي. لا يمكن تنفيذ العملية إذا وجدت عهد أو سلف غير مسوّاة."
+                          confirmLabel="إنهاء الخدمة"
+                          destructive
+                          onConfirm={async () => {
+                            const result = await updateSalesAgent({ user_id: agent.user_id, status: "inactive" });
                             if (result.error) setMessage(result.error);
                             else load();
                           }}
                         >
                           <UserX className="h-4 w-4" />
-                        </Button>
+                        </ConfirmActionButton>}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -192,10 +196,9 @@ function AgentDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<{ full_name: string; email: string; password: string; phone: string; national_id: string; role: "sales" | "sales_manager"; location_id: string; shift_id: string }>({
+  const [form, setForm] = useState<{ full_name: string; email: string; phone: string; national_id: string; role: "sales" | "sales_manager"; location_id: string; shift_id: string }>({
     full_name: "",
     email: "",
-    password: "",
     phone: "",
     national_id: "",
     role: "sales",
@@ -227,13 +230,12 @@ function AgentDialog({
     setForm(agent ? {
       full_name: agent.full_name || "",
       email: agent.email || "",
-      password: "",
       phone: agent.phone || "",
       national_id: agent.national_id || "",
       role: agent.role === "sales_manager" ? "sales_manager" : "sales",
       location_id: agent.location_id || "",
       shift_id: agent.shift_id || "",
-    } : { full_name: "", email: "", password: "", phone: "", national_id: "", role: "sales", location_id: "", shift_id: "" });
+    } : { full_name: "", email: "", phone: "", national_id: "", role: "sales", location_id: "", shift_id: "" });
   }, [agent, companies, open]);
 
   const updateAssignment = (companyId: string, patch: Partial<AssignmentForm[string]>) => {
@@ -255,8 +257,8 @@ function AgentDialog({
       onMessage("اسم البائع مطلوب.");
       return;
     }
-    if (!agent && (!form.email.includes("@") || form.password.length < 8)) {
-      onMessage("البريد الإلكتروني وكلمة مرور من 8 أحرف مطلوبة.");
+    if (!agent && !form.email.includes("@")) {
+      onMessage("البريد الإلكتروني الصحيح مطلوب لإرسال دعوة الدخول.");
       return;
     }
     const companyAssignments = Object.entries(assignments)
@@ -279,6 +281,7 @@ function AgentDialog({
     const result = agent
       ? await updateSalesAgent({
           user_id: agent.user_id,
+          expected_version: Number(agent.lifecycle_version || 1),
           full_name: form.full_name,
           phone: form.phone,
           national_id: form.national_id,
@@ -331,12 +334,7 @@ function AgentDialog({
               <Label>البريد الإلكتروني *</Label>
               <Input disabled={Boolean(agent)} value={form.email} onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))} />
             </div>
-            {!agent && (
-              <div className="space-y-2">
-                <Label>كلمة المرور *</Label>
-                <Input type="password" value={form.password} onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))} />
-              </div>
-            )}
+            {!agent && <p className="self-end pb-2 text-xs text-gray-500">سيصل للبائع رابط دعوة آمن لاختيار كلمة المرور.</p>}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

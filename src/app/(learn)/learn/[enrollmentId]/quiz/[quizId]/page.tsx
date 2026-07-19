@@ -1,5 +1,6 @@
 import { QuizExperience } from "@/components/lms/classroom/QuizExperience";
 
-export default function ClassroomQuizPage({ params }: { params: { enrollmentId: string; quizId: string } }) {
-  return <QuizExperience enrollmentId={params.enrollmentId} quizId={params.quizId} />;
+export default async function ClassroomQuizPage({ params }: { params: Promise<{ enrollmentId: string; quizId: string }> }) {
+  const { enrollmentId, quizId } = await params;
+  return <QuizExperience enrollmentId={enrollmentId} quizId={quizId} />;
 }

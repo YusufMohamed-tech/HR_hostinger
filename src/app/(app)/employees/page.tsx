@@ -2,12 +2,12 @@
 
 import React from "react";
 import Link from "next/link";
-import { Eye, Search, Trash2, Users } from "lucide-react";
-import { deleteEmployee } from "@/lib/services/employees";
+import { CircleCheck, Eye, Search, UserX, Users } from "lucide-react";
+import { finalizeEmployeeOnboarding, offboardEmployeeRecord } from "@/lib/services/employees";
 import { EditEmployeeDialog } from "@/components/forms/EditEmployeeDialog";
 import { PromoteEmployeeDialog } from "@/components/forms/PromoteEmployeeDialog";
 import { Button } from "@/components/ui/button";
-import { ConfirmActionButton } from "@/components/ui/feedback-dialog";
+import { ConfirmActionButton, MessageDialog } from "@/components/ui/feedback-dialog";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -30,6 +30,10 @@ const statusLabels: Record<string, string> = {
   Active: "نشط",
   Inactive: "غير نشط",
   "On Leave": "في إجازة",
+  onboarding: "قيد استكمال الانضمام",
+  offboarding: "قيد إنهاء الخدمة",
+  offboarded: "منتهي الخدمة",
+  archived: "مؤرشف",
 };
 
 export default function EmployeesPage() {
@@ -49,6 +53,7 @@ export default function EmployeesPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("الكل");
+  const [actionError, setActionError] = useState("");
 
   const uniqueDepartments = useMemo(() => {
     const depts = new Set<string>();
@@ -86,6 +91,7 @@ export default function EmployeesPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <MessageDialog open={Boolean(actionError)} onOpenChange={(open) => !open && setActionError("")} description={actionError} />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">الموظفون</h1>
@@ -159,6 +165,8 @@ export default function EmployeesPage() {
                 const empEmail = typeof empRecord.email === "string" ? empRecord.email : "-";
                 const empCode = typeof empRecord.employee_code === "string" ? empRecord.employee_code : empId;
                 const empStatus = typeof empRecord.status === "string" ? empRecord.status : "Active";
+                const lifecycleStatus = typeof empRecord.lifecycle_status === "string" ? empRecord.lifecycle_status : "active";
+                const displayedStatus = lifecycleStatus === "active" ? empStatus : lifecycleStatus;
                 const jobTitle = typeof empRecord.job_title === "string" ? empRecord.job_title : "-";
                 const department = (empRecord.department ?? null) as Record<string, unknown> | null;
                 const departmentName = typeof department?.name === "string"
@@ -186,12 +194,12 @@ export default function EmployeesPage() {
                       <Badge
                         variant="outline"
                         className={
-                          empStatus === "Active"
+                          displayedStatus === "Active"
                             ? "h-6 rounded px-2 text-[11px] bg-green-50 text-green-700 border-green-200"
                             : "h-6 rounded px-2 text-[11px] bg-amber-50 text-amber-700 border-amber-200"
                         }
                       >
-                        {statusLabels[empStatus] || empStatus}
+                        {statusLabels[displayedStatus] || displayedStatus}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-gray-600">
@@ -205,10 +213,30 @@ export default function EmployeesPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-0.5">
-                        {canManageEmployees && (
+                        {canManageEmployees && lifecycleStatus === "onboarding" && (
+                          <ConfirmActionButton
+                            variant="ghost"
+                            size="icon-xs"
+                            className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+                            title="تفعيل الموظف"
+                            description="سيتم التحقق من الملف الرسمي والعقد والتأمينات وموقع العمل قبل التفعيل. إذا كان أي عنصر ناقص ستبقى حالة الانضمام معلّقة دون وصول للنظام."
+                            confirmLabel="تحقق وفعّل"
+                            onConfirm={async () => {
+                              const result = await finalizeEmployeeOnboarding(empId);
+                              if (result.error) {
+                                setActionError(result.error.message);
+                                return;
+                              }
+                              refetch();
+                            }}
+                          >
+                            <CircleCheck className="h-3.5 w-3.5" />
+                          </ConfirmActionButton>
+                        )}
+                        {canManageEmployees && !["offboarded", "archived"].includes(lifecycleStatus) && (
                           <PromoteEmployeeDialog employee={emp} onSuccess={refetch} compact />
                         )}
-                        {canManageEmployees && (
+                        {canManageEmployees && !["offboarded", "archived"].includes(lifecycleStatus) && (
                           <EditEmployeeDialog employee={emp} onSuccess={refetch} compact />
                         )}
                         <Button asChild variant="ghost" size="icon-xs" className="overflow-hidden text-brand hover:text-brand-dark" aria-label="View employee">
@@ -216,22 +244,26 @@ export default function EmployeesPage() {
                             <Eye className="h-3.5 w-3.5" />
                           </Link>
                         </Button>
-                        {canManageEmployees && (
+                        {canManageEmployees && !["offboarded", "archived"].includes(lifecycleStatus) && (
                           <ConfirmActionButton
                             variant="ghost"
                             size="icon-xs"
                             className="text-red-500 hover:text-red-700 hover:bg-red-50"
-                            title="حذف الموظف"
-                            description={`سيتم حذف الموظف ${empName}. هل تريد المتابعة؟`}
-                            confirmLabel="حذف"
+                            title="إنهاء خدمة الموظف"
+                            description={`سيتم إيقاف وصول ${empName} وإغلاق الشيفتات والمواقع والعقد مع الاحتفاظ بالسجل التاريخي. يجب استرجاع العهد وتسوية السلف أولاً.`}
+                            confirmLabel="إنهاء الخدمة"
                             destructive
                             onConfirm={async () => {
                               if (!currentUser?.orgId) return;
-                              await deleteEmployee(currentUser.orgId, empId);
+                              const result = await offboardEmployeeRecord(currentUser.orgId, empId);
+                              if (result.error) {
+                                setActionError(result.error.message);
+                                return;
+                              }
                               refetch();
                             }}
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <UserX className="h-3.5 w-3.5" />
                           </ConfirmActionButton>
                         )}
                       </div>

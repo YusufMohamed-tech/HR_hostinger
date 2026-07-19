@@ -126,11 +126,12 @@ export async function createSuperadminTask(values: {
   due_date?: string;
   attachments?: File[];
 }) {
+  const requestValues = { ...values, task_id: crypto.randomUUID(), command_id: crypto.randomUUID() };
   const hasAttachments = Boolean(values.attachments?.length);
   const response = await fetch("/api/superadmin/tasks", {
     method: "POST",
     headers: hasAttachments ? undefined : { "Content-Type": "application/json" },
-    body: hasAttachments ? buildFormData(values as unknown as Record<string, unknown>) : JSON.stringify(values),
+    body: hasAttachments ? buildFormData(requestValues as unknown as Record<string, unknown>) : JSON.stringify(requestValues),
   });
 
   return parseResponse<Record<string, unknown>>(response, "Unable to create task.");

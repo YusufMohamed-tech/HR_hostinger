@@ -2,7 +2,8 @@ import { z } from "zod";
 
 export const createAgentSchema = z.object({
   email: z.string().trim().email(),
-  password: z.string().min(8),
+  password: z.string().min(12).max(128).regex(/[a-z]/).regex(/[A-Z]/).regex(/\d/),
+  command_id: z.string().uuid().optional(),
   full_name: z.string().trim().min(2).max(160),
   phone: z.string().trim().min(8).max(40),
   national_id: z.string().trim().min(5).max(40),
@@ -24,6 +25,7 @@ export const updateAgentSchema = z.object({
 });
 
 export const importSimsSchema = z.object({
+  command_id: z.string().uuid().optional(),
   sims: z
     .array(
       z.object({
@@ -37,12 +39,14 @@ export const importSimsSchema = z.object({
 });
 
 export const assignSimsSchema = z.object({
+  command_id: z.string().uuid().optional(),
   agent_id: z.string().uuid(),
   sim_ids: z.array(z.string().uuid()).min(1),
   notes: z.string().trim().max(500).optional(),
 });
 
 export const assignSimsByQuantitySchema = z.object({
+  command_id: z.string().uuid().optional(),
   agent_id: z.string().uuid(),
   quantity: z.coerce.number().int().positive(),
   provider: z.string().trim().max(40).default("virgin"),
@@ -54,14 +58,25 @@ export const recordSaleSchema = z.object({
   sim_unit_id: z.string().uuid(),
   package_id: z.string().uuid(),
   customer_name: z.string().trim().max(160).optional(),
+  command_id: z.string().uuid().optional(),
 });
 
 export const returnSimSchema = z.object({
   sim_unit_id: z.string().uuid(),
   notes: z.string().trim().max(500).optional(),
+  command_id: z.string().uuid().optional(),
+});
+
+export const voidSimSaleSchema = z.object({
+  sale_id: z.string().uuid(),
+  expected_version: z.coerce.number().int().positive(),
+  reason: z.string().trim().min(5).max(500),
+  command_id: z.string().uuid().optional(),
 });
 
 export const collectCashSchema = z.object({
+  collection_id: z.string().uuid().optional(),
+  command_id: z.string().uuid().optional(),
   agent_id: z.string().uuid(),
   amount: z.coerce.number().positive(),
   payment_method: z.enum(["cash", "bank_transfer"]).default("cash"),
@@ -81,6 +96,7 @@ export const reviewRequestSchema = z.object({
 });
 
 export const simBoxImportSchema = z.object({
+  command_id: z.string().uuid().optional(),
   provider: z.string().trim().min(1).max(80),
   order_number: z.string().trim().max(120).optional(),
   batch_number: z.string().trim().max(120).optional(),

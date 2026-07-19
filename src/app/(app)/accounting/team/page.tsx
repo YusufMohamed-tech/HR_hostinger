@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Eye, Pencil, Plus, Search, ShieldCheck, UserCheck, UserRound, UserX, Users } from "lucide-react";
+import { Eye, Pencil, Plus, Search, ShieldCheck, UserRound, UserX, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -210,25 +210,26 @@ export default function AccountingTeamPage() {
                           {canManage ? (
                             <>
                               <FinanceMemberDialog member={member} onDone={load} onMessage={setMessage} />
-                              <ConfirmActionButton
+                              {active && <ConfirmActionButton
                                 variant="ghost"
                                 size="sm"
-                                className={active ? "text-red-600 hover:bg-red-50" : "text-brand hover:text-brand-dark"}
-                                title={active ? "تعطيل عضو مالي" : "تفعيل عضو مالي"}
-                                description={active ? "سيتم منع هذا المستخدم من الوصول حتى يتم تفعيله مرة أخرى." : "سيتم إعادة تفعيل وصول هذا المستخدم إلى دوره المالي."}
-                                confirmLabel={active ? "تعطيل" : "تفعيل"}
-                                destructive={active}
+                                className="text-red-600 hover:bg-red-50"
+                                title="إنهاء خدمة عضو مالي"
+                                description="سيتم إيقاف الوصول وإغلاق التكليفات مع الاحتفاظ بالسجل التاريخي. يجب تسوية العهد والسلف أولاً."
+                                confirmLabel="إنهاء الخدمة"
+                                destructive
                                 onConfirm={async () => {
                                   const result = await updateFinanceTeamMember({
                                     user_id: member.user_id,
-                                    status: active ? "inactive" : "active",
+                                    expected_version: member.lifecycle_version,
+                                    status: "inactive",
                                   });
                                   if (result.error) setMessage(result.error);
                                   else load();
                                 }}
                               >
-                                {active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
-                              </ConfirmActionButton>
+                                <UserX className="h-4 w-4" />
+                              </ConfirmActionButton>}
                             </>
                           ) : (
                             <span className="text-xs text-gray-400">عرض فقط</span>
@@ -274,13 +275,11 @@ function FinanceMemberDialog({
   const [form, setForm] = useState<{
     full_name: string;
     email: string;
-    password: string;
     phone: string;
     role: FinanceTeamRole;
   }>({
     full_name: "",
     email: "",
-    password: "",
     phone: "",
     role: "accountant",
   });
@@ -290,13 +289,11 @@ function FinanceMemberDialog({
     setForm(member ? {
       full_name: member.full_name || "",
       email: member.email || "",
-      password: "",
       phone: member.phone || "",
       role: member.role,
     } : {
       full_name: "",
       email: "",
-      password: "",
       phone: "",
       role: "accountant",
     });
@@ -310,8 +307,8 @@ function FinanceMemberDialog({
       onMessage("اسم المستخدم مطلوب.");
       return;
     }
-    if (!member && (!form.email.includes("@") || form.password.length < 8)) {
-      onMessage("البريد الإلكتروني وكلمة مرور من 8 أحرف مطلوبة.");
+    if (!member && !form.email.includes("@")) {
+      onMessage("البريد الإلكتروني الصحيح مطلوب لإرسال دعوة الدخول.");
       return;
     }
 
@@ -319,6 +316,7 @@ function FinanceMemberDialog({
     const result = member
       ? await updateFinanceTeamMember({
           user_id: member.user_id,
+          expected_version: member.lifecycle_version,
           full_name: form.full_name,
           phone: form.phone,
           role: form.role,
@@ -326,7 +324,6 @@ function FinanceMemberDialog({
       : await createFinanceTeamMember({
           full_name: form.full_name,
           email: form.email,
-          password: form.password,
           phone: form.phone,
           role: form.role,
         });
@@ -402,17 +399,7 @@ function FinanceMemberDialog({
                 dir="ltr"
               />
             </div>
-            {!member && (
-              <div className="space-y-2">
-                <Label>كلمة المرور المؤقتة *</Label>
-                <Input
-                  type="password"
-                  value={form.password}
-                  onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
-                  placeholder="8 أحرف على الأقل"
-                />
-              </div>
-            )}
+            {!member && <p className="self-end pb-2 text-xs text-gray-500">سيصل للمستخدم رابط دعوة آمن لاختيار كلمة المرور.</p>}
             <div className="space-y-2">
               <Label>الجوال</Label>
               <Input value={form.phone} onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))} dir="ltr" />

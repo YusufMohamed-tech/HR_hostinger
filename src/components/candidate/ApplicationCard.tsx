@@ -3,6 +3,8 @@
 import React, { useState } from "react";
 import { ChevronDown, ChevronUp, Calendar, Building2, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { respondToCandidateOffer } from "@/lib/services/candidate";
 import type { CandidateApplication } from "@/lib/services/candidate";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -38,10 +40,13 @@ const EMP_TYPE_MAP: Record<string, string> = {
 
 type Props = {
   application: CandidateApplication;
+  onUpdated: () => void;
 };
 
-export function ApplicationCard({ application }: Props) {
+export function ApplicationCard({ application, onUpdated }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const [responding, setResponding] = useState(false);
+  const [responseError, setResponseError] = useState("");
   const job = application.job;
   const stageLabel = STAGE_LABELS[application.status] || application.status;
   const stageBadgeClass = STAGE_BADGE[application.status] || STAGE_BADGE.submitted;
@@ -111,6 +116,52 @@ export function ApplicationCard({ application }: Props) {
 
       {expanded && (
         <div className="border-t border-border/40 px-4 pb-4 pt-3 bg-muted/20">
+          {application.status === "offer" && (
+            <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-3">
+              <p className="text-sm font-semibold text-green-900">عرض وظيفي</p>
+              {application.offer_status === "pending" ? (
+                <>
+                  <p className="mt-1 text-xs text-green-800">راجع العرض ثم سجّل قرارك. لا يمكن بدء التعيين قبل قبولك الصريح.</p>
+                  <div className="mt-3 flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={responding}
+                      onClick={async () => {
+                        setResponding(true);
+                        setResponseError("");
+                        const result = await respondToCandidateOffer(application.id, "accepted");
+                        setResponding(false);
+                        if (result.error) setResponseError(result.error);
+                        else onUpdated();
+                      }}
+                    >
+                      قبول العرض
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={responding}
+                      onClick={async () => {
+                        setResponding(true);
+                        setResponseError("");
+                        const result = await respondToCandidateOffer(application.id, "declined");
+                        setResponding(false);
+                        if (result.error) setResponseError(result.error);
+                        else onUpdated();
+                      }}
+                    >
+                      رفض العرض
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-1 text-xs text-green-800">
+                  {application.offer_status === "accepted" ? "تم قبول العرض." : "تم رفض العرض."}
+                </p>
+              )}
+              {responseError && <p className="mt-2 text-xs text-red-700">{responseError}</p>}
+            </div>
+          )}
           <p className="text-xs font-semibold text-gray-700 mb-3">سجل المراحل</p>
           <div className="relative">
             <div className="absolute right-2 top-0 bottom-0 w-0.5 bg-border" />

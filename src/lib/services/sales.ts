@@ -49,6 +49,8 @@ export type SalesRevenueAccount = {
 export type SalesShiftPromptType = "hourly" | "mid_shift" | "end_shift";
 
 export type SalesShiftMonitorPrompt = {
+  id: string;
+  version: number;
   type: SalesShiftPromptType;
   key: string;
   title: string;
@@ -130,6 +132,7 @@ export type SalesAgent = {
   national_id?: string | null;
   status: string;
   employee_id?: string | null;
+  lifecycle_version?: number;
   location_id?: string | null;
   location?: { id: string; name: string | null; city?: string | null; radius_meters?: number | null } | null;
   shift_id?: string | null;
@@ -279,16 +282,24 @@ export async function getSalesShiftMonitor(companyId?: string) {
 }
 
 export async function respondSalesShiftPrompt(values: {
+  prompt_id: string;
+  expected_version: number;
   prompt_type: SalesShiftPromptType;
   prompt_key: string;
   company_id?: string | null;
   action: "snooze" | "acknowledge" | "open_sales" | "submit_reason";
   reason?: string;
 }) {
-  return apiFetch<SalesShiftMonitorData>("/api/sales/shift-monitor", {
+  const scope = `hrms-command:sales-shift-prompt:${values.prompt_id}:${values.expected_version}:${values.action}:${values.reason || ""}`;
+  const existing = typeof window !== "undefined" ? window.sessionStorage.getItem(scope) : null;
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(scope, commandId);
+  const result = await apiFetch<SalesShiftMonitorData>("/api/sales/shift-monitor", {
     method: "POST",
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, command_id: commandId }),
   });
+  if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(scope);
+  return result;
 }
 
 export async function requestSalesLogEdit(values: { sales_log_id: string; requested_changes: string }) {
@@ -343,7 +354,6 @@ export async function getSalesTeam() {
 export async function createSalesAgent(values: {
   full_name: string;
   email: string;
-  password: string;
   phone?: string;
   national_id?: string;
   role?: "sales" | "sales_manager";
@@ -358,14 +368,22 @@ export async function createSalesAgent(values: {
     target_notes?: string | null;
   }>;
 }) {
+  const scope = `hrms-command:sales-onboarding:${values.email.toLowerCase()}`;
+  const existing = typeof window !== "undefined" ? window.sessionStorage.getItem(scope) : null;
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(scope, commandId);
   return apiFetch<SalesAgent>("/api/sales/team", {
     method: "POST",
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, command_id: commandId }),
+  }).then((result) => {
+    if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(scope);
+    return result;
   });
 }
 
 export async function updateSalesAgent(values: {
   user_id: string;
+  expected_version?: number;
   full_name?: string;
   phone?: string;
   national_id?: string;
@@ -382,8 +400,16 @@ export async function updateSalesAgent(values: {
     target_notes?: string | null;
   }>;
 }) {
+  const action = values.status ? "offboard" : "configure";
+  const scope = `hrms-command:sales-team:${action}:${values.user_id}`;
+  const existing = typeof window !== "undefined" ? window.sessionStorage.getItem(scope) : null;
+  const commandId = existing || crypto.randomUUID();
+  if (typeof window !== "undefined" && !existing) window.sessionStorage.setItem(scope, commandId);
   return apiFetch<SalesAgent>("/api/sales/team", {
     method: "PATCH",
-    body: JSON.stringify(values),
+    body: JSON.stringify({ ...values, command_id: commandId }),
+  }).then((result) => {
+    if (!result.error && typeof window !== "undefined") window.sessionStorage.removeItem(scope);
+    return result;
   });
 }

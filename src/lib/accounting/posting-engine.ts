@@ -91,7 +91,13 @@ export async function postTransaction(
   userId: string,
   type: PostingType,
   source: Record<string, unknown>,
-  options?: { entryDate?: string; status?: "draft" | "posted"; sourceId?: string }
+  options?: {
+    entryDate?: string;
+    status?: "draft" | "posted";
+    sourceId?: string;
+    commandId?: string;
+    requestId?: string;
+  }
 ): Promise<PostingResult> {
   const template = templates[type];
   if (!template) throw new Error(`Unknown posting type: ${type}`);
@@ -118,6 +124,8 @@ export async function postTransaction(
     sourceId: options?.sourceId || String(source.id || ""),
     status: options?.status || "posted",
     lines,
+    commandId: options?.commandId,
+    requestId: options?.requestId,
   });
 
   return {

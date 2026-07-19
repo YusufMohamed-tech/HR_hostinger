@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSalesAccess } from "@/lib/server/sales-auth";
-import { getSupervisorPerformance } from "@/lib/services/carrier-dashboard";
+import { getCarrierDashboardSnapshot } from "@/lib/services/carrier-dashboard";
 import type { DashboardFilters } from "@/lib/services/carrier-dashboard";
 
 function buildFilters(orgId: string, sp: URLSearchParams): DashboardFilters {
@@ -15,13 +15,13 @@ function buildFilters(orgId: string, sp: URLSearchParams): DashboardFilters {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await requireSalesAccess({ managerOnly: true });
+  const auth = await requireSalesAccess({ managerOnly: true }, request);
   if ("error" in auth) return auth.error;
 
   const filters = buildFilters(auth.orgId, request.nextUrl.searchParams);
   try {
-    const data = await getSupervisorPerformance(filters);
-    return NextResponse.json({ data });
+    const snapshot = await getCarrierDashboardSnapshot(filters);
+    return NextResponse.json({ data: snapshot.supervisors, completeness: snapshot.completeness, requestId: auth.requestId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load supervisor performance";
     return NextResponse.json({ message }, { status: 500 });
