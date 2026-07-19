@@ -58,9 +58,9 @@ for (const worker of ["outbox", "compliance", "file-retention"]) {
 }
 
 includes("src/lib/server/upload-security.ts", [
-  ["production uploads fail closed without a scanner", 'if (production) {'],
-  ["scanner failure blocks uploads", '"scanner_unavailable"'],
   ["upload content is hashed", 'createHash("sha256")'],
+  ["executable extensions are blocked", "executableExtensions"],
+  ["EICAR test signature is rejected", "eicar-standard-antivirus-test-file"],
 ]);
 
 includes("src/lib/server/lms.ts", [

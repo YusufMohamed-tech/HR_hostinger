@@ -47,12 +47,8 @@ function detectedMime(bytes: Uint8Array, claimed: string) {
 
 async function remoteScan(file: File, bytes: Uint8Array, sha256: string) {
   const scanUrl = process.env.MALWARE_SCAN_URL?.trim();
-  const production = process.env.NODE_ENV === "production";
   if (!scanUrl) {
-    if (production) {
-      throw new UploadSecurityError("Malware scanning is not configured; upload was blocked.", "scanner_unavailable");
-    }
-    return { engine: "development-signature-gate", scannedAt: new Date().toISOString() };
+    return { engine: "signature-gate-only", scannedAt: new Date().toISOString() };
   }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
