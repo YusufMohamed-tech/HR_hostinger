@@ -170,7 +170,11 @@ export function EditLocationDialog({ location, onSuccess }: Props) {
             <div className="space-y-2">
               <Label>المدير</Label>
               <Select value={form.manager_employee_id} onValueChange={(v) => set("manager_employee_id", v || "")}>
-                <SelectTrigger><SelectValue placeholder="اختر المدير">{selectedManagerName || undefined}</SelectValue></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر المدير">
+                    {() => selectedManagerName || "اختر المدير"}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {employees.map((emp) => (
                     <SelectItem key={String(emp.id)} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
