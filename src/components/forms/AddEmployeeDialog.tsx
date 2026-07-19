@@ -605,7 +605,11 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <div className="space-y-2">
                   <Label>الشيفت</Label>
                   <Select value={shiftForm.shift_id} onValueChange={(v) => setShift("shift_id", v || "")}>
-                    <SelectTrigger><SelectValue placeholder="اختر شيفت" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="اختر شيفت">
+                        {() => { const s = shifts.find((sh) => String(sh.id) === shiftForm.shift_id); return s ? `${String(s.name)} (${typeof s.start_time === "string" ? s.start_time.slice(0, 5) : "--:--"} - ${typeof s.end_time === "string" ? s.end_time.slice(0, 5) : "--:--"})` : "اختر شيفت"; }}
+                      </SelectValue>
+                    </SelectTrigger>
                     <SelectContent>
                       {shifts.map((shift) => {
                         const start = typeof shift.start_time === "string" ? shift.start_time.slice(0, 5) : "--:--";
@@ -637,7 +641,11 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
               <div className="space-y-2">
                 <Label>القسم</Label>
                 <Select value={form.department_id} onValueChange={(v) => set("department_id", v || "")}>
-                  <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر">
+                      {() => String(departments.find((d) => String(d.id) === form.department_id)?.name || "اختر")}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     {departments.map((d) => (
                       <SelectItem key={String(d.id)} value={String(d.id)}>{String(d.name)}</SelectItem>
@@ -663,7 +671,11 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
               <div className="space-y-2">
                 <Label>المدير المباشر</Label>
                 <Select value={form.manager_id} onValueChange={(v) => set("manager_id", v || "")}>
-                  <SelectTrigger><SelectValue placeholder="اختر" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر">
+                      {() => { const e = employees.find((emp) => String(emp.id) === form.manager_id); return e ? String(e.full_name || e.name) : "اختر"; }}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     {employees.map((emp) => (
                       <SelectItem key={String(emp.id)} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
@@ -915,7 +927,11 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
             <div className="space-y-2">
               <Label>مجموعة قواعد الخصم</Label>
               <Select value={form.deduction_rule_group_id} onValueChange={(v) => set("deduction_rule_group_id", v || "")}>
-                <SelectTrigger><SelectValue placeholder="اختر مجموعة الخصم" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر مجموعة الخصم">
+                    {() => deductionGroups.find((g) => g.id === form.deduction_rule_group_id)?.name || "اختر مجموعة الخصم"}
+                  </SelectValue>
+                </SelectTrigger>
                 <SelectContent>
                   {deductionGroups.map((g) => (
                     <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>

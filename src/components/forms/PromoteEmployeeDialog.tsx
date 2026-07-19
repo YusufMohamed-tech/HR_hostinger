@@ -160,7 +160,11 @@ export function PromoteEmployeeDialog({ employee, onSuccess, compact = false }: 
               <div className="space-y-2">
                 <Label>القسم الجديد</Label>
                 <Select value={form.department_id} onValueChange={(value) => setForm((prev) => ({ ...prev, department_id: value || "" }))}>
-                  <SelectTrigger><SelectValue placeholder="اختر القسم" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر القسم">
+                      {() => getRecordName(departmentOptions.find((d) => String(d.id) === form.department_id), null) || "اختر القسم"}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     {departmentOptions.map((department) => (
                       <SelectItem key={String(department.id)} value={String(department.id)}>
@@ -173,7 +177,11 @@ export function PromoteEmployeeDialog({ employee, onSuccess, compact = false }: 
               <div className="space-y-2">
                 <Label>المدير المباشر الجديد</Label>
                 <Select value={form.manager_id} onValueChange={(value) => setForm((prev) => ({ ...prev, manager_id: value || "" }))}>
-                  <SelectTrigger><SelectValue placeholder="اختر المدير" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="اختر المدير">
+                      {() => getRecordName(managerOptions.find((m) => String(m.id) === form.manager_id), null) || "اختر المدير"}
+                    </SelectValue>
+                  </SelectTrigger>
                   <SelectContent>
                     {managerOptions.map((manager) => (
                       <SelectItem key={String(manager.id)} value={String(manager.id)}>

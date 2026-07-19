@@ -82,7 +82,11 @@ export function EditDepartmentDialog({ department, onSuccess }: Props) {
           <div className="space-y-2">
             <Label>مدير القسم</Label>
             <Select value={managerId} onValueChange={(v) => setManagerId(v || "")}>
-              <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder="اختر">
+                  {() => { const e = employees.find((emp) => String(emp.id) === managerId); return e ? String(e.full_name || e.name) : "اختر"; }}
+                </SelectValue>
+              </SelectTrigger>
               <SelectContent>
                 {employees.map((emp) => (
                   <SelectItem key={String(emp.id)} value={String(emp.id)}>{String(emp.full_name || emp.name)}</SelectItem>
