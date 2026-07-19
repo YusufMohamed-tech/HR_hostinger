@@ -10,17 +10,7 @@ import {
 import type { Role } from "./types";
 import { requestIdFromHeaders } from "./lib/request-id";
 
-const PRIVILEGED_MFA_ROLES: ReadonlySet<Role> = new Set([
-  "Superadmin",
-  "Admin",
-  "HR_Admin",
-  "HR_Recruitment",
-  "Training_Manager",
-  "Sales_Manager",
-  "Onground_Agent_Manager",
-  "Finance_Manager",
-  "Accountant",
-]);
+const PRIVILEGED_MFA_ROLES: ReadonlySet<Role> = new Set([]);
 
 function contentSecurityPolicy(nonce: string) {
   const development = process.env.NODE_ENV !== "production";
