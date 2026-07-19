@@ -31,6 +31,8 @@ export interface AccountingSettings {
   default_eosb_provision_id?: string | null;
   default_leave_encashment_id?: string | null;
   default_allowances_expense_id?: string | null;
+  default_commission_expense_id?: string | null;
+  default_commission_payable_id?: string | null;
   auto_post_sales?: boolean;
   auto_post_payroll?: boolean;
   auto_post_advances?: boolean;
