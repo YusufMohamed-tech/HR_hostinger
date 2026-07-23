@@ -2,8 +2,12 @@ import type {
   AccountingAccount,
   AccountingAccountTemplate,
   AccountingAllocationRule,
+  AccountingApprovalPolicy,
+  AccountingApprovalRequest,
   AccountingBranch,
   AccountingBook,
+  AccountingCloseChecklistTemplate,
+  AccountingCloseRun,
   AccountingCostCenter,
   AccountingCurrency,
   AccountingCustomer,
@@ -16,7 +20,11 @@ import type {
   AccountingInvoice,
   AccountingJournalEntry,
   AccountingLegalEntity,
+  AccountingOpeningBalanceBatch,
   AccountingPayment,
+  AccountingRecognitionSchedule,
+  AccountingRecurringSchedule,
+  AccountingRecurringTemplate,
   AccountingSalesCompanyLink,
   AccountingSettings,
   AccountingTaxRate,
@@ -561,6 +569,140 @@ export function saveAccountTemplate(values: Record<string, unknown>, id?: string
 
 export function backfillCostCenterDimensions() {
   return apiFetch<{ count: number }>("/api/accounting/dimensions/backfill-cost-centers", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+// Phase 3: GL Workflow services
+
+export function getApprovalPolicies() {
+  return apiFetch<AccountingApprovalPolicy[]>("/api/accounting/approval-policies");
+}
+
+export function getApprovalPolicy(id: string) {
+  return apiFetch<AccountingApprovalPolicy>(`/api/accounting/approval-policies/${id}`);
+}
+
+export function saveApprovalPolicy(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingApprovalPolicy>(`/api/accounting/approval-policies${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getApprovalRequests(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingApprovalRequest[]>(`/api/accounting/approval-requests${qs(params)}`);
+}
+
+export function submitApprovalRequest(values: Record<string, unknown>) {
+  return apiFetch<AccountingApprovalRequest>("/api/accounting/approval-requests", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function decideApproval(requestId: string, values: Record<string, unknown>) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/approval-requests/${requestId}/decide`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getRecurringTemplates() {
+  return apiFetch<AccountingRecurringTemplate[]>("/api/accounting/recurring-templates");
+}
+
+export function getRecurringTemplate(id: string) {
+  return apiFetch<AccountingRecurringTemplate & { lines: Record<string, unknown>[]; schedules: AccountingRecurringSchedule[] }>(`/api/accounting/recurring-templates/${id}`);
+}
+
+export function saveRecurringTemplate(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingRecurringTemplate>(`/api/accounting/recurring-templates${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getRecurringSchedules() {
+  return apiFetch<AccountingRecurringSchedule[]>("/api/accounting/recurring-schedules");
+}
+
+export function saveRecurringSchedule(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingRecurringSchedule>(`/api/accounting/recurring-schedules${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getRecognitionSchedules() {
+  return apiFetch<AccountingRecognitionSchedule[]>("/api/accounting/recognition-schedules");
+}
+
+export function getRecognitionSchedule(id: string) {
+  return apiFetch<AccountingRecognitionSchedule & { lines: Record<string, unknown>[] }>(`/api/accounting/recognition-schedules/${id}`);
+}
+
+export function saveRecognitionSchedule(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingRecognitionSchedule>(`/api/accounting/recognition-schedules${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getOpeningBalanceBatches() {
+  return apiFetch<AccountingOpeningBalanceBatch[]>("/api/accounting/opening-balances");
+}
+
+export function saveOpeningBalanceBatch(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingOpeningBalanceBatch>(`/api/accounting/opening-balances${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function approveOpeningBalanceBatch(id: string) {
+  return apiFetch<AccountingOpeningBalanceBatch>(`/api/accounting/opening-balances/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getCloseChecklistTemplates() {
+  return apiFetch<AccountingCloseChecklistTemplate[]>("/api/accounting/close-checklist-templates");
+}
+
+export function saveCloseChecklistTemplate(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingCloseChecklistTemplate>(`/api/accounting/close-checklist-templates${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getCloseRuns() {
+  return apiFetch<AccountingCloseRun[]>("/api/accounting/close-runs");
+}
+
+export function getCloseRun(id: string) {
+  return apiFetch<AccountingCloseRun & { tasks: Record<string, unknown>[] }>(`/api/accounting/close-runs/${id}`);
+}
+
+export function startCloseRun(values: Record<string, unknown>) {
+  return apiFetch<AccountingCloseRun>("/api/accounting/close-runs", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function completeCloseTask(runId: string, taskId: string, values?: Record<string, unknown>) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/close-runs/${runId}/complete-task`, {
+    method: "POST",
+    body: JSON.stringify({ task_id: taskId, ...values }),
+  });
+}
+
+export function completeCloseRun(runId: string) {
+  return apiFetch<AccountingCloseRun>(`/api/accounting/close-runs/${runId}/complete`, {
     method: "POST",
     body: JSON.stringify({}),
   });

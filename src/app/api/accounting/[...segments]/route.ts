@@ -215,7 +215,7 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
-  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions"];
+  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates"];
   if (entitySetupSegments.includes(parts[0])) return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
@@ -623,6 +623,58 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (error) throw new Error(error.message);
       return json(data || []);
     }
+    if (parts[0] === "approval-policies") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_approval_policies", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_approval_policies", auth.orgId, request));
+    }
+    if (parts[0] === "approval-requests") {
+      if (parts[1]) {
+        const req = await getRecord(admin, "accounting_approval_requests", auth.orgId, parts[1]);
+        const { data: decisions } = await db(admin).from("accounting_approval_decisions").select("*").eq("request_id", parts[1]).order("decided_at");
+        return json({ ...req, decisions: decisions || [] });
+      }
+      return json(await listTable(admin, "accounting_approval_requests", auth.orgId, request));
+    }
+    if (parts[0] === "recurring-templates") {
+      if (parts[1]) {
+        const template = await getRecord(admin, "accounting_recurring_journal_templates", auth.orgId, parts[1]);
+        const { data: lines } = await db(admin).from("accounting_recurring_journal_lines").select("*").eq("template_id", parts[1]).order("sort_order");
+        const { data: schedules } = await db(admin).from("accounting_recurring_schedules").select("*").eq("template_id", parts[1]).order("created_at", { ascending: false });
+        return json({ ...template, lines: lines || [], schedules: schedules || [] });
+      }
+      return json(await listTable(admin, "accounting_recurring_journal_templates", auth.orgId, request));
+    }
+    if (parts[0] === "recurring-schedules") {
+      if (parts[1]) {
+        const schedule = await getRecord(admin, "accounting_recurring_schedules", auth.orgId, parts[1]);
+        const { data: runs } = await db(admin).from("accounting_recurring_runs").select("*").eq("schedule_id", parts[1]).order("run_date", { ascending: false }).limit(50);
+        return json({ ...schedule, runs: runs || [] });
+      }
+      return json(await listTable(admin, "accounting_recurring_schedules", auth.orgId, request));
+    }
+    if (parts[0] === "recognition-schedules") {
+      if (parts[1]) {
+        const schedule = await getRecord(admin, "accounting_recognition_schedules", auth.orgId, parts[1]);
+        const { data: lines } = await db(admin).from("accounting_recognition_schedule_lines").select("*").eq("schedule_id", parts[1]).order("period_date");
+        return json({ ...schedule, lines: lines || [] });
+      }
+      return json(await listTable(admin, "accounting_recognition_schedules", auth.orgId, request));
+    }
+    if (parts[0] === "opening-balances") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_opening_balance_batches", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_opening_balance_batches", auth.orgId, request));
+    }
+    if (parts[0] === "close-runs") {
+      if (parts[1]) {
+        const run = await getRecord(admin, "accounting_close_runs", auth.orgId, parts[1]);
+        const { data: tasks } = await db(admin).from("accounting_close_tasks").select("*").eq("close_run_id", parts[1]).order("task_order");
+        return json({ ...run, tasks: tasks || [] });
+      }
+      return json(await listTable(admin, "accounting_close_runs", auth.orgId, request));
+    }
+    if (parts[0] === "close-checklist-templates") {
+      return json(await listTable(admin, "accounting_close_checklist_templates", auth.orgId, request));
+    }
     if (parts[0] === "currencies") return json(await getCurrencies(auth.orgId));
     if (parts[0] === "exchange-rates") {
       return json(await getExchangeRates(auth.orgId, {
@@ -937,6 +989,143 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const { data, error } = await db(admin).rpc("accounting_backfill_cost_center_dimensions", { p_org_id: auth.orgId });
       if (error) throw new Error(error.message);
       return json({ count: data || 0 });
+    }
+
+    if (parts[0] === "approval-policies") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_approval_policies").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_approval_policies").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "approval-steps") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_approval_steps").update(body).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_approval_steps").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "approval-requests") {
+      if (parts[1] && parts[2] === "decide") {
+        const { data, error } = await db(admin).from("accounting_approval_decisions").insert({
+          request_id: parts[1],
+          organization_id: auth.orgId,
+          step_number: Number(body.step_number || 1),
+          decision: body.decision,
+          actor_user_id: auth.user.id,
+          reason: body.reason || null,
+        }).select().single();
+        if (error) throw new Error(error.message);
+        const newStatus = body.decision === "approve" ? "approved" : body.decision === "reject" ? "rejected" : "returned";
+        await db(admin).from("accounting_approval_requests").update({ status: newStatus, completed_at: new Date().toISOString() }).eq("id", parts[1]);
+        return json(data, 201);
+      }
+      const { data, error } = await db(admin).from("accounting_approval_requests").insert({
+        ...body,
+        organization_id: auth.orgId,
+        submitted_by: auth.user.id,
+      }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "recurring-templates") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_recurring_journal_templates").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        if (Array.isArray(body.lines)) {
+          await db(admin).from("accounting_recurring_journal_lines").delete().eq("template_id", parts[1]);
+          const lines = (body.lines as Record<string, unknown>[]).map((l, i) => ({ ...l, template_id: parts[1], organization_id: auth.orgId, sort_order: i }));
+          if (lines.length) await db(admin).from("accounting_recurring_journal_lines").insert(lines);
+        }
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_recurring_journal_templates").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      if (Array.isArray(body.lines)) {
+        const lines = (body.lines as Record<string, unknown>[]).map((l, i) => ({ ...l, template_id: data.id, organization_id: auth.orgId, sort_order: i }));
+        if (lines.length) await db(admin).from("accounting_recurring_journal_lines").insert(lines);
+      }
+      return json(data, 201);
+    }
+    if (parts[0] === "recurring-schedules") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_recurring_schedules").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_recurring_schedules").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "recognition-schedules") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_recognition_schedules").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const payload = { ...body, organization_id: auth.orgId, created_by: auth.user.id, remaining_amount: body.total_amount };
+      const { data, error } = await db(admin).from("accounting_recognition_schedules").insert(payload).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "opening-balances") {
+      if (parts[1] && parts[2] === "approve") {
+        const { data, error } = await db(admin).from("accounting_opening_balance_batches").update({ status: "approved", approved_by: auth.user.id, approved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_opening_balance_batches").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_opening_balance_batches").insert({ ...body, organization_id: auth.orgId, uploaded_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "close-checklist-templates") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_close_checklist_templates").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_close_checklist_templates").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "close-runs") {
+      if (parts[1] && parts[2] === "complete-task") {
+        const { data, error } = await db(admin).from("accounting_close_tasks").update({
+          status: body.status || "completed",
+          completed_by: auth.user.id,
+          completed_at: new Date().toISOString(),
+          exception_reason: body.exception_reason || null,
+          updated_at: new Date().toISOString(),
+        }).eq("organization_id", auth.orgId).eq("id", body.task_id).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      if (parts[1] && parts[2] === "complete") {
+        const { data, error } = await db(admin).from("accounting_close_runs").update({ status: "completed", completed_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_close_runs").insert({ ...body, organization_id: auth.orgId, started_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      if (body.checklist_template_id) {
+        const { data: templateTasks } = await db(admin).from("accounting_close_tasks").select("name_ar, name_en, task_order").eq("close_run_id", body.checklist_template_id);
+      }
+      if (Array.isArray(body.tasks)) {
+        const tasks = (body.tasks as Record<string, unknown>[]).map((t, i) => ({ ...t, close_run_id: data.id, organization_id: auth.orgId, task_order: i + 1 }));
+        if (tasks.length) await db(admin).from("accounting_close_tasks").insert(tasks);
+      }
+      return json(data, 201);
     }
 
     if (parts[0] === "commissions" && parts[1] === "settle") {
