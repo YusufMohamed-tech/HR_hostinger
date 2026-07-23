@@ -1,5 +1,5 @@
 {
-  "id": "schema_v111_managed_recruitment_forms",
-  "file": "db/schema_v111_managed_recruitment_forms.sql",
-  "checksumSha256": "470d96d1c8a9952cf116cdf41d2700d1f0d401418c823aa8ba0e99ff2b6e5277"
+  "id": "schema_v112_accounting_legal_entities",
+  "file": "db/schema_v112_accounting_legal_entities.sql",
+  "checksumSha256": "f350858bae287a980658b91fcf97cd09bc06bc48bd7afce63bfb715be40bdb75"
 }

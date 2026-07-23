@@ -10,6 +10,7 @@ import {
   Bell,
   BookOpen,
   Boxes,
+  Building2,
   Briefcase,
   Calculator,
   CalendarDays,
@@ -175,9 +176,11 @@ export function SidebarContent() {
       { name: "مراكز التكلفة", href: "/accounting/cost-centers", icon: Layers },
       { name: "التقارير", href: "/accounting/reports", icon: ClipboardList },
       { name: "فريق المالية", href: "/accounting/team", icon: Users },
+      { name: "الكيانات والفروع", href: "/accounting/entity-setup", icon: Building2 },
       { name: "الإعدادات", href: "/accounting/settings", icon: Settings },
     ].filter((link) => {
       if (link.href === "/accounting/settings") return isSuperAdmin || role === "Finance_Manager";
+      if (link.href === "/accounting/entity-setup") return isSuperAdmin || role === "Finance_Manager";
       if (link.href === "/accounting/team") return canSeeFinanceTeam;
       return true;
     });

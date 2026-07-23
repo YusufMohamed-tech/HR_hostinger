@@ -90,6 +90,7 @@ import {
 } from "@/lib/services/accounting";
 import type { AccountingAccount, AccountingCostCenter, AccountingCustomer, AccountingPayment, AccountingSalesCompanyLink, AccountingTaxRate, AccountingVendor, AgentCommissionFinanceRow, CommissionPaymentMethod, MerchantCommissionFinanceRow } from "@/types/accounting";
 import { useRoleContext } from "@/providers/RoleProvider";
+import { EntityManagementPage } from "@/components/accounting/EntityManagement";
 
 type AccountingView =
   | "dashboard"
@@ -106,7 +107,8 @@ type AccountingView =
   | "payments"
   | "commissions"
   | "reports"
-  | "settings";
+  | "settings"
+  | "entity-setup";
 
 type JournalLineDraft = {
   account_id: string;
@@ -206,6 +208,7 @@ export function AccountingPage({ view }: { view: AccountingView }) {
   if (view === "commissions") return <SalesCommissionsPage />;
   if (view === "reports") return <ReportsIndexPage />;
   if (view === "settings") return <AccountingSettingsPage />;
+  if (view === "entity-setup") return <EntityManagementPage />;
   return null;
 }
 
