@@ -1,5 +1,5 @@
 {
-  "id": "schema_v117_accounting_ar_ap_party",
-  "file": "db/schema_v117_accounting_ar_ap_party.sql",
-  "checksumSha256": "d8f5b18bc3648a92c70b3fb9f5f29d2f63d7c302e41be3527a2979509ffb1077"
+  "id": "schema_v118_accounting_budgets_projects",
+  "file": "db/schema_v118_accounting_budgets_projects.sql",
+  "checksumSha256": "8808709275834580528e775b4e14f9d517089a86f22d23a515639a5218ad2001"
 }

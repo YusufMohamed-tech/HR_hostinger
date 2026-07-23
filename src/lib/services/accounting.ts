@@ -26,6 +26,9 @@ import type {
   AccountingDimensionPolicy,
   AccountingDimensionType,
   AccountingDimensionValue,
+  AccountingBudgetControlRule,
+  AccountingBudgetTransfer,
+  AccountingCommitment,
   AccountingDunningPolicy,
   AccountingExchangeRate,
   AccountingExpense,
@@ -38,6 +41,7 @@ import type {
   AccountingOpeningBalanceBatch,
   AccountingParty,
   AccountingPayment,
+  AccountingProject,
   AccountingPaymentBatch,
   AccountingRecognitionSchedule,
   AccountingRecurringSchedule,
@@ -971,6 +975,81 @@ export function getDunningPolicies() {
 
 export function saveDunningPolicy(values: Record<string, unknown>, id?: string) {
   return apiFetch<AccountingDunningPolicy>(`/api/accounting/dunning-policies${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+// Phase 7: Projects, Commitments, Budget services
+
+export function getProjects(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingProject[]>(`/api/accounting/projects${qs(params)}`);
+}
+
+export function getProject(id: string) {
+  return apiFetch<AccountingProject & { tasks: Record<string, unknown>[] }>(`/api/accounting/projects/${id}`);
+}
+
+export function saveProject(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingProject>(`/api/accounting/projects${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function saveProjectTask(projectId: string, values: Record<string, unknown>) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/projects/${projectId}/tasks`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getCommitments(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingCommitment[]>(`/api/accounting/commitments${qs(params)}`);
+}
+
+export function getCommitment(id: string) {
+  return apiFetch<AccountingCommitment & { consumptions: Record<string, unknown>[] }>(`/api/accounting/commitments/${id}`);
+}
+
+export function saveCommitment(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingCommitment>(`/api/accounting/commitments${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function consumeCommitment(commitmentId: string, values: Record<string, unknown>) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/commitments/${commitmentId}/consume`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getBudgetTransfers() {
+  return apiFetch<AccountingBudgetTransfer[]>("/api/accounting/budget-transfers");
+}
+
+export function createBudgetTransfer(values: Record<string, unknown>) {
+  return apiFetch<AccountingBudgetTransfer>("/api/accounting/budget-transfers", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function approveBudgetTransfer(id: string) {
+  return apiFetch<AccountingBudgetTransfer>(`/api/accounting/budget-transfers/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getBudgetControlRules() {
+  return apiFetch<AccountingBudgetControlRule[]>("/api/accounting/budget-control-rules");
+}
+
+export function saveBudgetControlRule(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingBudgetControlRule>(`/api/accounting/budget-control-rules${id ? `/${id}` : ""}`, {
     method: "POST",
     body: JSON.stringify(values),
   });

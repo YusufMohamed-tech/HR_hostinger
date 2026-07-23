@@ -1200,3 +1200,111 @@ export interface AccountingDunningPolicy {
   created_at: string;
   updated_at: string;
 }
+
+// Phase 7: Budget/Project/Commitment types
+
+export type ProjectType = "internal" | "external" | "capital" | "grant";
+export type ProjectStatus = "planning" | "active" | "on_hold" | "completed" | "cancelled";
+export type CommitmentType = "purchase_order" | "contract" | "reservation";
+export type CommitmentStatus = "open" | "partially_consumed" | "consumed" | "cancelled" | "expired";
+export type BudgetControlLevel = "none" | "warning" | "block";
+export type BudgetTransferStatus = "pending" | "approved" | "rejected";
+
+export interface AccountingProject {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  description: string | null;
+  project_type: ProjectType;
+  customer_id: string | null;
+  party_id: string | null;
+  manager_id: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  budget_amount: number | null;
+  consumed_amount: number;
+  committed_amount: number;
+  revenue_recognition_method: string | null;
+  status: ProjectStatus;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingProjectTask {
+  id: string;
+  organization_id: string;
+  project_id: string;
+  parent_task_id: string | null;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  budget_amount: number | null;
+  consumed_amount: number;
+  sort_order: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingCommitment {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  commitment_type: CommitmentType;
+  reference_no: string;
+  description: string | null;
+  party_id: string | null;
+  vendor_id: string | null;
+  project_id: string | null;
+  account_id: string | null;
+  cost_center_id: string | null;
+  commitment_date: string;
+  expected_delivery_date: string | null;
+  original_amount: number;
+  consumed_amount: number;
+  remaining_amount: number;
+  currency_code: string;
+  status: CommitmentStatus;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingBudgetTransfer {
+  id: string;
+  organization_id: string;
+  budget_id: string;
+  transfer_date: string;
+  from_account_id: string | null;
+  from_cost_center_id: string | null;
+  to_account_id: string | null;
+  to_cost_center_id: string | null;
+  amount: number;
+  reason: string;
+  status: BudgetTransferStatus;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface AccountingBudgetControlRule {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  name_ar: string;
+  name_en: string | null;
+  control_level: BudgetControlLevel;
+  threshold_percent: number;
+  applies_to: string;
+  check_scope: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
