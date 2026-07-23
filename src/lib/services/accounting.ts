@@ -1,10 +1,15 @@
 import type {
   AccountingAccount,
+  AccountingAccountTemplate,
+  AccountingAllocationRule,
   AccountingBranch,
   AccountingBook,
   AccountingCostCenter,
   AccountingCurrency,
   AccountingCustomer,
+  AccountingDimensionPolicy,
+  AccountingDimensionType,
+  AccountingDimensionValue,
   AccountingExchangeRate,
   AccountingExpense,
   AccountingFiscalCalendar,
@@ -493,5 +498,70 @@ export function saveAccountingFiscalCalendar(values: Record<string, unknown>, id
   return apiFetch<AccountingFiscalCalendar>(`/api/accounting/fiscal-calendars${id ? `/${id}` : ""}`, {
     method: "POST",
     body: JSON.stringify(values),
+  });
+}
+
+// Dimensions and COA (Phase 2)
+
+export function getDimensionTypes() {
+  return apiFetch<AccountingDimensionType[]>("/api/accounting/dimension-types");
+}
+
+export function saveDimensionType(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingDimensionType>(`/api/accounting/dimension-types${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getDimensionValues(typeId?: string) {
+  const params = typeId ? `?dimension_type_id=${typeId}` : "";
+  return apiFetch<AccountingDimensionValue[]>(`/api/accounting/dimension-values${params}`);
+}
+
+export function saveDimensionValue(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingDimensionValue>(`/api/accounting/dimension-values${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getDimensionPolicies() {
+  return apiFetch<AccountingDimensionPolicy[]>("/api/accounting/dimension-policies");
+}
+
+export function saveDimensionPolicy(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingDimensionPolicy>(`/api/accounting/dimension-policies${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getAllocationRules() {
+  return apiFetch<AccountingAllocationRule[]>("/api/accounting/allocation-rules");
+}
+
+export function saveAllocationRule(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingAllocationRule>(`/api/accounting/allocation-rules${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getAccountTemplates() {
+  return apiFetch<AccountingAccountTemplate[]>("/api/accounting/account-templates");
+}
+
+export function saveAccountTemplate(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingAccountTemplate>(`/api/accounting/account-templates${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function backfillCostCenterDimensions() {
+  return apiFetch<{ count: number }>("/api/accounting/dimensions/backfill-cost-centers", {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }

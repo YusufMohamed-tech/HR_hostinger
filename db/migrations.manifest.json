@@ -137,6 +137,7 @@
     { "id": "schema_v109_atomic_merchant_sim_assignment", "file": "db/schema_v109_atomic_merchant_sim_assignment.sql" },
     { "id": "schema_v110_atomic_eosb_accrual", "file": "db/schema_v110_atomic_eosb_accrual.sql" },
     { "id": "schema_v111_managed_recruitment_forms", "file": "db/schema_v111_managed_recruitment_forms.sql" },
-    { "id": "schema_v112_accounting_legal_entities", "file": "db/schema_v112_accounting_legal_entities.sql" }
+    { "id": "schema_v112_accounting_legal_entities", "file": "db/schema_v112_accounting_legal_entities.sql" },
+    { "id": "schema_v113_accounting_dimensions_and_coa", "file": "db/schema_v113_accounting_dimensions_and_coa.sql" }
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "id": "schema_v112_accounting_legal_entities",
-  "file": "db/schema_v112_accounting_legal_entities.sql",
-  "checksumSha256": "f350858bae287a980658b91fcf97cd09bc06bc48bd7afce63bfb715be40bdb75"
+  "id": "schema_v113_accounting_dimensions_and_coa",
+  "file": "db/schema_v113_accounting_dimensions_and_coa.sql",
+  "checksumSha256": "b05d23e35aa42994341ace3c0e0e4ba0a4eb8ea4b50ab7d0f15b606a26ac3950"
 }

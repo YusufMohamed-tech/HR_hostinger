@@ -215,7 +215,7 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
-  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars"];
+  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions"];
   if (entitySetupSegments.includes(parts[0])) return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
@@ -595,6 +595,34 @@ export async function GET(request: NextRequest, context: RouteContext) {
       const entityFilter = request.nextUrl.searchParams.get("legal_entity_id") || undefined;
       return json(await getUserScopes(auth.orgId, entityFilter));
     }
+    if (parts[0] === "dimension-types") {
+      const { data, error } = await db(admin).from("accounting_dimension_types").select("*").eq("organization_id", auth.orgId).order("sort_order");
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "dimension-values") {
+      let query = db(admin).from("accounting_dimension_values").select("*").eq("organization_id", auth.orgId).order("code");
+      const typeId = request.nextUrl.searchParams.get("dimension_type_id");
+      if (typeId) query = query.eq("dimension_type_id", typeId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "dimension-policies") {
+      const { data, error } = await db(admin).from("accounting_dimension_policies").select("*").eq("organization_id", auth.orgId).order("created_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "allocation-rules") {
+      const { data, error } = await db(admin).from("accounting_allocation_rules").select("*").eq("organization_id", auth.orgId).order("code");
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "account-templates") {
+      const { data, error } = await db(admin).from("accounting_account_templates").select("*").eq("organization_id", auth.orgId).order("code");
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
     if (parts[0] === "currencies") return json(await getCurrencies(auth.orgId));
     if (parts[0] === "exchange-rates") {
       return json(await getExchangeRates(auth.orgId, {
@@ -852,6 +880,63 @@ export async function POST(request: NextRequest, context: RouteContext) {
         operation: "save",
         payload: body,
       }), parts[1] ? 200 : 201);
+    }
+
+    // Dimension management POST endpoints
+    if (parts[0] === "dimension-types") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_dimension_types").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_dimension_types").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "dimension-values") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_dimension_values").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_dimension_values").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "dimension-policies") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_dimension_policies").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_dimension_policies").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "allocation-rules") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_allocation_rules").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_allocation_rules").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "account-templates") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_account_templates").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_account_templates").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "dimensions" && parts[1] === "backfill-cost-centers") {
+      const { data, error } = await db(admin).rpc("accounting_backfill_cost_center_dimensions", { p_org_id: auth.orgId });
+      if (error) throw new Error(error.message);
+      return json({ count: data || 0 });
     }
 
     if (parts[0] === "commissions" && parts[1] === "settle") {

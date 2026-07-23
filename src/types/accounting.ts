@@ -474,3 +474,105 @@ export interface AccountingEntityContext {
   locale: "ar" | "en";
   timezone: string;
 }
+
+// Dimensions and COA types (Phase 2)
+
+export type DimensionCategory = "branch" | "cost_center" | "profit_center" | "department" | "region" | "project" | "contract" | "product_line" | "employee" | "location" | "custom";
+export type DimensionRequirement = "required" | "optional" | "blocked";
+export type AllocationMethod = "percentage" | "fixed" | "driver";
+export type AllocationFrequency = "monthly" | "quarterly" | "annually" | "on_demand";
+export type AccountControlType = "none" | "customer" | "vendor" | "asset" | "bank" | "cash" | "employee" | "tax";
+
+export interface AccountingDimensionType {
+  id: string;
+  organization_id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  category: DimensionCategory;
+  is_hierarchical: boolean;
+  is_active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingDimensionValue {
+  id: string;
+  organization_id: string;
+  dimension_type_id: string;
+  legal_entity_id: string | null;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  parent_id: string | null;
+  reference_table: string | null;
+  reference_id: string | null;
+  is_active: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingDimensionPolicy {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  account_id: string | null;
+  account_type: string | null;
+  dimension_type_id: string;
+  requirement: DimensionRequirement;
+  is_active: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingAllocationRule {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  source_account_id: string | null;
+  source_dimension_type_id: string | null;
+  source_dimension_value_id: string | null;
+  method: AllocationMethod;
+  frequency: AllocationFrequency;
+  is_active: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingAllocationRuleLine {
+  id: string;
+  rule_id: string;
+  organization_id: string;
+  target_dimension_type_id: string | null;
+  target_dimension_value_id: string | null;
+  target_account_id: string | null;
+  weight: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface AccountingAccountTemplate {
+  id: string;
+  organization_id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  description: string | null;
+  version: number;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
