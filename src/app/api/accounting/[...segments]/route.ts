@@ -215,7 +215,7 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
-  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs", "parties", "credit-notes", "debit-notes", "nontrade-items", "payment-allocations", "aging-snapshots", "dunning-policies", "dunning-actions", "projects", "commitments", "budget-transfers", "budget-control-rules", "tax-codes", "vat-returns", "zatca-submissions", "zatca-devices", "withholding-certificates"];
+  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs", "parties", "credit-notes", "debit-notes", "nontrade-items", "payment-allocations", "aging-snapshots", "dunning-policies", "dunning-actions", "projects", "commitments", "budget-transfers", "budget-control-rules", "tax-codes", "vat-returns", "zatca-submissions", "zatca-devices", "withholding-certificates", "ic-agreements", "ic-transactions", "ic-balances", "consolidation-groups", "consolidation-runs", "elimination-rules"];
   if (entitySetupSegments.includes(parts[0])) return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
@@ -815,6 +815,34 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (parts[0] === "withholding-certificates") {
       if (parts[1]) return json(await getRecord(admin, "accounting_withholding_certificates", auth.orgId, parts[1]));
       return json(await listTable(admin, "accounting_withholding_certificates", auth.orgId, request));
+    }
+    if (parts[0] === "ic-agreements") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_intercompany_agreements", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_intercompany_agreements", auth.orgId, request));
+    }
+    if (parts[0] === "ic-transactions") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_intercompany_transactions", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_intercompany_transactions", auth.orgId, request));
+    }
+    if (parts[0] === "ic-balances") {
+      const { data, error } = await db(admin).from("accounting_intercompany_balances").select("*").eq("organization_id", auth.orgId).order("as_of_date", { ascending: false }).limit(100);
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "consolidation-groups") {
+      if (parts[1]) {
+        const group = await getRecord(admin, "accounting_consolidation_groups", auth.orgId, parts[1]);
+        const { data: members } = await db(admin).from("accounting_consolidation_group_members").select("*").eq("group_id", parts[1]);
+        return json({ ...group, members: members || [] });
+      }
+      return json(await listTable(admin, "accounting_consolidation_groups", auth.orgId, request));
+    }
+    if (parts[0] === "consolidation-runs") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_consolidation_runs", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_consolidation_runs", auth.orgId, request));
+    }
+    if (parts[0] === "elimination-rules") {
+      return json(await listTable(admin, "accounting_elimination_rules", auth.orgId, request));
     }
     if (parts[0] === "currencies") return json(await getCurrencies(auth.orgId));
     if (parts[0] === "exchange-rates") {
@@ -1615,6 +1643,75 @@ export async function POST(request: NextRequest, context: RouteContext) {
         return json(data);
       }
       const { data, error } = await db(admin).from("accounting_withholding_certificates").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "ic-agreements") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_intercompany_agreements").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_intercompany_agreements").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "ic-transactions") {
+      if (parts[1] && parts[2] === "confirm") {
+        const { data, error } = await db(admin).from("accounting_intercompany_transactions").update({ status: "confirmed", confirmed_by: auth.user.id, confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_intercompany_transactions").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_intercompany_transactions").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "consolidation-groups") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_consolidation_groups").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        if (Array.isArray(body.members)) {
+          await db(admin).from("accounting_consolidation_group_members").delete().eq("group_id", parts[1]);
+          const members = (body.members as Record<string, unknown>[]).map(m => ({ ...m, group_id: parts[1], organization_id: auth.orgId }));
+          if (members.length) await db(admin).from("accounting_consolidation_group_members").insert(members);
+        }
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_consolidation_groups").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      if (Array.isArray(body.members)) {
+        const members = (body.members as Record<string, unknown>[]).map(m => ({ ...m, group_id: data.id, organization_id: auth.orgId }));
+        if (members.length) await db(admin).from("accounting_consolidation_group_members").insert(members);
+      }
+      return json(data, 201);
+    }
+    if (parts[0] === "consolidation-runs") {
+      if (parts[1] && parts[2] === "approve") {
+        const { data, error } = await db(admin).from("accounting_consolidation_runs").update({ status: "approved", approved_by: auth.user.id, approved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_consolidation_runs").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_consolidation_runs").insert({ ...body, organization_id: auth.orgId, run_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "elimination-rules") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_elimination_rules").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_elimination_rules").insert({ ...body, organization_id: auth.orgId }).select().single();
       if (error) throw new Error(error.message);
       return json(data, 201);
     }

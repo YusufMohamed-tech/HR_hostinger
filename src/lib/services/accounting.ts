@@ -31,6 +31,11 @@ import type {
   AccountingCommitment,
   AccountingDunningPolicy,
   AccountingExchangeRate,
+  AccountingConsolidationGroup,
+  AccountingConsolidationRun,
+  AccountingEliminationRule,
+  AccountingIntercompanyAgreement,
+  AccountingIntercompanyTransaction,
   AccountingTaxCode,
   AccountingVatReturn,
   AccountingWithholdingCertificate,
@@ -1119,6 +1124,81 @@ export function getWithholdingCertificates(params?: Record<string, string | unde
 
 export function saveWithholdingCertificate(values: Record<string, unknown>, id?: string) {
   return apiFetch<AccountingWithholdingCertificate>(`/api/accounting/withholding-certificates${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+// Phase 9: Intercompany/Consolidation services
+
+export function getICagreements() {
+  return apiFetch<AccountingIntercompanyAgreement[]>("/api/accounting/ic-agreements");
+}
+
+export function saveICagreement(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingIntercompanyAgreement>(`/api/accounting/ic-agreements${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getICTransactions(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingIntercompanyTransaction[]>(`/api/accounting/ic-transactions${qs(params)}`);
+}
+
+export function saveICTransaction(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingIntercompanyTransaction>(`/api/accounting/ic-transactions${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function confirmICTransaction(id: string) {
+  return apiFetch<AccountingIntercompanyTransaction>(`/api/accounting/ic-transactions/${id}/confirm`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getConsolidationGroups() {
+  return apiFetch<AccountingConsolidationGroup[]>("/api/accounting/consolidation-groups");
+}
+
+export function getConsolidationGroup(id: string) {
+  return apiFetch<AccountingConsolidationGroup & { members: Record<string, unknown>[] }>(`/api/accounting/consolidation-groups/${id}`);
+}
+
+export function saveConsolidationGroup(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingConsolidationGroup>(`/api/accounting/consolidation-groups${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getConsolidationRuns(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingConsolidationRun[]>(`/api/accounting/consolidation-runs${qs(params)}`);
+}
+
+export function startConsolidationRun(values: Record<string, unknown>) {
+  return apiFetch<AccountingConsolidationRun>("/api/accounting/consolidation-runs", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function approveConsolidationRun(id: string) {
+  return apiFetch<AccountingConsolidationRun>(`/api/accounting/consolidation-runs/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getEliminationRules() {
+  return apiFetch<AccountingEliminationRule[]>("/api/accounting/elimination-rules");
+}
+
+export function saveEliminationRule(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingEliminationRule>(`/api/accounting/elimination-rules${id ? `/${id}` : ""}`, {
     method: "POST",
     body: JSON.stringify(values),
   });
