@@ -1,14 +1,21 @@
 import type {
   AccountingAccount,
+  AccountingBranch,
+  AccountingBook,
   AccountingCostCenter,
+  AccountingCurrency,
   AccountingCustomer,
+  AccountingExchangeRate,
   AccountingExpense,
+  AccountingFiscalCalendar,
   AccountingInvoice,
   AccountingJournalEntry,
+  AccountingLegalEntity,
   AccountingPayment,
   AccountingSalesCompanyLink,
   AccountingSettings,
   AccountingTaxRate,
+  AccountingUserScope,
   AccountingVendor,
   CommissionSettlementPayload,
   PayrollAccountingStatus,
@@ -358,6 +365,132 @@ export function settleEOSB(employeeId: string) {
 
 export function recordGOSIPayment(values: { month: string; amount: number }) {
   return apiFetch<{ success: boolean; journalEntryId?: string }>("/api/accounting/gosi/record-payment", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+// Multi-entity management
+
+export function getLegalEntities() {
+  return apiFetch<AccountingLegalEntity[]>("/api/accounting/entities");
+}
+
+export function getAllowedEntities() {
+  return apiFetch<AccountingLegalEntity[]>("/api/accounting/entities/allowed");
+}
+
+export function getLegalEntity(id: string) {
+  return apiFetch<AccountingLegalEntity>(`/api/accounting/entities/${id}`);
+}
+
+export function saveLegalEntity(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingLegalEntity>(`/api/accounting/entities${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function changeLegalEntityStatus(id: string, status: string, expectedVersion: number) {
+  return apiFetch<AccountingLegalEntity>(`/api/accounting/entities/${id}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status, expected_version: expectedVersion }),
+  });
+}
+
+export function backfillDefaultEntity() {
+  return apiFetch<{ legal_entity_id: string }>("/api/accounting/entities/backfill-default", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getAccountingBranches(legalEntityId?: string) {
+  const params = legalEntityId ? `?legal_entity_id=${legalEntityId}` : "";
+  return apiFetch<AccountingBranch[]>(`/api/accounting/branches${params}`);
+}
+
+export function saveAccountingBranch(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingBranch>(`/api/accounting/branches${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function deactivateAccountingBranch(id: string, expectedVersion: number) {
+  return apiFetch<AccountingBranch>(`/api/accounting/branches/${id}/deactivate`, {
+    method: "POST",
+    body: JSON.stringify({ expected_version: expectedVersion }),
+  });
+}
+
+export function getAccountingBooks(legalEntityId?: string) {
+  const params = legalEntityId ? `?legal_entity_id=${legalEntityId}` : "";
+  return apiFetch<AccountingBook[]>(`/api/accounting/books${params}`);
+}
+
+export function saveAccountingBook(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingBook>(`/api/accounting/books${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getAccountingUserScopes(legalEntityId?: string) {
+  const params = legalEntityId ? `?legal_entity_id=${legalEntityId}` : "";
+  return apiFetch<AccountingUserScope[]>(`/api/accounting/user-scopes${params}`);
+}
+
+export function saveAccountingUserScope(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingUserScope>(`/api/accounting/user-scopes${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function revokeAccountingUserScope(id: string) {
+  return apiFetch<AccountingUserScope>(`/api/accounting/user-scopes/${id}/revoke`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getAccountingCurrencies() {
+  return apiFetch<AccountingCurrency[]>("/api/accounting/currencies");
+}
+
+export function saveAccountingCurrency(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingCurrency>(`/api/accounting/currencies${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getAccountingExchangeRates(filters?: Record<string, string>) {
+  const params = filters ? "?" + new URLSearchParams(filters).toString() : "";
+  return apiFetch<AccountingExchangeRate[]>(`/api/accounting/exchange-rates${params}`);
+}
+
+export function saveAccountingExchangeRate(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingExchangeRate>(`/api/accounting/exchange-rates${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function approveAccountingExchangeRate(id: string) {
+  return apiFetch<AccountingExchangeRate>(`/api/accounting/exchange-rates/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getAccountingFiscalCalendars() {
+  return apiFetch<AccountingFiscalCalendar[]>("/api/accounting/fiscal-calendars");
+}
+
+export function saveAccountingFiscalCalendar(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingFiscalCalendar>(`/api/accounting/fiscal-calendars${id ? `/${id}` : ""}`, {
     method: "POST",
     body: JSON.stringify(values),
   });

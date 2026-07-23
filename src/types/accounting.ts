@@ -333,3 +333,144 @@ export interface CommissionSettlementPayload {
   account_id?: string;
   command_id?: string;
 }
+
+// Multi-entity types (Phase 1)
+
+export type LegalEntityStatus = "draft" | "active" | "suspended" | "closed";
+export type BookType = "statutory" | "management" | "tax" | "consolidation_adjustment";
+export type BookStatus = "active" | "suspended" | "closed";
+export type ExchangeRateType = "spot" | "average" | "closing" | "historical";
+export type UserScopeCapability = "full" | "branch_only" | "view_only";
+
+export interface AccountingLegalEntity {
+  id: string;
+  organization_id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  trade_name_ar: string | null;
+  trade_name_en: string | null;
+  commercial_registration: string | null;
+  vat_number: string | null;
+  tax_identification_number: string | null;
+  country: string;
+  address: string | null;
+  city: string | null;
+  functional_currency_code: string;
+  fiscal_calendar_id: string | null;
+  default_language: "ar" | "en";
+  timezone: string;
+  status: LegalEntityStatus;
+  consolidation_parent_id: string | null;
+  is_default: boolean;
+  version: number;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingBranch {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  parent_branch_id: string | null;
+  location_id: string | null;
+  tax_registration_override: string | null;
+  default_cost_center_id: string | null;
+  is_active: boolean;
+  version: number;
+  created_by: string | null;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingBook {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  book_type: BookType;
+  functional_currency_code: string;
+  fiscal_calendar_id: string | null;
+  status: BookStatus;
+  is_default: boolean;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingUserScope {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  legal_entity_id: string;
+  branch_id: string | null;
+  capability_group: UserScopeCapability;
+  is_active: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  granted_by: string | null;
+  granted_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingCurrency {
+  id: string;
+  organization_id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  symbol: string | null;
+  minor_units: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingExchangeRate {
+  id: string;
+  organization_id: string;
+  from_currency_code: string;
+  to_currency_code: string;
+  rate_date: string;
+  rate_type: ExchangeRateType;
+  rate: string;
+  source: string | null;
+  is_approved: boolean;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingFiscalCalendar {
+  id: string;
+  organization_id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  start_month: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingEntityContext {
+  organizationId: string;
+  legalEntityId: string;
+  branchId?: string;
+  bookId?: string;
+  functionalCurrency: string;
+  fiscalCalendarId?: string;
+  locale: "ar" | "en";
+  timezone: string;
+}

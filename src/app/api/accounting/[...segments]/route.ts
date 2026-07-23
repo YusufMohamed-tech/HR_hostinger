@@ -4,6 +4,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAccountingAccess, type AccountingAction } from "@/lib/accounting/permissions";
 import { createJournalEntry, getAccountingSettings, initializeAccountingDefaults, postJournalEntry, reverseJournalEntry, updateDraftJournalEntry } from "@/lib/accounting/posting";
 import {
+  getLegalEntities, getLegalEntity, saveLegalEntity, changeLegalEntityStatus,
+  getBranches, saveBranch, deactivateBranch,
+  getBooks, saveBook,
+  getUserScopes, saveUserScope, revokeUserScope,
+  getCurrencies, saveCurrency,
+  getExchangeRates, saveExchangeRate, approveExchangeRate,
+  getFiscalCalendars, saveFiscalCalendar,
+} from "@/lib/server/accounting/entities";
+import { getUserAllowedEntities, ensureDefaultEntity } from "@/lib/server/accounting/context";
+import {
   getAccountingDashboard,
   getBalanceSheet,
   getEmployeeAdvancesReport,
@@ -205,6 +215,8 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
+  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars"];
+  if (entitySetupSegments.includes(parts[0])) return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
   return "manage";
@@ -565,6 +577,34 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (error) throw new Error(error.message);
       return json({ sales_log_id: logId, status: data ? "invoice_created" : "not_generated", invoice: data || null });
     }
+    // Multi-entity management endpoints
+    if (parts[0] === "entities") {
+      if (parts[1] === "allowed") return json(await getUserAllowedEntities(auth.orgId, auth.user.id));
+      if (parts[1]) return json(await getLegalEntity(auth.orgId, parts[1]));
+      return json(await getLegalEntities(auth.orgId));
+    }
+    if (parts[0] === "branches") {
+      const entityFilter = request.nextUrl.searchParams.get("legal_entity_id") || undefined;
+      return json(await getBranches(auth.orgId, entityFilter));
+    }
+    if (parts[0] === "books") {
+      const entityFilter = request.nextUrl.searchParams.get("legal_entity_id") || undefined;
+      return json(await getBooks(auth.orgId, entityFilter));
+    }
+    if (parts[0] === "user-scopes") {
+      const entityFilter = request.nextUrl.searchParams.get("legal_entity_id") || undefined;
+      return json(await getUserScopes(auth.orgId, entityFilter));
+    }
+    if (parts[0] === "currencies") return json(await getCurrencies(auth.orgId));
+    if (parts[0] === "exchange-rates") {
+      return json(await getExchangeRates(auth.orgId, {
+        from: request.nextUrl.searchParams.get("from") || undefined,
+        to: request.nextUrl.searchParams.get("to") || undefined,
+        date: request.nextUrl.searchParams.get("date") || undefined,
+        type: request.nextUrl.searchParams.get("type") || undefined,
+      }));
+    }
+    if (parts[0] === "fiscal-calendars") return json(await getFiscalCalendars(auth.orgId));
     if (parts[0] === "budgets") {
       if (parts[1]) {
         const budget = await getRecord(admin, "accounting_budgets", auth.orgId, parts[1]);
@@ -715,7 +755,103 @@ export async function POST(request: NextRequest, context: RouteContext) {
   try {
     if (parts[0] === "init-defaults") {
       await initializeAccountingDefaults(admin, auth.orgId, auth.user.id);
+      await ensureDefaultEntity(auth.orgId);
       return json({ ok: true });
+    }
+
+    // Multi-entity management POST endpoints
+    if (parts[0] === "entities") {
+      if (parts[1] === "backfill-default") {
+        const entityId = await ensureDefaultEntity(auth.orgId);
+        return json({ legal_entity_id: entityId });
+      }
+      if (parts[1] && parts[2] === "status") {
+        return json(await changeLegalEntityStatus(auth.orgId, auth.user.id, parts[1], body.status, Number(body.expected_version || 0)));
+      }
+      return json(await saveLegalEntity({
+        orgId: auth.orgId,
+        actorUserId: auth.user.id,
+        entityType: "legal_entity",
+        entityId: parts[1] || null,
+        expectedVersion: Number(body.expected_version || 0),
+        operation: "save",
+        payload: body,
+      }), parts[1] ? 200 : 201);
+    }
+    if (parts[0] === "branches") {
+      if (parts[1] && parts[2] === "deactivate") {
+        return json(await deactivateBranch(auth.orgId, auth.user.id, parts[1], Number(body.expected_version || 0)));
+      }
+      return json(await saveBranch({
+        orgId: auth.orgId,
+        actorUserId: auth.user.id,
+        entityType: "branch",
+        entityId: parts[1] || null,
+        expectedVersion: Number(body.expected_version || 0),
+        operation: "save",
+        payload: body,
+      }), parts[1] ? 200 : 201);
+    }
+    if (parts[0] === "books") {
+      return json(await saveBook({
+        orgId: auth.orgId,
+        actorUserId: auth.user.id,
+        entityType: "book",
+        entityId: parts[1] || null,
+        expectedVersion: Number(body.expected_version || 0),
+        operation: "save",
+        payload: body,
+      }), parts[1] ? 200 : 201);
+    }
+    if (parts[0] === "user-scopes") {
+      if (parts[1] && parts[2] === "revoke") {
+        return json(await revokeUserScope(auth.orgId, auth.user.id, parts[1]));
+      }
+      return json(await saveUserScope({
+        orgId: auth.orgId,
+        actorUserId: auth.user.id,
+        entityType: "scope",
+        entityId: parts[1] || null,
+        expectedVersion: 0,
+        operation: "save",
+        payload: body,
+      }), parts[1] ? 200 : 201);
+    }
+    if (parts[0] === "currencies") {
+      return json(await saveCurrency({
+        orgId: auth.orgId,
+        actorUserId: auth.user.id,
+        entityType: "currency",
+        entityId: parts[1] || null,
+        expectedVersion: 0,
+        operation: "save",
+        payload: body,
+      }), parts[1] ? 200 : 201);
+    }
+    if (parts[0] === "exchange-rates") {
+      if (parts[1] && parts[2] === "approve") {
+        return json(await approveExchangeRate(auth.orgId, auth.user.id, parts[1]));
+      }
+      return json(await saveExchangeRate({
+        orgId: auth.orgId,
+        actorUserId: auth.user.id,
+        entityType: "rate",
+        entityId: parts[1] || null,
+        expectedVersion: 0,
+        operation: "save",
+        payload: body,
+      }), parts[1] ? 200 : 201);
+    }
+    if (parts[0] === "fiscal-calendars") {
+      return json(await saveFiscalCalendar({
+        orgId: auth.orgId,
+        actorUserId: auth.user.id,
+        entityType: "calendar",
+        entityId: parts[1] || null,
+        expectedVersion: 0,
+        operation: "save",
+        payload: body,
+      }), parts[1] ? 200 : 201);
     }
 
     if (parts[0] === "commissions" && parts[1] === "settle") {
