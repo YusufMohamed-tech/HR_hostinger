@@ -211,9 +211,11 @@ CREATE TABLE IF NOT EXISTS public.accounting_user_scopes (
   granted_by uuid REFERENCES public.profiles(user_id) ON DELETE SET NULL,
   granted_at timestamptz NOT NULL DEFAULT now(),
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (organization_id, user_id, legal_entity_id, COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid))
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX accounting_user_scopes_unique_idx
+  ON public.accounting_user_scopes (organization_id, user_id, legal_entity_id, COALESCE(branch_id, '00000000-0000-0000-0000-000000000000'::uuid));
 
 ALTER TABLE public.accounting_user_scopes ENABLE ROW LEVEL SECURITY;
 
