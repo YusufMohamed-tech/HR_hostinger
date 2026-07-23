@@ -576,3 +576,218 @@ export interface AccountingAccountTemplate {
   created_at: string;
   updated_at: string;
 }
+
+// Phase 3: GL Workflow types
+
+export type ApprovalDocumentType = "journal" | "payment" | "expense" | "invoice" | "budget" | "write_off" | "period_reopen";
+export type ApprovalRequestStatus = "pending" | "approved" | "rejected" | "returned" | "cancelled";
+export type ApprovalDecision = "approve" | "reject" | "return";
+export type RecurringFrequency = "daily" | "weekly" | "monthly" | "quarterly" | "annually";
+export type RecurringRunStatus = "completed" | "failed" | "skipped";
+export type RecognitionScheduleType = "accrual" | "prepayment" | "deferred_revenue";
+export type RecognitionMethod = "straight_line" | "custom";
+export type RecognitionScheduleStatus = "active" | "suspended" | "terminated" | "completed";
+export type RecognitionLineStatus = "pending" | "posted" | "skipped";
+export type OpeningBalanceBatchType = "trial_balance" | "customer_items" | "vendor_items" | "asset_register" | "bank_positions" | "historical_journals";
+export type OpeningBalanceStatus = "draft" | "validated" | "approved" | "posted" | "locked" | "rejected";
+export type CloseType = "soft" | "hard";
+export type CloseRunStatus = "in_progress" | "completed" | "failed" | "cancelled";
+export type CloseTaskStatus = "pending" | "in_progress" | "completed" | "failed" | "skipped" | "exception";
+
+export interface AccountingApprovalPolicy {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  name_ar: string;
+  name_en: string | null;
+  document_type: ApprovalDocumentType;
+  min_amount: number | null;
+  max_amount: number | null;
+  currency_code: string | null;
+  source_module: string | null;
+  branch_id: string | null;
+  required_steps: number;
+  is_active: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingApprovalStep {
+  id: string;
+  policy_id: string;
+  organization_id: string;
+  step_number: number;
+  required_capability: string;
+  required_approver_count: number;
+  created_at: string;
+}
+
+export interface AccountingApprovalRequest {
+  id: string;
+  organization_id: string;
+  policy_id: string;
+  policy_version: number;
+  target_type: string;
+  target_id: string;
+  current_step: number;
+  status: ApprovalRequestStatus;
+  submitted_by: string | null;
+  submitted_at: string;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface AccountingApprovalDecision {
+  id: string;
+  request_id: string;
+  organization_id: string;
+  step_number: number;
+  decision: ApprovalDecision;
+  actor_user_id: string;
+  reason: string | null;
+  decided_at: string;
+}
+
+export interface AccountingRecurringTemplate {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  name_ar: string;
+  name_en: string | null;
+  description: string | null;
+  branch_id: string | null;
+  book_id: string | null;
+  currency_code: string;
+  is_active: boolean;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingRecurringSchedule {
+  id: string;
+  organization_id: string;
+  template_id: string;
+  frequency: RecurringFrequency;
+  start_date: string;
+  end_date: string | null;
+  next_run_date: string;
+  auto_submit: boolean;
+  auto_post: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingRecurringRun {
+  id: string;
+  organization_id: string;
+  schedule_id: string;
+  run_date: string;
+  journal_entry_id: string | null;
+  status: RecurringRunStatus;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface AccountingRecognitionSchedule {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  name_ar: string;
+  name_en: string | null;
+  schedule_type: RecognitionScheduleType;
+  source_document_type: string | null;
+  source_document_id: string | null;
+  total_amount: number;
+  recognized_amount: number;
+  remaining_amount: number;
+  currency_code: string;
+  debit_account_id: string | null;
+  credit_account_id: string | null;
+  start_date: string;
+  end_date: string;
+  recognition_method: RecognitionMethod;
+  status: RecognitionScheduleStatus;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingRecognitionLine {
+  id: string;
+  schedule_id: string;
+  organization_id: string;
+  period_date: string;
+  amount: number;
+  journal_entry_id: string | null;
+  status: RecognitionLineStatus;
+  created_at: string;
+}
+
+export interface AccountingOpeningBalanceBatch {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  batch_type: OpeningBalanceBatchType;
+  name: string;
+  as_of_date: string;
+  total_debit: number;
+  total_credit: number;
+  row_count: number;
+  error_count: number;
+  status: OpeningBalanceStatus;
+  journal_entry_id: string | null;
+  uploaded_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingCloseChecklistTemplate {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  name_ar: string;
+  name_en: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingCloseRun {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  period_id: string | null;
+  checklist_template_id: string | null;
+  close_type: CloseType;
+  status: CloseRunStatus;
+  started_by: string | null;
+  started_at: string;
+  completed_at: string | null;
+  created_at: string;
+}
+
+export interface AccountingCloseTask {
+  id: string;
+  close_run_id: string;
+  organization_id: string;
+  task_order: number;
+  name_ar: string;
+  name_en: string | null;
+  status: CloseTaskStatus;
+  assignee_id: string | null;
+  completed_by: string | null;
+  completed_at: string | null;
+  exception_reason: string | null;
+  exception_approved_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
