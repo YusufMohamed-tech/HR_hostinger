@@ -215,7 +215,7 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
-  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs", "parties", "credit-notes", "debit-notes", "nontrade-items", "payment-allocations", "aging-snapshots", "dunning-policies", "dunning-actions", "projects", "commitments", "budget-transfers", "budget-control-rules"];
+  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs", "parties", "credit-notes", "debit-notes", "nontrade-items", "payment-allocations", "aging-snapshots", "dunning-policies", "dunning-actions", "projects", "commitments", "budget-transfers", "budget-control-rules", "tax-codes", "vat-returns", "zatca-submissions", "zatca-devices", "withholding-certificates"];
   if (entitySetupSegments.includes(parts[0])) return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
@@ -796,6 +796,25 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     if (parts[0] === "budget-control-rules") {
       return json(await listTable(admin, "accounting_budget_control_rules", auth.orgId, request));
+    }
+    if (parts[0] === "tax-codes") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_tax_codes", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_tax_codes", auth.orgId, request, "code"));
+    }
+    if (parts[0] === "vat-returns") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_vat_returns", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_vat_returns", auth.orgId, request));
+    }
+    if (parts[0] === "zatca-submissions") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_zatca_submissions", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_zatca_submissions", auth.orgId, request));
+    }
+    if (parts[0] === "zatca-devices") {
+      return json(await listTable(admin, "accounting_zatca_devices", auth.orgId, request));
+    }
+    if (parts[0] === "withholding-certificates") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_withholding_certificates", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_withholding_certificates", auth.orgId, request));
     }
     if (parts[0] === "currencies") return json(await getCurrencies(auth.orgId));
     if (parts[0] === "exchange-rates") {
@@ -1541,6 +1560,61 @@ export async function POST(request: NextRequest, context: RouteContext) {
         return json(data);
       }
       const { data, error } = await db(admin).from("accounting_budget_control_rules").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "tax-codes") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_tax_codes").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_tax_codes").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "vat-returns") {
+      if (parts[1] && parts[2] === "file") {
+        const { data, error } = await db(admin).from("accounting_vat_returns").update({ status: "filed", filed_at: new Date().toISOString(), filed_by: auth.user.id, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_vat_returns").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_vat_returns").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "zatca-submissions") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_zatca_submissions").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_zatca_submissions").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "zatca-devices") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_zatca_devices").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_zatca_devices").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "withholding-certificates") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_withholding_certificates").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_withholding_certificates").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
       if (error) throw new Error(error.message);
       return json(data, 201);
     }
