@@ -33,9 +33,15 @@ import type {
   AccountingExchangeRate,
   AccountingConsolidationGroup,
   AccountingConsolidationRun,
+  AccountingDashboardWidget,
   AccountingEliminationRule,
+  AccountingImportDefinition,
+  AccountingImportRun,
   AccountingIntercompanyAgreement,
   AccountingIntercompanyTransaction,
+  AccountingReportDefinition,
+  AccountingReportRun,
+  AccountingReportSchedule,
   AccountingTaxCode,
   AccountingVatReturn,
   AccountingWithholdingCertificate,
@@ -1199,6 +1205,78 @@ export function getEliminationRules() {
 
 export function saveEliminationRule(values: Record<string, unknown>, id?: string) {
   return apiFetch<AccountingEliminationRule>(`/api/accounting/elimination-rules${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+// Phase 10: Reporting/Import/Dashboard services
+
+export function getReportDefinitions() {
+  return apiFetch<AccountingReportDefinition[]>("/api/accounting/report-definitions");
+}
+
+export function saveReportDefinition(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingReportDefinition>(`/api/accounting/report-definitions${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getReportSchedules() {
+  return apiFetch<AccountingReportSchedule[]>("/api/accounting/report-schedules");
+}
+
+export function saveReportSchedule(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingReportSchedule>(`/api/accounting/report-schedules${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getReportRuns() {
+  return apiFetch<AccountingReportRun[]>("/api/accounting/report-runs");
+}
+
+export function createReportRun(values: Record<string, unknown>) {
+  return apiFetch<AccountingReportRun>("/api/accounting/report-runs", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getImportDefinitions() {
+  return apiFetch<AccountingImportDefinition[]>("/api/accounting/import-definitions");
+}
+
+export function saveImportDefinition(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingImportDefinition>(`/api/accounting/import-definitions${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getImportRuns() {
+  return apiFetch<AccountingImportRun[]>("/api/accounting/import-runs");
+}
+
+export function createImportRun(values: Record<string, unknown>) {
+  return apiFetch<AccountingImportRun>("/api/accounting/import-runs", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getAuditLog(params?: Record<string, string | undefined>) {
+  return apiFetch<Record<string, unknown>[]>(`/api/accounting/audit-log${qs(params)}`);
+}
+
+export function getDashboardWidgets() {
+  return apiFetch<AccountingDashboardWidget[]>("/api/accounting/dashboard-widgets");
+}
+
+export function saveDashboardWidget(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingDashboardWidget>(`/api/accounting/dashboard-widgets${id ? `/${id}` : ""}`, {
     method: "POST",
     body: JSON.stringify(values),
   });

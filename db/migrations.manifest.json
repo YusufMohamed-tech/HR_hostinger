@@ -145,6 +145,7 @@
     { "id": "schema_v117_accounting_ar_ap_party", "file": "db/schema_v117_accounting_ar_ap_party.sql" },
     { "id": "schema_v118_accounting_budgets_projects", "file": "db/schema_v118_accounting_budgets_projects.sql" },
     { "id": "schema_v119_accounting_vat_zatca", "file": "db/schema_v119_accounting_vat_zatca.sql" },
-    { "id": "schema_v120_accounting_intercompany_consolidation", "file": "db/schema_v120_accounting_intercompany_consolidation.sql" }
+    { "id": "schema_v120_accounting_intercompany_consolidation", "file": "db/schema_v120_accounting_intercompany_consolidation.sql" },
+    { "id": "schema_v121_accounting_reporting_delivery", "file": "db/schema_v121_accounting_reporting_delivery.sql" }
   ]
 }

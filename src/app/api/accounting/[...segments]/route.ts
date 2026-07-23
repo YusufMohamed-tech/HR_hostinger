@@ -215,7 +215,7 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
-  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs", "parties", "credit-notes", "debit-notes", "nontrade-items", "payment-allocations", "aging-snapshots", "dunning-policies", "dunning-actions", "projects", "commitments", "budget-transfers", "budget-control-rules", "tax-codes", "vat-returns", "zatca-submissions", "zatca-devices", "withholding-certificates", "ic-agreements", "ic-transactions", "ic-balances", "consolidation-groups", "consolidation-runs", "elimination-rules"];
+  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs", "parties", "credit-notes", "debit-notes", "nontrade-items", "payment-allocations", "aging-snapshots", "dunning-policies", "dunning-actions", "projects", "commitments", "budget-transfers", "budget-control-rules", "tax-codes", "vat-returns", "zatca-submissions", "zatca-devices", "withholding-certificates", "ic-agreements", "ic-transactions", "ic-balances", "consolidation-groups", "consolidation-runs", "elimination-rules", "report-definitions", "report-schedules", "report-runs", "governed-views", "import-definitions", "import-runs", "audit-log", "dashboard-widgets"];
   if (entitySetupSegments.includes(parts[0])) return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
@@ -843,6 +843,41 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     if (parts[0] === "elimination-rules") {
       return json(await listTable(admin, "accounting_elimination_rules", auth.orgId, request));
+    }
+    if (parts[0] === "report-definitions") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_report_definitions", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_report_definitions", auth.orgId, request, "code"));
+    }
+    if (parts[0] === "report-schedules") {
+      return json(await listTable(admin, "accounting_report_schedules", auth.orgId, request));
+    }
+    if (parts[0] === "report-runs") {
+      return json(await listTable(admin, "accounting_report_runs", auth.orgId, request));
+    }
+    if (parts[0] === "governed-views") {
+      return json(await listTable(admin, "accounting_governed_views", auth.orgId, request, "code"));
+    }
+    if (parts[0] === "import-definitions") {
+      return json(await listTable(admin, "accounting_import_definitions", auth.orgId, request, "code"));
+    }
+    if (parts[0] === "import-runs") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_import_runs", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_import_runs", auth.orgId, request));
+    }
+    if (parts[0] === "audit-log") {
+      let query = db(admin).from("accounting_audit_log_views").select("*").eq("organization_id", auth.orgId).order("created_at", { ascending: false }).limit(200);
+      const entityType = request.nextUrl.searchParams.get("entity_type");
+      const entityId = request.nextUrl.searchParams.get("entity_id");
+      if (entityType) query = query.eq("entity_type", entityType);
+      if (entityId) query = query.eq("entity_id", entityId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "dashboard-widgets") {
+      const { data, error } = await db(admin).from("accounting_dashboard_widgets").select("*").eq("organization_id", auth.orgId).eq("user_id", auth.user.id).order("position");
+      if (error) throw new Error(error.message);
+      return json(data || []);
     }
     if (parts[0] === "currencies") return json(await getCurrencies(auth.orgId));
     if (parts[0] === "exchange-rates") {
@@ -1712,6 +1747,66 @@ export async function POST(request: NextRequest, context: RouteContext) {
         return json(data);
       }
       const { data, error } = await db(admin).from("accounting_elimination_rules").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "report-definitions") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_report_definitions").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_report_definitions").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "report-schedules") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_report_schedules").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_report_schedules").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "report-runs") {
+      const { data, error } = await db(admin).from("accounting_report_runs").insert({ ...body, organization_id: auth.orgId, run_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "governed-views") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_governed_views").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_governed_views").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "import-definitions") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_import_definitions").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_import_definitions").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "import-runs") {
+      const { data, error } = await db(admin).from("accounting_import_runs").insert({ ...body, organization_id: auth.orgId, run_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "dashboard-widgets") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_dashboard_widgets").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_dashboard_widgets").insert({ ...body, organization_id: auth.orgId, user_id: auth.user.id }).select().single();
       if (error) throw new Error(error.message);
       return json(data, 201);
     }
