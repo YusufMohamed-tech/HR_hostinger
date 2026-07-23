@@ -18,12 +18,15 @@ import type {
   AccountingCloseChecklistTemplate,
   AccountingCloseRun,
   AccountingCostCenter,
+  AccountingCreditNote,
   AccountingCurrency,
   AccountingCustomer,
+  AccountingDebitNote,
   AccountingDepreciationRun,
   AccountingDimensionPolicy,
   AccountingDimensionType,
   AccountingDimensionValue,
+  AccountingDunningPolicy,
   AccountingExchangeRate,
   AccountingExpense,
   AccountingFiscalCalendar,
@@ -31,7 +34,9 @@ import type {
   AccountingInvoice,
   AccountingJournalEntry,
   AccountingLegalEntity,
+  AccountingNontradeItem,
   AccountingOpeningBalanceBatch,
+  AccountingParty,
   AccountingPayment,
   AccountingPaymentBatch,
   AccountingRecognitionSchedule,
@@ -884,6 +889,88 @@ export function getDepreciationRuns() {
 
 export function createDepreciationRun(values: Record<string, unknown>) {
   return apiFetch<AccountingDepreciationRun>("/api/accounting/depreciation-runs", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+// Phase 6: AR/AP/Party services
+
+export function getParties(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingParty[]>(`/api/accounting/parties${qs(params)}`);
+}
+
+export function getParty(id: string) {
+  return apiFetch<AccountingParty>(`/api/accounting/parties/${id}`);
+}
+
+export function saveParty(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingParty>(`/api/accounting/parties${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getCreditNotes(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingCreditNote[]>(`/api/accounting/credit-notes${qs(params)}`);
+}
+
+export function saveCreditNote(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingCreditNote>(`/api/accounting/credit-notes${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function issueCreditNote(id: string) {
+  return apiFetch<AccountingCreditNote>(`/api/accounting/credit-notes/${id}/issue`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getDebitNotes(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingDebitNote[]>(`/api/accounting/debit-notes${qs(params)}`);
+}
+
+export function saveDebitNote(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingDebitNote>(`/api/accounting/debit-notes${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function issueDebitNote(id: string) {
+  return apiFetch<AccountingDebitNote>(`/api/accounting/debit-notes/${id}/issue`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getNontradeItems(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingNontradeItem[]>(`/api/accounting/nontrade-items${qs(params)}`);
+}
+
+export function saveNontradeItem(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingNontradeItem>(`/api/accounting/nontrade-items${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function allocatePayment(values: Record<string, unknown>) {
+  return apiFetch<Record<string, unknown>>("/api/accounting/payment-allocations", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getDunningPolicies() {
+  return apiFetch<AccountingDunningPolicy[]>("/api/accounting/dunning-policies");
+}
+
+export function saveDunningPolicy(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingDunningPolicy>(`/api/accounting/dunning-policies${id ? `/${id}` : ""}`, {
     method: "POST",
     body: JSON.stringify(values),
   });

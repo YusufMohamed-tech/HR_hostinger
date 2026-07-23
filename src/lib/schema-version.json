@@ -1,5 +1,5 @@
 {
-  "id": "schema_v116_accounting_fixed_assets",
-  "file": "db/schema_v116_accounting_fixed_assets.sql",
-  "checksumSha256": "0f6a6bd790f244c5eb0890cd26287a172f036b207bd21e4afacb67b61f956872"
+  "id": "schema_v117_accounting_ar_ap_party",
+  "file": "db/schema_v117_accounting_ar_ap_party.sql",
+  "checksumSha256": "d8f5b18bc3648a92c70b3fb9f5f29d2f63d7c302e41be3527a2979509ffb1077"
 }
