@@ -4,8 +4,13 @@ import type {
   AccountingAllocationRule,
   AccountingApprovalPolicy,
   AccountingApprovalRequest,
+  AccountingBankAccount,
+  AccountingBankReconciliation,
+  AccountingBankStatement,
   AccountingBranch,
   AccountingBook,
+  AccountingCashForecast,
+  AccountingCashPosition,
   AccountingCloseChecklistTemplate,
   AccountingCloseRun,
   AccountingCostCenter,
@@ -22,6 +27,7 @@ import type {
   AccountingLegalEntity,
   AccountingOpeningBalanceBatch,
   AccountingPayment,
+  AccountingPaymentBatch,
   AccountingRecognitionSchedule,
   AccountingRecurringSchedule,
   AccountingRecurringTemplate,
@@ -703,6 +709,108 @@ export function completeCloseTask(runId: string, taskId: string, values?: Record
 
 export function completeCloseRun(runId: string) {
   return apiFetch<AccountingCloseRun>(`/api/accounting/close-runs/${runId}/complete`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+// Phase 4: Treasury services
+
+export function getBankAccounts() {
+  return apiFetch<AccountingBankAccount[]>("/api/accounting/bank-accounts");
+}
+
+export function getBankAccount(id: string) {
+  return apiFetch<AccountingBankAccount>(`/api/accounting/bank-accounts/${id}`);
+}
+
+export function saveBankAccount(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingBankAccount>(`/api/accounting/bank-accounts${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getBankStatements(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingBankStatement[]>(`/api/accounting/bank-statements${qs(params)}`);
+}
+
+export function getBankStatement(id: string) {
+  return apiFetch<AccountingBankStatement & { lines: Record<string, unknown>[] }>(`/api/accounting/bank-statements/${id}`);
+}
+
+export function saveBankStatement(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingBankStatement>(`/api/accounting/bank-statements${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getBankReconciliations(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingBankReconciliation[]>(`/api/accounting/bank-reconciliations${qs(params)}`);
+}
+
+export function getBankReconciliation(id: string) {
+  return apiFetch<AccountingBankReconciliation & { matches: Record<string, unknown>[] }>(`/api/accounting/bank-reconciliations/${id}`);
+}
+
+export function startBankReconciliation(values: Record<string, unknown>) {
+  return apiFetch<AccountingBankReconciliation>("/api/accounting/bank-reconciliations", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function addReconciliationMatch(reconciliationId: string, values: Record<string, unknown>) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/bank-reconciliations/${reconciliationId}/match`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function completeReconciliation(reconciliationId: string) {
+  return apiFetch<AccountingBankReconciliation>(`/api/accounting/bank-reconciliations/${reconciliationId}/complete`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getCashPositions(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingCashPosition[]>(`/api/accounting/cash-positions${qs(params)}`);
+}
+
+export function getCashForecasts() {
+  return apiFetch<AccountingCashForecast[]>("/api/accounting/cash-forecasts");
+}
+
+export function getCashForecast(id: string) {
+  return apiFetch<AccountingCashForecast & { lines: Record<string, unknown>[] }>(`/api/accounting/cash-forecasts/${id}`);
+}
+
+export function saveCashForecast(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingCashForecast>(`/api/accounting/cash-forecasts${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getPaymentBatches() {
+  return apiFetch<AccountingPaymentBatch[]>("/api/accounting/payment-batches");
+}
+
+export function getPaymentBatch(id: string) {
+  return apiFetch<AccountingPaymentBatch & { items: Record<string, unknown>[] }>(`/api/accounting/payment-batches/${id}`);
+}
+
+export function savePaymentBatch(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingPaymentBatch>(`/api/accounting/payment-batches${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function approvePaymentBatch(id: string) {
+  return apiFetch<AccountingPaymentBatch>(`/api/accounting/payment-batches/${id}/approve`, {
     method: "POST",
     body: JSON.stringify({}),
   });

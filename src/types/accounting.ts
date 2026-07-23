@@ -791,3 +791,141 @@ export interface AccountingCloseTask {
   created_at: string;
   updated_at: string;
 }
+
+// Phase 4: Treasury types
+
+export type BankStatementImportSource = "manual" | "csv" | "mt940" | "camt053" | "api";
+export type BankStatementStatus = "imported" | "in_progress" | "reconciled" | "closed";
+export type BankStatementLineStatus = "unmatched" | "matched" | "reconciled" | "excluded";
+export type ReconciliationStatus = "in_progress" | "completed" | "approved";
+export type ReconciliationMatchMethod = "auto_exact" | "auto_fuzzy" | "manual" | "rule_based";
+export type CashForecastCategory = "receivable" | "payable" | "payroll" | "tax" | "loan" | "capex" | "other_inflow" | "other_outflow";
+export type CashForecastStatus = "draft" | "published" | "archived";
+export type PaymentBatchStatus = "draft" | "approved" | "sent_to_bank" | "processed" | "partially_processed" | "failed";
+export type PaymentBatchItemStatus = "pending" | "processed" | "failed" | "rejected";
+
+export interface AccountingBankAccount {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  account_id: string;
+  bank_name_ar: string;
+  bank_name_en: string | null;
+  branch_name: string | null;
+  iban: string | null;
+  account_number: string | null;
+  swift_code: string | null;
+  currency_code: string;
+  opening_balance: number;
+  current_balance: number;
+  is_default: boolean;
+  is_active: boolean;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingBankStatement {
+  id: string;
+  organization_id: string;
+  bank_account_id: string;
+  statement_date: string;
+  opening_balance: number;
+  closing_balance: number;
+  total_debits: number;
+  total_credits: number;
+  transaction_count: number;
+  import_source: BankStatementImportSource | null;
+  file_url: string | null;
+  status: BankStatementStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingBankStatementLine {
+  id: string;
+  organization_id: string;
+  statement_id: string;
+  bank_account_id: string;
+  transaction_date: string;
+  value_date: string | null;
+  amount: number;
+  direction: "debit" | "credit";
+  description: string | null;
+  reference: string | null;
+  counterparty_name: string | null;
+  counterparty_iban: string | null;
+  category: string | null;
+  status: BankStatementLineStatus;
+  matched_payment_id: string | null;
+  matched_journal_entry_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingBankReconciliation {
+  id: string;
+  organization_id: string;
+  bank_account_id: string;
+  statement_id: string | null;
+  reconciliation_date: string;
+  statement_balance: number;
+  book_balance: number;
+  adjusted_book_balance: number | null;
+  difference: number;
+  matched_count: number;
+  unmatched_count: number;
+  status: ReconciliationStatus;
+  reconciled_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingCashPosition {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  position_date: string;
+  bank_account_id: string;
+  opening_balance: number;
+  inflows: number;
+  outflows: number;
+  closing_balance: number;
+  currency_code: string;
+  created_at: string;
+}
+
+export interface AccountingCashForecast {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  name: string;
+  forecast_date: string;
+  horizon_days: number;
+  status: CashForecastStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingPaymentBatch {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  bank_account_id: string;
+  name: string;
+  payment_date: string;
+  total_amount: number;
+  payment_count: number;
+  status: PaymentBatchStatus;
+  file_format: string | null;
+  file_url: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}

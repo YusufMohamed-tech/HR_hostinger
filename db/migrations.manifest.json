@@ -139,6 +139,7 @@
     { "id": "schema_v111_managed_recruitment_forms", "file": "db/schema_v111_managed_recruitment_forms.sql" },
     { "id": "schema_v112_accounting_legal_entities", "file": "db/schema_v112_accounting_legal_entities.sql" },
     { "id": "schema_v113_accounting_dimensions_and_coa", "file": "db/schema_v113_accounting_dimensions_and_coa.sql" },
-    { "id": "schema_v114_accounting_gl_workflows", "file": "db/schema_v114_accounting_gl_workflows.sql" }
+    { "id": "schema_v114_accounting_gl_workflows", "file": "db/schema_v114_accounting_gl_workflows.sql" },
+    { "id": "schema_v115_accounting_treasury", "file": "db/schema_v115_accounting_treasury.sql" }
   ]
 }

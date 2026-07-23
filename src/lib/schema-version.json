@@ -1,5 +1,5 @@
 {
-  "id": "schema_v114_accounting_gl_workflows",
-  "file": "db/schema_v114_accounting_gl_workflows.sql",
-  "checksumSha256": "4c0509a0d8001a2eaf307d8492bfc1c28686a03a7130488ac19e00d6aae34d9c"
+  "id": "schema_v115_accounting_treasury",
+  "file": "db/schema_v115_accounting_treasury.sql",
+  "checksumSha256": "1dab4145cbc07558f812b9a5945595925e361064bd638cfee0e67027aa34880e"
 }
