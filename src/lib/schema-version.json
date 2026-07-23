@@ -1,5 +1,5 @@
 {
-  "id": "schema_v118_accounting_budgets_projects",
-  "file": "db/schema_v118_accounting_budgets_projects.sql",
-  "checksumSha256": "8808709275834580528e775b4e14f9d517089a86f22d23a515639a5218ad2001"
+  "id": "schema_v119_accounting_vat_zatca",
+  "file": "db/schema_v119_accounting_vat_zatca.sql",
+  "checksumSha256": "21ef7a9f77a5bb6c96ccd0e08332830c259dd06894f840ce132539368210fe8a"
 }

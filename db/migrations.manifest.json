@@ -143,6 +143,7 @@
     { "id": "schema_v115_accounting_treasury", "file": "db/schema_v115_accounting_treasury.sql" },
     { "id": "schema_v116_accounting_fixed_assets", "file": "db/schema_v116_accounting_fixed_assets.sql" },
     { "id": "schema_v117_accounting_ar_ap_party", "file": "db/schema_v117_accounting_ar_ap_party.sql" },
-    { "id": "schema_v118_accounting_budgets_projects", "file": "db/schema_v118_accounting_budgets_projects.sql" }
+    { "id": "schema_v118_accounting_budgets_projects", "file": "db/schema_v118_accounting_budgets_projects.sql" },
+    { "id": "schema_v119_accounting_vat_zatca", "file": "db/schema_v119_accounting_vat_zatca.sql" }
   ]
 }

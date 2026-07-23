@@ -1308,3 +1308,116 @@ export interface AccountingBudgetControlRule {
   created_at: string;
   updated_at: string;
 }
+
+// Phase 8: VAT/ZATCA types
+
+export type TaxType = "vat" | "withholding" | "excise" | "customs" | "exempt" | "zero_rated" | "reverse_charge";
+export type VatReturnStatus = "draft" | "reviewed" | "filed" | "paid" | "amended";
+export type ZatcaDocumentType = "standard_invoice" | "simplified_invoice" | "credit_note" | "debit_note";
+export type ZatcaSubmissionType = "reporting" | "clearance";
+export type ZatcaStatus = "pending" | "submitted" | "cleared" | "reported" | "rejected" | "warning";
+export type ZatcaDeviceEnvironment = "sandbox" | "simulation" | "production";
+export type ZatcaDeviceStatus = "pending" | "compliance_passed" | "production_ready" | "active" | "revoked";
+export type WithholdingCertificateStatus = "draft" | "issued" | "filed" | "cancelled";
+
+export interface AccountingTaxCode {
+  id: string;
+  organization_id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  tax_type: TaxType;
+  rate: number;
+  is_inclusive: boolean;
+  account_id: string | null;
+  reverse_charge_account_id: string | null;
+  zatca_category_code: string | null;
+  zatca_exemption_reason_code: string | null;
+  is_active: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingVatReturn {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  period_from: string;
+  period_to: string;
+  due_date: string;
+  standard_sales: number;
+  zero_rated_sales: number;
+  exempt_sales: number;
+  output_vat: number;
+  standard_purchases: number;
+  import_purchases: number;
+  input_vat: number;
+  adjustments: number;
+  net_vat: number;
+  status: VatReturnStatus;
+  filed_at: string | null;
+  payment_reference: string | null;
+  paid_at: string | null;
+  journal_entry_id: string | null;
+  filed_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingZatcaSubmission {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  invoice_id: string | null;
+  credit_note_id: string | null;
+  debit_note_id: string | null;
+  document_type: ZatcaDocumentType;
+  submission_type: ZatcaSubmissionType;
+  invoice_hash: string | null;
+  qr_code: string | null;
+  zatca_uuid: string | null;
+  zatca_status: ZatcaStatus;
+  zatca_response_code: string | null;
+  zatca_response_message: string | null;
+  zatca_warnings: string[] | null;
+  submitted_at: string | null;
+  cleared_at: string | null;
+  retry_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingZatcaDevice {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  device_name: string;
+  environment: ZatcaDeviceEnvironment;
+  status: ZatcaDeviceStatus;
+  last_sequence_number: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingWithholdingCertificate {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  certificate_no: string;
+  party_id: string | null;
+  vendor_id: string | null;
+  payment_id: string | null;
+  tax_code_id: string | null;
+  gross_amount: number;
+  withholding_rate: number;
+  withholding_amount: number;
+  net_amount: number;
+  issue_date: string;
+  status: WithholdingCertificateStatus;
+  journal_entry_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}

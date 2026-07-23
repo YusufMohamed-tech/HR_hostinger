@@ -31,6 +31,11 @@ import type {
   AccountingCommitment,
   AccountingDunningPolicy,
   AccountingExchangeRate,
+  AccountingTaxCode,
+  AccountingVatReturn,
+  AccountingWithholdingCertificate,
+  AccountingZatcaDevice,
+  AccountingZatcaSubmission,
   AccountingExpense,
   AccountingFiscalCalendar,
   AccountingFixedAsset,
@@ -1050,6 +1055,70 @@ export function getBudgetControlRules() {
 
 export function saveBudgetControlRule(values: Record<string, unknown>, id?: string) {
   return apiFetch<AccountingBudgetControlRule>(`/api/accounting/budget-control-rules${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+// Phase 8: VAT/ZATCA services
+
+export function getTaxCodes() {
+  return apiFetch<AccountingTaxCode[]>("/api/accounting/tax-codes");
+}
+
+export function saveTaxCode(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingTaxCode>(`/api/accounting/tax-codes${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getVatReturns() {
+  return apiFetch<AccountingVatReturn[]>("/api/accounting/vat-returns");
+}
+
+export function saveVatReturn(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingVatReturn>(`/api/accounting/vat-returns${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function fileVatReturn(id: string) {
+  return apiFetch<AccountingVatReturn>(`/api/accounting/vat-returns/${id}/file`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getZatcaSubmissions(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingZatcaSubmission[]>(`/api/accounting/zatca-submissions${qs(params)}`);
+}
+
+export function saveZatcaSubmission(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingZatcaSubmission>(`/api/accounting/zatca-submissions${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getZatcaDevices() {
+  return apiFetch<AccountingZatcaDevice[]>("/api/accounting/zatca-devices");
+}
+
+export function saveZatcaDevice(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingZatcaDevice>(`/api/accounting/zatca-devices${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getWithholdingCertificates(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingWithholdingCertificate[]>(`/api/accounting/withholding-certificates${qs(params)}`);
+}
+
+export function saveWithholdingCertificate(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingWithholdingCertificate>(`/api/accounting/withholding-certificates${id ? `/${id}` : ""}`, {
     method: "POST",
     body: JSON.stringify(values),
   });
