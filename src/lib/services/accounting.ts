@@ -4,6 +4,10 @@ import type {
   AccountingAllocationRule,
   AccountingApprovalPolicy,
   AccountingApprovalRequest,
+  AccountingAssetCategory,
+  AccountingAssetMaintenance,
+  AccountingAssetRevaluation,
+  AccountingAssetTransfer,
   AccountingBankAccount,
   AccountingBankReconciliation,
   AccountingBankStatement,
@@ -16,12 +20,14 @@ import type {
   AccountingCostCenter,
   AccountingCurrency,
   AccountingCustomer,
+  AccountingDepreciationRun,
   AccountingDimensionPolicy,
   AccountingDimensionType,
   AccountingDimensionValue,
   AccountingExchangeRate,
   AccountingExpense,
   AccountingFiscalCalendar,
+  AccountingFixedAsset,
   AccountingInvoice,
   AccountingJournalEntry,
   AccountingLegalEntity,
@@ -813,5 +819,72 @@ export function approvePaymentBatch(id: string) {
   return apiFetch<AccountingPaymentBatch>(`/api/accounting/payment-batches/${id}/approve`, {
     method: "POST",
     body: JSON.stringify({}),
+  });
+}
+
+// Phase 5: Fixed Asset services
+
+export function getAssetCategories() {
+  return apiFetch<AccountingAssetCategory[]>("/api/accounting/asset-categories");
+}
+
+export function saveAssetCategory(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingAssetCategory>(`/api/accounting/asset-categories${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getFixedAssets(params?: Record<string, string | undefined>) {
+  return apiFetch<AccountingFixedAsset[]>(`/api/accounting/fixed-assets${qs(params)}`);
+}
+
+export function getFixedAsset(id: string) {
+  return apiFetch<AccountingFixedAsset & { depreciation_schedule: Record<string, unknown>[]; revaluations: AccountingAssetRevaluation[]; transfers: AccountingAssetTransfer[]; maintenance: AccountingAssetMaintenance[] }>(`/api/accounting/fixed-assets/${id}`);
+}
+
+export function saveFixedAsset(values: Record<string, unknown>, id?: string) {
+  return apiFetch<AccountingFixedAsset>(`/api/accounting/fixed-assets${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function disposeFixedAsset(id: string, values: Record<string, unknown>) {
+  return apiFetch<AccountingFixedAsset>(`/api/accounting/fixed-assets/${id}/dispose`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function revalueFixedAsset(id: string, values: Record<string, unknown>) {
+  return apiFetch<AccountingAssetRevaluation>(`/api/accounting/fixed-assets/${id}/revalue`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function transferFixedAsset(id: string, values: Record<string, unknown>) {
+  return apiFetch<AccountingAssetTransfer>(`/api/accounting/fixed-assets/${id}/transfer`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function addAssetMaintenance(assetId: string, values: Record<string, unknown>) {
+  return apiFetch<AccountingAssetMaintenance>(`/api/accounting/fixed-assets/${assetId}/maintenance`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getDepreciationRuns() {
+  return apiFetch<AccountingDepreciationRun[]>("/api/accounting/depreciation-runs");
+}
+
+export function createDepreciationRun(values: Record<string, unknown>) {
+  return apiFetch<AccountingDepreciationRun>("/api/accounting/depreciation-runs", {
+    method: "POST",
+    body: JSON.stringify(values),
   });
 }

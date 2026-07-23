@@ -1,5 +1,5 @@
 {
-  "id": "schema_v115_accounting_treasury",
-  "file": "db/schema_v115_accounting_treasury.sql",
-  "checksumSha256": "1dab4145cbc07558f812b9a5945595925e361064bd638cfee0e67027aa34880e"
+  "id": "schema_v116_accounting_fixed_assets",
+  "file": "db/schema_v116_accounting_fixed_assets.sql",
+  "checksumSha256": "0f6a6bd790f244c5eb0890cd26287a172f036b207bd21e4afacb67b61f956872"
 }
