@@ -929,3 +929,133 @@ export interface AccountingPaymentBatch {
   created_at: string;
   updated_at: string;
 }
+
+// Phase 5: Fixed Asset types
+
+export type DepreciationMethod = "straight_line" | "declining_balance" | "double_declining" | "sum_of_years" | "units_of_production";
+export type FixedAssetStatus = "draft" | "active" | "fully_depreciated" | "disposed" | "impaired" | "suspended";
+export type AssetDisposalMethod = "sale" | "scrap" | "donation" | "write_off" | "transfer";
+export type DepreciationScheduleStatus = "scheduled" | "posted" | "skipped" | "adjusted";
+export type DepreciationRunStatus = "completed" | "reversed" | "failed";
+export type AssetMaintenanceType = "preventive" | "corrective" | "upgrade" | "inspection";
+
+export interface AccountingAssetCategory {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  parent_id: string | null;
+  asset_account_id: string | null;
+  depreciation_account_id: string | null;
+  accumulated_depreciation_account_id: string | null;
+  disposal_gain_account_id: string | null;
+  disposal_loss_account_id: string | null;
+  default_useful_life_months: number | null;
+  default_depreciation_method: DepreciationMethod | null;
+  default_salvage_rate: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingFixedAsset {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  branch_id: string | null;
+  category_id: string | null;
+  asset_number: string;
+  name_ar: string;
+  name_en: string | null;
+  description: string | null;
+  serial_number: string | null;
+  barcode: string | null;
+  location: string | null;
+  custodian_employee_id: string | null;
+  acquisition_date: string;
+  in_service_date: string | null;
+  acquisition_cost: number;
+  salvage_value: number;
+  useful_life_months: number;
+  depreciation_method: DepreciationMethod;
+  depreciation_start_date: string | null;
+  accumulated_depreciation: number;
+  net_book_value: number;
+  current_value: number | null;
+  currency_code: string;
+  status: FixedAssetStatus;
+  disposal_date: string | null;
+  disposal_amount: number | null;
+  disposal_method: AssetDisposalMethod | null;
+  vendor_id: string | null;
+  warranty_expiry_date: string | null;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingDepreciationRun {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  run_date: string;
+  period_from: string;
+  period_to: string;
+  asset_count: number;
+  total_depreciation: number;
+  journal_entry_id: string | null;
+  status: DepreciationRunStatus;
+  run_by: string | null;
+  created_at: string;
+}
+
+export interface AccountingAssetRevaluation {
+  id: string;
+  organization_id: string;
+  asset_id: string;
+  revaluation_date: string;
+  previous_value: number;
+  new_value: number;
+  adjustment_amount: number;
+  reason: string | null;
+  journal_entry_id: string | null;
+  approved_by: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface AccountingAssetTransfer {
+  id: string;
+  organization_id: string;
+  asset_id: string;
+  transfer_date: string;
+  from_branch_id: string | null;
+  to_branch_id: string | null;
+  from_location: string | null;
+  to_location: string | null;
+  from_custodian_id: string | null;
+  to_custodian_id: string | null;
+  reason: string | null;
+  approved_by: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface AccountingAssetMaintenance {
+  id: string;
+  organization_id: string;
+  asset_id: string;
+  maintenance_date: string;
+  maintenance_type: AssetMaintenanceType;
+  description: string | null;
+  cost: number;
+  capitalize: boolean;
+  vendor_id: string | null;
+  next_maintenance_date: string | null;
+  journal_entry_id: string | null;
+  created_by: string | null;
+  created_at: string;
+}

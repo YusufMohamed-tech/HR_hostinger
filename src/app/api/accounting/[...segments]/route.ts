@@ -215,7 +215,7 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
-  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches"];
+  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs"];
   if (entitySetupSegments.includes(parts[0])) return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
@@ -718,6 +718,24 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return json({ ...batch, items: items || [] });
       }
       return json(await listTable(admin, "accounting_payment_batches", auth.orgId, request));
+    }
+    if (parts[0] === "asset-categories") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_asset_categories", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_asset_categories", auth.orgId, request, "code"));
+    }
+    if (parts[0] === "fixed-assets") {
+      if (parts[1]) {
+        const asset = await getRecord(admin, "accounting_fixed_assets", auth.orgId, parts[1]);
+        const { data: depSchedule } = await db(admin).from("accounting_depreciation_schedules").select("*").eq("asset_id", parts[1]).order("period_date");
+        const { data: revaluations } = await db(admin).from("accounting_asset_revaluations").select("*").eq("asset_id", parts[1]).order("revaluation_date", { ascending: false });
+        const { data: transfers } = await db(admin).from("accounting_asset_transfers").select("*").eq("asset_id", parts[1]).order("transfer_date", { ascending: false });
+        const { data: maintenance } = await db(admin).from("accounting_asset_maintenance").select("*").eq("asset_id", parts[1]).order("maintenance_date", { ascending: false });
+        return json({ ...asset, depreciation_schedule: depSchedule || [], revaluations: revaluations || [], transfers: transfers || [], maintenance: maintenance || [] });
+      }
+      return json(await listTable(admin, "accounting_fixed_assets", auth.orgId, request));
+    }
+    if (parts[0] === "depreciation-runs") {
+      return json(await listTable(admin, "accounting_depreciation_runs", auth.orgId, request));
     }
     if (parts[0] === "currencies") return json(await getCurrencies(auth.orgId));
     if (parts[0] === "exchange-rates") {
@@ -1254,6 +1272,84 @@ export async function POST(request: NextRequest, context: RouteContext) {
         const items = (body.items as Record<string, unknown>[]).map(i => ({ ...i, batch_id: data.id, organization_id: auth.orgId }));
         if (items.length) await db(admin).from("accounting_payment_batch_items").insert(items);
       }
+      return json(data, 201);
+    }
+    if (parts[0] === "asset-categories") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_asset_categories").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_asset_categories").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "fixed-assets") {
+      if (parts[1] && parts[2] === "dispose") {
+        const { data, error } = await db(admin).from("accounting_fixed_assets").update({
+          status: "disposed",
+          disposal_date: body.disposal_date || new Date().toISOString().slice(0, 10),
+          disposal_amount: body.disposal_amount || 0,
+          disposal_method: body.disposal_method || "write_off",
+          updated_at: new Date().toISOString(),
+        }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      if (parts[1] && parts[2] === "revalue") {
+        const asset = await getRecord(admin, "accounting_fixed_assets", auth.orgId, parts[1]);
+        const { data, error } = await db(admin).from("accounting_asset_revaluations").insert({
+          organization_id: auth.orgId,
+          asset_id: parts[1],
+          revaluation_date: body.revaluation_date || new Date().toISOString().slice(0, 10),
+          previous_value: asset.net_book_value,
+          new_value: body.new_value,
+          adjustment_amount: Number(body.new_value) - Number(asset.net_book_value),
+          reason: body.reason || null,
+          created_by: auth.user.id,
+        }).select().single();
+        if (error) throw new Error(error.message);
+        await db(admin).from("accounting_fixed_assets").update({ current_value: body.new_value, updated_at: new Date().toISOString() }).eq("id", parts[1]);
+        return json(data, 201);
+      }
+      if (parts[1] && parts[2] === "transfer") {
+        const { data, error } = await db(admin).from("accounting_asset_transfers").insert({
+          organization_id: auth.orgId,
+          asset_id: parts[1],
+          ...body,
+          created_by: auth.user.id,
+        }).select().single();
+        if (error) throw new Error(error.message);
+        const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (body.to_branch_id) updates.branch_id = body.to_branch_id;
+        if (body.to_location) updates.location = body.to_location;
+        if (body.to_custodian_id) updates.custodian_employee_id = body.to_custodian_id;
+        await db(admin).from("accounting_fixed_assets").update(updates).eq("id", parts[1]);
+        return json(data, 201);
+      }
+      if (parts[1] && parts[2] === "maintenance") {
+        const { data, error } = await db(admin).from("accounting_asset_maintenance").insert({
+          organization_id: auth.orgId,
+          asset_id: parts[1],
+          ...body,
+          created_by: auth.user.id,
+        }).select().single();
+        if (error) throw new Error(error.message);
+        return json(data, 201);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_fixed_assets").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const nbv = Number(body.acquisition_cost || 0) - Number(body.salvage_value || 0);
+      const { data, error } = await db(admin).from("accounting_fixed_assets").insert({ ...body, organization_id: auth.orgId, net_book_value: nbv, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "depreciation-runs") {
+      const { data, error } = await db(admin).from("accounting_depreciation_runs").insert({ ...body, organization_id: auth.orgId, run_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
       return json(data, 201);
     }
 
