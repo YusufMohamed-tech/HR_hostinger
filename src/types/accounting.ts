@@ -1421,3 +1421,102 @@ export interface AccountingWithholdingCertificate {
   created_at: string;
   updated_at: string;
 }
+
+// Phase 9: Intercompany/Consolidation types
+
+export type ICTransactionStatus = "pending" | "posted" | "confirmed" | "disputed" | "cancelled";
+export type ConsolidationMethod = "full" | "proportional" | "equity";
+export type ConsolidationRunStatus = "in_progress" | "completed" | "approved" | "published";
+export type EliminationType = "ic_receivable_payable" | "ic_revenue_expense" | "ic_investment" | "ic_dividend" | "unrealized_profit";
+
+export interface AccountingIntercompanyAgreement {
+  id: string;
+  organization_id: string;
+  from_entity_id: string;
+  to_entity_id: string;
+  agreement_type: string;
+  name_ar: string;
+  name_en: string | null;
+  description: string | null;
+  frequency: string | null;
+  amount: number | null;
+  currency_code: string;
+  from_account_id: string | null;
+  to_account_id: string | null;
+  is_active: boolean;
+  effective_from: string | null;
+  effective_to: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingIntercompanyTransaction {
+  id: string;
+  organization_id: string;
+  agreement_id: string | null;
+  from_entity_id: string;
+  to_entity_id: string;
+  transaction_date: string;
+  amount: number;
+  currency_code: string;
+  description: string | null;
+  from_journal_entry_id: string | null;
+  to_journal_entry_id: string | null;
+  status: ICTransactionStatus;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingConsolidationGroup {
+  id: string;
+  organization_id: string;
+  name_ar: string;
+  name_en: string | null;
+  parent_entity_id: string | null;
+  consolidation_currency: string;
+  method: ConsolidationMethod;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingConsolidationRun {
+  id: string;
+  organization_id: string;
+  group_id: string;
+  period_from: string;
+  period_to: string;
+  consolidation_date: string;
+  status: ConsolidationRunStatus;
+  elimination_journal_id: string | null;
+  translation_journal_id: string | null;
+  minority_interest: number | null;
+  total_assets: number | null;
+  total_equity: number | null;
+  total_revenue: number | null;
+  net_income: number | null;
+  run_by: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingEliminationRule {
+  id: string;
+  organization_id: string;
+  group_id: string;
+  name_ar: string;
+  name_en: string | null;
+  elimination_type: EliminationType;
+  from_account_id: string | null;
+  to_account_id: string | null;
+  is_auto: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}

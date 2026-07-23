@@ -1,5 +1,5 @@
 {
-  "id": "schema_v119_accounting_vat_zatca",
-  "file": "db/schema_v119_accounting_vat_zatca.sql",
-  "checksumSha256": "21ef7a9f77a5bb6c96ccd0e08332830c259dd06894f840ce132539368210fe8a"
+  "id": "schema_v120_accounting_intercompany_consolidation",
+  "file": "db/schema_v120_accounting_intercompany_consolidation.sql",
+  "checksumSha256": "f1dbaec6c0713342999289cdf7bd91b9c24712eeca8f78364114c8dd5971914a"
 }
