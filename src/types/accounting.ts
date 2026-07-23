@@ -1520,3 +1520,113 @@ export interface AccountingEliminationRule {
   created_at: string;
   updated_at: string;
 }
+
+// Phase 10: Reporting/Delivery types
+
+export type ReportCategory = "financial" | "management" | "tax" | "regulatory" | "operational" | "custom";
+export type ReportOutputFormat = "pdf" | "xlsx" | "csv" | "json";
+export type ReportRunStatus = "running" | "completed" | "failed" | "cancelled";
+export type ImportRunStatus = "pending" | "validating" | "validated" | "importing" | "completed" | "failed" | "cancelled";
+export type DashboardWidgetType = "kpi" | "chart" | "table" | "alert" | "shortcut";
+export type DashboardWidgetSize = "small" | "medium" | "large" | "full";
+
+export interface AccountingReportDefinition {
+  id: string;
+  organization_id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  category: ReportCategory;
+  report_type: string;
+  description: string | null;
+  parameters: Record<string, unknown>;
+  layout: Record<string, unknown>;
+  is_system: boolean;
+  is_active: boolean;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingReportSchedule {
+  id: string;
+  organization_id: string;
+  report_definition_id: string;
+  name: string;
+  frequency: string;
+  delivery_method: string;
+  recipients: unknown[];
+  parameters: Record<string, unknown>;
+  output_format: ReportOutputFormat;
+  next_run_date: string;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingReportRun {
+  id: string;
+  organization_id: string;
+  report_definition_id: string;
+  schedule_id: string | null;
+  parameters: Record<string, unknown>;
+  output_format: ReportOutputFormat;
+  file_url: string | null;
+  file_size_bytes: number | null;
+  row_count: number | null;
+  execution_time_ms: number | null;
+  status: ReportRunStatus;
+  error_message: string | null;
+  run_by: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface AccountingImportDefinition {
+  id: string;
+  organization_id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  target_table: string;
+  column_mapping: Record<string, unknown>;
+  validation_rules: Record<string, unknown>;
+  default_values: Record<string, unknown>;
+  file_format: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingImportRun {
+  id: string;
+  organization_id: string;
+  import_definition_id: string | null;
+  file_name: string;
+  file_url: string | null;
+  total_rows: number;
+  processed_rows: number;
+  error_rows: number;
+  status: ImportRunStatus;
+  errors: unknown[];
+  run_by: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface AccountingDashboardWidget {
+  id: string;
+  organization_id: string;
+  user_id: string | null;
+  widget_type: DashboardWidgetType;
+  title_ar: string;
+  title_en: string | null;
+  config: Record<string, unknown>;
+  position: number;
+  size: DashboardWidgetSize;
+  is_visible: boolean;
+  created_at: string;
+  updated_at: string;
+}

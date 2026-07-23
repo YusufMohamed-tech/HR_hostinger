@@ -1,5 +1,5 @@
 {
-  "id": "schema_v120_accounting_intercompany_consolidation",
-  "file": "db/schema_v120_accounting_intercompany_consolidation.sql",
-  "checksumSha256": "f1dbaec6c0713342999289cdf7bd91b9c24712eeca8f78364114c8dd5971914a"
+  "id": "schema_v121_accounting_reporting_delivery",
+  "file": "db/schema_v121_accounting_reporting_delivery.sql",
+  "checksumSha256": "12fc5808a967257ea9a53e929327cde80100dd2a94135857d0a9964730d9d090"
 }
