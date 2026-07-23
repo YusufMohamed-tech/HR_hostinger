@@ -215,7 +215,7 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
-  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs", "parties", "credit-notes", "debit-notes", "nontrade-items", "payment-allocations", "aging-snapshots", "dunning-policies", "dunning-actions"];
+  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs", "parties", "credit-notes", "debit-notes", "nontrade-items", "payment-allocations", "aging-snapshots", "dunning-policies", "dunning-actions", "projects", "commitments", "budget-transfers", "budget-control-rules"];
   if (entitySetupSegments.includes(parts[0])) return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
@@ -774,6 +774,28 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     if (parts[0] === "dunning-policies") {
       return json(await listTable(admin, "accounting_dunning_policies", auth.orgId, request));
+    }
+    if (parts[0] === "projects") {
+      if (parts[1]) {
+        const project = await getRecord(admin, "accounting_projects", auth.orgId, parts[1]);
+        const { data: tasks } = await db(admin).from("accounting_project_tasks").select("*").eq("project_id", parts[1]).order("sort_order");
+        return json({ ...project, tasks: tasks || [] });
+      }
+      return json(await listTable(admin, "accounting_projects", auth.orgId, request, "code"));
+    }
+    if (parts[0] === "commitments") {
+      if (parts[1]) {
+        const commitment = await getRecord(admin, "accounting_commitments", auth.orgId, parts[1]);
+        const { data: consumptions } = await db(admin).from("accounting_commitment_consumptions").select("*").eq("commitment_id", parts[1]).order("consumption_date", { ascending: false });
+        return json({ ...commitment, consumptions: consumptions || [] });
+      }
+      return json(await listTable(admin, "accounting_commitments", auth.orgId, request));
+    }
+    if (parts[0] === "budget-transfers") {
+      return json(await listTable(admin, "accounting_budget_transfers", auth.orgId, request));
+    }
+    if (parts[0] === "budget-control-rules") {
+      return json(await listTable(admin, "accounting_budget_control_rules", auth.orgId, request));
     }
     if (parts[0] === "currencies") return json(await getCurrencies(auth.orgId));
     if (parts[0] === "exchange-rates") {
@@ -1457,6 +1479,68 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (parts[0] === "dunning-actions") {
       const { data, error } = await db(admin).from("accounting_dunning_actions").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "projects") {
+      if (parts[1] && parts[2] === "tasks") {
+        if (body.task_id) {
+          const { data, error } = await db(admin).from("accounting_project_tasks").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", body.task_id).select().single();
+          if (error) throw new Error(error.message);
+          return json(data);
+        }
+        const { data, error } = await db(admin).from("accounting_project_tasks").insert({ ...body, project_id: parts[1], organization_id: auth.orgId }).select().single();
+        if (error) throw new Error(error.message);
+        return json(data, 201);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_projects").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_projects").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "commitments") {
+      if (parts[1] && parts[2] === "consume") {
+        const { data, error } = await db(admin).from("accounting_commitment_consumptions").insert({ ...body, commitment_id: parts[1], organization_id: auth.orgId }).select().single();
+        if (error) throw new Error(error.message);
+        const { data: commitment } = await db(admin).from("accounting_commitments").select("consumed_amount, original_amount").eq("id", parts[1]).single();
+        if (commitment) {
+          const newConsumed = Number(commitment.consumed_amount) + Number(body.amount);
+          const remaining = Number(commitment.original_amount) - newConsumed;
+          const status = remaining <= 0 ? "consumed" : "partially_consumed";
+          await db(admin).from("accounting_commitments").update({ consumed_amount: newConsumed, remaining_amount: Math.max(0, remaining), status, updated_at: new Date().toISOString() }).eq("id", parts[1]);
+        }
+        return json(data, 201);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_commitments").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_commitments").insert({ ...body, organization_id: auth.orgId, remaining_amount: body.original_amount, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "budget-transfers") {
+      if (parts[1] && parts[2] === "approve") {
+        const { data, error } = await db(admin).from("accounting_budget_transfers").update({ status: "approved", approved_by: auth.user.id, approved_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_budget_transfers").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "budget-control-rules") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_budget_control_rules").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_budget_control_rules").insert({ ...body, organization_id: auth.orgId }).select().single();
       if (error) throw new Error(error.message);
       return json(data, 201);
     }
