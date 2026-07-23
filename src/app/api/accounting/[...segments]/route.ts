@@ -215,7 +215,7 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
-  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates"];
+  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches"];
   if (entitySetupSegments.includes(parts[0])) return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
@@ -675,6 +675,50 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (parts[0] === "close-checklist-templates") {
       return json(await listTable(admin, "accounting_close_checklist_templates", auth.orgId, request));
     }
+    if (parts[0] === "bank-accounts") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_bank_accounts", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_bank_accounts", auth.orgId, request));
+    }
+    if (parts[0] === "bank-statements") {
+      if (parts[1]) {
+        const stmt = await getRecord(admin, "accounting_bank_statements", auth.orgId, parts[1]);
+        const { data: lines } = await db(admin).from("accounting_bank_statement_lines").select("*").eq("statement_id", parts[1]).order("transaction_date");
+        return json({ ...stmt, lines: lines || [] });
+      }
+      return json(await listTable(admin, "accounting_bank_statements", auth.orgId, request));
+    }
+    if (parts[0] === "bank-reconciliations") {
+      if (parts[1]) {
+        const recon = await getRecord(admin, "accounting_bank_reconciliations", auth.orgId, parts[1]);
+        const { data: matches } = await db(admin).from("accounting_reconciliation_matches").select("*").eq("reconciliation_id", parts[1]).order("created_at");
+        return json({ ...recon, matches: matches || [] });
+      }
+      return json(await listTable(admin, "accounting_bank_reconciliations", auth.orgId, request));
+    }
+    if (parts[0] === "cash-positions") {
+      let query = db(admin).from("accounting_cash_positions").select("*").eq("organization_id", auth.orgId).order("position_date", { ascending: false });
+      const bankAccountId = request.nextUrl.searchParams.get("bank_account_id");
+      if (bankAccountId) query = query.eq("bank_account_id", bankAccountId);
+      const { data, error } = await query.limit(90);
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "cash-forecasts") {
+      if (parts[1]) {
+        const forecast = await getRecord(admin, "accounting_cash_forecasts", auth.orgId, parts[1]);
+        const { data: lines } = await db(admin).from("accounting_cash_forecast_lines").select("*").eq("forecast_id", parts[1]).order("line_date");
+        return json({ ...forecast, lines: lines || [] });
+      }
+      return json(await listTable(admin, "accounting_cash_forecasts", auth.orgId, request));
+    }
+    if (parts[0] === "payment-batches") {
+      if (parts[1]) {
+        const batch = await getRecord(admin, "accounting_payment_batches", auth.orgId, parts[1]);
+        const { data: items } = await db(admin).from("accounting_payment_batch_items").select("*").eq("batch_id", parts[1]).order("created_at");
+        return json({ ...batch, items: items || [] });
+      }
+      return json(await listTable(admin, "accounting_payment_batches", auth.orgId, request));
+    }
     if (parts[0] === "currencies") return json(await getCurrencies(auth.orgId));
     if (parts[0] === "exchange-rates") {
       return json(await getExchangeRates(auth.orgId, {
@@ -1118,12 +1162,97 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
       const { data, error } = await db(admin).from("accounting_close_runs").insert({ ...body, organization_id: auth.orgId, started_by: auth.user.id }).select().single();
       if (error) throw new Error(error.message);
-      if (body.checklist_template_id) {
-        const { data: templateTasks } = await db(admin).from("accounting_close_tasks").select("name_ar, name_en, task_order").eq("close_run_id", body.checklist_template_id);
-      }
       if (Array.isArray(body.tasks)) {
         const tasks = (body.tasks as Record<string, unknown>[]).map((t, i) => ({ ...t, close_run_id: data.id, organization_id: auth.orgId, task_order: i + 1 }));
         if (tasks.length) await db(admin).from("accounting_close_tasks").insert(tasks);
+      }
+      return json(data, 201);
+    }
+    if (parts[0] === "bank-accounts") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_bank_accounts").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_bank_accounts").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "bank-statements") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_bank_statements").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        if (Array.isArray(body.lines)) {
+          const lines = (body.lines as Record<string, unknown>[]).map(l => ({ ...l, statement_id: parts[1], bank_account_id: body.bank_account_id || data.bank_account_id, organization_id: auth.orgId }));
+          if (lines.length) await db(admin).from("accounting_bank_statement_lines").insert(lines);
+        }
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_bank_statements").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      if (Array.isArray(body.lines)) {
+        const lines = (body.lines as Record<string, unknown>[]).map(l => ({ ...l, statement_id: data.id, bank_account_id: body.bank_account_id, organization_id: auth.orgId }));
+        if (lines.length) await db(admin).from("accounting_bank_statement_lines").insert(lines);
+      }
+      return json(data, 201);
+    }
+    if (parts[0] === "bank-reconciliations") {
+      if (parts[1] && parts[2] === "match") {
+        const { data, error } = await db(admin).from("accounting_reconciliation_matches").insert({
+          ...body,
+          reconciliation_id: parts[1],
+          organization_id: auth.orgId,
+        }).select().single();
+        if (error) throw new Error(error.message);
+        if (body.statement_line_id) {
+          await db(admin).from("accounting_bank_statement_lines").update({ status: "matched", updated_at: new Date().toISOString() }).eq("id", body.statement_line_id);
+        }
+        return json(data, 201);
+      }
+      if (parts[1] && parts[2] === "complete") {
+        const { data, error } = await db(admin).from("accounting_bank_reconciliations").update({ status: "completed", updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_bank_reconciliations").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_bank_reconciliations").insert({ ...body, organization_id: auth.orgId, reconciled_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "cash-forecasts") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_cash_forecasts").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_cash_forecasts").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      if (Array.isArray(body.lines)) {
+        const lines = (body.lines as Record<string, unknown>[]).map(l => ({ ...l, forecast_id: data.id, organization_id: auth.orgId }));
+        if (lines.length) await db(admin).from("accounting_cash_forecast_lines").insert(lines);
+      }
+      return json(data, 201);
+    }
+    if (parts[0] === "payment-batches") {
+      if (parts[1] && parts[2] === "approve") {
+        const { data, error } = await db(admin).from("accounting_payment_batches").update({ status: "approved", approved_by: auth.user.id, approved_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_payment_batches").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_payment_batches").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      if (Array.isArray(body.items)) {
+        const items = (body.items as Record<string, unknown>[]).map(i => ({ ...i, batch_id: data.id, organization_id: auth.orgId }));
+        if (items.length) await db(admin).from("accounting_payment_batch_items").insert(items);
       }
       return json(data, 201);
     }
