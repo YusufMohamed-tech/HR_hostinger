@@ -1059,3 +1059,144 @@ export interface AccountingAssetMaintenance {
   created_by: string | null;
   created_at: string;
 }
+
+// Phase 6: AR/AP/Party types
+
+export type PartyType = "customer" | "vendor" | "employee" | "intercompany" | "government" | "other";
+export type CreditNoteStatus = "draft" | "issued" | "applied" | "cancelled";
+export type DebitNoteStatus = "draft" | "issued" | "applied" | "cancelled";
+export type NontradeItemType = "receivable" | "payable";
+export type NontradeStatus = "open" | "partially_settled" | "settled" | "written_off" | "cancelled";
+export type AgingType = "ar" | "ap";
+export type DunningActionType = "reminder" | "warning" | "suspension" | "legal";
+export type DunningActionStatus = "pending" | "sent" | "acknowledged" | "resolved";
+
+export interface AccountingParty {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  party_type: PartyType;
+  code: string | null;
+  name_ar: string;
+  name_en: string | null;
+  vat_number: string | null;
+  commercial_registration: string | null;
+  national_id: string | null;
+  phone: string | null;
+  email: string | null;
+  address_line1: string | null;
+  city: string | null;
+  region: string | null;
+  postal_code: string | null;
+  country: string | null;
+  bank_name: string | null;
+  iban: string | null;
+  payment_terms_days: number | null;
+  credit_limit: number | null;
+  ar_account_id: string | null;
+  ap_account_id: string | null;
+  linked_customer_id: string | null;
+  linked_vendor_id: string | null;
+  linked_employee_id: string | null;
+  is_active: boolean;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingCreditNote {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  note_no: string;
+  party_id: string | null;
+  customer_id: string | null;
+  original_invoice_id: string | null;
+  note_date: string;
+  reason: string | null;
+  subtotal: number;
+  vat_amount: number;
+  total_amount: number;
+  currency_code: string;
+  status: CreditNoteStatus;
+  journal_entry_id: string | null;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingDebitNote {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  note_no: string;
+  party_id: string | null;
+  vendor_id: string | null;
+  original_invoice_id: string | null;
+  note_date: string;
+  reason: string | null;
+  subtotal: number;
+  vat_amount: number;
+  total_amount: number;
+  currency_code: string;
+  status: DebitNoteStatus;
+  journal_entry_id: string | null;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingNontradeItem {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  item_type: NontradeItemType;
+  party_id: string | null;
+  description_ar: string;
+  description_en: string | null;
+  amount: number;
+  outstanding_amount: number;
+  currency_code: string;
+  due_date: string | null;
+  account_id: string | null;
+  cost_center_id: string | null;
+  status: NontradeStatus;
+  journal_entry_id: string | null;
+  reference: string | null;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccountingAgingSnapshot {
+  id: string;
+  organization_id: string;
+  legal_entity_id: string | null;
+  snapshot_date: string;
+  aging_type: AgingType;
+  party_id: string | null;
+  current_amount: number;
+  days_1_30: number;
+  days_31_60: number;
+  days_61_90: number;
+  days_91_120: number;
+  over_120: number;
+  total: number;
+  created_at: string;
+}
+
+export interface AccountingDunningPolicy {
+  id: string;
+  organization_id: string;
+  name_ar: string;
+  name_en: string | null;
+  overdue_days_trigger: number;
+  action_type: DunningActionType;
+  template_text: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}

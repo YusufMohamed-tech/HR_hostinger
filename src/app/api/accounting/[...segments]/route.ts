@@ -215,7 +215,7 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   if (parts[0] === "commissions" && parts[1] === "settle") return "post";
   if (method === "GET") return "view";
   if (parts[0] === "settings" || parts[0] === "init-defaults") return "settings";
-  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs"];
+  const entitySetupSegments = ["entities", "branches", "books", "user-scopes", "currencies", "exchange-rates", "fiscal-calendars", "dimension-types", "dimension-values", "dimension-policies", "allocation-rules", "account-templates", "dimensions", "approval-policies", "approval-steps", "approval-requests", "recurring-templates", "recurring-schedules", "recognition-schedules", "opening-balances", "close-runs", "close-checklist-templates", "bank-accounts", "bank-statements", "bank-reconciliations", "cash-positions", "cash-forecasts", "payment-batches", "asset-categories", "fixed-assets", "depreciation-runs", "parties", "credit-notes", "debit-notes", "nontrade-items", "payment-allocations", "aging-snapshots", "dunning-policies", "dunning-actions"];
   if (entitySetupSegments.includes(parts[0])) return "settings";
   if (["post", "reverse", "approve", "reject", "pay", "issue", "record-payment"].includes(parts[2] || "")) return "post";
   if (parts[0] === "payments" && parts[2] === "post") return "post";
@@ -736,6 +736,44 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     if (parts[0] === "depreciation-runs") {
       return json(await listTable(admin, "accounting_depreciation_runs", auth.orgId, request));
+    }
+    if (parts[0] === "parties") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_parties", auth.orgId, parts[1]));
+      let query = db(admin).from("accounting_parties").select("*").eq("organization_id", auth.orgId).order("name_ar");
+      const partyType = request.nextUrl.searchParams.get("party_type");
+      if (partyType) query = query.eq("party_type", partyType);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "credit-notes") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_credit_notes", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_credit_notes", auth.orgId, request));
+    }
+    if (parts[0] === "debit-notes") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_debit_notes", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_debit_notes", auth.orgId, request));
+    }
+    if (parts[0] === "nontrade-items") {
+      if (parts[1]) return json(await getRecord(admin, "accounting_nontrade_items", auth.orgId, parts[1]));
+      return json(await listTable(admin, "accounting_nontrade_items", auth.orgId, request));
+    }
+    if (parts[0] === "payment-allocations") {
+      const paymentId = request.nextUrl.searchParams.get("payment_id");
+      let query = db(admin).from("accounting_payment_allocations").select("*").eq("organization_id", auth.orgId);
+      if (paymentId) query = query.eq("payment_id", paymentId);
+      const { data, error } = await query.order("allocated_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "aging-snapshots") {
+      const agingType = request.nextUrl.searchParams.get("type") || "ar";
+      const { data, error } = await db(admin).from("accounting_aging_snapshots").select("*").eq("organization_id", auth.orgId).eq("aging_type", agingType).order("snapshot_date", { ascending: false }).limit(100);
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "dunning-policies") {
+      return json(await listTable(admin, "accounting_dunning_policies", auth.orgId, request));
     }
     if (parts[0] === "currencies") return json(await getCurrencies(auth.orgId));
     if (parts[0] === "exchange-rates") {
@@ -1349,6 +1387,76 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
     if (parts[0] === "depreciation-runs") {
       const { data, error } = await db(admin).from("accounting_depreciation_runs").insert({ ...body, organization_id: auth.orgId, run_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "parties") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_parties").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_parties").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "credit-notes") {
+      if (parts[1] && parts[2] === "issue") {
+        const { data, error } = await db(admin).from("accounting_credit_notes").update({ status: "issued", updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_credit_notes").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_credit_notes").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "debit-notes") {
+      if (parts[1] && parts[2] === "issue") {
+        const { data, error } = await db(admin).from("accounting_debit_notes").update({ status: "issued", updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_debit_notes").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_debit_notes").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "nontrade-items") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_nontrade_items").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_nontrade_items").insert({ ...body, organization_id: auth.orgId, outstanding_amount: body.amount, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "payment-allocations") {
+      const { data, error } = await db(admin).from("accounting_payment_allocations").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "dunning-policies") {
+      if (parts[1]) {
+        const { data, error } = await db(admin).from("accounting_dunning_policies").update({ ...body, updated_at: new Date().toISOString() }).eq("organization_id", auth.orgId).eq("id", parts[1]).select().single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin).from("accounting_dunning_policies").insert({ ...body, organization_id: auth.orgId }).select().single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+    if (parts[0] === "dunning-actions") {
+      const { data, error } = await db(admin).from("accounting_dunning_actions").insert({ ...body, organization_id: auth.orgId, created_by: auth.user.id }).select().single();
       if (error) throw new Error(error.message);
       return json(data, 201);
     }

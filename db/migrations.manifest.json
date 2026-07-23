@@ -141,6 +141,7 @@
     { "id": "schema_v113_accounting_dimensions_and_coa", "file": "db/schema_v113_accounting_dimensions_and_coa.sql" },
     { "id": "schema_v114_accounting_gl_workflows", "file": "db/schema_v114_accounting_gl_workflows.sql" },
     { "id": "schema_v115_accounting_treasury", "file": "db/schema_v115_accounting_treasury.sql" },
-    { "id": "schema_v116_accounting_fixed_assets", "file": "db/schema_v116_accounting_fixed_assets.sql" }
+    { "id": "schema_v116_accounting_fixed_assets", "file": "db/schema_v116_accounting_fixed_assets.sql" },
+    { "id": "schema_v117_accounting_ar_ap_party", "file": "db/schema_v117_accounting_ar_ap_party.sql" }
   ]
 }
