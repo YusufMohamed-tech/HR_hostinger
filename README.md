@@ -91,10 +91,18 @@ npm run test:sim-commissions
 
 Finance users can review and settle sales commissions under `/accounting/commissions`. Settlement marks commission ledger rows paid with payment method, reference, and notes; it does not change the original sale snapshot.
 
-## Deployment (Vercel)
+## Deployment
 - Follow [docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md); do not deploy from this short README alone.
 - Set every production-required value documented in `.env.example`, including the worker, malware-scanner, audit-evidence, and rate-limit secrets.
 - Run `npm run verify:ci`, rehearse migration/rollback and backup/restore on staging, then obtain the launch sign-offs tracked in `docs/PRE_LAUNCH_AUDIT.md`.
+
+### Hostinger Node.js Web App
+
+- Select Next.js with Node.js 22, build command `npm run build`, and start command `npm start`.
+- Add the required environment variables in hPanel before building. In particular, `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` must be present during the build. Do not commit or upload a file containing production secrets.
+- After changing environment variables, use **Save and redeploy** so the public Supabase configuration is rebuilt into the client bundle.
+- Verify `GET /api/health` returns `200` and `GET /api/ready` returns `200` with all three checks set to `ok`. A successful build alone does not prove the runtime or database is ready.
+- If the site still fails after a successful build, inspect the Node.js runtime logs in hPanel rather than the completed build log.
 
 ## Documentation
 See [docs](docs) for the current migration, security, operational, governance, role, payroll, and launch evidence documents. The [documentations](documentations) directory contains the earlier architecture and product references.
