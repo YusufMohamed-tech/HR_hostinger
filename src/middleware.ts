@@ -9,6 +9,7 @@ import {
 } from "./lib/rbac";
 import type { Role } from "./types";
 import { requestIdFromHeaders } from "./lib/request-id";
+import { isCrossSiteMutation } from "./lib/cross-site-mutation";
 
 const PRIVILEGED_MFA_ROLES: ReadonlySet<Role> = new Set([]);
 
@@ -72,20 +73,6 @@ function subscriptionEnabled(subscription: { status?: string; period_end?: strin
   return !expiry || Date.parse(expiry) > Date.now();
 }
 
-function crossSiteMutation(request: NextRequest) {
-  if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method) || !request.nextUrl.pathname.startsWith("/api/")) {
-    return false;
-  }
-  if (request.headers.get("sec-fetch-site")?.toLowerCase() === "cross-site") return true;
-  const origin = request.headers.get("origin");
-  if (!origin) return false;
-  try {
-    return new URL(origin).origin !== request.nextUrl.origin;
-  } catch {
-    return true;
-  }
-}
-
 export async function middleware(request: NextRequest) {
   const requestId = requestIdFromHeaders(request.headers);
   const nonce = btoa(crypto.randomUUID());
@@ -102,7 +89,7 @@ export async function middleware(request: NextRequest) {
   let response = secure(NextResponse.next({ request: { headers: requestHeaders } }));
   const pathname = request.nextUrl.pathname;
 
-  if (crossSiteMutation(request)) {
+  if (isCrossSiteMutation(request)) {
     return secure(NextResponse.json(
       { message: "Cross-site mutation was rejected.", requestId },
       { status: 403 },
