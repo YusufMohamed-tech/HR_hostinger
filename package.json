@@ -9,7 +9,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "lint:strict": "eslint . --ext .ts,.tsx --max-warnings 0",
     "typecheck": "tsc --noEmit --pretty false",
-    "test:unit": "tsx --test tests/**/*.test.ts",
+    "test:unit": "tsx --test tests/*.test.ts",
     "test:db": "node scripts/test-database-migrations.mjs",
     "test:sim-box-generation": "node scripts/test-sim-box-generation.mjs",
     "test:sim-box-parser": "node scripts/test-sim-box-parser.mjs",
@@ -53,7 +53,7 @@
     "date-fns": "^4.1.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.14.0",
-    "next": "15.5.20",
+    "next": "15.5.22",
     "react": "^18.3.1",
     "react-day-picker": "^9.14.0",
     "react-dom": "^18.3.1",
@@ -73,13 +73,14 @@
     "eslint": "^8",
     "eslint-config-next": "15.5.20",
     "pg": "^8.11.5",
-    "postcss": "8.5.13",
+    "postcss": "8.5.23",
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",
     "tsx": "^4.20.6",
     "typescript": "^5"
   },
   "overrides": {
-    "postcss": "$postcss"
+    "postcss": "$postcss",
+    "sharp": "0.35.3"
   }
 }
