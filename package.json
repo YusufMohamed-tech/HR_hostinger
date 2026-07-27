@@ -9,7 +9,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "lint:strict": "eslint . --ext .ts,.tsx --max-warnings 0",
     "typecheck": "tsc --noEmit --pretty false",
-    "test:unit": "tsx --test 'tests/**/*.test.ts'",
+    "test:unit": "tsx --test tests/*.test.ts",
     "test:db": "node scripts/test-database-migrations.mjs",
     "test:sim-box-generation": "node scripts/test-sim-box-generation.mjs",
     "test:sim-box-parser": "node scripts/test-sim-box-parser.mjs",
