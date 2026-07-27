@@ -121,9 +121,28 @@ export async function middleware(request: NextRequest) {
     || pathname === "/reset-password"
   ) return response;
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  if (!supabaseUrl || !supabaseAnonKey) {
+    const missing = [
+      !supabaseUrl ? "NEXT_PUBLIC_SUPABASE_URL" : null,
+      !supabaseAnonKey ? "NEXT_PUBLIC_SUPABASE_ANON_KEY" : null,
+    ].filter(Boolean);
+    console.error("Middleware configuration is incomplete", { requestId, missing });
+    return secure(isApiRequest(pathname)
+      ? NextResponse.json(
+          { message: "Service configuration is unavailable.", requestId },
+          { status: 503 },
+        )
+      : new NextResponse("Service configuration is unavailable.", {
+          status: 503,
+          headers: { "x-request-id": requestId },
+        }));
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         get(name: string) {
@@ -353,6 +372,10 @@ export async function middleware(request: NextRequest) {
   }
 
   return response;
+}
+
+function isApiRequest(pathname: string) {
+  return pathname.startsWith("/api/");
 }
 
 export const config = {
