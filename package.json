@@ -47,7 +47,7 @@
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.1",
     "@types/leaflet": "^1.9.21",
-    "@zxing/browser": "^0.2.0",
+    "@zxing/browser": "0.1.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
