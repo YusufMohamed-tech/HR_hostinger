@@ -771,6 +771,7 @@ const handlers: Record<string, OutboxHandler> = {
       link: label.link,
     });
   },
+  "accounting.entity_changed": async () => {},
   "finance.team_configured": async () => {},
   "platform.organization_created": async () => {},
   "platform.organization_updated": async () => {},
