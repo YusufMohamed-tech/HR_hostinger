@@ -36,6 +36,28 @@ function firstRow(data: unknown, fallback: string) {
   return row as EmployeeRow;
 }
 
+async function activateEmployeeProfileIfActive(
+  admin: AdminClient,
+  values: { orgId: string; userId: string; employee: EmployeeRow }
+) {
+  const lifecycleStatus = String(values.employee.lifecycle_status || "").toLowerCase();
+  const employmentStatus = String(values.employee.status || "").toLowerCase();
+  const employeeIsActive = lifecycleStatus === "active"
+    || (!lifecycleStatus && employmentStatus === "active");
+  if (!employeeIsActive) return;
+
+  const activation = await admin
+    .from("profiles")
+    .update({ account_status: "Active" })
+    .eq("org_id", values.orgId)
+    .eq("user_id", values.userId)
+    .select("user_id")
+    .single();
+  if (activation.error) {
+    throw lifecycleError(activation.error, "Unable to activate employee login account.");
+  }
+}
+
 export async function beginEmployeeOnboarding(
   admin: AdminClient,
   values: {
@@ -252,20 +274,11 @@ export async function inviteAndLinkEmployeeIdentity(
     await cancelIdentityDeletion(admin, cleanupJobId, "Employee identity linked successfully.");
   }
 
-  const lifecycleStatus = String(linkedEmployee.lifecycle_status || "").toLowerCase();
-  const employmentStatus = String(linkedEmployee.status || "").toLowerCase();
-  if (lifecycleStatus === "active" || (!lifecycleStatus && employmentStatus === "active")) {
-    const activation = await admin
-      .from("profiles")
-      .update({ account_status: "Active" })
-      .eq("org_id", values.orgId)
-      .eq("user_id", authUser.id)
-      .select("user_id")
-      .single();
-    if (activation.error) {
-      throw lifecycleError(activation.error, "Unable to activate employee login account.");
-    }
-  }
+  await activateEmployeeProfileIfActive(admin, {
+    orgId: values.orgId,
+    userId: authUser.id,
+    employee: linkedEmployee,
+  });
 
   return {
     employee: linkedEmployee,
@@ -273,4 +286,39 @@ export async function inviteAndLinkEmployeeIdentity(
     invited,
     createdWithPassword,
   };
+}
+
+export async function setEmployeeIdentityPassword(
+  admin: AdminClient,
+  values: { orgId: string; employeeId: string; password: string }
+) {
+  const employeeResult = await admin
+    .from("employees")
+    .select("id, org_id, user_id, lifecycle_status, status")
+    .eq("org_id", values.orgId)
+    .eq("id", values.employeeId)
+    .maybeSingle();
+  if (employeeResult.error) throw lifecycleError(employeeResult.error, "Unable to load employee.");
+  if (!employeeResult.data) throw new EmployeeLifecycleError("Employee was not found.", 404);
+  if (!employeeResult.data.user_id) {
+    throw new EmployeeLifecycleError("Employee does not have a login account yet.", 409);
+  }
+  if (["offboarding", "offboarded", "archived"].includes(String(employeeResult.data.lifecycle_status))) {
+    throw new EmployeeLifecycleError("Password cannot be set for an offboarded employee.", 409);
+  }
+
+  const update = await admin.auth.admin.updateUserById(employeeResult.data.user_id, {
+    password: values.password,
+  });
+  if (update.error || !update.data.user) {
+    throw new EmployeeLifecycleError(update.error?.message || "Unable to update employee password.", 500);
+  }
+
+  await activateEmployeeProfileIfActive(admin, {
+    orgId: values.orgId,
+    userId: employeeResult.data.user_id,
+    employee: employeeResult.data,
+  });
+
+  return { userId: update.data.user.id };
 }
