@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireTenantContext } from "@/lib/server/tenant-context";
-import { EmployeeLifecycleError, inviteAndLinkEmployeeIdentity } from "@/lib/server/employee-lifecycle";
+import {
+  EmployeeLifecycleError,
+  inviteAndLinkEmployeeIdentity,
+  setEmployeeIdentityPassword,
+} from "@/lib/server/employee-lifecycle";
 import { isStrongEmployeeAccountPassword } from "@/lib/employee-account-password";
 import type { OrgRole } from "@/types/database";
 
@@ -14,6 +18,17 @@ const accountSchema = z.object({
   role: z.enum(["employee", "hr_admin", "hr_recruitment", "training_manager", "onground_agent_manager", "promoter", "finance_manager", "accountant", "finance_viewer"]),
   password: passwordSchema,
 });
+const passwordUpdateSchema = z.object({
+  employee_id: z.string().uuid(),
+  password: passwordSchema,
+});
+
+function invalidPasswordResponse() {
+  return NextResponse.json(
+    { message: "Password must contain 12+ characters, uppercase and lowercase letters, and a number." },
+    { status: 400 }
+  );
+}
 
 export async function POST(request: NextRequest) {
   const auth = await requireTenantContext({ feature: "hr", capability: "manage_people" }, request);
@@ -22,10 +37,7 @@ export async function POST(request: NextRequest) {
   const parsed = accountSchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) {
     if (parsed.error.issues.some((issue) => issue.path[0] === "password")) {
-      return NextResponse.json(
-        { message: "Password must contain 12+ characters, uppercase and lowercase letters, and a number." },
-        { status: 400 }
-      );
+      return invalidPasswordResponse();
     }
     return NextResponse.json({ message: parsed.error.issues[0]?.message || "Invalid employee account request." }, { status: 400 });
   }
@@ -69,6 +81,38 @@ export async function POST(request: NextRequest) {
     const lifecycleError = error instanceof EmployeeLifecycleError ? error : null;
     return NextResponse.json(
       { message: lifecycleError?.message || "Unable to invite employee account.", requestId: auth.requestId },
+      { status: lifecycleError?.status || 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  const auth = await requireTenantContext({ feature: "hr", capability: "manage_people" }, request);
+  if ("error" in auth) return auth.error;
+
+  const parsed = passwordUpdateSchema.safeParse(await request.json().catch(() => ({})));
+  if (!parsed.success) {
+    if (parsed.error.issues.some((issue) => issue.path[0] === "password")) {
+      return invalidPasswordResponse();
+    }
+    return NextResponse.json({ message: "Invalid employee password request." }, { status: 400 });
+  }
+
+  try {
+    const result = await setEmployeeIdentityPassword(auth.admin, {
+      orgId: auth.orgId,
+      employeeId: parsed.data.employee_id,
+      password: parsed.data.password,
+    });
+    return NextResponse.json({
+      user: { id: result.userId },
+      password_updated: true,
+      requestId: auth.requestId,
+    });
+  } catch (error) {
+    const lifecycleError = error instanceof EmployeeLifecycleError ? error : null;
+    return NextResponse.json(
+      { message: lifecycleError?.message || "Unable to update employee password.", requestId: auth.requestId },
       { status: lifecycleError?.status || 500 }
     );
   }

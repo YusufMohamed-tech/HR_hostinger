@@ -125,6 +125,25 @@ export async function createEmployeeAccount(values: {
   } as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
+export async function setEmployeeAccountPassword(values: {
+  employee_id: string;
+  password: string;
+}) {
+  const response = await fetch("/api/hr/employee-accounts", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(values),
+  });
+  const data = await response.json().catch(() => null);
+
+  return {
+    data: response.ok ? data : null,
+    error: response.ok
+      ? null
+      : { message: String(data?.message || "Unable to update employee password.") },
+  };
+}
+
 export async function updateEmployee(
   id: string,
   values: Record<string, unknown>,
