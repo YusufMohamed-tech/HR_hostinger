@@ -110,9 +110,15 @@ export type ProductInventoryStockRow = {
   unit_cost_snapshot: number;
   planned_sale_price_snapshot: number;
   currency: string;
+  current_agent_id?: string | null;
+  current_handover_id?: string | null;
+  current_sale_id?: string | null;
+  assigned_at?: string | null;
+  sold_at?: string | null;
   created_at: string;
   product?: { name: string; sku: string | null; model: string | null } | null;
   warehouse?: { name_ar: string; name_en: string | null } | null;
+  agent?: { full_name: string } | null;
 };
 
 export type ManualReceiptGroupInput = {
@@ -223,4 +229,156 @@ export type ProductInventoryPhotoPreview = {
   }>;
   candidates: ProductInventoryPhotoCandidate[];
   counts: Record<ProductInventoryImportRowStatus, number>;
+};
+
+export type ProductInventoryFieldAgent = {
+  id: string;
+  user_id: string;
+  full_name: string;
+  phone: string;
+  region: string | null;
+  status: "active" | "suspended";
+};
+
+export type ProductHandoverLine = {
+  id: string;
+  handover_id: string;
+  unit_id: string;
+  product_id: string;
+  planned_sale_price_snapshot: number;
+  minimum_sale_price: number;
+  maximum_sale_price: number;
+  currency: string;
+  tax_included: boolean;
+  line_status: "pending" | "accepted" | "sold" | "returned" | "voided" | "cancelled";
+  unit?: ProductInventoryStockRow | null;
+};
+
+export type ProductHandover = {
+  id: string;
+  handover_no: string;
+  warehouse_id: string;
+  agent_id: string;
+  status: "issued" | "accepted" | "completed" | "cancelled";
+  require_acknowledgment: boolean;
+  notes: string | null;
+  issued_at: string;
+  accepted_at: string | null;
+  version: number;
+  agent?: ProductInventoryFieldAgent | null;
+  warehouse?: ProductInventoryWarehouse | null;
+  lines?: ProductHandoverLine[];
+};
+
+export type ProductPriceOverrideRequest = {
+  id: string;
+  unit_id: string;
+  handover_id: string;
+  agent_id: string;
+  requested_price: number;
+  currency: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected" | "used" | "cancelled";
+  requested_at: string;
+  review_note: string | null;
+  version: number;
+  unit?: ProductInventoryStockRow | null;
+  agent?: ProductInventoryFieldAgent | null;
+};
+
+export type AgentProductSale = {
+  id: string;
+  sale_no: string;
+  agent_id: string;
+  sale_date: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_reference: string | null;
+  payment_method: string;
+  subtotal: number;
+  vat_amount: number;
+  total_amount: number;
+  status: "active" | "voided";
+  accounting_status: ProductInventoryAccountingStatus;
+  version: number;
+  created_at: string;
+  agent?: ProductInventoryFieldAgent | null;
+  lines?: Array<{
+    id: string;
+    unit_id: string;
+    serial_snapshot: string;
+    product_name_snapshot: string;
+    unit_cost_snapshot: number;
+    planned_sale_price_snapshot: number;
+    actual_sale_price: number;
+    net_amount: number;
+    vat_amount: number;
+    total_amount: number;
+    gross_profit: number;
+    currency: string;
+    agent_commission_amount: number;
+  }>;
+};
+
+export type AgentProductCollection = {
+  id: string;
+  collection_no: string;
+  agent_id: string;
+  amount: number;
+  payment_method: string;
+  reference: string | null;
+  collection_date: string;
+  status: "posted" | "reversed";
+  accounting_status: ProductInventoryAccountingStatus;
+  version: number;
+  created_at: string;
+  agent?: ProductInventoryFieldAgent | null;
+};
+
+export type ProductCommerceManagerData = {
+  settings: {
+    require_agent_acknowledgment: boolean;
+    default_price_tolerance_percent: number;
+    max_handover_units: number;
+  };
+  agents: ProductInventoryFieldAgent[];
+  warehouses: ProductInventoryWarehouse[];
+  available_units: ProductInventoryStockRow[];
+  handovers: ProductHandover[];
+  sales: AgentProductSale[];
+  collections: AgentProductCollection[];
+  price_overrides: ProductPriceOverrideRequest[];
+  balances: Array<{
+    agent_id: string;
+    agent_name: string;
+    active_sales: number;
+    collected: number;
+    outstanding: number;
+    custody_cost: number;
+    custody_retail: number;
+  }>;
+};
+
+export type ProductAgentDashboardData = {
+  agent: ProductInventoryFieldAgent;
+  settings: {
+    require_agent_acknowledgment: boolean;
+    default_price_tolerance_percent: number;
+  };
+  warehouses: ProductInventoryWarehouse[];
+  pending_handovers: ProductHandover[];
+  units: ProductInventoryStockRow[];
+  handover_lines: ProductHandoverLine[];
+  sales: AgentProductSale[];
+  collections: AgentProductCollection[];
+  price_overrides: ProductPriceOverrideRequest[];
+  totals: {
+    custody_units: number;
+    custody_cost: number;
+    custody_retail: number;
+    active_sales: number;
+    collected: number;
+    outstanding: number;
+    gross_profit: number;
+  };
 };

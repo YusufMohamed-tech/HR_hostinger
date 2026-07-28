@@ -1,5 +1,9 @@
 import type {
+  AgentProductCollection,
+  AgentProductSale,
   ManualReceiptInput,
+  ProductAgentDashboardData,
+  ProductCommerceManagerData,
   ProductInventoryCompany,
   ProductInventoryProduct,
   ProductInventoryStockRow,
@@ -83,8 +87,150 @@ export function getProductStock() {
 export function getFinanceProductInventory() {
   return apiFetch<{
     receipts: ProductReceipt[];
-    totals: { units: number; cost: number; expectedSales: number; margin: number };
+    inventory: ProductInventoryStockRow[];
+    sales: AgentProductSale[];
+    collections: AgentProductCollection[];
+    totals: {
+      units: number;
+      cost: number;
+      expectedSales: number;
+      margin: number;
+      salesRevenue: number;
+      salesCost: number;
+      grossProfit: number;
+      vat: number;
+      collected: number;
+      outstanding: number;
+    };
   }>("/api/accounting/inventory");
+}
+
+export function getProductCommerceManager() {
+  return apiFetch<ProductCommerceManagerData>("/api/sales/inventory/handovers");
+}
+
+export function createProductHandover(values: {
+  handover_id: string;
+  command_id: string;
+  warehouse_id: string;
+  agent_id: string;
+  require_acknowledgment?: boolean;
+  notes?: string;
+  units: Array<{
+    unit_id: string;
+    minimum_sale_price?: number;
+    maximum_sale_price?: number;
+  }>;
+}) {
+  return apiFetch<Record<string, unknown>>("/api/sales/inventory/handovers", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function acceptProductHandover(handoverId: string, expectedVersion: number, commandId: string) {
+  return apiFetch<Record<string, unknown>>(`/api/sales/inventory/handovers/${handoverId}/accept`, {
+    method: "POST",
+    body: JSON.stringify({ expected_version: expectedVersion, command_id: commandId }),
+  });
+}
+
+export function returnAgentProducts(values: {
+  return_id: string;
+  command_id: string;
+  warehouse_id: string;
+  unit_ids: string[];
+  reason: string;
+}) {
+  return apiFetch<Record<string, unknown>>("/api/sales/inventory/returns", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getProductAgentDashboard() {
+  return apiFetch<ProductAgentDashboardData>("/api/sales/inventory/me/dashboard");
+}
+
+export function requestProductPriceOverride(values: {
+  request_id: string;
+  command_id: string;
+  unit_id: string;
+  requested_price: number;
+  reason: string;
+}) {
+  return apiFetch<Record<string, unknown>>("/api/sales/inventory/price-overrides", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function reviewProductPriceOverride(
+  requestId: string,
+  values: {
+    command_id: string;
+    expected_version: number;
+    decision: "approved" | "rejected";
+    review_note?: string;
+  }
+) {
+  return apiFetch<Record<string, unknown>>(`/api/sales/inventory/price-overrides/${requestId}/review`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function recordAgentProductSale(values: {
+  sale_id: string;
+  command_id: string;
+  unit_id: string;
+  actual_sale_price: number;
+  sale_date: string;
+  payment_method: "cash" | "bank_transfer" | "card" | "electronic" | "agent_credit";
+  customer_name?: string;
+  customer_phone?: string;
+  customer_reference?: string;
+  price_override_request_id?: string;
+}) {
+  return apiFetch<AgentProductSale>("/api/sales/inventory/agent-sales", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function voidAgentProductSale(
+  saleId: string,
+  values: {
+    command_id: string;
+    expected_version: number;
+    reason: string;
+    return_disposition: "sellable" | "damaged";
+  }
+) {
+  return apiFetch<Record<string, unknown>>(`/api/sales/inventory/agent-sales/${saleId}/void`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function recordAgentProductCollection(values: {
+  collection_id: string;
+  command_id: string;
+  agent_id: string;
+  amount: number;
+  payment_method: "cash" | "bank_transfer" | "card" | "electronic";
+  reference?: string;
+  collection_date: string;
+  notes?: string;
+}) {
+  return apiFetch<AgentProductCollection>("/api/sales/inventory/agent-collections", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getProductInventoryMovements() {
+  return apiFetch<Array<Record<string, unknown>>>("/api/sales/inventory/movements");
 }
 
 export async function previewProductInventoryWorkbook(

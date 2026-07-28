@@ -112,3 +112,97 @@ export const photoCommitSchema = z.object({
   warnings_accepted: z.boolean().default(false),
   candidates: z.array(photoCandidateCommitSchema).min(1).max(200),
 });
+
+export const productHandoverSchema = z.object({
+  handover_id: uuid,
+  command_id: uuid,
+  warehouse_id: uuid,
+  agent_id: uuid,
+  require_acknowledgment: z.boolean().optional(),
+  notes: z.string().trim().max(1000).default(""),
+  units: z.array(z.object({
+    unit_id: uuid,
+    minimum_sale_price: money.optional(),
+    maximum_sale_price: money.optional(),
+  })).min(1).max(200),
+}).superRefine((value, context) => {
+  if (new Set(value.units.map((unit) => unit.unit_id)).size !== value.units.length) {
+    context.addIssue({ code: "custom", path: ["units"], message: "اختر كل وحدة مرة واحدة فقط." });
+  }
+  value.units.forEach((unit, index) => {
+    if (
+      unit.minimum_sale_price !== undefined
+      && unit.maximum_sale_price !== undefined
+      && unit.minimum_sale_price > unit.maximum_sale_price
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["units", index],
+        message: "الحد الأدنى لسعر البيع يجب ألا يتجاوز الحد الأعلى.",
+      });
+    }
+  });
+});
+
+export const productHandoverAcceptSchema = z.object({
+  command_id: uuid,
+  expected_version: z.coerce.number().int().positive(),
+});
+
+export const productAgentReturnSchema = z.object({
+  return_id: uuid,
+  command_id: uuid,
+  warehouse_id: uuid,
+  unit_ids: z.array(uuid).min(1).max(200),
+  reason: z.string().trim().min(3).max(1000),
+}).superRefine((value, context) => {
+  if (new Set(value.unit_ids).size !== value.unit_ids.length) {
+    context.addIssue({ code: "custom", path: ["unit_ids"], message: "اختر كل وحدة مرة واحدة فقط." });
+  }
+});
+
+export const productPriceOverrideRequestSchema = z.object({
+  request_id: uuid,
+  command_id: uuid,
+  unit_id: uuid,
+  requested_price: money,
+  reason: z.string().trim().min(5).max(1000),
+});
+
+export const productPriceOverrideReviewSchema = z.object({
+  command_id: uuid,
+  expected_version: z.coerce.number().int().positive(),
+  decision: z.enum(["approved", "rejected"]),
+  review_note: z.string().trim().max(1000).default(""),
+});
+
+export const agentProductSaleSchema = z.object({
+  sale_id: uuid,
+  command_id: uuid,
+  unit_id: uuid,
+  actual_sale_price: money,
+  sale_date: z.iso.date(),
+  payment_method: z.enum(["cash", "bank_transfer", "card", "electronic", "agent_credit"]),
+  customer_name: z.string().trim().max(160).default(""),
+  customer_phone: z.string().trim().max(40).default(""),
+  customer_reference: z.string().trim().max(160).default(""),
+  price_override_request_id: uuid.optional(),
+});
+
+export const agentProductSaleVoidSchema = z.object({
+  command_id: uuid,
+  expected_version: z.coerce.number().int().positive(),
+  reason: z.string().trim().min(5).max(1000),
+  return_disposition: z.enum(["sellable", "damaged"]).default("sellable"),
+});
+
+export const agentProductCollectionSchema = z.object({
+  collection_id: uuid,
+  command_id: uuid,
+  agent_id: uuid,
+  amount: money,
+  payment_method: z.enum(["cash", "bank_transfer", "card", "electronic"]),
+  reference: z.string().trim().max(160).default(""),
+  collection_date: z.iso.date(),
+  notes: z.string().trim().max(1000).default(""),
+});

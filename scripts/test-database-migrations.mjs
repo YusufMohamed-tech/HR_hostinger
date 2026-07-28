@@ -121,6 +121,68 @@ async function testConcurrentSimSale(connectionString) {
   }
 }
 
+async function testConcurrentProductSale(connectionString) {
+  const clients = [new Client({ connectionString }), new Client({ connectionString })];
+  try {
+    await Promise.all(clients.map(async (client) => {
+      await client.connect();
+      await client.query("SELECT set_config('request.jwt.claim.role', 'service_role', false)");
+    }));
+    const unitResult = await clients[0].query(
+      "SELECT id FROM public.product_inventory_units WHERE raw_serial_number = 'VG-PHASE3-0003'"
+    );
+    const unitId = unitResult.rows[0]?.id;
+    if (!unitId) throw new Error("Concurrent product-sale test unit was not prepared.");
+    const sql = `SELECT public.execute_product_commerce_command(
+      $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'sale', $5::jsonb
+    ) AS value`;
+    const common = [
+      "11111111-1111-4111-8111-111111111111",
+      "71717171-7171-4171-8171-717171717171",
+    ];
+    const attempts = await Promise.allSettled([
+      clients[0].query(sql, [...common,
+        "ae400101-0000-4000-8000-000000000101",
+        "ae400102-0000-4000-8000-000000000102",
+        JSON.stringify({
+          sale_id: "ae400103-0000-4000-8000-000000000103",
+          unit_id: unitId,
+          actual_sale_price: 110,
+          sale_date: "2099-07-14",
+          payment_method: "cash",
+          customer_name: "Concurrent product buyer A",
+        })]),
+      clients[1].query(sql, [...common,
+        "ae400104-0000-4000-8000-000000000104",
+        "ae400105-0000-4000-8000-000000000105",
+        JSON.stringify({
+          sale_id: "ae400106-0000-4000-8000-000000000106",
+          unit_id: unitId,
+          actual_sale_price: 110,
+          sale_date: "2099-07-14",
+          payment_method: "cash",
+          customer_name: "Concurrent product buyer B",
+        })]),
+    ]);
+    if (attempts.filter((attempt) => attempt.status === "fulfilled").length !== 1) {
+      throw new Error(`Concurrent product sale did not produce exactly one winner: ${attempts.map((attempt) => attempt.status).join(", ")}`);
+    }
+    const check = await clients[0].query(
+      `SELECT
+        (SELECT count(*)::integer FROM public.agent_product_sale_lines line
+          JOIN public.agent_product_sales sale ON sale.id = line.sale_id
+          WHERE line.unit_id = $1 AND sale.status = 'active') AS sales,
+        (SELECT status FROM public.product_inventory_units WHERE id = $1) AS status`,
+      [unitId]
+    );
+    if (check.rows[0]?.sales !== 1 || check.rows[0]?.status !== "sold") {
+      throw new Error(`Concurrent product sale control failed: ${JSON.stringify(check.rows[0])}`);
+    }
+  } finally {
+    await Promise.all(clients.map((client) => client.end().catch(() => undefined)));
+  }
+}
+
 async function testConcurrentLmsQuizAttempt(connectionString) {
   const clients = [new Client({ connectionString }), new Client({ connectionString })];
   try {
@@ -5103,6 +5165,367 @@ const launchAssertions = `
   END
   $test$;
 
+  -- Phase 4 product inventory: serialized units move through manager handover,
+  -- agent acknowledgment, controlled price exceptions, sale, collection,
+  -- unsold return, and manager void without losing their cost or audit trail.
+  INSERT INTO auth.users (id, email) VALUES
+    ('71717171-7171-4171-8171-717171717171', 'product-agent-a@example.test');
+  INSERT INTO public.org_members (org_id, user_id, role) VALUES
+    ('11111111-1111-4111-8111-111111111111',
+     '71717171-7171-4171-8171-717171717171', 'field_agent');
+  UPDATE public.profiles
+  SET org_id = '11111111-1111-4111-8111-111111111111',
+      account_status = 'Active'
+  WHERE user_id = '71717171-7171-4171-8171-717171717171';
+  INSERT INTO public.employees (
+    id, org_id, user_id, full_name, email, job_title, status, lifecycle_status
+  ) VALUES (
+    '72727272-7272-4272-8272-727272727272',
+    '11111111-1111-4111-8111-111111111111',
+    '71717171-7171-4171-8171-717171717171',
+    'Atomic Product Agent', 'product-agent-a@example.test',
+    'Field Agent', 'Active', 'active'
+  );
+  SELECT set_config('app.sales_identity_command', 'trusted', false);
+  INSERT INTO public.field_agents (
+    id, organization_id, user_id, full_name, phone, national_id,
+    commission_rate, status, created_by
+  ) VALUES (
+    'b7b7b7b7-b7b7-47b7-87b7-b7b7b7b7b7b7',
+    '11111111-1111-4111-8111-111111111111',
+    '71717171-7171-4171-8171-717171717171',
+    'Atomic Product Agent', '0500000007', 'PRODUCT-SMOKE-AGENT',
+    5, 'active', '61616161-6161-4161-8161-616161616161'
+  );
+  SELECT set_config('app.sales_identity_command', '', false);
+
+  DO $test$
+  DECLARE
+    warehouse_id_value uuid;
+    unit_ids uuid[];
+    handover_result jsonb;
+    handover_replay jsonb;
+    accepted_result jsonb;
+    accepted_replay jsonb;
+    override_result jsonb;
+    override_replay jsonb;
+    review_result jsonb;
+    sale_result jsonb;
+    sale_replay jsonb;
+    collection_result jsonb;
+    collection_replay jsonb;
+    return_result jsonb;
+    return_replay jsonb;
+    second_handover jsonb;
+    second_sale jsonb;
+    void_result jsonb;
+    third_handover jsonb;
+    policy_denied boolean := false;
+  BEGIN
+    SELECT id INTO warehouse_id_value
+    FROM public.inventory_warehouses
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+      AND is_default
+    LIMIT 1;
+    SELECT array_agg(id ORDER BY normalized_serial_number) INTO unit_ids
+    FROM public.product_inventory_units
+    WHERE receipt_id = 'ae300001-0000-4000-8000-000000000001';
+
+    handover_result := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae400001-0000-4000-8000-000000000001',
+      'ae400002-0000-4000-8000-000000000002',
+      'handover_issue',
+      jsonb_build_object(
+        'handover_id', 'ae400003-0000-4000-8000-000000000003',
+        'warehouse_id', warehouse_id_value,
+        'agent_id', 'b7b7b7b7-b7b7-47b7-87b7-b7b7b7b7b7b7',
+        'require_acknowledgment', true,
+        'notes', 'Phase 4 acknowledged custody',
+        'units', jsonb_build_array(
+          jsonb_build_object('unit_id', unit_ids[1], 'minimum_sale_price', 90, 'maximum_sale_price', 110),
+          jsonb_build_object('unit_id', unit_ids[2], 'minimum_sale_price', 90, 'maximum_sale_price', 110)
+        )
+      )
+    );
+    handover_replay := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae400001-0000-4000-8000-000000000001',
+      'ae400002-0000-4000-8000-000000000002',
+      'handover_issue',
+      jsonb_build_object(
+        'handover_id', 'ae400003-0000-4000-8000-000000000003',
+        'warehouse_id', warehouse_id_value,
+        'agent_id', 'b7b7b7b7-b7b7-47b7-87b7-b7b7b7b7b7b7',
+        'require_acknowledgment', true,
+        'notes', 'Phase 4 acknowledged custody',
+        'units', jsonb_build_array(
+          jsonb_build_object('unit_id', unit_ids[1], 'minimum_sale_price', 90, 'maximum_sale_price', 110),
+          jsonb_build_object('unit_id', unit_ids[2], 'minimum_sale_price', 90, 'maximum_sale_price', 110)
+        )
+      )
+    );
+    accepted_result := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '71717171-7171-4171-8171-717171717171',
+      'ae400004-0000-4000-8000-000000000004',
+      'ae400005-0000-4000-8000-000000000005',
+      'handover_accept',
+      '{"handover_id":"ae400003-0000-4000-8000-000000000003","expected_version":1}'::jsonb
+    );
+    accepted_replay := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '71717171-7171-4171-8171-717171717171',
+      'ae400004-0000-4000-8000-000000000004',
+      'ae400005-0000-4000-8000-000000000005',
+      'handover_accept',
+      '{"handover_id":"ae400003-0000-4000-8000-000000000003","expected_version":1}'::jsonb
+    );
+    override_result := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '71717171-7171-4171-8171-717171717171',
+      'ae400006-0000-4000-8000-000000000006',
+      'ae400007-0000-4000-8000-000000000007',
+      'price_override_request',
+      jsonb_build_object(
+        'request_id', 'ae400008-0000-4000-8000-000000000008',
+        'unit_id', unit_ids[1], 'requested_price', 50,
+        'reason', 'Controlled Phase 4 commercial exception'
+      )
+    );
+    override_replay := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '71717171-7171-4171-8171-717171717171',
+      'ae400006-0000-4000-8000-000000000006',
+      'ae400007-0000-4000-8000-000000000007',
+      'price_override_request',
+      jsonb_build_object(
+        'request_id', 'ae400008-0000-4000-8000-000000000008',
+        'unit_id', unit_ids[1], 'requested_price', 50,
+        'reason', 'Controlled Phase 4 commercial exception'
+      )
+    );
+    BEGIN
+      PERFORM public.execute_product_commerce_command(
+        '11111111-1111-4111-8111-111111111111',
+        '71717171-7171-4171-8171-717171717171',
+        'ae400009-0000-4000-8000-000000000009',
+        'ae400010-0000-4000-8000-000000000010',
+        'sale',
+        jsonb_build_object(
+          'sale_id', 'ae400011-0000-4000-8000-000000000011',
+          'unit_id', unit_ids[1], 'actual_sale_price', 50,
+          'sale_date', '2099-07-13', 'payment_method', 'cash'
+        )
+      );
+    EXCEPTION WHEN check_violation THEN
+      policy_denied := true;
+    END;
+    review_result := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae400012-0000-4000-8000-000000000012',
+      'ae400013-0000-4000-8000-000000000013',
+      'price_override_review',
+      '{"request_id":"ae400008-0000-4000-8000-000000000008","expected_version":1,"decision":"approved","review_note":"Approved for atomic proof"}'::jsonb
+    );
+    sale_result := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '71717171-7171-4171-8171-717171717171',
+      'ae400014-0000-4000-8000-000000000014',
+      'ae400015-0000-4000-8000-000000000015',
+      'sale',
+      jsonb_build_object(
+        'sale_id', 'ae400016-0000-4000-8000-000000000016',
+        'unit_id', unit_ids[1], 'actual_sale_price', 50,
+        'sale_date', '2099-07-13', 'payment_method', 'cash',
+        'customer_name', 'Phase 4 buyer',
+        'price_override_request_id', 'ae400008-0000-4000-8000-000000000008'
+      )
+    );
+    sale_replay := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '71717171-7171-4171-8171-717171717171',
+      'ae400014-0000-4000-8000-000000000014',
+      'ae400015-0000-4000-8000-000000000015',
+      'sale',
+      jsonb_build_object(
+        'sale_id', 'ae400016-0000-4000-8000-000000000016',
+        'unit_id', unit_ids[1], 'actual_sale_price', 50,
+        'sale_date', '2099-07-13', 'payment_method', 'cash',
+        'customer_name', 'Phase 4 buyer',
+        'price_override_request_id', 'ae400008-0000-4000-8000-000000000008'
+      )
+    );
+    collection_result := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae400017-0000-4000-8000-000000000017',
+      'ae400018-0000-4000-8000-000000000018',
+      'collection_post',
+      '{"collection_id":"ae400019-0000-4000-8000-000000000019","agent_id":"b7b7b7b7-b7b7-47b7-87b7-b7b7b7b7b7b7","amount":20,"payment_method":"cash","collection_date":"2099-07-13","reference":"PHASE4-COLLECT"}'::jsonb
+    );
+    collection_replay := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae400017-0000-4000-8000-000000000017',
+      'ae400018-0000-4000-8000-000000000018',
+      'collection_post',
+      '{"collection_id":"ae400019-0000-4000-8000-000000000019","agent_id":"b7b7b7b7-b7b7-47b7-87b7-b7b7b7b7b7b7","amount":20,"payment_method":"cash","collection_date":"2099-07-13","reference":"PHASE4-COLLECT"}'::jsonb
+    );
+    return_result := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '71717171-7171-4171-8171-717171717171',
+      'ae400020-0000-4000-8000-000000000020',
+      'ae400021-0000-4000-8000-000000000021',
+      'agent_return',
+      jsonb_build_object(
+        'return_id', 'ae400022-0000-4000-8000-000000000022',
+        'warehouse_id', warehouse_id_value,
+        'unit_ids', jsonb_build_array(unit_ids[2]),
+        'reason', 'Unsold stock returned intact'
+      )
+    );
+    return_replay := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '71717171-7171-4171-8171-717171717171',
+      'ae400020-0000-4000-8000-000000000020',
+      'ae400021-0000-4000-8000-000000000021',
+      'agent_return',
+      jsonb_build_object(
+        'return_id', 'ae400022-0000-4000-8000-000000000022',
+        'warehouse_id', warehouse_id_value,
+        'unit_ids', jsonb_build_array(unit_ids[2]),
+        'reason', 'Unsold stock returned intact'
+      )
+    );
+    second_handover := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae400023-0000-4000-8000-000000000023',
+      'ae400024-0000-4000-8000-000000000024',
+      'handover_issue',
+      jsonb_build_object(
+        'handover_id', 'ae400025-0000-4000-8000-000000000025',
+        'warehouse_id', warehouse_id_value,
+        'agent_id', 'b7b7b7b7-b7b7-47b7-87b7-b7b7b7b7b7b7',
+        'require_acknowledgment', false,
+        'units', jsonb_build_array(jsonb_build_object(
+          'unit_id', unit_ids[2], 'minimum_sale_price', 90, 'maximum_sale_price', 110
+        ))
+      )
+    );
+    second_sale := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '71717171-7171-4171-8171-717171717171',
+      'ae400026-0000-4000-8000-000000000026',
+      'ae400027-0000-4000-8000-000000000027',
+      'sale',
+      jsonb_build_object(
+        'sale_id', 'ae400028-0000-4000-8000-000000000028',
+        'unit_id', unit_ids[2], 'actual_sale_price', 100,
+        'sale_date', '2099-07-13', 'payment_method', 'bank_transfer'
+      )
+    );
+    void_result := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae400029-0000-4000-8000-000000000029',
+      'ae400030-0000-4000-8000-000000000030',
+      'sale_void',
+      '{"sale_id":"ae400028-0000-4000-8000-000000000028","expected_version":1,"reason":"Customer returned unopened unit","return_disposition":"sellable"}'::jsonb
+    );
+    third_handover := public.execute_product_commerce_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae400031-0000-4000-8000-000000000031',
+      'ae400032-0000-4000-8000-000000000032',
+      'handover_issue',
+      jsonb_build_object(
+        'handover_id', 'ae400033-0000-4000-8000-000000000033',
+        'warehouse_id', warehouse_id_value,
+        'agent_id', 'b7b7b7b7-b7b7-47b7-87b7-b7b7b7b7b7b7',
+        'require_acknowledgment', false,
+        'units', jsonb_build_array(jsonb_build_object(
+          'unit_id', unit_ids[3], 'minimum_sale_price', 99, 'maximum_sale_price', 121
+        ))
+      )
+    );
+
+    IF handover_result IS DISTINCT FROM handover_replay
+       OR accepted_result IS DISTINCT FROM accepted_replay
+       OR override_result IS DISTINCT FROM override_replay
+       OR sale_result IS DISTINCT FROM sale_replay
+       OR collection_result IS DISTINCT FROM collection_replay
+       OR return_result IS DISTINCT FROM return_replay
+       OR NOT policy_denied
+       OR handover_result->'handover'->>'status' <> 'issued'
+       OR accepted_result->'handover'->>'status' <> 'accepted'
+       OR review_result->'request'->>'status' <> 'approved'
+       OR sale_result->'sale'->>'status' <> 'active'
+       OR collection_result->'collection'->>'status' <> 'posted'
+       OR second_handover->'handover'->>'status' <> 'accepted'
+       OR second_sale->'sale'->>'status' <> 'active'
+       OR void_result->'sale'->>'status' <> 'voided'
+       OR third_handover->'handover'->>'status' <> 'accepted'
+       OR (SELECT status FROM public.product_inventory_units WHERE id = unit_ids[1]) <> 'sold'
+       OR (SELECT status FROM public.product_inventory_units WHERE id = unit_ids[2]) <> 'in_stock'
+       OR (SELECT unit_cost_snapshot FROM public.product_inventory_units WHERE id = unit_ids[2]) <> 60
+       OR (SELECT status FROM public.product_inventory_units WHERE id = unit_ids[3]) <> 'with_agent'
+       OR (SELECT status FROM public.product_price_override_requests
+           WHERE id = 'ae400008-0000-4000-8000-000000000008') <> 'used'
+       OR (SELECT count(*) FROM public.product_handovers
+           WHERE id IN (
+             'ae400003-0000-4000-8000-000000000003',
+             'ae400025-0000-4000-8000-000000000025',
+             'ae400033-0000-4000-8000-000000000033'
+           )) <> 3
+       OR (SELECT count(*) FROM public.agent_product_sales
+           WHERE id IN (
+             'ae400016-0000-4000-8000-000000000016',
+             'ae400028-0000-4000-8000-000000000028'
+           )) <> 2
+       OR (SELECT count(*) FROM public.agent_product_collections
+           WHERE id = 'ae400019-0000-4000-8000-000000000019'
+             AND amount = 20 AND accounting_status = 'pending') <> 1
+       OR (SELECT count(*) FROM public.product_inventory_movements
+           WHERE unit_id = ANY(unit_ids)
+             AND movement_type IN (
+               'handover_issued', 'handover_accepted', 'agent_return', 'sale', 'sale_void'
+             )) <> 12
+       OR (SELECT count(*) FROM public.product_inventory_commands
+           WHERE idempotency_key IN (
+             'ae400002-0000-4000-8000-000000000002',
+             'ae400005-0000-4000-8000-000000000005',
+             'ae400007-0000-4000-8000-000000000007',
+             'ae400013-0000-4000-8000-000000000013',
+             'ae400015-0000-4000-8000-000000000015',
+             'ae400018-0000-4000-8000-000000000018',
+             'ae400021-0000-4000-8000-000000000021',
+             'ae400024-0000-4000-8000-000000000024',
+             'ae400027-0000-4000-8000-000000000027',
+             'ae400030-0000-4000-8000-000000000030',
+             'ae400032-0000-4000-8000-000000000032'
+           )) <> 11
+       OR (SELECT count(*) FROM public.event_outbox
+           WHERE topic IN (
+             'product_inventory.handover_issued',
+             'product_inventory.handover_accepted',
+             'product_inventory.agent_returned',
+             'product_inventory.price_override_requested',
+             'product_inventory.price_override_reviewed',
+             'product_inventory.sale_recorded',
+             'product_inventory.sale_voided',
+             'product_inventory.collection_posted'
+           )
+           AND payload->>'agent_id' = 'b7b7b7b7-b7b7-47b7-87b7-b7b7b7b7b7b7') <> 11 THEN
+      RAISE EXCEPTION 'Phase 4 custody, pricing, sale, collection, return, void, replay, or audit proof failed.';
+    END IF;
+  END
+  $test$;
+
   -- Browser clients cannot bypass the new command boundaries or invoke their
   -- service-only functions directly.
   DO $test$
@@ -5111,6 +5534,7 @@ const launchAssertions = `
     product_inventory_denied boolean:=false; product_function_denied boolean:=false;
     workbook_rows_denied boolean:=false; workbook_function_denied boolean:=false;
     photo_rows_denied boolean:=false; photo_function_denied boolean:=false;
+    commerce_rows_denied boolean:=false; commerce_function_denied boolean:=false;
     product_inventory_rows integer:=0; workbook_rows integer:=0; photo_rows integer:=0;
   BEGIN
     SET LOCAL ROLE authenticated;
@@ -5196,11 +5620,31 @@ const launchAssertions = `
         'ae300001-0000-4000-8000-000000000001',3,true,'[]'::jsonb);
     EXCEPTION WHEN insufficient_privilege THEN photo_function_denied:=true;
     END;
+    BEGIN
+      UPDATE public.product_handovers
+      SET notes = 'Forbidden browser mutation'
+      WHERE id = 'ae400003-0000-4000-8000-000000000003';
+      GET DIAGNOSTICS product_inventory_rows = ROW_COUNT;
+      commerce_rows_denied := product_inventory_rows = 0;
+    EXCEPTION WHEN insufficient_privilege THEN commerce_rows_denied:=true;
+    END;
+    BEGIN
+      PERFORM public.execute_product_commerce_command(
+        '11111111-1111-4111-8111-111111111111',
+        '61616161-6161-4161-8161-616161616161',
+        'ae400034-0000-4000-8000-000000000034',
+        'ae400035-0000-4000-8000-000000000035',
+        'sale_void',
+        '{"sale_id":"ae400016-0000-4000-8000-000000000016","expected_version":1,"reason":"Forbidden browser command","return_disposition":"sellable"}'::jsonb
+      );
+    EXCEPTION WHEN insufficient_privilege THEN commerce_function_denied:=true;
+    END;
     RESET ROLE;
     IF NOT sim_denied OR NOT accounting_denied OR NOT promoter_denied OR NOT eosb_denied
        OR NOT function_denied OR NOT product_inventory_denied OR NOT product_function_denied
        OR NOT workbook_rows_denied OR NOT workbook_function_denied
-       OR NOT photo_rows_denied OR NOT photo_function_denied THEN
+       OR NOT photo_rows_denied OR NOT photo_function_denied
+       OR NOT commerce_rows_denied OR NOT commerce_function_denied THEN
       RAISE EXCEPTION 'One or more atomic command boundaries allowed a direct browser write.';
     END IF;
   END
@@ -5261,6 +5705,7 @@ try {
   await testConcurrentSimSale(databaseUrl);
   await testConcurrentAccountingNumbers(databaseUrl);
   await testConcurrentLmsQuizAttempt(databaseUrl);
+  await testConcurrentProductSale(databaseUrl);
   console.log("Database migration/RLS smoke test passed on disposable PostgreSQL 16.");
 } finally {
   if (containerStarted) {

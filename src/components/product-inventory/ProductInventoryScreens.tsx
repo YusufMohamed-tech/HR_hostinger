@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Boxes, Camera, CheckCircle2, ClipboardList, FileImage, FileSpreadsheet, PackagePlus, Plus, Trash2, WalletCards } from "lucide-react";
+import { Boxes, Camera, CheckCircle2, ClipboardList, FileImage, FileSpreadsheet, PackagePlus, Plus, Send, Trash2, WalletCards } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,8 @@ import {
   saveManualReceipt,
 } from "@/lib/services/product-inventory";
 import type {
+  AgentProductCollection,
+  AgentProductSale,
   ProductInventoryCompany,
   ProductInventoryProduct,
   ProductInventoryStockRow,
@@ -47,6 +49,15 @@ const statusLabels: Record<string, string> = {
   pending: "بانتظار المعالجة المحاسبية",
   not_required: "عهدة / لا يحتاج قيد",
   posted: "مرحّل",
+  in_stock: "في المخزن",
+  in_transit: "قيد التسليم",
+  with_agent: "عهدة مندوب",
+  sold: "مباع",
+  returned: "مرتجع",
+  damaged: "تالف",
+  active: "نشط",
+  voided: "ملغي",
+  reversed: "معكوس",
 };
 
 function StatusBadge({ value }: { value: string }) {
@@ -101,6 +112,9 @@ export function ProductInventoryDashboard() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
+            <Link href="/sales/inventory/assignments"><Send className="ml-2 h-4 w-4" />تسليم للمندوبين</Link>
+          </Button>
+          <Button asChild variant="outline">
             <Link href="/sales/inventory/receipts/photo"><Camera className="ml-2 h-4 w-4" />استلام بالصور</Link>
           </Button>
           <Button asChild variant="outline">
@@ -147,13 +161,13 @@ export function ProductInventoryDashboard() {
         <CardHeader><CardTitle>أحدث الوحدات المسلسلة</CardTitle></CardHeader>
         <CardContent className="p-0">
           <Table>
-            <TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>الرقم التسلسلي</TableHead><TableHead>المستودع</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع المخطط</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>الرقم التسلسلي</TableHead><TableHead>الموقع / العهدة</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع المخطط</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader>
             <TableBody>
               {stock.slice(0, 20).map((unit) => (
                 <TableRow key={unit.id}>
                   <TableCell>{unit.product?.name || "-"}</TableCell>
                   <TableCell className="font-mono" dir="ltr">{unit.raw_serial_number}</TableCell>
-                  <TableCell>{unit.warehouse?.name_ar || unit.warehouse?.name_en || "-"}</TableCell>
+                  <TableCell>{unit.agent?.full_name || unit.warehouse?.name_ar || unit.warehouse?.name_en || "-"}</TableCell>
                   <TableCell>{money(unit.unit_cost_snapshot, unit.currency)}</TableCell>
                   <TableCell>{money(unit.planned_sale_price_snapshot, unit.currency)}</TableCell>
                   <TableCell><StatusBadge value={unit.status} /></TableCell>
@@ -368,12 +382,21 @@ export function ProductReceiptDetailScreen({ receiptId }: { receiptId: string })
 
 export function FinanceProductInventoryScreen() {
   const [receipts, setReceipts] = useState<ProductReceipt[]>([]);
-  const [totals, setTotals] = useState({ units: 0, cost: 0, expectedSales: 0, margin: 0 });
+  const [inventory, setInventory] = useState<ProductInventoryStockRow[]>([]);
+  const [sales, setSales] = useState<AgentProductSale[]>([]);
+  const [collections, setCollections] = useState<AgentProductCollection[]>([]);
+  const [totals, setTotals] = useState({ units: 0, cost: 0, expectedSales: 0, margin: 0, salesRevenue: 0, salesCost: 0, grossProfit: 0, vat: 0, collected: 0, outstanding: 0 });
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   useEffect(() => {
     void getFinanceProductInventory().then((result) => {
-      if (result.data) { setReceipts(result.data.receipts); setTotals(result.data.totals); }
+      if (result.data) {
+        setReceipts(result.data.receipts);
+        setInventory(result.data.inventory);
+        setSales(result.data.sales);
+        setCollections(result.data.collections);
+        setTotals(result.data.totals);
+      }
       setMessage(result.error || "");
       setLoading(false);
     });
@@ -382,8 +405,12 @@ export function FinanceProductInventoryScreen() {
   return (
     <div className="space-y-6" dir="rtl">
       <MessageDialog open={Boolean(message)} onOpenChange={(open) => !open && setMessage("")} description={message} />
-      <div><h1 className="text-3xl font-bold text-gray-950">مخزون المنتجات — المالية</h1><p className="mt-2 text-gray-500">رؤية تشغيلية تلقائية للتكلفة وقيمة البيع المخططة. الترحيل المحاسبي الفعلي ضمن مرحلة الربط المحاسبي.</p></div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard title="الوحدات المؤكدة" value={String(totals.units)} icon={Boxes} /><MetricCard title="إجمالي التكلفة" value={money(totals.cost)} icon={WalletCards} /><MetricCard title="قيمة البيع المتوقعة" value={money(totals.expectedSales)} icon={ClipboardList} /><MetricCard title="الهامش المتوقع" value={money(totals.margin)} icon={CheckCircle2} /></div>
+      <div><h1 className="text-3xl font-bold text-gray-950">مخزون المنتجات — المالية</h1><p className="mt-2 text-gray-500">التكلفة والمبيعات الفعلية والتحصيلات تصل تلقائياً من حركة المخزون. القيود العامة والترحيل التلقائي تُفعّل في المرحلة الخامسة.</p></div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard title="وحدات المخزون والعهد" value={String(totals.units)} icon={Boxes} /><MetricCard title="تكلفة المخزون الحالية" value={money(totals.cost)} icon={WalletCards} /><MetricCard title="مبيعات المنتجات الفعلية" value={money(totals.salesRevenue)} icon={ClipboardList} /><MetricCard title="مجمل ربح المبيعات" value={money(totals.grossProfit)} icon={CheckCircle2} /></div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard title="قيمة البيع المخططة للمخزون" value={money(totals.expectedSales)} icon={ClipboardList} /><MetricCard title="تكلفة الوحدات المباعة" value={money(totals.salesCost)} icon={WalletCards} /><MetricCard title="المحصل من المندوبين" value={money(totals.collected)} icon={CheckCircle2} /><MetricCard title="المتبقي على المندوبين" value={money(totals.outstanding)} icon={WalletCards} /></div>
+      <Card className="border-none shadow-sm"><CardHeader><CardTitle>مبيعات المنتجات من المندوبين</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>البيع</TableHead><TableHead>المندوب</TableHead><TableHead>المنتج / المسلسل</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع</TableHead><TableHead>الربح</TableHead><TableHead>المعالجة</TableHead></TableRow></TableHeader><TableBody>{sales.map((sale) => <TableRow key={sale.id}><TableCell><span className="font-mono">{sale.sale_no}</span><br /><StatusBadge value={sale.status} /></TableCell><TableCell>{sale.agent?.full_name || "-"}</TableCell><TableCell>{sale.lines?.[0]?.product_name_snapshot || "-"}<p className="font-mono text-xs text-gray-400">{sale.lines?.[0]?.serial_snapshot}</p></TableCell><TableCell>{money(sale.lines?.[0]?.unit_cost_snapshot || 0)}</TableCell><TableCell>{money(sale.total_amount)}</TableCell><TableCell>{money(sale.lines?.[0]?.gross_profit || 0)}</TableCell><TableCell><StatusBadge value={sale.accounting_status} /></TableCell></TableRow>)}</TableBody></Table>{sales.length === 0 && <p className="p-8 text-center text-sm text-gray-500">لا توجد مبيعات منتجات حتى الآن.</p>}</CardContent></Card>
+      <Card className="border-none shadow-sm"><CardHeader><CardTitle>المخزون الحالي والعهد</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>المسلسل</TableHead><TableHead>الموقع / المندوب</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع المخطط</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader><TableBody>{inventory.filter((unit) => ["in_stock", "in_transit", "with_agent", "returned"].includes(unit.status)).slice(0, 250).map((unit) => <TableRow key={unit.id}><TableCell>{unit.product?.name || "-"}</TableCell><TableCell className="font-mono">{unit.raw_serial_number}</TableCell><TableCell>{unit.agent?.full_name || unit.warehouse?.name_ar || "-"}</TableCell><TableCell>{money(unit.unit_cost_snapshot, unit.currency)}</TableCell><TableCell>{money(unit.planned_sale_price_snapshot, unit.currency)}</TableCell><TableCell><StatusBadge value={unit.status} /></TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
+      <Card className="border-none shadow-sm"><CardHeader><CardTitle>تحصيلات المندوبين</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>التحصيل</TableHead><TableHead>المندوب</TableHead><TableHead>التاريخ</TableHead><TableHead>المبلغ</TableHead><TableHead>الطريقة</TableHead><TableHead>المعالجة</TableHead></TableRow></TableHeader><TableBody>{collections.map((collection) => <TableRow key={collection.id}><TableCell className="font-mono">{collection.collection_no}</TableCell><TableCell>{collection.agent?.full_name || "-"}</TableCell><TableCell>{collection.collection_date}</TableCell><TableCell>{money(collection.amount)}</TableCell><TableCell>{collection.payment_method}</TableCell><TableCell><StatusBadge value={collection.accounting_status} /></TableCell></TableRow>)}</TableBody></Table>{collections.length === 0 && <p className="p-8 text-center text-sm text-gray-500">لا توجد تحصيلات منتجات بعد.</p>}</CardContent></Card>
       <Card className="border-none shadow-sm"><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>السند</TableHead><TableHead>المورد</TableHead><TableHead>الوحدات</TableHead><TableHead>التكلفة</TableHead><TableHead>قيمة البيع</TableHead><TableHead>الهامش</TableHead><TableHead>المعالجة</TableHead></TableRow></TableHeader><TableBody>{receipts.map((receipt) => <TableRow key={receipt.id}><TableCell className="font-mono">{receipt.receipt_no}</TableCell><TableCell>{receipt.company?.name || "-"}</TableCell><TableCell>{receipt.total_units}</TableCell><TableCell>{money(receipt.physical_total_cost, receipt.currency)}</TableCell><TableCell>{money(receipt.expected_sales_value, receipt.currency)}</TableCell><TableCell>{money(receipt.expected_margin, receipt.currency)}</TableCell><TableCell><StatusBadge value={receipt.accounting_status} /></TableCell></TableRow>)}</TableBody></Table>{receipts.length === 0 && <p className="p-8 text-center text-sm text-gray-500">لا توجد استلامات مؤكدة حتى الآن.</p>}</CardContent></Card>
     </div>
   );

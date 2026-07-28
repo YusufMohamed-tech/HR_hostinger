@@ -30,6 +30,13 @@ Attach screenshots, request IDs, test-data references, reconciliation outputs, d
 - [ ] Training manager/instructor/learner course, review, community, and assignment scopes are enforced.
 - [ ] Sales manager/sales/promoter/field-agent/merchant scopes and company/location assignments are enforced.
 - [ ] Inventory receiver can open only product inventory, notifications, and settings; another receiver's draft and non-inventory modules are denied.
+- [ ] Inventory receiver cannot open product assignments or invoke handover, sale, void, price-approval, collection, or movement APIs.
+- [ ] Manager can select a grouped product count, set minimum/maximum sale prices, issue a handover, and see each serialized unit become in transit or immediately accepted.
+- [ ] Assigned field agent sees only their product custody, verifies all serials, and acknowledges a pending handover before selling.
+- [ ] Sale outside the approved range is denied until the manager approves the same unit and exact price; another price still fails.
+- [ ] Unsold agent return restores the same serial and original cost to the selected warehouse.
+- [ ] Manager void with sellable disposition restores the sold serial to stock; damaged disposition keeps it unavailable.
+- [ ] Product sale and collection appear automatically in Finance with cost, actual selling price, gross profit, VAT, and outstanding agent balance.
 
 ## 3. Cross-module integrity
 

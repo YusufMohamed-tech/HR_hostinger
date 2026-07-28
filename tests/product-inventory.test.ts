@@ -5,7 +5,14 @@ import {
   normalizeSerial,
   parseSerialNumbers,
 } from "../src/lib/product-inventory/normalization";
-import { manualReceiptSchema } from "../src/lib/product-inventory/schemas";
+import {
+  agentProductCollectionSchema,
+  agentProductSaleSchema,
+  productHandoverSchema,
+  productPriceOverrideRequestSchema,
+  productPriceOverrideReviewSchema,
+  manualReceiptSchema,
+} from "../src/lib/product-inventory/schemas";
 import {
   buildInventoryImportCsv,
   parseCsvRows,
@@ -251,8 +258,80 @@ test("inventory receiver and finance routes follow least-privilege role boundari
   assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/receipts/import"), true);
   assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/receipts/photo"), true);
   assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/stock"), true);
+  assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/assignments"), false);
+  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/handovers"), false);
   assert.equal(canAccessPath("Inventory_Receiver", "/sales/products"), false);
   assert.equal(canAccessPath("Inventory_Receiver", "/accounting/inventory"), false);
   assert.equal(canAccessPath("Accountant", "/accounting/inventory"), true);
   assert.equal(canAccessPath("Accountant", "/sales/inventory"), false);
+});
+
+test("Phase 4 commerce inputs enforce unique custody units, price ranges, and positive money", () => {
+  const unitId = "10000000-0000-4000-8000-000000000301";
+  const base = {
+    handover_id: "10000000-0000-4000-8000-000000000302",
+    command_id: "10000000-0000-4000-8000-000000000303",
+    warehouse_id: "10000000-0000-4000-8000-000000000304",
+    agent_id: "10000000-0000-4000-8000-000000000305",
+  };
+  assert.equal(productHandoverSchema.safeParse({
+    ...base,
+    units: [{ unit_id: unitId, minimum_sale_price: 90, maximum_sale_price: 110 }],
+  }).success, true);
+  assert.equal(productHandoverSchema.safeParse({
+    ...base,
+    units: [
+      { unit_id: unitId, minimum_sale_price: 120, maximum_sale_price: 110 },
+      { unit_id: unitId, minimum_sale_price: 90, maximum_sale_price: 110 },
+    ],
+  }).success, false);
+
+  assert.equal(agentProductSaleSchema.safeParse({
+    sale_id: "10000000-0000-4000-8000-000000000306",
+    command_id: "10000000-0000-4000-8000-000000000307",
+    unit_id: unitId,
+    actual_sale_price: 100,
+    sale_date: "2026-07-28",
+    payment_method: "cash",
+  }).success, true);
+  assert.equal(agentProductCollectionSchema.safeParse({
+    collection_id: "10000000-0000-4000-8000-000000000308",
+    command_id: "10000000-0000-4000-8000-000000000309",
+    agent_id: base.agent_id,
+    amount: 0,
+    payment_method: "cash",
+    collection_date: "2026-07-28",
+  }).success, false);
+});
+
+test("Phase 4 price exceptions require a reason and an explicit manager decision", () => {
+  assert.equal(productPriceOverrideRequestSchema.safeParse({
+    request_id: "10000000-0000-4000-8000-000000000310",
+    command_id: "10000000-0000-4000-8000-000000000311",
+    unit_id: "10000000-0000-4000-8000-000000000312",
+    requested_price: 50,
+    reason: "Client promotion approved in the field",
+  }).success, true);
+  assert.equal(productPriceOverrideRequestSchema.safeParse({
+    request_id: "10000000-0000-4000-8000-000000000310",
+    command_id: "10000000-0000-4000-8000-000000000311",
+    unit_id: "10000000-0000-4000-8000-000000000312",
+    requested_price: 50,
+    reason: "no",
+  }).success, false);
+  assert.equal(productPriceOverrideReviewSchema.safeParse({
+    command_id: "10000000-0000-4000-8000-000000000313",
+    expected_version: 1,
+    decision: "approved",
+  }).success, true);
+});
+
+test("field agents receive only the Phase 4 self-service inventory routes", () => {
+  assert.equal(canAccessPath("Field_Agent", "/agent/products"), true);
+  assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/me/dashboard"), true);
+  assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/agent-sales"), true);
+  assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/price-overrides"), true);
+  assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/stock"), false);
+  assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/agent-collections"), false);
+  assert.equal(canAccessPath("Onground_Agent_Manager", "/sales/inventory/assignments"), true);
 });

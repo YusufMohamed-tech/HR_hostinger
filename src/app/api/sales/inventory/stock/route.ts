@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   try {
     const { data, error } = await productInventoryDb(auth.admin)
       .from("product_inventory_units")
-      .select("id, product_id, raw_serial_number, status, condition, ownership_type, unit_cost_snapshot, planned_sale_price_snapshot, currency, created_at, product:product_id(name, sku, model), warehouse:warehouse_id(name_ar, name_en)")
+      .select("id, product_id, raw_serial_number, status, condition, ownership_type, unit_cost_snapshot, planned_sale_price_snapshot, currency, current_agent_id, current_handover_id, current_sale_id, assigned_at, sold_at, created_at, product:product_id(name, sku, model), warehouse:warehouse_id(name_ar, name_en), agent:current_agent_id(full_name)")
       .eq("organization_id", auth.orgId)
       .order("created_at", { ascending: false })
       .limit(500);

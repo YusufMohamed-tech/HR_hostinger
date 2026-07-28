@@ -357,6 +357,59 @@ const productReceiptEventPayload = z.object({
   version: z.coerce.number().int().positive(),
 });
 
+const productHandoverEventPayload = z.object({
+  handover_id: z.string().uuid(),
+  handover_no: z.string().min(1),
+  agent_id: z.string().uuid(),
+  agent_user_id: z.string().uuid(),
+  unit_count: z.coerce.number().int().positive(),
+  status: z.enum(["issued", "accepted", "completed", "cancelled"]),
+  version: z.coerce.number().int().positive(),
+});
+
+const productReturnEventPayload = z.object({
+  return_id: z.string().uuid(),
+  agent_id: z.string().uuid(),
+  warehouse_id: z.string().uuid(),
+  unit_count: z.coerce.number().int().positive(),
+  reason: z.string().min(1),
+  version: z.coerce.number().int().positive(),
+});
+
+const productPriceOverrideEventPayload = z.object({
+  request_id: z.string().uuid(),
+  unit_id: z.string().uuid(),
+  agent_id: z.string().uuid(),
+  requested_price: z.coerce.number().positive(),
+  currency: z.string().length(3),
+  decision: z.enum(["approved", "rejected"]).optional(),
+  version: z.coerce.number().int().positive(),
+});
+
+const productSaleEventPayload = z.object({
+  sale_id: z.string().uuid(),
+  sale_no: z.string().min(1),
+  unit_id: z.string().uuid(),
+  agent_id: z.string().uuid(),
+  agent_user_id: z.string().uuid().optional(),
+  total_amount: z.coerce.number().positive(),
+  unit_cost: z.coerce.number().positive().optional(),
+  gross_profit: z.coerce.number().optional(),
+  return_disposition: z.enum(["sellable", "damaged"]).optional(),
+  reason: z.string().optional(),
+  version: z.coerce.number().int().positive(),
+});
+
+const productCollectionEventPayload = z.object({
+  collection_id: z.string().uuid(),
+  agent_id: z.string().uuid(),
+  amount: z.coerce.number().positive(),
+  payment_method: z.string().min(1),
+  collection_date: z.string().min(1),
+  outstanding_after: z.coerce.number(),
+  version: z.coerce.number().int().positive(),
+});
+
 async function financeManagerUserId(orgId: string) {
   const admin = createAdminClient();
   const { data, error } = await admin.from("org_members").select("user_id")
@@ -404,6 +457,22 @@ async function financeManagerUserIds(orgId: string) {
     .eq("org_id", orgId).eq("role", "finance_manager");
   if (error) throw new Error(`Finance Manager recipient lookup failed: ${error.message}`);
   return (data || []).map((row) => row.user_id);
+}
+
+async function productInventoryManagerUserIds(orgId: string) {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("org_members").select("user_id")
+    .eq("org_id", orgId).in("role", ["admin", "sales_manager", "onground_agent_manager"]);
+  if (error) throw new Error(`Product inventory manager recipient lookup failed: ${error.message}`);
+  return (data || []).map((row) => row.user_id);
+}
+
+async function productAgentUserId(orgId: string, agentId: string) {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("field_agents").select("user_id")
+    .eq("organization_id", orgId).eq("id", agentId).maybeSingle();
+  if (error) throw new Error(`Product field-agent recipient lookup failed: ${error.message}`);
+  return typeof data?.user_id === "string" ? data.user_id : null;
 }
 
 async function employeeUserId(orgId: string, employeeId: string) {
@@ -1165,6 +1234,105 @@ const handlers: Record<string, OutboxHandler> = {
       userIds: await financeUserIds(event.org_id),
       title: `تم تأكيد استلام منتجات ${payload.receipt_no}`,
       body: `${payload.total_units} وحدة، تكلفة ${payload.total_cost.toFixed(2)} ر.س، وقيمة بيع مخططة ${payload.expected_sales_value.toFixed(2)} ر.س.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
+  "product_inventory.handover_issued": async (event) => {
+    const payload = productHandoverEventPayload.parse(event.payload);
+    if (payload.status !== "issued") return;
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [payload.agent_user_id],
+      title: `عهدة منتجات جديدة ${payload.handover_no}`,
+      body: `${payload.unit_count} وحدة مسلسلة تنتظر مراجعتك وتأكيد الاستلام.`,
+      type: "sales",
+      link: "/agent/products/receive",
+    });
+  },
+  "product_inventory.handover_accepted": async (event) => {
+    const payload = productHandoverEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await productInventoryManagerUserIds(event.org_id),
+      title: `تم استلام العهدة ${payload.handover_no}`,
+      body: `أكد المندوب استلام ${payload.unit_count} وحدة مسلسلة.`,
+      type: "sales",
+      link: "/sales/inventory/assignments",
+    });
+  },
+  "product_inventory.agent_returned": async (event) => {
+    const payload = productReturnEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await productInventoryManagerUserIds(event.org_id),
+      title: "تم إرجاع منتجات إلى المخزن",
+      body: `${payload.unit_count} وحدة — ${payload.reason}`,
+      type: "sales",
+      link: "/sales/inventory/assignments",
+    });
+  },
+  "product_inventory.price_override_requested": async (event) => {
+    const payload = productPriceOverrideEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await productInventoryManagerUserIds(event.org_id),
+      title: "طلب استثناء سعر منتج",
+      body: `السعر المطلوب ${payload.requested_price.toFixed(2)} ${payload.currency}.`,
+      type: "sales",
+      link: "/sales/inventory/assignments",
+    });
+  },
+  "product_inventory.price_override_reviewed": async (event) => {
+    const payload = productPriceOverrideEventPayload.parse(event.payload);
+    const agentUserId = await productAgentUserId(event.org_id, payload.agent_id);
+    if (!agentUserId) return;
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [agentUserId],
+      title: payload.decision === "approved" ? "تم اعتماد سعر المنتج" : "تم رفض سعر المنتج",
+      body: `السعر المطلوب ${payload.requested_price.toFixed(2)} ${payload.currency}.`,
+      type: "sales",
+      link: "/agent/products/sell",
+    });
+  },
+  "product_inventory.sale_recorded": async (event) => {
+    const payload = productSaleEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: `مبيعة منتج جديدة ${payload.sale_no}`,
+      body: `قيمة البيع ${payload.total_amount.toFixed(2)} ر.س، والتكلفة ${Number(payload.unit_cost || 0).toFixed(2)} ر.س.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
+  "product_inventory.sale_voided": async (event) => {
+    const payload = productSaleEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: `إلغاء مبيعة منتج ${payload.sale_no}`,
+      body: `${payload.total_amount.toFixed(2)} ر.س — ${payload.reason || "بدون تفاصيل"}.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
+  "product_inventory.collection_posted": async (event) => {
+    const payload = productCollectionEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: "تحصيل جديد من مندوب منتجات",
+      body: `${payload.amount.toFixed(2)} ر.س — المتبقي ${payload.outstanding_after.toFixed(2)} ر.س.`,
       type: "accounting",
       link: "/accounting/inventory",
     });

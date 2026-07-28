@@ -117,9 +117,18 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (role === "Inventory_Receiver") {
+    const commercePath =
+      normalizedPath.startsWith("/sales/inventory/assignments") ||
+      normalizedPath.startsWith("/api/sales/inventory/handovers") ||
+      normalizedPath.startsWith("/api/sales/inventory/returns") ||
+      normalizedPath.startsWith("/api/sales/inventory/agent-sales") ||
+      normalizedPath.startsWith("/api/sales/inventory/agent-collections") ||
+      normalizedPath.startsWith("/api/sales/inventory/price-overrides") ||
+      normalizedPath.startsWith("/api/sales/inventory/movements") ||
+      normalizedPath.startsWith("/api/sales/inventory/me");
     return (
-      normalizedPath.startsWith("/sales/inventory") ||
-      normalizedPath.startsWith("/api/sales/inventory") ||
+      (!commercePath && normalizedPath.startsWith("/sales/inventory")) ||
+      (!commercePath && normalizedPath.startsWith("/api/sales/inventory")) ||
       normalizedPath.startsWith("/notifications") ||
       normalizedPath.startsWith("/settings")
     );
@@ -153,10 +162,17 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (role === "Field_Agent") {
+    const productInventoryAgentApi =
+      normalizedPath.startsWith("/api/sales/inventory/me") ||
+      normalizedPath.startsWith("/api/sales/inventory/handovers/") ||
+      normalizedPath.startsWith("/api/sales/inventory/returns") ||
+      normalizedPath.startsWith("/api/sales/inventory/agent-sales") ||
+      normalizedPath.startsWith("/api/sales/inventory/price-overrides");
     return (
       normalizedPath.startsWith("/agent") ||
       normalizedPath.startsWith("/api/sales/agents") ||
       normalizedPath.startsWith("/api/sales/merchants") ||
+      productInventoryAgentApi ||
       normalizedPath.startsWith("/attendance") ||
       normalizedPath.startsWith("/api/attendance") ||
       normalizedPath.startsWith("/notifications") ||
