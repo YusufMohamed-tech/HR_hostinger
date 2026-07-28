@@ -18,6 +18,7 @@ export type ProductInventoryProduct = {
   company_id: string;
   name: string;
   sku: string | null;
+  barcode: string | null;
   model: string | null;
   price: number;
   default_cost: number | null;
@@ -81,6 +82,22 @@ export type ProductReceipt = {
   company?: ProductInventoryCompany | null;
   warehouse?: ProductInventoryWarehouse | null;
   lines?: ProductReceiptLine[];
+  sources?: ProductReceiptSource[];
+};
+
+export type ProductReceiptSource = {
+  id: string;
+  source_type: "manual" | "excel" | "csv" | "photo";
+  original_name: string | null;
+  extraction_status: string;
+  total_rows: number;
+  valid_rows: number;
+  warning_rows: number;
+  invalid_rows: number;
+  duplicate_rows: number;
+  unmatched_rows: number;
+  committed_at: string | null;
+  created_at: string;
 };
 
 export type ProductInventoryStockRow = {
@@ -121,4 +138,53 @@ export type ManualReceiptInput = {
   currency: string;
   notes?: string;
   groups: ManualReceiptGroupInput[];
+};
+
+export type ProductInventoryImportRowStatus =
+  | "valid"
+  | "warning"
+  | "invalid"
+  | "duplicate"
+  | "unmatched";
+
+export type ProductInventoryImportRow = {
+  row_number: number;
+  raw_data: Record<string, string | number | boolean | null>;
+  supplier_code: string;
+  receipt_reference: string;
+  product_sku: string;
+  product_name: string;
+  model: string;
+  product_id: string;
+  serial_number: string;
+  normalized_serial: string;
+  barcode: string;
+  unit_cost: number | null;
+  planned_sale_price: number | null;
+  currency: string;
+  tax_code: string;
+  condition: "new" | "open_box" | "refurbished";
+  notes: string;
+  status: ProductInventoryImportRowStatus;
+  confidence: number;
+  validation_errors: string[];
+  validation_warnings: string[];
+};
+
+export type ProductInventoryWorkbookPreview = {
+  receipt: ProductReceipt;
+  source: {
+    id: string;
+    source_type: "excel" | "csv";
+    original_name: string;
+    total_rows: number;
+    valid_rows: number;
+    warning_rows: number;
+    invalid_rows: number;
+    duplicate_rows: number;
+    unmatched_rows: number;
+    file_sha256: string;
+  };
+  rows: ProductInventoryImportRow[];
+  headers: string[];
 };

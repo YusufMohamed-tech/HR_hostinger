@@ -1,6 +1,6 @@
 # Product Inventory — Phase 1 Implementation
 
-Phase 1 delivers the manual, serialized product-receiving foundation from the Virgin product inventory blueprint. Photo extraction, Excel/CSV import, agent handover, field sales, returns, and automatic journal posting remain later phases.
+Phase 1 delivers the manual, serialized product-receiving foundation from the Virgin product inventory blueprint. Excel/CSV receiving is delivered in Phase 2; photo extraction, agent handover, field sales, returns, and automatic journal posting remain later phases.
 
 ## Delivered workflow
 

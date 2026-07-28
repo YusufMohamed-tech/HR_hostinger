@@ -17,6 +17,7 @@ import {
   CheckSquare,
   ClipboardList,
   Clock,
+  FileSpreadsheet,
   FileText,
   Landmark,
   Layers,
@@ -250,6 +251,7 @@ export function SidebarContent() {
           title: "استلام المنتجات",
           links: [
             { name: "مخزون المنتجات", href: "/sales/inventory", icon: Package },
+            { name: "استيراد Excel / CSV", href: "/sales/inventory/receipts/import", icon: FileSpreadsheet },
             { name: "استلام يدوي جديد", href: "/sales/inventory/receipts/new", icon: PackagePlus },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],

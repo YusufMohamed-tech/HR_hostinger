@@ -1,5 +1,5 @@
 {
-  "id": "schema_v123_atomic_product_receiving",
-  "file": "db/schema_v123_atomic_product_receiving.sql",
-  "checksumSha256": "8df5939c119746cbcfaef6a27973df3939c529b49e658348b8c125f8cdcd2a72"
+  "id": "schema_v124_product_inventory_workbook_imports",
+  "file": "db/schema_v124_product_inventory_workbook_imports.sql",
+  "checksumSha256": "d4d16aef3968d1e9cacdcd6b07e9314c05860d5a453a2df58f9bdb3ff201efd6"
 }

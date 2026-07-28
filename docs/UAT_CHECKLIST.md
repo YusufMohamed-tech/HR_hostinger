@@ -42,6 +42,10 @@ Attach screenshots, request IDs, test-data references, reconciliation outputs, d
 - [ ] Journal, invoice, expense, payment, budget, period close/reopen, asset capitalization/depreciation, advance disbursement, sales cash, commissions, and reversals remain balanced and linked.
 - [ ] Sales log correction/void preserves revisions and produces correct accounting reversal/repost behavior.
 - [ ] Manual product receipt groups require product, unit cost, planned sale price, and unique serials; retry is idempotent and confirmation creates exactly one stock unit and receipt movement per serial.
+- [ ] Product inventory template downloads; valid XLSX and CSV files accept Arabic/English headers, preserve text serial leading zeros, preview all source rows, and group equal product/cost/sale-price/currency/condition rows.
+- [ ] Macro-enabled, legacy, oversized, over-row-limit, wrong-signature, infected, formula-like, numeric-serial, duplicate, confirmed-serial, and unmatched-product imports fail with actionable row/file errors.
+- [ ] Workbook commit cannot omit an original row; corrected rows, the clean private original, SHA-256/scan metadata, source row number, and signed evidence access remain linked to the receipt.
+- [ ] Equivalent manual and workbook inputs create the same priced receipt groups, stock units, receipt movements, valuation totals, and finance visibility after confirmation.
 - [ ] A confirmed serial cannot be received again; cancelled/confirmed receipts cannot be edited; stale receipt versions are rejected.
 - [ ] Finance roles automatically see confirmed unit count, cost, expected sale value, margin, ownership type, and accounting status without inventory mutation access.
 - [ ] Recruitment transition/offer/interview/hire and public application submission are tenant-safe, state-safe, and replay-safe.

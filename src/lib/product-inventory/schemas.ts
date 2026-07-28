@@ -51,3 +51,34 @@ export const receiptTransitionSchema = z.object({
   command_id: uuid,
   reason: z.string().trim().min(3).max(1000).optional(),
 });
+
+export const workbookImportRowSchema = z.object({
+  row_number: z.coerce.number().int().min(2),
+  raw_data: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
+  supplier_code: z.string().max(160).default(""),
+  receipt_reference: z.string().max(160).default(""),
+  product_sku: z.string().max(160).default(""),
+  product_name: z.string().max(300).default(""),
+  model: z.string().max(160).default(""),
+  product_id: z.string().uuid(),
+  serial_number: z.string().trim().min(1).max(160),
+  normalized_serial: z.string().max(160).default(""),
+  barcode: z.string().max(160).default(""),
+  unit_cost: money,
+  planned_sale_price: money,
+  currency,
+  tax_code: z.string().max(80).default(""),
+  condition: z.enum(["new", "open_box", "refurbished"]).default("new"),
+  notes: z.string().max(1000).default(""),
+  status: z.enum(["valid", "warning"]),
+  confidence: z.coerce.number().min(0).max(1).default(1),
+  validation_errors: z.array(z.string()).max(20).default([]),
+  validation_warnings: z.array(z.string()).max(20).default([]),
+});
+
+export const workbookCommitSchema = z.object({
+  source_id: z.string().uuid(),
+  expected_version: z.coerce.number().int().positive(),
+  command_id: z.string().uuid(),
+  rows: z.array(workbookImportRowSchema).min(1).max(10000),
+});

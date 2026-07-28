@@ -4666,13 +4666,197 @@ const launchAssertions = `
   END
   $test$;
 
+  -- Phase 2 product inventory: every workbook row and its clean private source
+  -- are retained, partial commits are denied, price groups are formed
+  -- atomically, and the completed receipt reuses Phase 1 stock confirmation.
+  DO $test$
+  DECLARE
+    warehouse_id_value uuid;
+    preview_rows jsonb;
+    preview_result jsonb;
+    preview_replay jsonb;
+    commit_result jsonb;
+    commit_replay jsonb;
+    confirmed_result jsonb;
+    partial_denied boolean := false;
+  BEGIN
+    SELECT id INTO warehouse_id_value
+    FROM public.inventory_warehouses
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+      AND is_default = true
+    LIMIT 1;
+    preview_rows := jsonb_build_array(
+      jsonb_build_object(
+        'row_number', 2, 'raw_data', '{"product_sku":"ATOMIC-PRODUCT-1","serial_number":"VG-PHASE2-0001"}'::jsonb,
+        'product_sku', 'ATOMIC-PRODUCT-1', 'product_name', 'Atomic Sales Product',
+        'model', '', 'product_id', 'e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2',
+        'serial_number', 'VG-PHASE2-0001', 'normalized_serial', 'VGPHASE20001',
+        'barcode', '', 'unit_cost', 60, 'planned_sale_price', 100,
+        'currency', 'SAR', 'condition', 'new', 'status', 'valid',
+        'confidence', 1, 'validation_errors', '[]'::jsonb, 'validation_warnings', '[]'::jsonb
+      ),
+      jsonb_build_object(
+        'row_number', 3, 'raw_data', '{"product_sku":"ATOMIC-PRODUCT-1","serial_number":"VG-PHASE2-0002"}'::jsonb,
+        'product_sku', 'ATOMIC-PRODUCT-1', 'product_name', 'Atomic Sales Product',
+        'model', '', 'product_id', 'e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2',
+        'serial_number', 'VG-PHASE2-0002', 'normalized_serial', 'VGPHASE20002',
+        'barcode', '', 'unit_cost', 60, 'planned_sale_price', 100,
+        'currency', 'SAR', 'condition', 'new', 'status', 'valid',
+        'confidence', 1, 'validation_errors', '[]'::jsonb, 'validation_warnings', '[]'::jsonb
+      ),
+      jsonb_build_object(
+        'row_number', 4, 'raw_data', '{"product_sku":"ATOMIC-PRODUCT-1","serial_number":"VG-PHASE2-0003"}'::jsonb,
+        'product_sku', 'ATOMIC-PRODUCT-1', 'product_name', 'Atomic Sales Product',
+        'model', '', 'product_id', 'e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2',
+        'serial_number', 'VG-PHASE2-0003', 'normalized_serial', 'VGPHASE20003',
+        'barcode', '', 'unit_cost', 65, 'planned_sale_price', 110,
+        'currency', 'SAR', 'condition', 'open_box', 'status', 'warning',
+        'confidence', 1, 'validation_errors', '[]'::jsonb,
+        'validation_warnings', '["Serial number also appears in another draft receipt."]'::jsonb
+      )
+    );
+
+    preview_result := public.execute_product_workbook_preview(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae200002-0000-4000-8000-000000000002',
+      'ae200003-0000-4000-8000-000000000003',
+      'ae200001-0000-4000-8000-000000000001',
+      'ae200004-0000-4000-8000-000000000004',
+      'ae200005-0000-4000-8000-000000000005',
+      jsonb_build_object(
+        'supplier_company_id', 'e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1',
+        'warehouse_id', warehouse_id_value, 'ownership_type', 'purchased',
+        'receipt_date', '2099-07-11', 'currency', 'SAR',
+        'delivery_note_no', 'VIRGIN-DN-PHASE2', 'supplier_invoice_no', 'VIRGIN-INV-PHASE2'
+      ),
+      jsonb_build_object(
+        'bucket', 'product-inventory-imports',
+        'path', '11111111-1111-4111-8111-111111111111/ae200001-0000-4000-8000-000000000001/ae200003-0000-4000-8000-000000000003/virgin-phase2.csv',
+        'filename', 'virgin-phase2.csv', 'type', 'text/csv', 'source_type', 'csv',
+        'size_bytes', 512, 'sha256', repeat('a', 64), 'scan_status', 'clean',
+        'scan_engine', 'database-smoke-test', 'scanned_at', now(),
+        'headers', jsonb_build_array('product_sku', 'serial_number', 'unit_cost', 'planned_sale_price')
+      ),
+      preview_rows
+    );
+    preview_replay := public.execute_product_workbook_preview(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae200002-0000-4000-8000-000000000002',
+      'ae200003-0000-4000-8000-000000000003',
+      'ae200001-0000-4000-8000-000000000001',
+      'ae200004-0000-4000-8000-000000000004',
+      'ae200005-0000-4000-8000-000000000005',
+      jsonb_build_object(
+        'supplier_company_id', 'e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1',
+        'warehouse_id', warehouse_id_value, 'ownership_type', 'purchased',
+        'receipt_date', '2099-07-11', 'currency', 'SAR',
+        'delivery_note_no', 'VIRGIN-DN-PHASE2', 'supplier_invoice_no', 'VIRGIN-INV-PHASE2'
+      ),
+      jsonb_build_object(
+        'bucket', 'product-inventory-imports',
+        'path', '11111111-1111-4111-8111-111111111111/ae200001-0000-4000-8000-000000000001/ae200003-0000-4000-8000-000000000003/virgin-phase2.csv',
+        'filename', 'virgin-phase2.csv', 'type', 'text/csv', 'source_type', 'csv',
+        'size_bytes', 512, 'sha256', repeat('a', 64), 'scan_status', 'clean',
+        'scan_engine', 'database-smoke-test', 'scanned_at', now(),
+        'headers', jsonb_build_array('product_sku', 'serial_number', 'unit_cost', 'planned_sale_price')
+      ),
+      preview_rows
+    );
+
+    BEGIN
+      PERFORM public.execute_product_workbook_commit(
+        '11111111-1111-4111-8111-111111111111',
+        '61616161-6161-4161-8161-616161616161',
+        'ae200006-0000-4000-8000-000000000006',
+        'ae200007-0000-4000-8000-000000000007',
+        'ae200001-0000-4000-8000-000000000001',
+        'ae200004-0000-4000-8000-000000000004',
+        1, preview_rows - 2
+      );
+    EXCEPTION WHEN check_violation THEN
+      partial_denied := true;
+    END;
+
+    commit_result := public.execute_product_workbook_commit(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae200008-0000-4000-8000-000000000008',
+      'ae200009-0000-4000-8000-000000000009',
+      'ae200001-0000-4000-8000-000000000001',
+      'ae200004-0000-4000-8000-000000000004',
+      1, preview_rows
+    );
+    commit_replay := public.execute_product_workbook_commit(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae200008-0000-4000-8000-000000000008',
+      'ae200009-0000-4000-8000-000000000009',
+      'ae200001-0000-4000-8000-000000000001',
+      'ae200004-0000-4000-8000-000000000004',
+      1, preview_rows
+    );
+    confirmed_result := public.execute_product_receipt_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae200010-0000-4000-8000-000000000010',
+      'ae200011-0000-4000-8000-000000000011',
+      'receipt_confirm',
+      '{"receipt_id":"ae200001-0000-4000-8000-000000000001","expected_version":2}'::jsonb
+    );
+
+    IF preview_result IS DISTINCT FROM preview_replay
+       OR commit_result IS DISTINCT FROM commit_replay
+       OR NOT partial_denied
+       OR (commit_result->>'group_count')::integer <> 2
+       OR commit_result->'receipt'->>'status' <> 'ready_to_confirm'
+       OR confirmed_result->'receipt'->>'status' <> 'confirmed'
+       OR (confirmed_result->'receipt'->>'total_units')::integer <> 3
+       OR (confirmed_result->'receipt'->>'physical_total_cost')::numeric <> 185
+       OR (confirmed_result->'receipt'->>'expected_sales_value')::numeric <> 310
+       OR (SELECT count(*) FROM public.product_inventory_import_rows
+           WHERE source_id = 'ae200004-0000-4000-8000-000000000004') <> 3
+       OR (SELECT count(*) FROM public.product_receipt_lines
+           WHERE receipt_id = 'ae200001-0000-4000-8000-000000000001') <> 2
+       OR (SELECT count(*) FROM public.product_receipt_candidates
+           WHERE receipt_id = 'ae200001-0000-4000-8000-000000000001'
+             AND source_id = 'ae200004-0000-4000-8000-000000000004'
+             AND source_reference LIKE 'row:%') <> 3
+       OR (SELECT count(*) FROM public.product_inventory_units
+           WHERE receipt_id = 'ae200001-0000-4000-8000-000000000001') <> 3
+       OR NOT EXISTS (
+         SELECT 1 FROM public.product_receipt_sources source
+         JOIN public.managed_files file ON file.id = source.managed_file_id
+         WHERE source.id = 'ae200004-0000-4000-8000-000000000004'
+           AND source.committed_at IS NOT NULL
+           AND source.file_sha256 = repeat('a', 64)
+           AND source.valid_rows = 2
+           AND source.warning_rows = 1
+           AND file.bucket_id = 'product-inventory-imports'
+           AND file.scan_status = 'clean'
+       )
+       OR (SELECT count(*) FROM public.event_outbox
+           WHERE payload->>'receipt_id' = 'ae200001-0000-4000-8000-000000000001'
+             AND topic IN (
+               'product_inventory.workbook_previewed',
+               'product_inventory.workbook_committed',
+               'product_inventory.receipt_draft_saved',
+               'product_inventory.receipt_confirmed'
+             )) <> 4 THEN
+      RAISE EXCEPTION 'Workbook evidence, replay, full-row commit, grouping, or stock confirmation failed.';
+    END IF;
+  END
+  $test$;
+
   -- Browser clients cannot bypass the new command boundaries or invoke their
   -- service-only functions directly.
   DO $test$
   DECLARE sim_denied boolean:=false; accounting_denied boolean:=false;
     promoter_denied boolean:=false; eosb_denied boolean:=false; function_denied boolean:=false;
     product_inventory_denied boolean:=false; product_function_denied boolean:=false;
-    product_inventory_rows integer:=0;
+    workbook_rows_denied boolean:=false; workbook_function_denied boolean:=false;
+    product_inventory_rows integer:=0; workbook_rows integer:=0;
   BEGIN
     SET LOCAL ROLE authenticated;
     PERFORM set_config('request.jwt.claim.role','authenticated',true);
@@ -4726,9 +4910,26 @@ const launchAssertions = `
         'receipt_confirm','{"receipt_id":"ae100001-0000-4000-8000-000000000001","expected_version":2}'::jsonb);
     EXCEPTION WHEN insufficient_privilege THEN product_function_denied:=true;
     END;
+    BEGIN
+      UPDATE public.product_inventory_import_rows
+      SET unit_cost = 1
+      WHERE source_id = 'ae200004-0000-4000-8000-000000000004';
+      GET DIAGNOSTICS workbook_rows = ROW_COUNT;
+      workbook_rows_denied := workbook_rows = 0;
+    EXCEPTION WHEN insufficient_privilege THEN workbook_rows_denied:=true;
+    END;
+    BEGIN
+      PERFORM public.execute_product_workbook_commit(
+        '11111111-1111-4111-8111-111111111111','61616161-6161-4161-8161-616161616161',
+        'ae200012-0000-4000-8000-000000000012','ae200013-0000-4000-8000-000000000013',
+        'ae200001-0000-4000-8000-000000000001','ae200004-0000-4000-8000-000000000004',
+        3,'[]'::jsonb);
+    EXCEPTION WHEN insufficient_privilege THEN workbook_function_denied:=true;
+    END;
     RESET ROLE;
     IF NOT sim_denied OR NOT accounting_denied OR NOT promoter_denied OR NOT eosb_denied
-       OR NOT function_denied OR NOT product_inventory_denied OR NOT product_function_denied THEN
+       OR NOT function_denied OR NOT product_inventory_denied OR NOT product_function_denied
+       OR NOT workbook_rows_denied OR NOT workbook_function_denied THEN
       RAISE EXCEPTION 'One or more atomic command boundaries allowed a direct browser write.';
     END IF;
   END
