@@ -10,7 +10,12 @@ import {
 } from "@/components/ui/dialog";
 import { Pencil } from "lucide-react";
 import { useDepartments, useLocations, useEmployees } from "@/hooks/use-data";
-import { createEmployeeAccount, updateEmployee, type EmployeeAccountRole } from "@/lib/services/employees";
+import {
+  createEmployeeAccount,
+  setEmployeeAccountPassword,
+  updateEmployee,
+  type EmployeeAccountRole,
+} from "@/lib/services/employees";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
 import { getDeductionRuleGroups, type DeductionRuleGroup } from "@/lib/services/deduction-rule-groups";
@@ -273,6 +278,19 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
         return;
       }
     }
+    const changingExistingPassword = Boolean(
+      employee?.user_id && (accountPassword || accountPasswordConfirmation)
+    );
+    if (changingExistingPassword) {
+      if (!isStrongEmployeeAccountPassword(accountPassword)) {
+        setError(EMPLOYEE_ACCOUNT_PASSWORD_MESSAGE);
+        return;
+      }
+      if (accountPassword !== accountPasswordConfirmation) {
+        setError(EMPLOYEE_ACCOUNT_PASSWORD_CONFIRMATION_MESSAGE);
+        return;
+      }
+    }
     setSubmitting(true);
     setError("");
 
@@ -357,6 +375,20 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
 
       if (accountError) {
         setError(`تم حفظ بيانات الموظف، لكن فشل إنشاء حساب الدخول: ${accountError.message}`);
+        setSubmitting(false);
+        onSuccess();
+        return;
+      }
+    }
+
+    if (employee.user_id && changingExistingPassword) {
+      const { error: passwordError } = await setEmployeeAccountPassword({
+        employee_id: String(employee.id),
+        password: accountPassword,
+      });
+
+      if (passwordError) {
+        setError(`تم حفظ بيانات الموظف، لكن تعذر تحديث كلمة المرور: ${passwordError.message}`);
         setSubmitting(false);
         onSuccess();
         return;
@@ -721,6 +753,42 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                   </p>
                 </div>
               )}
+            </div>
+          )}
+          {employee?.user_id && (
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-700">حساب الدخول</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  الحساب مرتبط بهذا الموظف. اترك الحقول فارغة للحفاظ على كلمة المرور الحالية.
+                </p>
+              </div>
+              <div className={twoColumnGridClass}>
+                <div className="space-y-2">
+                  <Label>كلمة مرور جديدة</Label>
+                  <Input
+                    type="password"
+                    dir="ltr"
+                    autoComplete="new-password"
+                    value={accountPassword}
+                    onChange={(event) => setAccountPassword(event.target.value)}
+                    placeholder="12+ characters"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>تأكيد كلمة المرور</Label>
+                  <Input
+                    type="password"
+                    dir="ltr"
+                    autoComplete="new-password"
+                    value={accountPasswordConfirmation}
+                    onChange={(event) => setAccountPasswordConfirmation(event.target.value)}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                يجب أن تحتوي على 12 حرفًا على الأقل وحرف كبير وصغير ورقم.
+              </p>
             </div>
           )}
 
