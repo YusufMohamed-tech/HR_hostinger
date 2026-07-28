@@ -188,3 +188,39 @@ export type ProductInventoryWorkbookPreview = {
   rows: ProductInventoryImportRow[];
   headers: string[];
 };
+
+export type ProductInventoryPhotoCandidate = {
+  source_id: string;
+  candidate_index: number;
+  raw_product_name: string;
+  raw_sku: string;
+  raw_model: string;
+  raw_serial: string;
+  raw_barcode: string;
+  product_id: string;
+  serial_number: string;
+  normalized_serial: string;
+  unit_cost: number | null;
+  planned_sale_price: number | null;
+  currency: string;
+  condition: "new" | "open_box" | "refurbished";
+  status: ProductInventoryImportRowStatus;
+  confidence: number;
+  match_method: "sku" | "barcode" | "name" | "alias" | "fuzzy" | "none";
+  validation_errors: string[];
+  validation_warnings: string[];
+  save_as_alias: boolean;
+};
+
+export type ProductInventoryPhotoPreview = {
+  receipt: ProductReceipt;
+  sources: Array<{
+    id: string;
+    source_type: "photo";
+    original_name: string;
+    confidence: number | null;
+    total_rows: number;
+  }>;
+  candidates: ProductInventoryPhotoCandidate[];
+  counts: Record<ProductInventoryImportRowStatus, number>;
+};

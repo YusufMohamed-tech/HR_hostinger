@@ -24,7 +24,7 @@ export const PRODUCT_INVENTORY_WORKBOOK_HEADERS = [
 
 type WorkbookField = typeof PRODUCT_INVENTORY_WORKBOOK_HEADERS[number];
 type RawCell = string | number | boolean | Date | null | undefined;
-type CatalogAlias = { product_id: string; normalized_value: string };
+export type CatalogAlias = { product_id: string; normalized_value: string };
 
 const HEADER_ALIASES: Record<WorkbookField, string[]> = {
   supplier_code: ["supplier_code", "supplier", "suppliercode", "رمز المورد", "كود المورد", "المورد"],
@@ -111,7 +111,27 @@ function originalData(row: RawCell[], headers: RawCell[]) {
   return data;
 }
 
-function matchProduct(
+function diceSimilarity(left: string, right: string) {
+  if (left === right) return 1;
+  if (left.length < 2 || right.length < 2) return 0;
+  const pairs = new Map<string, number>();
+  for (let index = 0; index < left.length - 1; index += 1) {
+    const pair = left.slice(index, index + 2);
+    pairs.set(pair, (pairs.get(pair) ?? 0) + 1);
+  }
+  let overlap = 0;
+  for (let index = 0; index < right.length - 1; index += 1) {
+    const pair = right.slice(index, index + 2);
+    const available = pairs.get(pair) ?? 0;
+    if (available > 0) {
+      pairs.set(pair, available - 1);
+      overlap += 1;
+    }
+  }
+  return (2 * overlap) / (left.length + right.length - 2);
+}
+
+export function matchProductCatalog(
   values: { sku: string; name: string; barcode: string; model: string },
   products: ProductInventoryProduct[],
   aliases: CatalogAlias[]
@@ -122,18 +142,22 @@ function matchProduct(
   const model = normalizeProductMatchValue(values.model);
   let matches: ProductInventoryProduct[] = [];
   let confidence = 0;
+  let method: "sku" | "barcode" | "name" | "alias" | "fuzzy" | "none" = "none";
 
   if (sku) {
     matches = products.filter((product) => normalizeProductMatchValue(product.sku) === sku);
     confidence = 1;
+    if (matches.length > 0) method = "sku";
   }
   if (matches.length === 0 && barcode) {
     matches = products.filter((product) => normalizeProductMatchValue(product.barcode) === barcode);
     confidence = 1;
+    if (matches.length > 0) method = "barcode";
   }
   if (matches.length === 0 && name) {
     matches = products.filter((product) => normalizeProductMatchValue(product.name) === name);
     confidence = 0.95;
+    if (matches.length > 0) method = "name";
   }
   if (matches.length === 0 && (sku || barcode || name)) {
     const candidates = new Set(
@@ -143,12 +167,36 @@ function matchProduct(
     );
     matches = products.filter((product) => candidates.has(product.id));
     confidence = 0.9;
+    if (matches.length > 0) method = "alias";
+  }
+  if (matches.length === 0 && name.length >= 5) {
+    const ranked = products
+      .map((product) => ({
+        product,
+        score: diceSimilarity(name, normalizeProductMatchValue(product.name)),
+      }))
+      .filter((candidate) => candidate.score >= 0.72)
+      .sort((left, right) => right.score - left.score);
+    if (ranked[0] && (!ranked[1] || ranked[0].score - ranked[1].score >= 0.08)) {
+      matches = [ranked[0].product];
+      confidence = Math.min(0.89, 0.65 + ranked[0].score * 0.25);
+      method = "fuzzy";
+    } else if (ranked.length > 0) {
+      matches = ranked.map((candidate) => candidate.product);
+      confidence = Math.min(0.85, 0.65 + ranked[0].score * 0.2);
+      method = "fuzzy";
+    }
   }
   if (matches.length > 1 && model) {
     const narrowed = matches.filter((product) => normalizeProductMatchValue(product.model) === model);
     if (narrowed.length > 0) matches = narrowed;
   }
-  return { product: matches.length === 1 ? matches[0] : null, ambiguous: matches.length > 1, confidence };
+  return {
+    product: matches.length === 1 ? matches[0] : null,
+    ambiguous: matches.length > 1,
+    confidence,
+    method,
+  };
 }
 
 function statusFor(errors: string[], warnings: string[], unmatched: boolean, duplicate: boolean): ProductInventoryImportRowStatus {
@@ -244,7 +292,7 @@ export function parseProductInventoryWorkbookRows(
     }
     if (!/^[A-Z]{3}$/u.test(currency)) errors.push("Currency must be a three-letter code.");
 
-    const match = matchProduct({ sku, name: productName, barcode, model }, context.products, aliases);
+    const match = matchProductCatalog({ sku, name: productName, barcode, model }, context.products, aliases);
     if (match.ambiguous) warnings.push("Product match is ambiguous; select the correct catalog product.");
     const duplicate = Boolean(normalizedSerial && seen.has(normalizedSerial));
     if (duplicate) errors.push("Serial number is duplicated inside this workbook.");

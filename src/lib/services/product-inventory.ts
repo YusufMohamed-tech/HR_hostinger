@@ -4,6 +4,8 @@ import type {
   ProductInventoryProduct,
   ProductInventoryStockRow,
   ProductInventoryImportRow,
+  ProductInventoryPhotoCandidate,
+  ProductInventoryPhotoPreview,
   ProductInventoryWorkbookPreview,
   ProductInventoryWarehouse,
   ProductReceipt,
@@ -167,4 +169,84 @@ export async function openProductInventorySource(receiptId: string, sourceId: st
     evidenceWindow?.close();
   }
   return result;
+}
+
+export async function previewProductInventoryPhotos(
+  receiptId: string,
+  values: {
+    command_id: string;
+    supplier_company_id: string;
+    warehouse_id: string;
+    ownership_type: "purchased" | "consignment";
+    receipt_date: string;
+    currency: string;
+    delivery_note_no?: string;
+    supplier_invoice_no?: string;
+    notes?: string;
+    photos: Array<{
+      file: File;
+      source_id: string;
+      managed_file_id: string;
+      extraction: {
+        raw_text: string;
+        ocr_confidence: number | null;
+        barcode_values: string[];
+        bounding_boxes: Array<{
+          text: string;
+          confidence: number;
+          x0: number;
+          y0: number;
+          x1: number;
+          y1: number;
+        }>;
+        engine: string;
+        version: string;
+      };
+    }>;
+  }
+): Promise<ApiResult<ProductInventoryPhotoPreview>> {
+  try {
+    const form = new FormData();
+    const manifest = values.photos.map((photo, index) => {
+      const field = `photo_${index}`;
+      form.set(field, photo.file);
+      return {
+        field,
+        source_id: photo.source_id,
+        managed_file_id: photo.managed_file_id,
+        extraction: photo.extraction,
+      };
+    });
+    form.set("manifest", JSON.stringify(manifest));
+    for (const [key, value] of Object.entries(values)) {
+      if (key !== "photos") form.set(key, String(value ?? ""));
+    }
+    const response = await fetch(`/api/sales/inventory/receipts/${receiptId}/photo-preview`, {
+      method: "POST",
+      body: form,
+    });
+    const payload = await response.json().catch(() => ({})) as {
+      data?: ProductInventoryPhotoPreview;
+      message?: string;
+    };
+    if (!response.ok) return { data: null, error: payload.message || "تعذر تحليل صور المنتجات." };
+    return { data: payload.data ?? null, error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error.message : "تعذر رفع صور المنتجات." };
+  }
+}
+
+export function commitProductInventoryPhotos(
+  receiptId: string,
+  values: {
+    expected_version: number;
+    command_id: string;
+    warnings_accepted: boolean;
+    candidates: ProductInventoryPhotoCandidate[];
+  }
+) {
+  return apiFetch<ProductReceipt>(`/api/sales/inventory/receipts/${receiptId}/photo-commit`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
 }

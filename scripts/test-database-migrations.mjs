@@ -4849,6 +4849,260 @@ const launchAssertions = `
   END
   $test$;
 
+  -- Phase 3 product inventory: private image evidence and local extraction
+  -- metadata are retained, every candidate must be reviewed, warnings require
+  -- explicit acceptance, corrected labels may become manager-approved aliases,
+  -- and priced photo candidates reuse the Phase 1 stock command.
+  DO $test$
+  DECLARE
+    warehouse_id_value uuid;
+    preview_sources jsonb;
+    preview_candidates jsonb;
+    commit_candidates jsonb;
+    preview_result jsonb;
+    preview_replay jsonb;
+    commit_result jsonb;
+    commit_replay jsonb;
+    confirmed_result jsonb;
+    partial_denied boolean := false;
+    warning_denied boolean := false;
+  BEGIN
+    SELECT id INTO warehouse_id_value
+    FROM public.inventory_warehouses
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+      AND is_default = true
+    LIMIT 1;
+
+    preview_sources := jsonb_build_array(
+      jsonb_build_object(
+        'source_id', 'ae300004-0000-4000-8000-000000000004',
+        'managed_file_id', 'ae300005-0000-4000-8000-000000000005',
+        'file', jsonb_build_object(
+          'bucket', 'product-inventory-photos',
+          'path', '11111111-1111-4111-8111-111111111111/ae300001-0000-4000-8000-000000000001/ae300003-0000-4000-8000-000000000003/label-1.jpg',
+          'filename', 'label-1.jpg', 'type', 'image/jpeg',
+          'size_bytes', 2048, 'sha256', repeat('b', 64),
+          'scan_status', 'clean', 'scan_engine', 'database-smoke-test',
+          'scanned_at', '2099-07-12T00:00:00Z'
+        ),
+        'extraction', jsonb_build_object(
+          'engine', 'tesseract-zxing-local', 'version', 'local-product-label-v1',
+          'raw_text', E'Product: Virgin Photo Router\\nS/N: VG-PHASE3-O001\\nS/N: VG-PHASE3-0002',
+          'ocr_confidence', 82, 'barcode_values', jsonb_build_array('6280000000001'),
+          'bounding_boxes', jsonb_build_array(jsonb_build_object(
+            'text', 'Virgin', 'confidence', 90, 'x0', 10, 'y0', 10, 'x1', 80, 'y1', 30
+          ))
+        )
+      ),
+      jsonb_build_object(
+        'source_id', 'ae300006-0000-4000-8000-000000000006',
+        'managed_file_id', 'ae300007-0000-4000-8000-000000000007',
+        'file', jsonb_build_object(
+          'bucket', 'product-inventory-photos',
+          'path', '11111111-1111-4111-8111-111111111111/ae300001-0000-4000-8000-000000000001/ae300003-0000-4000-8000-000000000003/label-2.png',
+          'filename', 'label-2.png', 'type', 'image/png',
+          'size_bytes', 3072, 'sha256', repeat('c', 64),
+          'scan_status', 'clean', 'scan_engine', 'database-smoke-test',
+          'scanned_at', '2099-07-12T00:00:00Z'
+        ),
+        'extraction', jsonb_build_object(
+          'engine', 'tesseract-zxing-local', 'version', 'local-product-label-v1',
+          'raw_text', E'SKU: ATOMIC-PRODUCT-1\\nSerial: VG-PHASE3-0003',
+          'ocr_confidence', 97, 'barcode_values', '[]'::jsonb,
+          'bounding_boxes', '[]'::jsonb
+        )
+      )
+    );
+
+    preview_candidates := jsonb_build_array(
+      jsonb_build_object(
+        'source_id', 'ae300004-0000-4000-8000-000000000004',
+        'candidate_index', 1, 'raw_product_name', 'Virgin Photo Router',
+        'raw_sku', '', 'raw_model', '', 'raw_serial', 'VG-PHASE3-O001',
+        'raw_barcode', '6280000000001', 'product_id', '',
+        'serial_number', 'VG-PHASE3-O001', 'normalized_serial', 'VGPHASE3O001',
+        'unit_cost', null, 'planned_sale_price', null, 'currency', 'SAR',
+        'condition', 'new', 'status', 'unmatched', 'confidence', 0,
+        'match_method', 'none',
+        'validation_errors', jsonb_build_array('Product could not be matched.'),
+        'validation_warnings', '[]'::jsonb
+      ),
+      jsonb_build_object(
+        'source_id', 'ae300004-0000-4000-8000-000000000004',
+        'candidate_index', 2, 'raw_product_name', 'Atomic Sales Product',
+        'raw_sku', 'ATOMIC-PRODUCT-1', 'raw_model', '',
+        'raw_serial', 'VG-PHASE3-0002', 'raw_barcode', '',
+        'product_id', 'e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2',
+        'serial_number', 'VG-PHASE3-0002', 'normalized_serial', 'VGPHASE30002',
+        'unit_cost', 60, 'planned_sale_price', 100, 'currency', 'SAR',
+        'condition', 'new', 'status', 'warning', 'confidence', 0.82,
+        'match_method', 'sku', 'validation_errors', '[]'::jsonb,
+        'validation_warnings', jsonb_build_array('Extraction confidence is below 90%.')
+      ),
+      jsonb_build_object(
+        'source_id', 'ae300006-0000-4000-8000-000000000006',
+        'candidate_index', 1, 'raw_product_name', 'Atomic Sales Product',
+        'raw_sku', 'ATOMIC-PRODUCT-1', 'raw_model', '',
+        'raw_serial', 'VG-PHASE3-0003', 'raw_barcode', '',
+        'product_id', 'e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2',
+        'serial_number', 'VG-PHASE3-0003', 'normalized_serial', 'VGPHASE30003',
+        'unit_cost', 65, 'planned_sale_price', 110, 'currency', 'SAR',
+        'condition', 'open_box', 'status', 'valid', 'confidence', 0.97,
+        'match_method', 'sku', 'validation_errors', '[]'::jsonb,
+        'validation_warnings', '[]'::jsonb
+      )
+    );
+
+    preview_result := public.execute_product_photo_preview(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae300002-0000-4000-8000-000000000002',
+      'ae300003-0000-4000-8000-000000000003',
+      'ae300001-0000-4000-8000-000000000001',
+      jsonb_build_object(
+        'supplier_company_id', 'e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1',
+        'warehouse_id', warehouse_id_value, 'ownership_type', 'purchased',
+        'receipt_date', '2099-07-12', 'currency', 'SAR',
+        'delivery_note_no', 'VIRGIN-DN-PHASE3',
+        'supplier_invoice_no', 'VIRGIN-INV-PHASE3'
+      ),
+      preview_sources, preview_candidates
+    );
+    preview_replay := public.execute_product_photo_preview(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae300002-0000-4000-8000-000000000002',
+      'ae300003-0000-4000-8000-000000000003',
+      'ae300001-0000-4000-8000-000000000001',
+      jsonb_build_object(
+        'supplier_company_id', 'e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1',
+        'warehouse_id', warehouse_id_value, 'ownership_type', 'purchased',
+        'receipt_date', '2099-07-12', 'currency', 'SAR',
+        'delivery_note_no', 'VIRGIN-DN-PHASE3',
+        'supplier_invoice_no', 'VIRGIN-INV-PHASE3'
+      ),
+      preview_sources, preview_candidates
+    );
+
+    commit_candidates := jsonb_build_array(
+      jsonb_build_object(
+        'source_id', 'ae300004-0000-4000-8000-000000000004',
+        'candidate_index', 1, 'raw_product_name', 'Virgin Photo Router',
+        'raw_sku', '', 'raw_model', '', 'raw_serial', 'VG-PHASE3-O001',
+        'raw_barcode', '6280000000001',
+        'product_id', 'e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2',
+        'serial_number', 'VG-PHASE3-0001', 'normalized_serial', 'VGPHASE30001',
+        'unit_cost', 60, 'planned_sale_price', 100, 'currency', 'SAR',
+        'condition', 'new', 'status', 'warning', 'confidence', 0.6,
+        'match_method', 'none', 'validation_errors', '[]'::jsonb,
+        'validation_warnings', jsonb_build_array('Extraction confidence is below 90%.'),
+        'save_as_alias', true
+      ),
+      preview_candidates->1,
+      preview_candidates->2
+    );
+
+    BEGIN
+      PERFORM public.execute_product_photo_commit(
+        '11111111-1111-4111-8111-111111111111',
+        '61616161-6161-4161-8161-616161616161',
+        'ae300008-0000-4000-8000-000000000008',
+        'ae300009-0000-4000-8000-000000000009',
+        'ae300001-0000-4000-8000-000000000001',
+        1, true, commit_candidates - 2
+      );
+    EXCEPTION WHEN check_violation THEN
+      partial_denied := true;
+    END;
+
+    BEGIN
+      PERFORM public.execute_product_photo_commit(
+        '11111111-1111-4111-8111-111111111111',
+        '61616161-6161-4161-8161-616161616161',
+        'ae300010-0000-4000-8000-000000000010',
+        'ae300011-0000-4000-8000-000000000011',
+        'ae300001-0000-4000-8000-000000000001',
+        1, false, commit_candidates
+      );
+    EXCEPTION WHEN check_violation THEN
+      warning_denied := true;
+    END;
+
+    commit_result := public.execute_product_photo_commit(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae300012-0000-4000-8000-000000000012',
+      'ae300013-0000-4000-8000-000000000013',
+      'ae300001-0000-4000-8000-000000000001',
+      1, true, commit_candidates
+    );
+    commit_replay := public.execute_product_photo_commit(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae300012-0000-4000-8000-000000000012',
+      'ae300013-0000-4000-8000-000000000013',
+      'ae300001-0000-4000-8000-000000000001',
+      1, true, commit_candidates
+    );
+    confirmed_result := public.execute_product_receipt_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae300014-0000-4000-8000-000000000014',
+      'ae300015-0000-4000-8000-000000000015',
+      'receipt_confirm',
+      '{"receipt_id":"ae300001-0000-4000-8000-000000000001","expected_version":2}'::jsonb
+    );
+
+    IF preview_result IS DISTINCT FROM preview_replay
+       OR commit_result IS DISTINCT FROM commit_replay
+       OR NOT partial_denied OR NOT warning_denied
+       OR (commit_result->>'group_count')::integer <> 2
+       OR commit_result->'receipt'->>'status' <> 'ready_to_confirm'
+       OR confirmed_result->'receipt'->>'status' <> 'confirmed'
+       OR (confirmed_result->'receipt'->>'total_units')::integer <> 3
+       OR (confirmed_result->'receipt'->>'physical_total_cost')::numeric <> 185
+       OR (confirmed_result->'receipt'->>'expected_sales_value')::numeric <> 310
+       OR (SELECT count(*) FROM public.product_inventory_photo_candidates
+           WHERE receipt_id = 'ae300001-0000-4000-8000-000000000001') <> 3
+       OR (SELECT count(*) FROM public.product_inventory_photo_candidates
+           WHERE receipt_id = 'ae300001-0000-4000-8000-000000000001'
+             AND product_corrected AND serial_corrected
+             AND reviewed_by = '61616161-6161-4161-8161-616161616161') <> 1
+       OR (SELECT count(*) FROM public.product_receipt_candidates
+           WHERE receipt_id = 'ae300001-0000-4000-8000-000000000001'
+             AND source_id IS NOT NULL AND source_reference LIKE 'photo:%') <> 3
+       OR (SELECT count(*) FROM public.product_inventory_units
+           WHERE receipt_id = 'ae300001-0000-4000-8000-000000000001') <> 3
+       OR (SELECT count(*) FROM public.product_receipt_sources source
+           JOIN public.managed_files file ON file.id = source.managed_file_id
+           WHERE source.receipt_id = 'ae300001-0000-4000-8000-000000000001'
+             AND source.source_type = 'photo'
+             AND source.committed_at IS NOT NULL
+             AND source.extraction_provider = 'tesseract-zxing-local'
+             AND source.extraction_version = 'local-product-label-v1'
+             AND file.bucket_id = 'product-inventory-photos'
+             AND file.scan_status = 'clean') <> 2
+       OR NOT EXISTS (
+         SELECT 1 FROM public.product_inventory_aliases
+         WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+           AND product_id = 'e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2'
+           AND normalized_value = 'virginphotorouter'
+           AND source = 'photo_correction' AND is_approved
+           AND approved_by = '61616161-6161-4161-8161-616161616161'
+       )
+       OR (SELECT count(*) FROM public.event_outbox
+           WHERE payload->>'receipt_id' = 'ae300001-0000-4000-8000-000000000001'
+             AND topic IN (
+               'product_inventory.photo_previewed',
+               'product_inventory.photo_committed',
+               'product_inventory.receipt_draft_saved',
+               'product_inventory.receipt_confirmed'
+             )) <> 4 THEN
+      RAISE EXCEPTION 'Photo evidence, replay, review, alias, grouping, or stock confirmation failed.';
+    END IF;
+  END
+  $test$;
+
   -- Browser clients cannot bypass the new command boundaries or invoke their
   -- service-only functions directly.
   DO $test$
@@ -4856,7 +5110,8 @@ const launchAssertions = `
     promoter_denied boolean:=false; eosb_denied boolean:=false; function_denied boolean:=false;
     product_inventory_denied boolean:=false; product_function_denied boolean:=false;
     workbook_rows_denied boolean:=false; workbook_function_denied boolean:=false;
-    product_inventory_rows integer:=0; workbook_rows integer:=0;
+    photo_rows_denied boolean:=false; photo_function_denied boolean:=false;
+    product_inventory_rows integer:=0; workbook_rows integer:=0; photo_rows integer:=0;
   BEGIN
     SET LOCAL ROLE authenticated;
     PERFORM set_config('request.jwt.claim.role','authenticated',true);
@@ -4926,10 +5181,26 @@ const launchAssertions = `
         3,'[]'::jsonb);
     EXCEPTION WHEN insufficient_privilege THEN workbook_function_denied:=true;
     END;
+    BEGIN
+      UPDATE public.product_inventory_photo_candidates
+      SET unit_cost = 1
+      WHERE receipt_id = 'ae300001-0000-4000-8000-000000000001';
+      GET DIAGNOSTICS photo_rows = ROW_COUNT;
+      photo_rows_denied := photo_rows = 0;
+    EXCEPTION WHEN insufficient_privilege THEN photo_rows_denied:=true;
+    END;
+    BEGIN
+      PERFORM public.execute_product_photo_commit(
+        '11111111-1111-4111-8111-111111111111','61616161-6161-4161-8161-616161616161',
+        'ae300016-0000-4000-8000-000000000016','ae300017-0000-4000-8000-000000000017',
+        'ae300001-0000-4000-8000-000000000001',3,true,'[]'::jsonb);
+    EXCEPTION WHEN insufficient_privilege THEN photo_function_denied:=true;
+    END;
     RESET ROLE;
     IF NOT sim_denied OR NOT accounting_denied OR NOT promoter_denied OR NOT eosb_denied
        OR NOT function_denied OR NOT product_inventory_denied OR NOT product_function_denied
-       OR NOT workbook_rows_denied OR NOT workbook_function_denied THEN
+       OR NOT workbook_rows_denied OR NOT workbook_function_denied
+       OR NOT photo_rows_denied OR NOT photo_function_denied THEN
       RAISE EXCEPTION 'One or more atomic command boundaries allowed a direct browser write.';
     END IF;
   END

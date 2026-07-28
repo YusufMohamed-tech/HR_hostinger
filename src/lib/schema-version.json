@@ -1,5 +1,5 @@
 {
-  "id": "schema_v124_product_inventory_workbook_imports",
-  "file": "db/schema_v124_product_inventory_workbook_imports.sql",
-  "checksumSha256": "d4d16aef3968d1e9cacdcd6b07e9314c05860d5a453a2df58f9bdb3ff201efd6"
+  "id": "schema_v125_product_inventory_photo_extraction",
+  "file": "db/schema_v125_product_inventory_photo_extraction.sql",
+  "checksumSha256": "63b57a0cbf4a6cb60e15afcc04d585db703f157ca5832c1569976cee574ea265"
 }

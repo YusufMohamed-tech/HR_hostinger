@@ -82,3 +82,33 @@ export const workbookCommitSchema = z.object({
   command_id: z.string().uuid(),
   rows: z.array(workbookImportRowSchema).min(1).max(10000),
 });
+
+export const photoCandidateCommitSchema = z.object({
+  source_id: z.string().uuid(),
+  candidate_index: z.coerce.number().int().positive().max(200),
+  raw_product_name: z.string().max(300).default(""),
+  raw_sku: z.string().max(160).default(""),
+  raw_model: z.string().max(160).default(""),
+  raw_serial: z.string().max(160).default(""),
+  raw_barcode: z.string().max(160).default(""),
+  product_id: z.string().uuid(),
+  serial_number: z.string().trim().min(1).max(160),
+  normalized_serial: z.string().max(160).default(""),
+  unit_cost: money,
+  planned_sale_price: money,
+  currency,
+  condition: z.enum(["new", "open_box", "refurbished"]).default("new"),
+  status: z.enum(["valid", "warning"]),
+  confidence: z.coerce.number().min(0).max(1),
+  match_method: z.enum(["sku", "barcode", "name", "alias", "fuzzy", "none"]),
+  validation_errors: z.array(z.string().max(500)).max(20).default([]),
+  validation_warnings: z.array(z.string().max(500)).max(20).default([]),
+  save_as_alias: z.boolean().default(false),
+});
+
+export const photoCommitSchema = z.object({
+  expected_version: z.coerce.number().int().positive(),
+  command_id: z.string().uuid(),
+  warnings_accepted: z.boolean().default(false),
+  candidates: z.array(photoCandidateCommitSchema).min(1).max(200),
+});

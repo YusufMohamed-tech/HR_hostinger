@@ -46,6 +46,12 @@ Attach screenshots, request IDs, test-data references, reconciliation outputs, d
 - [ ] Macro-enabled, legacy, oversized, over-row-limit, wrong-signature, infected, formula-like, numeric-serial, duplicate, confirmed-serial, and unmatched-product imports fail with actionable row/file errors.
 - [ ] Workbook commit cannot omit an original row; corrected rows, the clean private original, SHA-256/scan metadata, source row number, and signed evidence access remain linked to the receipt.
 - [ ] Equivalent manual and workbook inputs create the same priced receipt groups, stock units, receipt movements, valuation totals, and finance visibility after confirmation.
+- [ ] Receiver captures/selects multiple product-label photos on mobile; local OCR/barcode extraction finds English/Arabic product labels and serial/IMEI values without sending images to an external AI provider.
+- [ ] Photo review shows confidence, raw evidence, unmatched/duplicate errors, prices, conditions, and a grouping summary; warnings require explicit acceptance and no original candidate can be omitted at commit.
+- [ ] Photo originals remain private and signed; OCR engine/version/text/barcodes/bounding boxes, suggested/final values, corrections, actor, timestamps, and receipt candidates remain linked after confirmation.
+- [ ] Only managers can explicitly approve a corrected raw label as an alias; an approved alias improves a later matching attempt without replacing existing catalog aliases.
+- [ ] Representative Virgin sample photos are scored for exact product and serial accuracy, low-confidence review, glare/rotation/blur, multiple serials, barcode-only labels, and false-positive behavior; expected-versus-actual evidence is attached.
+- [ ] Equivalent manual, workbook, and photo inputs create the same priced groups, stock units, movements, valuations, and Finance visibility after confirmation.
 - [ ] A confirmed serial cannot be received again; cancelled/confirmed receipts cannot be edited; stale receipt versions are rejected.
 - [ ] Finance roles automatically see confirmed unit count, cost, expected sale value, margin, ownership type, and accounting status without inventory mutation access.
 - [ ] Recruitment transition/offer/interview/hire and public application submission are tenant-safe, state-safe, and replay-safe.

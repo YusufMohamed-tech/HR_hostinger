@@ -149,6 +149,7 @@
     { "id": "schema_v121_accounting_reporting_delivery", "file": "db/schema_v121_accounting_reporting_delivery.sql" },
     { "id": "schema_v122_product_inventory_foundation", "file": "db/schema_v122_product_inventory_foundation.sql" },
     { "id": "schema_v123_atomic_product_receiving", "file": "db/schema_v123_atomic_product_receiving.sql" },
-    { "id": "schema_v124_product_inventory_workbook_imports", "file": "db/schema_v124_product_inventory_workbook_imports.sql" }
+    { "id": "schema_v124_product_inventory_workbook_imports", "file": "db/schema_v124_product_inventory_workbook_imports.sql" },
+    { "id": "schema_v125_product_inventory_photo_extraction", "file": "db/schema_v125_product_inventory_photo_extraction.sql" }
   ]
 }

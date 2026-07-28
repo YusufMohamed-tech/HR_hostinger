@@ -2,7 +2,7 @@
 
 Phase 2 adds secure Excel/CSV receiving to the Phase 1 serialized inventory workflow. A receiver can download a stable template, upload a supplier workbook, review and correct every source row, and convert the complete file into priced receipt groups. Final stock creation still uses the Phase 1 confirmation command, so manual and workbook receipts produce the same receipt, unit, movement, valuation, and finance records.
 
-Photo extraction is intentionally Phase 3.
+Photo extraction is delivered in Phase 3 and documented in `PRODUCT_INVENTORY_PHASE_3.md`.
 
 ## Receiver workflow
 
