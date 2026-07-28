@@ -16,6 +16,11 @@ import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
 import { getDeductionRuleGroups, type DeductionRuleGroup } from "@/lib/services/deduction-rule-groups";
 import { bankOptions, educationLevelOptions, saudiCityOptions } from "@/lib/hr-options";
 import { inferLocationCity, locationMatchesCompany } from "@/lib/location-classification";
+import {
+  EMPLOYEE_ACCOUNT_PASSWORD_CONFIRMATION_MESSAGE,
+  EMPLOYEE_ACCOUNT_PASSWORD_MESSAGE,
+  isStrongEmployeeAccountPassword,
+} from "@/lib/employee-account-password";
 
 interface Props {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -68,6 +73,8 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<EmployeeAccountRole>("employee");
+  const [accountPassword, setAccountPassword] = useState("");
+  const [accountPasswordConfirmation, setAccountPasswordConfirmation] = useState("");
   const [canMultiCheckin, setCanMultiCheckin] = useState(false);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
   const [primaryLocationId, setPrimaryLocationId] = useState("");
@@ -164,6 +171,8 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
       setIsDepartmentManager(Boolean(managedDepartment));
       setCreateLoginAccount(false);
       setAccountRole(Boolean(managedDepartment) ? "training_manager" : "employee");
+      setAccountPassword("");
+      setAccountPasswordConfirmation("");
       setCanMultiCheckin(Boolean(employee.can_multi_checkin));
       const employeeLocationRows = Array.isArray(employee.employee_locations) ? employee.employee_locations : [];
       const locationIds = employeeLocationRows
@@ -255,6 +264,14 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
         setError("البريد الإلكتروني مطلوب لإنشاء حساب الدخول.");
         return;
       }
+      if (!isStrongEmployeeAccountPassword(accountPassword)) {
+        setError(EMPLOYEE_ACCOUNT_PASSWORD_MESSAGE);
+        return;
+      }
+      if (accountPassword !== accountPasswordConfirmation) {
+        setError(EMPLOYEE_ACCOUNT_PASSWORD_CONFIRMATION_MESSAGE);
+        return;
+      }
     }
     setSubmitting(true);
     setError("");
@@ -335,6 +352,7 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
         email: form.email.trim(),
         full_name: form.full_name,
         role: accountRole,
+        password: accountPassword,
       });
 
       if (accountError) {
@@ -675,7 +693,32 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                       أدوار المالية تمنح المستخدم صلاحيات داخل وحدة المالية والمحاسبة حسب مستوى الدور.
                     </p>
                   </div>
-                  <p className="text-xs text-gray-500">سيصل للموظف رابط دعوة آمن لاختيار كلمة المرور بنفسه.</p>
+                  <div className={twoColumnGridClass}>
+                    <div className="space-y-2">
+                      <Label>كلمة المرور المؤقتة</Label>
+                      <Input
+                        type="password"
+                        dir="ltr"
+                        autoComplete="new-password"
+                        value={accountPassword}
+                        onChange={(event) => setAccountPassword(event.target.value)}
+                        placeholder="12+ characters"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>تأكيد كلمة المرور</Label>
+                      <Input
+                        type="password"
+                        dir="ltr"
+                        autoComplete="new-password"
+                        value={accountPasswordConfirmation}
+                        onChange={(event) => setAccountPasswordConfirmation(event.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    يجب أن تحتوي على 12 حرفًا على الأقل وحرف كبير وصغير ورقم. شاركها مع الموظف بطريقة آمنة.
+                  </p>
                 </div>
               )}
             </div>

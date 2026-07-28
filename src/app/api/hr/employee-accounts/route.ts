@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireTenantContext } from "@/lib/server/tenant-context";
 import { EmployeeLifecycleError, inviteAndLinkEmployeeIdentity } from "@/lib/server/employee-lifecycle";
+import { isStrongEmployeeAccountPassword } from "@/lib/employee-account-password";
 import type { OrgRole } from "@/types/database";
 
+const passwordSchema = z.string().refine(isStrongEmployeeAccountPassword);
 const accountSchema = z.object({
   command_id: z.string().uuid(),
   employee_id: z.string().uuid(),
   email: z.string().trim().email().max(255),
   full_name: z.string().trim().min(2).max(160).optional(),
   role: z.enum(["employee", "hr_admin", "hr_recruitment", "training_manager", "onground_agent_manager", "promoter", "finance_manager", "accountant", "finance_viewer"]),
+  password: passwordSchema,
 });
 
 export async function POST(request: NextRequest) {
@@ -18,6 +21,12 @@ export async function POST(request: NextRequest) {
 
   const parsed = accountSchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) {
+    if (parsed.error.issues.some((issue) => issue.path[0] === "password")) {
+      return NextResponse.json(
+        { message: "Password must contain 12+ characters, uppercase and lowercase letters, and a number." },
+        { status: 400 }
+      );
+    }
     return NextResponse.json({ message: parsed.error.issues[0]?.message || "Invalid employee account request." }, { status: 400 });
   }
 
@@ -39,6 +48,7 @@ export async function POST(request: NextRequest) {
       email: parsed.data.email,
       fullName: parsed.data.full_name || employeeResult.data.full_name,
       role: parsed.data.role as OrgRole,
+      password: parsed.data.password,
     });
     return NextResponse.json({
       user: {
@@ -48,7 +58,11 @@ export async function POST(request: NextRequest) {
         role: parsed.data.role,
       },
       employee: result.employee,
-      delivery: result.invited ? "invitation_sent" : "existing_account_linked",
+      delivery: result.createdWithPassword
+        ? "password_account_created"
+        : result.invited
+          ? "invitation_sent"
+          : "existing_account_linked",
       requestId: auth.requestId,
     });
   } catch (error) {

@@ -24,6 +24,11 @@ import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
 import { getDeductionRuleGroups, type DeductionRuleGroup } from "@/lib/services/deduction-rule-groups";
 import { bankOptions, educationLevelOptions, saudiCityOptions } from "@/lib/hr-options";
 import { inferLocationCity, locationMatchesCompany } from "@/lib/location-classification";
+import {
+  EMPLOYEE_ACCOUNT_PASSWORD_CONFIRMATION_MESSAGE,
+  EMPLOYEE_ACCOUNT_PASSWORD_MESSAGE,
+  isStrongEmployeeAccountPassword,
+} from "@/lib/employee-account-password";
 
 interface Props {
   onSuccess: () => void;
@@ -75,6 +80,8 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<EmployeeAccountRole>("employee");
+  const [accountPassword, setAccountPassword] = useState("");
+  const [accountPasswordConfirmation, setAccountPasswordConfirmation] = useState("");
   const [officialFile, setOfficialFile] = useState<File | null>(null);
   const [contractFile, setContractFile] = useState<File | null>(null);
   const [personnelForm, setPersonnelForm] = useState({
@@ -227,6 +234,14 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     if (createLoginAccount) {
       if (!parsed.data.email) {
         setError("البريد الإلكتروني مطلوب لإنشاء حساب الدخول.");
+        return;
+      }
+      if (!isStrongEmployeeAccountPassword(accountPassword)) {
+        setError(EMPLOYEE_ACCOUNT_PASSWORD_MESSAGE);
+        return;
+      }
+      if (accountPassword !== accountPasswordConfirmation) {
+        setError(EMPLOYEE_ACCOUNT_PASSWORD_CONFIRMATION_MESSAGE);
         return;
       }
     }
@@ -396,6 +411,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
         email: parsed.data.email,
         full_name: parsed.data.full_name,
         role: accountRole,
+        password: accountPassword,
       });
 
       if (accountError) {
@@ -464,6 +480,8 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     setShiftForm({ shift_id: "", start_date: "", end_date: "" });
     setCreateLoginAccount(false);
     setAccountRole("employee");
+    setAccountPassword("");
+    setAccountPasswordConfirmation("");
     setOfficialFile(null);
     setContractFile(null);
     setPersonnelForm({
@@ -819,7 +837,32 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                     أدوار المالية تمنح المستخدم صلاحيات داخل وحدة المالية والمحاسبة حسب مستوى الدور.
                   </p>
                 </div>
-                <p className="text-xs text-gray-500">سيصل للموظف رابط دعوة آمن لاختيار كلمة المرور بنفسه.</p>
+                <div className={twoColumnGridClass}>
+                  <div className="space-y-2">
+                    <Label>كلمة المرور المؤقتة</Label>
+                    <Input
+                      type="password"
+                      dir="ltr"
+                      autoComplete="new-password"
+                      value={accountPassword}
+                      onChange={(event) => setAccountPassword(event.target.value)}
+                      placeholder="12+ characters"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>تأكيد كلمة المرور</Label>
+                    <Input
+                      type="password"
+                      dir="ltr"
+                      autoComplete="new-password"
+                      value={accountPasswordConfirmation}
+                      onChange={(event) => setAccountPasswordConfirmation(event.target.value)}
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500">
+                  يجب أن تحتوي على 12 حرفًا على الأقل وحرف كبير وصغير ورقم. شاركها مع الموظف بطريقة آمنة.
+                </p>
               </div>
             )}
           </div>
