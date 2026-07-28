@@ -160,6 +160,7 @@ export async function inviteAndLinkEmployeeIdentity(
     email: string;
     fullName: string;
     role: OrgRole;
+    password?: string;
   }
 ) {
   const employeeResult = await admin
@@ -177,6 +178,7 @@ export async function inviteAndLinkEmployeeIdentity(
   const email = values.email.trim().toLowerCase();
   let authUser = await findAuthUserByEmail(admin, email);
   let invited = false;
+  let createdWithPassword = false;
   let cleanupJobId = "";
 
   if (authUser) {
@@ -192,21 +194,32 @@ export async function inviteAndLinkEmployeeIdentity(
       throw new EmployeeLifecycleError("Employee already has a different login account.", 409);
     }
   } else {
-    const invite = await admin.auth.admin.inviteUserByEmail(email, {
-      data: { full_name: values.fullName, identity_command_id: values.commandId },
-    });
-    if (invite.error || !invite.data.user) {
-      throw new EmployeeLifecycleError(invite.error?.message || "Unable to invite employee.", 500);
+    const identity = values.password
+      ? await admin.auth.admin.createUser({
+          email,
+          password: values.password,
+          email_confirm: true,
+          user_metadata: { full_name: values.fullName, identity_command_id: values.commandId },
+        })
+      : await admin.auth.admin.inviteUserByEmail(email, {
+          data: { full_name: values.fullName, identity_command_id: values.commandId },
+        });
+    if (identity.error || !identity.data.user) {
+      throw new EmployeeLifecycleError(
+        identity.error?.message || (values.password ? "Unable to create employee account." : "Unable to invite employee."),
+        500
+      );
     }
-    authUser = invite.data.user;
-    invited = true;
+    authUser = identity.data.user;
+    invited = !values.password;
+    createdWithPassword = Boolean(values.password);
     try {
       cleanupJobId = await armIdentityDeletion(admin, {
         orgId: values.orgId,
         userId: authUser.id,
         sourceType: "provisioning_safety",
         sourceId: values.commandId,
-        reason: "Delete invited identity if employee linking never completes.",
+        reason: "Delete provisioned identity if employee linking never completes.",
         actorUserId: values.actorUserId,
         requestId: values.commandId,
       });
@@ -233,10 +246,31 @@ export async function inviteAndLinkEmployeeIdentity(
   if (link.error) {
     throw lifecycleError(link.error, "Unable to link employee login account.");
   }
+  const linkedEmployee = firstRow(link.data, "Identity linking returned no employee.");
 
   if (cleanupJobId) {
     await cancelIdentityDeletion(admin, cleanupJobId, "Employee identity linked successfully.");
   }
 
-  return { employee: firstRow(link.data, "Identity linking returned no employee."), user: authUser, invited };
+  const lifecycleStatus = String(linkedEmployee.lifecycle_status || "").toLowerCase();
+  const employmentStatus = String(linkedEmployee.status || "").toLowerCase();
+  if (lifecycleStatus === "active" || (!lifecycleStatus && employmentStatus === "active")) {
+    const activation = await admin
+      .from("profiles")
+      .update({ account_status: "Active" })
+      .eq("org_id", values.orgId)
+      .eq("user_id", authUser.id)
+      .select("user_id")
+      .single();
+    if (activation.error) {
+      throw lifecycleError(activation.error, "Unable to activate employee login account.");
+    }
+  }
+
+  return {
+    employee: linkedEmployee,
+    user: authUser,
+    invited,
+    createdWithPassword,
+  };
 }
