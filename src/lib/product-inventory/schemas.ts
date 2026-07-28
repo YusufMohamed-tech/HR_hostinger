@@ -206,3 +206,11 @@ export const agentProductCollectionSchema = z.object({
   collection_date: z.iso.date(),
   notes: z.string().trim().max(1000).default(""),
 });
+
+export const productInventoryLossSchema = z.object({
+  loss_id: uuid,
+  command_id: uuid,
+  unit_id: uuid,
+  loss_type: z.enum(["damage", "loss"]),
+  reason: z.string().trim().min(5).max(1000),
+});

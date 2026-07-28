@@ -1092,6 +1092,8 @@ Use the actual next numbers at implementation time.
 
 **Exit:** Finance can reconcile stock units and values to journal entries without re-entering operational data.
 
+**Implemented (2026-07-29):** `schema_v127_product_inventory_accounting` and the Phase 5 Finance/worker/API changes implement this exit contract. See `virgin-product-inventory-phase-5-accounting.md` for the delivered mappings, controls, reconciliation behavior, retry flow, the deliberate supplier-input-VAT boundary, and the fail-closed handling of unallocated consignment collections.
+
 ### Phase 6 — Hardening, migration verification, and UAT
 
 - Tenant, role, upload, idempotency, row-lock, and performance tests.

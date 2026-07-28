@@ -92,3 +92,30 @@ export async function executeProductCommerceCommand(
   }
   return data as Record<string, unknown>;
 }
+
+export async function executeProductInventoryLossCommand(
+  admin: ReturnType<typeof createAdminClient>,
+  values: {
+    orgId: string;
+    actorUserId: string;
+    requestId: string;
+    commandId: string;
+    payload: Record<string, unknown>;
+  }
+) {
+  const { data, error } = await productInventoryDb(admin).rpc(
+    "execute_product_inventory_loss_command",
+    {
+      p_org_id: values.orgId,
+      p_actor_user_id: values.actorUserId,
+      p_request_id: values.requestId,
+      p_command_id: values.commandId,
+      p_payload: values.payload,
+    }
+  );
+  if (error) throw Object.assign(new Error(error.message), { code: error.code });
+  if (!data || typeof data !== "object") {
+    throw new Error("The product inventory loss command returned no result.");
+  }
+  return data as Record<string, unknown>;
+}

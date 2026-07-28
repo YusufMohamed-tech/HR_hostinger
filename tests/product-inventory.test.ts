@@ -11,8 +11,16 @@ import {
   productHandoverSchema,
   productPriceOverrideRequestSchema,
   productPriceOverrideReviewSchema,
+  productInventoryLossSchema,
   manualReceiptSchema,
 } from "../src/lib/product-inventory/schemas";
+import {
+  buildProductCollectionAccountingLines,
+  buildProductLossAccountingLines,
+  buildProductReceiptAccountingLines,
+  buildProductSaleAccountingLines,
+  productAccountingBalance,
+} from "../src/lib/product-inventory/accounting";
 import {
   buildInventoryImportCsv,
   parseCsvRows,
@@ -334,4 +342,83 @@ test("field agents receive only the Phase 4 self-service inventory routes", () =
   assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/stock"), false);
   assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/agent-collections"), false);
   assert.equal(canAccessPath("Onground_Agent_Manager", "/sales/inventory/assignments"), true);
+});
+
+test("Phase 5 receipt posting balances inventory against AP or GRNI by group", () => {
+  const posting = buildProductReceiptAccountingLines({
+    reference: "PRI-2026-000001",
+    inventoryGroups: [
+      { accountId: "inventory-router", cost: 120 },
+      { accountId: "inventory-phone", cost: 80 },
+    ],
+    settlementAccountId: "grni",
+    settlementDescription: "GRNI accrual PRI-2026-000001",
+  });
+  assert.equal(posting.totalCost, 200);
+  assert.deepEqual(productAccountingBalance(posting.lines), {
+    debit: 200,
+    credit: 200,
+    balanced: true,
+  });
+  assert.equal(posting.lines.find((line) => line.account_id === "grni")?.credit, 200);
+});
+
+test("Phase 5 sale posting balances agent receivable, revenue, VAT, COGS, and commission", () => {
+  const posting = buildProductSaleAccountingLines({
+    reference: "PS-2026-000001",
+    receivableAccountId: "agent-ar",
+    vatPayableAccountId: "vat-output",
+    total: 115,
+    vat: 15,
+    saleLines: [{
+      netAmount: 100,
+      cost: 60,
+      commission: 5,
+      revenueAccountId: "revenue",
+      cogsAccountId: "cogs",
+      inventoryAccountId: "inventory",
+    }],
+    accrueCommission: true,
+    commissionExpenseAccountId: "commission-expense",
+    commissionPayableAccountId: "commission-payable",
+  });
+  assert.equal(posting.cost, 60);
+  assert.equal(posting.revenue, 100);
+  assert.equal(posting.commission, 5);
+  assert.deepEqual(productAccountingBalance(posting.lines), {
+    debit: 180,
+    credit: 180,
+    balanced: true,
+  });
+});
+
+test("Phase 5 collection and loss postings are balanced and loss input is explicit", () => {
+  const collection = buildProductCollectionAccountingLines({
+    reference: "PC-2026-000001",
+    receiptAccountId: "cash",
+    receivableAccountId: "agent-ar",
+    amount: 115,
+  });
+  const loss = buildProductLossAccountingLines({
+    reference: "loss-1",
+    shrinkageAccountId: "shrinkage",
+    inventoryAccountId: "inventory",
+    cost: 60,
+  });
+  assert.equal(productAccountingBalance(collection).balanced, true);
+  assert.equal(productAccountingBalance(loss).balanced, true);
+  assert.equal(productInventoryLossSchema.safeParse({
+    loss_id: "10000000-0000-4000-8000-000000000401",
+    command_id: "10000000-0000-4000-8000-000000000402",
+    unit_id: "10000000-0000-4000-8000-000000000403",
+    loss_type: "damage",
+    reason: "Damaged during warehouse handling",
+  }).success, true);
+  assert.equal(productInventoryLossSchema.safeParse({
+    loss_id: "10000000-0000-4000-8000-000000000401",
+    command_id: "10000000-0000-4000-8000-000000000402",
+    unit_id: "10000000-0000-4000-8000-000000000403",
+    loss_type: "damage",
+    reason: "bad",
+  }).success, false);
 });

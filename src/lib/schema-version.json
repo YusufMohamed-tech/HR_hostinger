@@ -1,5 +1,5 @@
 {
-  "id": "schema_v126_product_inventory_agent_commerce",
-  "file": "db/schema_v126_product_inventory_agent_commerce.sql",
-  "checksumSha256": "02870d7086d3d1777c2efe3e5ea4f383d3f52aed002400934270ba422ed12be7"
+  "id": "schema_v127_product_inventory_accounting",
+  "file": "db/schema_v127_product_inventory_accounting.sql",
+  "checksumSha256": "4fce146a486ec6a31d9baaa1e206fd3209d35e4639148acb5026bfa8614f6ccf"
 }

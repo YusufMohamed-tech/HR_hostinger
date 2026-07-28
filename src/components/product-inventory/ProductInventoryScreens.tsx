@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Boxes, Camera, CheckCircle2, ClipboardList, FileImage, FileSpreadsheet, PackagePlus, Plus, Send, Trash2, WalletCards } from "lucide-react";
+import { AlertTriangle, Boxes, Camera, CheckCircle2, ClipboardList, FileImage, FileSpreadsheet, PackagePlus, Plus, RefreshCcw, Save, Send, Settings, Trash2, WalletCards } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,18 +17,25 @@ import {
   cancelProductReceipt,
   confirmProductReceipt,
   getFinanceProductInventory,
+  getProductInventoryAccountingSettings,
   getProductInventorySetup,
   getProductReceipt,
   getProductReceipts,
   getProductStock,
   newInventoryCommandId,
   openProductInventorySource,
+  retryProductInventoryAccounting,
   saveManualReceipt,
+  settleProductAgentCommission,
+  updateProductInventoryAccountingSettings,
 } from "@/lib/services/product-inventory";
 import type {
   AgentProductCollection,
   AgentProductSale,
   ProductInventoryCompany,
+  ProductInventoryAccountingPosting,
+  ProductInventoryAccountingSettings,
+  ProductAgentCommission,
   ProductInventoryProduct,
   ProductInventoryStockRow,
   ProductInventoryWarehouse,
@@ -47,6 +54,7 @@ const statusLabels: Record<string, string> = {
   cancelled: "ملغي",
   failed: "فشل",
   pending: "بانتظار المعالجة المحاسبية",
+  pending_approval: "بانتظار اعتماد القيد",
   not_required: "عهدة / لا يحتاج قيد",
   posted: "مرحّل",
   in_stock: "في المخزن",
@@ -58,6 +66,8 @@ const statusLabels: Record<string, string> = {
   active: "نشط",
   voided: "ملغي",
   reversed: "معكوس",
+  accrued: "مستحقة",
+  settled: "مسددة",
 };
 
 function StatusBadge({ value }: { value: string }) {
@@ -385,33 +395,199 @@ export function FinanceProductInventoryScreen() {
   const [inventory, setInventory] = useState<ProductInventoryStockRow[]>([]);
   const [sales, setSales] = useState<AgentProductSale[]>([]);
   const [collections, setCollections] = useState<AgentProductCollection[]>([]);
-  const [totals, setTotals] = useState({ units: 0, cost: 0, expectedSales: 0, margin: 0, salesRevenue: 0, salesCost: 0, grossProfit: 0, vat: 0, collected: 0, outstanding: 0 });
+  const [losses, setLosses] = useState<Array<Record<string, unknown>>>([]);
+  const [commissions, setCommissions] = useState<ProductAgentCommission[]>([]);
+  const [exceptions, setExceptions] = useState<ProductInventoryAccountingPosting[]>([]);
+  const [totals, setTotals] = useState({
+    units: 0,
+    cost: 0,
+    expectedSales: 0,
+    margin: 0,
+    salesRevenue: 0,
+    salesCost: 0,
+    grossProfit: 0,
+    vat: 0,
+    collected: 0,
+    outstanding: 0,
+    consignmentUnits: 0,
+    consignmentMemoCost: 0,
+    companyOwnedSalesRevenue: 0,
+    consignmentSalesRevenue: 0,
+    commission: 0,
+    commissionAccrued: 0,
+    commissionSettled: 0,
+    failedPostings: 0,
+    pendingPostings: 0,
+  });
+  const [reconciliation, setReconciliation] = useState({
+    stockUnits: 0,
+    stockCost: 0,
+    inventoryGlBalance: 0,
+    inventoryDifference: 0,
+    operationalAgentReceivable: 0,
+    agentReceivableGlBalance: 0,
+    agentReceivableDifference: 0,
+    consignmentUnits: 0,
+    consignmentMemoCost: 0,
+    consignmentSalesRevenue: 0,
+    collectionAllocationBlocked: false,
+    balanced: false,
+  });
+  const [settingsData, setSettingsData] = useState<ProductInventoryAccountingSettings | null>(null);
+  const [settingsForm, setSettingsForm] = useState<Partial<ProductInventoryAccountingSettings>>({});
+  const [accounts, setAccounts] = useState<Array<{ id: string; code: string; name_ar: string; type: string }>>([]);
+  const [canManageSettings, setCanManageSettings] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState("");
   const [message, setMessage] = useState("");
-  useEffect(() => {
-    void getFinanceProductInventory().then((result) => {
-      if (result.data) {
-        setReceipts(result.data.receipts);
-        setInventory(result.data.inventory);
-        setSales(result.data.sales);
-        setCollections(result.data.collections);
-        setTotals(result.data.totals);
-      }
-      setMessage(result.error || "");
-      setLoading(false);
-    });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [inventoryResult, settingsResult] = await Promise.all([
+      getFinanceProductInventory(),
+      getProductInventoryAccountingSettings(),
+    ]);
+    if (inventoryResult.data) {
+      setReceipts(inventoryResult.data.receipts);
+      setInventory(inventoryResult.data.inventory);
+      setSales(inventoryResult.data.sales);
+      setCollections(inventoryResult.data.collections);
+      setLosses(inventoryResult.data.losses);
+      setCommissions(inventoryResult.data.commissions);
+      setExceptions(inventoryResult.data.postingExceptions);
+      setTotals(inventoryResult.data.totals);
+      setReconciliation(inventoryResult.data.reconciliation);
+    }
+    if (settingsResult.data) {
+      setSettingsData(settingsResult.data.settings);
+      setSettingsForm(settingsResult.data.settings);
+      setAccounts(settingsResult.data.accounts);
+      setCanManageSettings(settingsResult.data.can_manage);
+    }
+    setMessage(inventoryResult.error || settingsResult.error || "");
+    setLoading(false);
   }, []);
+  useEffect(() => { void load(); }, [load]);
+
+  const saveSettings = async () => {
+    if (!settingsData) return;
+    setWorking("settings");
+    const result = await updateProductInventoryAccountingSettings({
+      ...settingsForm,
+      expected_version: settingsData.version,
+    });
+    setWorking("");
+    if (result.error) return setMessage(result.error);
+    setMessage("تم حفظ إعدادات ترحيل مخزون المنتجات.");
+    await load();
+  };
+
+  const retryPosting = async (posting: ProductInventoryAccountingPosting) => {
+    setWorking(`${posting.source_type}:${posting.source_id}`);
+    const result = await retryProductInventoryAccounting(posting.source_type, posting.source_id);
+    setWorking("");
+    if (result.error) return setMessage(result.error);
+    setMessage("تمت إعادة محاولة الترحيل بنجاح.");
+    await load();
+  };
+
+  const settleCommission = async (commission: ProductAgentCommission) => {
+    const bankTransfer = window.confirm("اضغط «موافق» للسداد البنكي، أو «إلغاء» للسداد النقدي.");
+    const reference = window.prompt("مرجع السداد (اختياري):") || "";
+    setWorking(`commission:${commission.id}`);
+    const result = await settleProductAgentCommission(commission.id, {
+      command_id: newInventoryCommandId(),
+      payment_method: bankTransfer ? "bank_transfer" : "cash",
+      payment_date: new Date().toISOString().slice(0, 10),
+      payment_reference: reference,
+      finance_notes: "سداد عمولة بيع منتج مسلسلة من شاشة مطابقة المخزون.",
+    });
+    setWorking("");
+    if (result.error) return setMessage(result.error);
+    setMessage("تم سداد العمولة وإنشاء قيد الدفع المرتبط.");
+    await load();
+  };
+
   if (loading) return <PageSkeleton />;
+  const accountFields: Array<[keyof ProductInventoryAccountingSettings, string, string]> = [
+    ["default_inventory_asset_id", "حساب أصل المخزون", "asset"],
+    ["default_inventory_grni_id", "بضاعة مستلمة غير مفوترة (GRNI)", "liability"],
+    ["default_inventory_cogs_id", "تكلفة مبيعات المنتجات", "expense"],
+    ["default_inventory_shrinkage_id", "فاقد وتلف المخزون", "expense"],
+    ["default_agent_receivable_id", "ذمم مندوبي المنتجات", "asset"],
+    ["default_accounts_payable_id", "ذمم الموردين", "liability"],
+    ["default_sales_revenue_id", "إيرادات المنتجات", "revenue"],
+    ["default_vat_payable_id", "ضريبة المخرجات", "liability"],
+    ["default_cash_account_id", "النقدية", "asset"],
+    ["default_bank_account_id", "البنك", "asset"],
+    ["default_commission_expense_id", "مصروف عمولة المندوب", "expense"],
+    ["default_commission_payable_id", "عمولة المندوب المستحقة", "liability"],
+  ];
+  const activeInventoryStatuses = new Set([
+    "in_stock",
+    "reserved",
+    "in_transit",
+    "with_agent",
+    "returned",
+    "quarantine",
+    "damaged",
+  ]);
   return (
     <div className="space-y-6" dir="rtl">
       <MessageDialog open={Boolean(message)} onOpenChange={(open) => !open && setMessage("")} description={message} />
-      <div><h1 className="text-3xl font-bold text-gray-950">مخزون المنتجات — المالية</h1><p className="mt-2 text-gray-500">التكلفة والمبيعات الفعلية والتحصيلات تصل تلقائياً من حركة المخزون. القيود العامة والترحيل التلقائي تُفعّل في المرحلة الخامسة.</p></div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><h1 className="text-3xl font-bold text-gray-950">مخزون المنتجات — المالية</h1><p className="mt-2 text-gray-500">قيمة المخزون والبيع والتحصيل والفاقد مترابطة تلقائياً مع القيود العامة، مع مطابقة وتشخيص قابل لإعادة المحاولة.</p></div>
+        <Button variant="outline" onClick={() => void load()}><RefreshCcw className="ml-2 h-4 w-4" />تحديث ومطابقة</Button>
+      </div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard title="وحدات المخزون والعهد" value={String(totals.units)} icon={Boxes} /><MetricCard title="تكلفة المخزون الحالية" value={money(totals.cost)} icon={WalletCards} /><MetricCard title="مبيعات المنتجات الفعلية" value={money(totals.salesRevenue)} icon={ClipboardList} /><MetricCard title="مجمل ربح المبيعات" value={money(totals.grossProfit)} icon={CheckCircle2} /></div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard title="قيمة البيع المخططة للمخزون" value={money(totals.expectedSales)} icon={ClipboardList} /><MetricCard title="تكلفة الوحدات المباعة" value={money(totals.salesCost)} icon={WalletCards} /><MetricCard title="المحصل من المندوبين" value={money(totals.collected)} icon={CheckCircle2} /><MetricCard title="المتبقي على المندوبين" value={money(totals.outstanding)} icon={WalletCards} /></div>
-      <Card className="border-none shadow-sm"><CardHeader><CardTitle>مبيعات المنتجات من المندوبين</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>البيع</TableHead><TableHead>المندوب</TableHead><TableHead>المنتج / المسلسل</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع</TableHead><TableHead>الربح</TableHead><TableHead>المعالجة</TableHead></TableRow></TableHeader><TableBody>{sales.map((sale) => <TableRow key={sale.id}><TableCell><span className="font-mono">{sale.sale_no}</span><br /><StatusBadge value={sale.status} /></TableCell><TableCell>{sale.agent?.full_name || "-"}</TableCell><TableCell>{sale.lines?.[0]?.product_name_snapshot || "-"}<p className="font-mono text-xs text-gray-400">{sale.lines?.[0]?.serial_snapshot}</p></TableCell><TableCell>{money(sale.lines?.[0]?.unit_cost_snapshot || 0)}</TableCell><TableCell>{money(sale.total_amount)}</TableCell><TableCell>{money(sale.lines?.[0]?.gross_profit || 0)}</TableCell><TableCell><StatusBadge value={sale.accounting_status} /></TableCell></TableRow>)}</TableBody></Table>{sales.length === 0 && <p className="p-8 text-center text-sm text-gray-500">لا توجد مبيعات منتجات حتى الآن.</p>}</CardContent></Card>
-      <Card className="border-none shadow-sm"><CardHeader><CardTitle>المخزون الحالي والعهد</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>المسلسل</TableHead><TableHead>الموقع / المندوب</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع المخطط</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader><TableBody>{inventory.filter((unit) => ["in_stock", "in_transit", "with_agent", "returned"].includes(unit.status)).slice(0, 250).map((unit) => <TableRow key={unit.id}><TableCell>{unit.product?.name || "-"}</TableCell><TableCell className="font-mono">{unit.raw_serial_number}</TableCell><TableCell>{unit.agent?.full_name || unit.warehouse?.name_ar || "-"}</TableCell><TableCell>{money(unit.unit_cost_snapshot, unit.currency)}</TableCell><TableCell>{money(unit.planned_sale_price_snapshot, unit.currency)}</TableCell><TableCell><StatusBadge value={unit.status} /></TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
-      <Card className="border-none shadow-sm"><CardHeader><CardTitle>تحصيلات المندوبين</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>التحصيل</TableHead><TableHead>المندوب</TableHead><TableHead>التاريخ</TableHead><TableHead>المبلغ</TableHead><TableHead>الطريقة</TableHead><TableHead>المعالجة</TableHead></TableRow></TableHeader><TableBody>{collections.map((collection) => <TableRow key={collection.id}><TableCell className="font-mono">{collection.collection_no}</TableCell><TableCell>{collection.agent?.full_name || "-"}</TableCell><TableCell>{collection.collection_date}</TableCell><TableCell>{money(collection.amount)}</TableCell><TableCell>{collection.payment_method}</TableCell><TableCell><StatusBadge value={collection.accounting_status} /></TableCell></TableRow>)}</TableBody></Table>{collections.length === 0 && <p className="p-8 text-center text-sm text-gray-500">لا توجد تحصيلات منتجات بعد.</p>}</CardContent></Card>
-      <Card className="border-none shadow-sm"><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>السند</TableHead><TableHead>المورد</TableHead><TableHead>الوحدات</TableHead><TableHead>التكلفة</TableHead><TableHead>قيمة البيع</TableHead><TableHead>الهامش</TableHead><TableHead>المعالجة</TableHead></TableRow></TableHeader><TableBody>{receipts.map((receipt) => <TableRow key={receipt.id}><TableCell className="font-mono">{receipt.receipt_no}</TableCell><TableCell>{receipt.company?.name || "-"}</TableCell><TableCell>{receipt.total_units}</TableCell><TableCell>{money(receipt.physical_total_cost, receipt.currency)}</TableCell><TableCell>{money(receipt.expected_sales_value, receipt.currency)}</TableCell><TableCell>{money(receipt.expected_margin, receipt.currency)}</TableCell><TableCell><StatusBadge value={receipt.accounting_status} /></TableCell></TableRow>)}</TableBody></Table>{receipts.length === 0 && <p className="p-8 text-center text-sm text-gray-500">لا توجد استلامات مؤكدة حتى الآن.</p>}</CardContent></Card>
+
+      <Card className={reconciliation.balanced ? "border-emerald-200 shadow-sm" : "border-amber-200 shadow-sm"}>
+        <CardHeader><CardTitle className="flex items-center gap-2">{reconciliation.balanced ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : <AlertTriangle className="h-5 w-5 text-amber-600" />}مطابقة التشغيل مع دفتر الأستاذ</CardTitle></CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-xl bg-gray-50 p-4"><p className="text-sm text-gray-500">المخزون المملوك: تشغيل / دفتر</p><p className="mt-2 font-bold">{money(reconciliation.stockCost)} / {money(reconciliation.inventoryGlBalance)}</p><p className={Math.abs(reconciliation.inventoryDifference) < 0.01 ? "mt-1 text-sm text-emerald-700" : "mt-1 text-sm text-amber-700"}>الفرق {money(reconciliation.inventoryDifference)}</p></div>
+          <div className="rounded-xl bg-gray-50 p-4"><p className="text-sm text-gray-500">ذمم المندوبين: تشغيل / دفتر</p><p className="mt-2 font-bold">{money(reconciliation.operationalAgentReceivable)} / {money(reconciliation.agentReceivableGlBalance)}</p><p className={Math.abs(reconciliation.agentReceivableDifference) < 0.01 ? "mt-1 text-sm text-emerald-700" : "mt-1 text-sm text-amber-700"}>الفرق {money(reconciliation.agentReceivableDifference)}</p></div>
+          <div className="rounded-xl bg-blue-50 p-4"><p className="text-sm text-blue-700">عهدة ومبيعات المورد (مذكرة فقط)</p><p className="mt-2 font-bold">{reconciliation.consignmentUnits} وحدة · {money(reconciliation.consignmentMemoCost)}</p><p className="mt-1 text-sm font-medium text-blue-800">مبيعات عهدة {money(reconciliation.consignmentSalesRevenue)}</p><p className="mt-1 text-xs text-blue-700">{reconciliation.collectionAllocationBlocked ? "تحصيل المندوب موقوف محاسبياً حتى اعتماد توزيع مبيعات العهدة." : "مستبعدة من أصل مخزون الشركة."}</p></div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-none shadow-sm">
+        <CardHeader><CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-600" />استثناءات وطابور الترحيل ({exceptions.length})</CardTitle></CardHeader>
+        <CardContent className="p-0">
+          <Table><TableHeader><TableRow><TableHead>المصدر</TableHead><TableHead>الحالة</TableHead><TableHead>المحاولات</TableHead><TableHead>آخر خطأ</TableHead><TableHead>القيد</TableHead><TableHead /></TableRow></TableHeader><TableBody>{exceptions.map((posting) => <TableRow key={`${posting.source_type}:${posting.source_id}`}><TableCell><span className="font-medium">{posting.source_type}</span><p className="font-mono text-xs text-gray-400">{posting.source_id}</p></TableCell><TableCell><StatusBadge value={posting.status} /></TableCell><TableCell>{posting.attempt_count || 0}</TableCell><TableCell className="max-w-sm text-sm text-red-700">{posting.last_error || "بانتظار العامل الخلفي أو اعتماد القيد"}</TableCell><TableCell>{posting.journal?.entry_no || "-"}</TableCell><TableCell><Button size="sm" variant="outline" disabled={working === `${posting.source_type}:${posting.source_id}` || posting.status === "pending_approval"} onClick={() => void retryPosting(posting)}><RefreshCcw className="ml-1 h-4 w-4" />إعادة المحاولة</Button></TableCell></TableRow>)}</TableBody></Table>
+          {exceptions.length === 0 && <p className="p-6 text-center text-sm text-emerald-700">لا توجد حركات فاشلة أو معلقة.</p>}
+        </CardContent>
+      </Card>
+
+      <Card className="border-none shadow-sm">
+        <CardHeader><CardTitle>عمولات مندوبي المنتجات</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2"><div className="rounded-lg bg-amber-50 p-4"><p className="text-sm text-amber-700">عمولات مستحقة</p><p className="mt-1 text-2xl font-bold">{money(totals.commissionAccrued)}</p></div><div className="rounded-lg bg-emerald-50 p-4"><p className="text-sm text-emerald-700">عمولات مسددة</p><p className="mt-1 text-2xl font-bold">{money(totals.commissionSettled)}</p></div></div>
+          <div className="overflow-x-auto rounded-xl border"><Table><TableHeader><TableRow><TableHead>المندوب</TableHead><TableHead>المبيعة</TableHead><TableHead>المبلغ</TableHead><TableHead>الحالة</TableHead><TableHead /></TableRow></TableHeader><TableBody>{commissions.map((commission) => <TableRow key={commission.id}><TableCell>{commission.agent?.full_name || "-"}</TableCell><TableCell className="font-mono">{commission.sale?.sale_no || commission.sale_id}</TableCell><TableCell>{money(commission.commission_amount, commission.currency)}</TableCell><TableCell><StatusBadge value={commission.status} /></TableCell><TableCell>{commission.status === "accrued" && canManageSettings ? <Button size="sm" disabled={working === `commission:${commission.id}`} onClick={() => void settleCommission(commission)}>سداد وربط القيد</Button> : "-"}</TableCell></TableRow>)}</TableBody></Table>{commissions.length === 0 && <p className="p-6 text-center text-sm text-gray-500">لا توجد عمولات منتجات مثبتة.</p>}</div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-none shadow-sm">
+        <CardHeader><CardTitle className="flex items-center gap-2"><Settings className="h-5 w-5 text-brand" />إعدادات ترحيل مخزون المنتجات</CardTitle></CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{accountFields.map(([key, label, type]) => <div key={key} className="space-y-2"><Label>{label}</Label><select disabled={!canManageSettings} className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={String(settingsForm[key] || "")} onChange={(event) => setSettingsForm((current) => ({ ...current, [key]: event.target.value }))}><option value="">اختر الحساب</option>{accounts.filter((account) => account.type === type).map((account) => <option key={account.id} value={account.id}>{account.code} — {account.name_ar}</option>)}</select></div>)}</div>
+          <div className="grid gap-3 border-t pt-4 md:grid-cols-2">
+            {([
+              ["auto_post_inventory_receipts", "ترحيل الاستلامات مباشرة (بدلاً من انتظار الاعتماد)"],
+              ["auto_post_product_sales", "ترحيل مبيعات المنتجات مباشرة"],
+              ["auto_post_product_collections", "ترحيل تحصيلات المندوبين مباشرة"],
+              ["enable_product_agent_commissions", "إثبات عمولة المندوب المستحقة مع البيع"],
+            ] as Array<[keyof ProductInventoryAccountingSettings, string]>).map(([key, label]) => <label key={key} className="flex items-center gap-2 rounded-lg border p-3 text-sm"><input type="checkbox" disabled={!canManageSettings} checked={Boolean(settingsForm[key])} onChange={(event) => setSettingsForm((current) => ({ ...current, [key]: event.target.checked }))} />{label}</label>)}
+          </div>
+          {canManageSettings ? <Button disabled={working === "settings"} onClick={() => void saveSettings()}><Save className="ml-2 h-4 w-4" />حفظ الإعدادات</Button> : <p className="text-sm text-gray-500">عرض فقط؛ مدير المالية هو المخوّل بتغيير خرائط الحسابات.</p>}
+        </CardContent>
+      </Card>
+
+      <Card className="border-none shadow-sm"><CardHeader><CardTitle>مبيعات المنتجات من المندوبين</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>البيع</TableHead><TableHead>المندوب</TableHead><TableHead>المنتج / المسلسل</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع</TableHead><TableHead>الربح</TableHead><TableHead>المعالجة</TableHead></TableRow></TableHeader><TableBody>{sales.slice(0, 250).map((sale) => <TableRow key={sale.id}><TableCell><span className="font-mono">{sale.sale_no}</span><br /><StatusBadge value={sale.status} /></TableCell><TableCell>{sale.agent?.full_name || "-"}</TableCell><TableCell>{sale.lines?.[0]?.product_name_snapshot || "-"}<p className="font-mono text-xs text-gray-400">{sale.lines?.[0]?.serial_snapshot}</p></TableCell><TableCell>{money(sale.lines?.[0]?.unit_cost_snapshot || 0)}</TableCell><TableCell>{money(sale.total_amount)}</TableCell><TableCell>{money(sale.lines?.[0]?.gross_profit || 0)}</TableCell><TableCell><StatusBadge value={sale.accounting_status} /></TableCell></TableRow>)}</TableBody></Table>{sales.length === 0 && <p className="p-8 text-center text-sm text-gray-500">لا توجد مبيعات منتجات حتى الآن.</p>}</CardContent></Card>
+      <Card className="border-none shadow-sm"><CardHeader><CardTitle>المخزون الحالي والعهد</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>المسلسل</TableHead><TableHead>الملكية</TableHead><TableHead>الموقع / المندوب</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع المخطط</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader><TableBody>{inventory.filter((unit) => activeInventoryStatuses.has(unit.status)).slice(0, 250).map((unit) => <TableRow key={unit.id}><TableCell>{unit.product?.name || "-"}</TableCell><TableCell className="font-mono">{unit.raw_serial_number}</TableCell><TableCell>{unit.ownership_type === "consignment" ? "عهدة مورد" : "مملوك"}</TableCell><TableCell>{unit.agent?.full_name || unit.warehouse?.name_ar || "-"}</TableCell><TableCell>{money(unit.unit_cost_snapshot, unit.currency)}</TableCell><TableCell>{money(unit.planned_sale_price_snapshot, unit.currency)}</TableCell><TableCell><StatusBadge value={unit.status} /></TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
+      <Card className="border-none shadow-sm"><CardHeader><CardTitle>تحصيلات المندوبين</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>التحصيل</TableHead><TableHead>المندوب</TableHead><TableHead>التاريخ</TableHead><TableHead>المبلغ</TableHead><TableHead>الطريقة</TableHead><TableHead>المعالجة</TableHead></TableRow></TableHeader><TableBody>{collections.slice(0, 250).map((collection) => <TableRow key={collection.id}><TableCell className="font-mono">{collection.collection_no}</TableCell><TableCell>{collection.agent?.full_name || "-"}</TableCell><TableCell>{collection.collection_date}</TableCell><TableCell>{money(collection.amount)}</TableCell><TableCell>{collection.payment_method}</TableCell><TableCell><StatusBadge value={collection.accounting_status} /></TableCell></TableRow>)}</TableBody></Table>{collections.length === 0 && <p className="p-8 text-center text-sm text-gray-500">لا توجد تحصيلات منتجات بعد.</p>}</CardContent></Card>
+      <Card className="border-none shadow-sm"><CardHeader><CardTitle>فاقد وتلف المخزون</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>النوع</TableHead><TableHead>المنتج / المسلسل</TableHead><TableHead>التكلفة</TableHead><TableHead>السبب</TableHead><TableHead>المعالجة</TableHead></TableRow></TableHeader><TableBody>{losses.map((loss) => <TableRow key={String(loss.id)}><TableCell>{loss.loss_type === "loss" ? "فقد" : "تلف"}</TableCell><TableCell>{String(loss.product_name_snapshot || "-")}<p className="font-mono text-xs">{String(loss.serial_snapshot || "")}</p></TableCell><TableCell>{money(Number(loss.unit_cost_snapshot || 0), String(loss.currency || "SAR"))}</TableCell><TableCell>{String(loss.reason || "-")}</TableCell><TableCell><StatusBadge value={String(loss.accounting_status)} /></TableCell></TableRow>)}</TableBody></Table>{losses.length === 0 && <p className="p-6 text-center text-sm text-gray-500">لا يوجد فاقد أو تلف مثبت.</p>}</CardContent></Card>
+      <Card className="border-none shadow-sm"><CardHeader><CardTitle>استلامات الموردين</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>السند</TableHead><TableHead>المورد</TableHead><TableHead>الملكية</TableHead><TableHead>الوحدات</TableHead><TableHead>التكلفة</TableHead><TableHead>قيمة البيع</TableHead><TableHead>المعالجة</TableHead></TableRow></TableHeader><TableBody>{receipts.slice(0, 250).map((receipt) => <TableRow key={receipt.id}><TableCell className="font-mono">{receipt.receipt_no}</TableCell><TableCell>{receipt.company?.name || "-"}</TableCell><TableCell>{receipt.ownership_type === "consignment" ? "عهدة مورد" : "شراء"}</TableCell><TableCell>{receipt.total_units}</TableCell><TableCell>{money(receipt.physical_total_cost, receipt.currency)}</TableCell><TableCell>{money(receipt.expected_sales_value, receipt.currency)}</TableCell><TableCell><StatusBadge value={receipt.accounting_status} /></TableCell></TableRow>)}</TableBody></Table>{receipts.length === 0 && <p className="p-8 text-center text-sm text-gray-500">لا توجد استلامات مؤكدة حتى الآن.</p>}</CardContent></Card>
     </div>
   );
 }

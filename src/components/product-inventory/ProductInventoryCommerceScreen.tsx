@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
+  AlertTriangle,
   Check,
   ClipboardCheck,
   Coins,
@@ -29,6 +30,7 @@ import {
   getProductInventoryMovements,
   newInventoryCommandId,
   recordAgentProductCollection,
+  recordProductInventoryLoss,
   reviewProductPriceOverride,
   voidAgentProductSale,
 } from "@/lib/services/product-inventory";
@@ -252,6 +254,37 @@ export function ProductInventoryCommerceManagerScreen() {
     await load();
   };
 
+  const recordLoss = async (group: StockGroup) => {
+    const availableSerials = group.units.map((unit) => unit.raw_serial_number);
+    const serial = window.prompt(
+      `اكتب الرقم التسلسلي المراد إثباته كتالف أو مفقود:\n${availableSerials.slice(0, 20).join("\n")}`
+    )?.trim();
+    if (!serial) return;
+    const unit = group.units.find((candidate) => candidate.raw_serial_number === serial);
+    if (!unit) return setMessage("الرقم التسلسلي ليس ضمن هذه المجموعة.");
+    const reason = window.prompt("اكتب سبب التلف أو الفقد (5 أحرف على الأقل):")?.trim();
+    if (!reason) return;
+    const lossType = window.confirm("اضغط «موافق» لإثباته كمفقود، أو «إلغاء» لإثباته كتالف.")
+      ? "loss" as const
+      : "damage" as const;
+    setSaving(true);
+    const result = await recordProductInventoryLoss({
+      loss_id: crypto.randomUUID(),
+      command_id: newInventoryCommandId(),
+      unit_id: unit.id,
+      loss_type: lossType,
+      reason,
+    });
+    setSaving(false);
+    if (result.error) return setMessage(result.error);
+    setSelected((current) => {
+      const next = new Set(current);
+      next.delete(unit.id);
+      return next;
+    });
+    await load();
+  };
+
   if (loading || !data) return <PageSkeleton />;
   const pendingOverrides = data.price_overrides.filter((request) => request.status === "pending");
   const activeSales = data.sales.filter((sale) => sale.status === "active");
@@ -290,7 +323,7 @@ export function ProductInventoryCommerceManagerScreen() {
           </label>
           <div className="overflow-x-auto rounded-xl border">
             <Table>
-              <TableHeader><TableRow><TableHead>اختيار</TableHead><TableHead>مجموعة المنتج</TableHead><TableHead>العدد</TableHead><TableHead>التكلفة</TableHead><TableHead>السعر المخطط</TableHead><TableHead>أقل سعر</TableHead><TableHead>أعلى سعر</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>اختيار</TableHead><TableHead>مجموعة المنتج</TableHead><TableHead>العدد</TableHead><TableHead>التكلفة</TableHead><TableHead>السعر المخطط</TableHead><TableHead>أقل سعر</TableHead><TableHead>أعلى سعر</TableHead><TableHead>فاقد / تلف</TableHead></TableRow></TableHeader>
               <TableBody>{groups.map((group) => {
                 const allSelected = group.units.every((unit) => selected.has(unit.id));
                 return (
@@ -302,6 +335,7 @@ export function ProductInventoryCommerceManagerScreen() {
                     <TableCell>{money(group.plannedPrice, group.currency)}</TableCell>
                     <TableCell><Input type="number" min="0.01" step="0.01" className="w-28" value={ranges[group.key]?.minimum || ""} onChange={(event) => setRanges((current) => ({ ...current, [group.key]: { minimum: event.target.value, maximum: current[group.key]?.maximum || "" } }))} /></TableCell>
                     <TableCell><Input type="number" min="0.01" step="0.01" className="w-28" value={ranges[group.key]?.maximum || ""} onChange={(event) => setRanges((current) => ({ ...current, [group.key]: { minimum: current[group.key]?.minimum || "", maximum: event.target.value } }))} /></TableCell>
+                    <TableCell><Button size="sm" variant="outline" disabled={saving} className="text-red-700" onClick={() => void recordLoss(group)}><AlertTriangle className="ml-1 h-4 w-4" />إثبات</Button></TableCell>
                   </TableRow>
                 );
               })}</TableBody>

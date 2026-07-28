@@ -151,6 +151,7 @@
     { "id": "schema_v123_atomic_product_receiving", "file": "db/schema_v123_atomic_product_receiving.sql" },
     { "id": "schema_v124_product_inventory_workbook_imports", "file": "db/schema_v124_product_inventory_workbook_imports.sql" },
     { "id": "schema_v125_product_inventory_photo_extraction", "file": "db/schema_v125_product_inventory_photo_extraction.sql" },
-    { "id": "schema_v126_product_inventory_agent_commerce", "file": "db/schema_v126_product_inventory_agent_commerce.sql" }
+    { "id": "schema_v126_product_inventory_agent_commerce", "file": "db/schema_v126_product_inventory_agent_commerce.sql" },
+    { "id": "schema_v127_product_inventory_accounting", "file": "db/schema_v127_product_inventory_accounting.sql" }
   ]
 }

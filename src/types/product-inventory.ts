@@ -8,6 +8,7 @@ export type ProductInventoryReceiptStatus =
 
 export type ProductInventoryAccountingStatus =
   | "pending"
+  | "pending_approval"
   | "not_required"
   | "posted"
   | "failed"
@@ -333,6 +334,60 @@ export type AgentProductCollection = {
   version: number;
   created_at: string;
   agent?: ProductInventoryFieldAgent | null;
+};
+
+export type ProductInventoryAccountingPosting = {
+  id: string;
+  source_type: "receipt" | "sale" | "collection" | "loss";
+  source_id: string;
+  status: ProductInventoryAccountingStatus;
+  journal_entry_id: string | null;
+  reversal_entry_id: string | null;
+  amounts: Record<string, number>;
+  attempt_count: number;
+  last_error: string | null;
+  last_attempt_at: string | null;
+  updated_at: string;
+  journal?: {
+    id: string;
+    entry_no: string;
+    status: string;
+    total_debit: number;
+    total_credit: number;
+  } | null;
+};
+
+export type ProductInventoryAccountingSettings = {
+  id: string;
+  version: number;
+  default_inventory_asset_id: string | null;
+  default_inventory_grni_id: string | null;
+  default_inventory_cogs_id: string | null;
+  default_inventory_shrinkage_id: string | null;
+  default_agent_receivable_id: string | null;
+  default_accounts_payable_id: string | null;
+  default_sales_revenue_id: string | null;
+  default_vat_payable_id: string | null;
+  default_cash_account_id: string | null;
+  default_bank_account_id: string | null;
+  default_commission_expense_id: string | null;
+  default_commission_payable_id: string | null;
+  auto_post_inventory_receipts: boolean;
+  auto_post_product_sales: boolean;
+  auto_post_product_collections: boolean;
+  enable_product_agent_commissions: boolean;
+};
+
+export type ProductAgentCommission = {
+  id: string;
+  sale_id: string;
+  agent_id: string;
+  commission_amount: number;
+  currency: string;
+  status: "pending" | "accrued" | "settled" | "reversed";
+  settled_at: string | null;
+  agent?: { id: string; full_name: string } | null;
+  sale?: { id: string; sale_no: string; sale_date: string; status: string } | null;
 };
 
 export type ProductCommerceManagerData = {

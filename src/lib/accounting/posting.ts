@@ -195,3 +195,36 @@ export async function reverseJournalEntry(
   const reversal = firstRpcRow(data, "Accounting journal reversal");
   return journalWithLines(admin, orgId, String(reversal.id));
 }
+
+export async function cancelJournalEntry(
+  admin: AdminClient,
+  orgId: string,
+  entryId: string,
+  userId: string,
+  options?: CommandOptions
+) {
+  const currentResult = await db(admin)
+    .from("accounting_journal_entries")
+    .select("id, version")
+    .eq("organization_id", orgId)
+    .eq("id", entryId)
+    .maybeSingle();
+  if (currentResult.error) throw new Error(currentResult.error.message);
+  const current = currentResult.data as Record<string, unknown> | null;
+  if (!current) throw new Error("القيد غير موجود.");
+  const context = commandContext(options);
+  const { data, error } = await db(admin).rpc("execute_accounting_master_command", {
+    p_org_id: orgId,
+    p_actor_user_id: userId,
+    p_request_id: context.requestId,
+    p_command_id: context.commandId,
+    p_entity_type: "journal",
+    p_entity_id: entryId,
+    p_expected_version: options?.expectedVersion ?? Number(current.version || 0),
+    p_operation: "cancel",
+    p_payload: {},
+  });
+  if (error) throw new Error(error.message);
+  firstRpcRow(data, "Accounting journal cancellation");
+  return journalWithLines(admin, orgId, entryId);
+}

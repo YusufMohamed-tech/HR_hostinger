@@ -10,6 +10,9 @@ import type {
   ProductInventoryImportRow,
   ProductInventoryPhotoCandidate,
   ProductInventoryPhotoPreview,
+  ProductInventoryAccountingPosting,
+  ProductInventoryAccountingSettings,
+  ProductAgentCommission,
   ProductInventoryWorkbookPreview,
   ProductInventoryWarehouse,
   ProductReceipt,
@@ -90,6 +93,11 @@ export function getFinanceProductInventory() {
     inventory: ProductInventoryStockRow[];
     sales: AgentProductSale[];
     collections: AgentProductCollection[];
+    losses: Array<Record<string, unknown>>;
+    commissions: ProductAgentCommission[];
+    postings: ProductInventoryAccountingPosting[];
+    postingExceptions: ProductInventoryAccountingPosting[];
+    settings: ProductInventoryAccountingSettings;
     totals: {
       units: number;
       cost: number;
@@ -101,8 +109,84 @@ export function getFinanceProductInventory() {
       vat: number;
       collected: number;
       outstanding: number;
+      consignmentUnits: number;
+      consignmentMemoCost: number;
+      companyOwnedSalesRevenue: number;
+      consignmentSalesRevenue: number;
+      commission: number;
+      commissionAccrued: number;
+      commissionSettled: number;
+      failedPostings: number;
+      pendingPostings: number;
+    };
+    reconciliation: {
+      stockUnits: number;
+      stockCost: number;
+      inventoryGlBalance: number;
+      inventoryDifference: number;
+      operationalAgentReceivable: number;
+      agentReceivableGlBalance: number;
+      agentReceivableDifference: number;
+      consignmentUnits: number;
+      consignmentMemoCost: number;
+      consignmentSalesRevenue: number;
+      collectionAllocationBlocked: boolean;
+      balanced: boolean;
     };
   }>("/api/accounting/inventory");
+}
+
+export function getProductInventoryAccountingSettings() {
+  return apiFetch<{
+    settings: ProductInventoryAccountingSettings;
+    accounts: Array<{
+      id: string;
+      code: string;
+      name_ar: string;
+      name_en: string | null;
+      type: string;
+      subtype: string | null;
+      normal_balance: string;
+      is_active: boolean;
+    }>;
+    can_manage: boolean;
+  }>("/api/accounting/inventory/settings");
+}
+
+export function updateProductInventoryAccountingSettings(
+  values: Partial<ProductInventoryAccountingSettings> & { expected_version: number }
+) {
+  return apiFetch<ProductInventoryAccountingSettings>("/api/accounting/inventory/settings", {
+    method: "PATCH",
+    body: JSON.stringify(values),
+  });
+}
+
+export function retryProductInventoryAccounting(
+  sourceType: "receipt" | "sale" | "collection" | "loss",
+  sourceId: string
+) {
+  return apiFetch<Record<string, unknown>>(
+    `/api/accounting/inventory/${sourceType}/${sourceId}/retry-posting`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+export function settleProductAgentCommission(
+  commissionId: string,
+  values: {
+    command_id: string;
+    payment_method: "cash" | "bank_transfer";
+    payment_date: string;
+    payment_reference?: string;
+    finance_notes?: string;
+    account_id?: string;
+  }
+) {
+  return apiFetch<Record<string, unknown>>(
+    `/api/accounting/inventory/commissions/${commissionId}/settle`,
+    { method: "POST", body: JSON.stringify(values) }
+  );
 }
 
 export function getProductCommerceManager() {
@@ -231,6 +315,19 @@ export function recordAgentProductCollection(values: {
 
 export function getProductInventoryMovements() {
   return apiFetch<Array<Record<string, unknown>>>("/api/sales/inventory/movements");
+}
+
+export function recordProductInventoryLoss(values: {
+  loss_id: string;
+  command_id: string;
+  unit_id: string;
+  loss_type: "damage" | "loss";
+  reason: string;
+}) {
+  return apiFetch<Record<string, unknown>>("/api/sales/inventory/losses", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
 }
 
 export async function previewProductInventoryWorkbook(
