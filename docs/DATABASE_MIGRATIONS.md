@@ -2,7 +2,7 @@
 
 `db/migrations.manifest.json` is the only authoritative migration order. Filename sorting is not an ordering mechanism because historical versions 13, 43, 44, and 54 each contain two migrations.
 
-Current repository state (2026-07-19): 112 ordered migrations after the baseline; the current head is `schema_v110_atomic_eosb_accrual`. Always use the verifier for the live count instead of copying this number into deployment scripts.
+Current repository state (2026-07-28): 125 ordered migrations after the baseline; the current head is `schema_v123_atomic_product_receiving`. Always use the verifier for the live count instead of copying this number into deployment scripts.
 
 ## Safety rules
 

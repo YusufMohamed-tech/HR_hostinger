@@ -4558,11 +4558,121 @@ const launchAssertions = `
   $test$;
   DROP TRIGGER reject_final_command_outbox ON public.event_outbox;
 
+  -- Phase 1 product inventory: receipt commands are replay-safe, confirmation
+  -- creates one serialized stock unit and one movement per accepted serial,
+  -- and confirmed serials cannot be received twice.
+  UPDATE public.sales_products
+  SET inventory_enabled = true, tracking_mode = 'serialized',
+      sku = 'ATOMIC-PRODUCT-1', default_cost = 60
+  WHERE id = 'e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2';
+  DO $test$
+  DECLARE
+    warehouse_id_value uuid;
+    draft_result jsonb;
+    replayed_draft jsonb;
+    confirmed_result jsonb;
+    duplicate_draft jsonb;
+    duplicate_denied boolean := false;
+    receipt_payload jsonb;
+  BEGIN
+    SELECT id INTO warehouse_id_value
+    FROM public.inventory_warehouses
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+      AND is_default = true
+    LIMIT 1;
+    receipt_payload := jsonb_build_object(
+      'receipt_id', 'ae100001-0000-4000-8000-000000000001',
+      'expected_version', 0,
+      'supplier_company_id', 'e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1',
+      'warehouse_id', warehouse_id_value,
+      'ownership_type', 'purchased',
+      'receipt_date', '2099-07-10',
+      'currency', 'SAR',
+      'groups', jsonb_build_array(jsonb_build_object(
+        'product_id', 'e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2',
+        'unit_cost', 60,
+        'planned_sale_price', 100,
+        'currency', 'SAR',
+        'tax_included', true,
+        'condition', 'new',
+        'serial_numbers', jsonb_build_array('VG-PHASE1-0001', 'VG-PHASE1-0002')
+      ))
+    );
+    draft_result := public.execute_product_receipt_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae100002-0000-4000-8000-000000000002',
+      'ae100003-0000-4000-8000-000000000003',
+      'receipt_draft_save', receipt_payload
+    );
+    replayed_draft := public.execute_product_receipt_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae100002-0000-4000-8000-000000000002',
+      'ae100003-0000-4000-8000-000000000003',
+      'receipt_draft_save', receipt_payload
+    );
+    confirmed_result := public.execute_product_receipt_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae100004-0000-4000-8000-000000000004',
+      'ae100005-0000-4000-8000-000000000005',
+      'receipt_confirm',
+      '{"receipt_id":"ae100001-0000-4000-8000-000000000001","expected_version":1}'::jsonb
+    );
+
+    duplicate_draft := public.execute_product_receipt_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae100006-0000-4000-8000-000000000006',
+      'ae100007-0000-4000-8000-000000000007',
+      'receipt_draft_save',
+      receipt_payload || '{"receipt_id":"ae100008-0000-4000-8000-000000000008"}'::jsonb
+    );
+    BEGIN
+      PERFORM public.execute_product_receipt_command(
+        '11111111-1111-4111-8111-111111111111',
+        '61616161-6161-4161-8161-616161616161',
+        'ae100009-0000-4000-8000-000000000009',
+        'ae100010-0000-4000-8000-000000000010',
+        'receipt_confirm',
+        '{"receipt_id":"ae100008-0000-4000-8000-000000000008","expected_version":1}'::jsonb
+      );
+    EXCEPTION WHEN unique_violation THEN
+      duplicate_denied := true;
+    END;
+
+    IF draft_result IS DISTINCT FROM replayed_draft
+       OR confirmed_result->'receipt'->>'status' <> 'confirmed'
+       OR confirmed_result->'receipt'->>'accounting_status' <> 'pending'
+       OR (confirmed_result->'receipt'->>'total_units')::integer <> 2
+       OR (confirmed_result->'receipt'->>'physical_total_cost')::numeric <> 120
+       OR (confirmed_result->'receipt'->>'expected_sales_value')::numeric <> 200
+       OR NOT duplicate_denied
+       OR (SELECT count(*) FROM public.product_inventory_units
+           WHERE receipt_id = 'ae100001-0000-4000-8000-000000000001') <> 2
+       OR (SELECT count(*) FROM public.product_inventory_movements
+           WHERE receipt_id = 'ae100001-0000-4000-8000-000000000001'
+             AND movement_type = 'receipt') <> 2
+       OR (SELECT count(*) FROM public.event_outbox
+           WHERE org_id = '11111111-1111-4111-8111-111111111111'
+             AND topic IN (
+               'product_inventory.receipt_draft_saved',
+               'product_inventory.receipt_confirmed'
+             )
+             AND payload->>'receipt_id' = 'ae100001-0000-4000-8000-000000000001') <> 2 THEN
+      RAISE EXCEPTION 'Product receipt idempotency, confirmation, valuation, serial uniqueness, or event proof failed.';
+    END IF;
+  END
+  $test$;
+
   -- Browser clients cannot bypass the new command boundaries or invoke their
   -- service-only functions directly.
   DO $test$
   DECLARE sim_denied boolean:=false; accounting_denied boolean:=false;
     promoter_denied boolean:=false; eosb_denied boolean:=false; function_denied boolean:=false;
+    product_inventory_denied boolean:=false; product_function_denied boolean:=false;
+    product_inventory_rows integer:=0;
   BEGIN
     SET LOCAL ROLE authenticated;
     PERFORM set_config('request.jwt.claim.role','authenticated',true);
@@ -4601,8 +4711,24 @@ const launchAssertions = `
         'inventory_import','{"sims":[]}'::jsonb);
     EXCEPTION WHEN insufficient_privilege THEN function_denied:=true;
     END;
+    BEGIN
+      UPDATE public.product_inventory_units
+      SET status = 'sold'
+      WHERE receipt_id = 'ae100001-0000-4000-8000-000000000001';
+      GET DIAGNOSTICS product_inventory_rows = ROW_COUNT;
+      product_inventory_denied := product_inventory_rows = 0;
+    EXCEPTION WHEN insufficient_privilege THEN product_inventory_denied:=true;
+    END;
+    BEGIN
+      PERFORM public.execute_product_receipt_command(
+        '11111111-1111-4111-8111-111111111111','61616161-6161-4161-8161-616161616161',
+        'ae100011-0000-4000-8000-000000000011','ae100012-0000-4000-8000-000000000012',
+        'receipt_confirm','{"receipt_id":"ae100001-0000-4000-8000-000000000001","expected_version":2}'::jsonb);
+    EXCEPTION WHEN insufficient_privilege THEN product_function_denied:=true;
+    END;
     RESET ROLE;
-    IF NOT sim_denied OR NOT accounting_denied OR NOT promoter_denied OR NOT eosb_denied OR NOT function_denied THEN
+    IF NOT sim_denied OR NOT accounting_denied OR NOT promoter_denied OR NOT eosb_denied
+       OR NOT function_denied OR NOT product_inventory_denied OR NOT product_function_denied THEN
       RAISE EXCEPTION 'One or more atomic command boundaries allowed a direct browser write.';
     END IF;
   END
@@ -4640,6 +4766,8 @@ try {
       cwd: process.cwd(),
       env: {
         ...process.env,
+        SUPABASE_DB_URL: "",
+        POSTGRES_URL: "",
         DATABASE_URL: databaseUrl,
         MIGRATION_ACTOR: "database-smoke-test",
       },

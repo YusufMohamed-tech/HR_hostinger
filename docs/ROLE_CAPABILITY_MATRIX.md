@@ -11,22 +11,23 @@ This is the launch authorization contract for Tatwir HRMS. It applies to navigat
 
 ## Capability matrix
 
-| Workspace role | People | Attendance | Leave | Recruitment | Payroll preparation | Assets | Locations | Accounting |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| `admin` | Manage | Manage | Manage | Manage | Manage | Manage | Manage | Admin where accounting policy allows |
-| `hr_admin` | Manage | Manage | Manage | Manage | Manage | Manage | Manage | No posting authority unless explicitly granted by accounting policy |
-| `hr_recruitment` | Scoped employee read | No | No | Manage | No | No | Read | No |
-| `training_manager` | Assigned scope only | Assigned scope only | Assigned approval scope only | No | No | No | Manage | No |
-| `finance_manager` | No | No | No | No | Manage | No | Read | Approve/post/reverse |
-| `accountant` | No | No | No | No | Read required inputs | No | Read | Prepare transactions |
-| `finance_viewer` | No | No | No | No | Read reports | No | Read | Read only |
-| `sales_manager` | No | No | No | No | No | No | Manage | Sales/accounting permissions defined by accounting policy |
-| `sales` | Self | Self | Self | No | Self payslip | Self | Read | No |
-| `onground_agent_manager` | Agent scope | No | No | No | No | No | Read | No |
-| `promoter` | Self | No | No | No | No | No | Read | No |
-| `field_agent` | Self | No | No | No | No | No | Read | No |
-| `merchant` | Self | No | No | No | No | No | Read | No |
-| `employee` | Self | Self | Self | No | Self payslip | Self | Read | No |
+| Workspace role | People | Attendance | Leave | Recruitment | Payroll preparation | Assets | Locations | Product inventory | Accounting |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `admin` | Manage | Manage | Manage | Manage | Manage | Manage | Manage | Receive/manage | Admin where accounting policy allows |
+| `hr_admin` | Manage | Manage | Manage | Manage | Manage | Manage | Manage | No | No posting authority unless explicitly granted by accounting policy |
+| `hr_recruitment` | Scoped employee read | No | No | Manage | No | No | Read | No | No |
+| `training_manager` | Assigned scope only | Assigned scope only | Assigned approval scope only | No | No | No | Manage | No | No |
+| `finance_manager` | No | No | No | No | Manage | No | Read | Confirmed valuation read | Approve/post/reverse |
+| `accountant` | No | No | No | No | Read required inputs | No | Read | Confirmed valuation read | Prepare transactions |
+| `finance_viewer` | No | No | No | No | Read reports | No | Read | Confirmed valuation read | Read only |
+| `sales_manager` | No | No | No | No | No | No | Manage | Receive/manage | Sales/accounting permissions defined by accounting policy |
+| `sales` | Self | Self | Self | No | Self payslip | Self | Read | No | No |
+| `onground_agent_manager` | Agent scope | No | No | No | No | No | Read | Receive/manage | No |
+| `inventory_receiver` | No | No | No | No | No | No | No | Receive; own drafts | No |
+| `promoter` | Self | No | No | No | No | No | Read | No | No |
+| `field_agent` | Self | No | No | No | No | No | Read | No | No |
+| `merchant` | Self | No | No | No | No | No | Read | No | No |
+| `employee` | Self | Self | Self | No | Self payslip | Self | Read | No | No |
 
 “Manage” is still constrained to the current organization. Manager scope is derived from employee manager, department manager, location manager, or explicitly assigned location; it is not a tenant-wide permission.
 
@@ -42,6 +43,9 @@ The canonical RLS helpers are:
 - `can_manage_payroll()` — `admin`, `hr_admin`, `finance_manager`.
 - `can_manage_assets()` — `admin`, `hr_admin`.
 - `can_manage_locations()` — `admin`, `hr_admin`, `training_manager`, `sales_manager`.
+- `can_receive_product_inventory()` — `admin`, `sales_manager`, `onground_agent_manager`, `inventory_receiver`.
+- `can_manage_product_inventory()` — `admin`, `sales_manager`, `onground_agent_manager`.
+- `can_view_product_inventory()` — receiving roles plus `finance_manager`, `accountant`, and `finance_viewer`.
 - `can_manage_employee_scope(employee_id)` — people managers, the employee, or an assigned training manager.
 
 Accounting posting remains a distinct high-risk capability and must not be inferred from `can_manage_payroll()`.

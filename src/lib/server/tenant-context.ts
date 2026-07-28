@@ -51,6 +51,7 @@ const ORG_ROLES = new Set<OrgRole>([
   "sales",
   "sales_manager",
   "onground_agent_manager",
+  "inventory_receiver",
   "promoter",
   "field_agent",
   "merchant",

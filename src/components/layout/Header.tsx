@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { LogOut, Menu, Search, Network, Users, MapPin, Calendar, CheckSquare, Bell, ClipboardList, Layers, Briefcase, Settings, Calculator } from "lucide-react";
+import { LogOut, Menu, Search, Network, Users, MapPin, Calendar, CheckSquare, Bell, ClipboardList, Layers, Briefcase, Settings, Calculator, Package } from "lucide-react";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { SidebarContent } from "./Sidebar";
@@ -36,6 +36,8 @@ const ALL_SEARCH_ITEMS = [
   { label: "فريق المبيعات", href: "/sales/team", icon: Users, keywords: ["sales team", "sales agents", "مندوب مبيعات", "فريق المبيعات"] },
   { label: "المندوبون الميدانيون", href: "/sales/agents", icon: Users, keywords: ["field agents", "onground", "sim", "مندوب", "شرائح"] },
   { label: "مخزون الشرائح", href: "/sales/stock", icon: Network, keywords: ["stock", "inventory", "sim", "مخزون", "شرائح"] },
+  { label: "مخزون المنتجات", href: "/sales/inventory", icon: Package, keywords: ["product inventory", "receiving", "serial", "استلام", "مخزون", "منتجات", "تسلسلي"] },
+  { label: "قيمة مخزون المنتجات", href: "/accounting/inventory", icon: Calculator, keywords: ["inventory valuation", "cost", "margin", "تكلفة", "مخزون", "هامش"] },
   { label: "الإعدادات", href: "/settings", icon: Settings, keywords: ["profile", "preferences", "config", "إعدادات"] },
 ];
 
@@ -52,7 +54,10 @@ const PROMOTER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
   ["/promoter", "/sales/leads", "/attendance", "/notifications", "/settings"].includes(item.href)
 );
 const ONGROUND_AGENT_MANAGER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
-  ["/sales/agents", "/sales/stock", "/notifications", "/settings"].includes(item.href)
+  ["/sales/agents", "/sales/stock", "/sales/inventory", "/notifications", "/settings"].includes(item.href)
+);
+const INVENTORY_RECEIVER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
+  ["/sales/inventory", "/notifications", "/settings"].includes(item.href)
 );
 
 const ROLE_LABELS: Record<string, string> = {
@@ -67,6 +72,7 @@ const ROLE_LABELS: Record<string, string> = {
   Sales: "المبيعات",
   Sales_Manager: "مدير المبيعات",
   Onground_Agent_Manager: "مدير المندوبين الميدانيين",
+  Inventory_Receiver: "مستلم مخزون المنتجات",
   Promoter: "مروج مبيعات",
   Field_Agent: "مندوب ميداني",
   Merchant: "تاجر",
@@ -84,6 +90,7 @@ export function Header() {
     if (currentUser?.role === "HR_Recruitment") return RECRUITER_SEARCH_ITEMS;
     if (currentUser?.role === "HR_Admin") return HR_ADMIN_SEARCH_ITEMS;
     if (currentUser?.role === "Onground_Agent_Manager") return ONGROUND_AGENT_MANAGER_SEARCH_ITEMS;
+    if (currentUser?.role === "Inventory_Receiver") return INVENTORY_RECEIVER_SEARCH_ITEMS;
     if (["Finance_Manager", "Accountant", "Finance_Viewer"].includes(currentUser?.role || "")) return FINANCE_SEARCH_ITEMS;
     if (currentUser?.role === "Promoter") return PROMOTER_SEARCH_ITEMS;
     if (currentUser?.role === "Employee") {

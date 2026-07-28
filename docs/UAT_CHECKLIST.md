@@ -1,8 +1,8 @@
 # HRMS Launch UAT Checklist
 
-Release commit: __________  
-Staging URL/environment: __________  
-Test window: __________  
+Release commit: __________
+Staging URL/environment: __________
+Test window: __________
 UAT lead: __________
 
 Attach screenshots, request IDs, test-data references, reconciliation outputs, defects, and retest evidence. Never attach real identity documents, bank data, secrets, or production personal data.
@@ -29,6 +29,7 @@ Attach screenshots, request IDs, test-data references, reconciliation outputs, d
 - [ ] Finance manager/accountant/viewer permissions match `ROLE_CAPABILITY_MATRIX.md`; prohibited posting/settings actions fail.
 - [ ] Training manager/instructor/learner course, review, community, and assignment scopes are enforced.
 - [ ] Sales manager/sales/promoter/field-agent/merchant scopes and company/location assignments are enforced.
+- [ ] Inventory receiver can open only product inventory, notifications, and settings; another receiver's draft and non-inventory modules are denied.
 
 ## 3. Cross-module integrity
 
@@ -40,6 +41,9 @@ Attach screenshots, request IDs, test-data references, reconciliation outputs, d
 - [ ] Payroll calculation matches the signed formula specification; run/approve/pay/recalculate/adjust retry safely and reconcile to payslips/GOSI/accounting.
 - [ ] Journal, invoice, expense, payment, budget, period close/reopen, asset capitalization/depreciation, advance disbursement, sales cash, commissions, and reversals remain balanced and linked.
 - [ ] Sales log correction/void preserves revisions and produces correct accounting reversal/repost behavior.
+- [ ] Manual product receipt groups require product, unit cost, planned sale price, and unique serials; retry is idempotent and confirmation creates exactly one stock unit and receipt movement per serial.
+- [ ] A confirmed serial cannot be received again; cancelled/confirmed receipts cannot be edited; stale receipt versions are rejected.
+- [ ] Finance roles automatically see confirmed unit count, cost, expected sale value, margin, ownership type, and accounting status without inventory mutation access.
 - [ ] Recruitment transition/offer/interview/hire and public application submission are tenant-safe, state-safe, and replay-safe.
 - [ ] LMS assignment creates all intended enrollments or none; rubric saves atomically; review/rubric/completion/certificate/outbox remain consistent.
 - [ ] Chat pagination is bounded; unread/read state, recipients, realtime update, moderation, attachment cleanup, and retention behavior are correct.
@@ -80,5 +84,5 @@ Attach screenshots, request IDs, test-data references, reconciliation outputs, d
 | Security / privacy / accessibility |  |  |  |
 | Operations / backup / incident |  |  |  |
 
-Final decision: [ ] GO  [ ] CONDITIONAL GO  [ ] NO-GO  
+Final decision: [ ] GO  [ ] CONDITIONAL GO  [ ] NO-GO
 Open conditions and owners: ________________________________________________

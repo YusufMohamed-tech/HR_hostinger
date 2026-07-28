@@ -146,6 +146,8 @@
     { "id": "schema_v118_accounting_budgets_projects", "file": "db/schema_v118_accounting_budgets_projects.sql" },
     { "id": "schema_v119_accounting_vat_zatca", "file": "db/schema_v119_accounting_vat_zatca.sql" },
     { "id": "schema_v120_accounting_intercompany_consolidation", "file": "db/schema_v120_accounting_intercompany_consolidation.sql" },
-    { "id": "schema_v121_accounting_reporting_delivery", "file": "db/schema_v121_accounting_reporting_delivery.sql" }
+    { "id": "schema_v121_accounting_reporting_delivery", "file": "db/schema_v121_accounting_reporting_delivery.sql" },
+    { "id": "schema_v122_product_inventory_foundation", "file": "db/schema_v122_product_inventory_foundation.sql" },
+    { "id": "schema_v123_atomic_product_receiving", "file": "db/schema_v123_atomic_product_receiving.sql" }
   ]
 }

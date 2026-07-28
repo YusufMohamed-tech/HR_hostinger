@@ -346,6 +346,17 @@ const salesCashPayload = z.object({
   actor_user_id: z.string().uuid(),
 });
 
+const productReceiptEventPayload = z.object({
+  receipt_id: z.string().uuid(),
+  receipt_no: z.string().min(1),
+  ownership_type: z.enum(["purchased", "consignment"]),
+  total_units: z.coerce.number().int().nonnegative(),
+  total_cost: z.coerce.number().nonnegative(),
+  expected_sales_value: z.coerce.number().nonnegative(),
+  accounting_status: z.enum(["pending", "not_required", "posted", "failed", "reversed"]).optional(),
+  version: z.coerce.number().int().positive(),
+});
+
 async function financeManagerUserId(orgId: string) {
   const admin = createAdminClient();
   const { data, error } = await admin.from("org_members").select("user_id")
@@ -1140,6 +1151,20 @@ const handlers: Record<string, OutboxHandler> = {
   "organization.location_deleted": async () => {},
   "sales.identity_provisioned": async () => {},
   "sales.team_configured": async () => {},
+  "product_inventory.receipt_draft_saved": async () => {},
+  "product_inventory.receipt_cancelled": async () => {},
+  "product_inventory.receipt_confirmed": async (event) => {
+    const payload = productReceiptEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: `تم تأكيد استلام منتجات ${payload.receipt_no}`,
+      body: `${payload.total_units} وحدة، تكلفة ${payload.total_cost.toFixed(2)} ر.س، وقيمة بيع مخططة ${payload.expected_sales_value.toFixed(2)} ر.س.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
   "sales.cash_submitted": async () => {},
   "sales.cash_rejected": async () => {},
   "sales.cash_confirmed": async (event) => {

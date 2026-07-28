@@ -90,6 +90,7 @@ export type EmployeeAccountRole =
   | "hr_recruitment"
   | "training_manager"
   | "onground_agent_manager"
+  | "inventory_receiver"
   | "promoter"
   | "finance_manager"
   | "accountant"
