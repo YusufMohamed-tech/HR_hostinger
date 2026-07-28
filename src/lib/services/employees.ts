@@ -100,6 +100,7 @@ export async function createEmployeeAccount(values: {
   email: string;
   full_name?: string;
   role: EmployeeAccountRole;
+  password: string;
 }) {
   const scope = `employee-identity:${values.employee_id}:${values.email.toLowerCase()}`;
   const response = await fetch("/api/hr/employee-accounts", {
