@@ -83,6 +83,16 @@ async function recordMigration(id, file, checksum) {
   `);
 }
 
+async function applyMigrationAtomically(id, file, checksum, content) {
+  await sql(`
+    BEGIN;
+    ${content}
+    INSERT INTO public.schema_migrations (id, file, checksum)
+    VALUES (${lit(id)}, ${lit(file)}, ${lit(checksum)});
+    COMMIT;
+  `);
+}
+
 function lit(s) {
   return `'${s.replace(/'/g, "''")}'`;
 }
@@ -160,8 +170,7 @@ async function main() {
 
     process.stdout.write(`  APPLY ${id} ... `);
     try {
-      await sql(content);
-      await recordMigration(id, file, checksum);
+      await applyMigrationAtomically(id, file, checksum, content);
       console.log("OK");
       ran++;
     } catch (err) {

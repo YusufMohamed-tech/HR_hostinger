@@ -11,14 +11,9 @@ import {
 import { Plus } from "lucide-react";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { useDepartments, useLocations, useEmployees, useShifts } from "@/hooks/use-data";
-import { createEmployee, createEmployeeAccount, finalizeEmployeeOnboarding, replaceEmployeeLocations, type EmployeeAccountRole } from "@/lib/services/employees";
+import { createEmployee, replaceEmployeeLocations, type EmployeeAccountRole } from "@/lib/services/employees";
 import { assignEmployeeShift } from "@/lib/services/schedule";
 import { updateDepartment } from "@/lib/services/departments";
-import {
-  createEmployeeContract,
-  createPersonnelFile,
-  upsertSocialInsurance,
-} from "@/lib/services/personnel";
 import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
 import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
 import { getDeductionRuleGroups, type DeductionRuleGroup } from "@/lib/services/deduction-rule-groups";
@@ -79,26 +74,9 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const [companies, setCompanies] = useState<SalesCompany[]>([]);
   const [deductionGroups, setDeductionGroups] = useState<DeductionRuleGroup[]>([]);
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
-  const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<EmployeeAccountRole>("employee");
   const [accountPassword, setAccountPassword] = useState("");
   const [accountPasswordConfirmation, setAccountPasswordConfirmation] = useState("");
-  const [officialFile, setOfficialFile] = useState<File | null>(null);
-  const [contractFile, setContractFile] = useState<File | null>(null);
-  const [personnelForm, setPersonnelForm] = useState({
-    file_category: "official",
-    file_expiry_date: "",
-    gosi_number: "",
-    scheme_code: "",
-    contributory_wage: "",
-    maximum_contributory_wage: "",
-    contribution_rate: "",
-    employer_contribution_rate: "",
-    insurance_effective_from: "",
-    contract_type: "permanent",
-    contract_start_date: "",
-    contract_end_date: "",
-  });
 
   const [form, setForm] = useState({
     full_name: "",
@@ -116,7 +94,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     date_of_birth: "",
     date_of_birth_hijri: "",
     gender: "",
-    hiring_date: "",
+    hiring_date: todayString(),
     department_id: "",
     job_title: "",
     manager_id: "",
@@ -150,8 +128,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
   const setShift = (key: string, value: string | null) => setShiftForm((prev) => ({ ...prev, [key]: value ?? "" }));
-  const setPersonnel = (key: string, value: string | null) => setPersonnelForm((prev) => ({ ...prev, [key]: value ?? "" }));
-  const isTrainee = form.employment_type === "intern";
   const setArabicName = (value: string) => {
     setForm((prev) => ({ ...prev, full_name_ar: value, full_name: value }));
   };
@@ -218,7 +194,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const handleDepartmentManagerChange = (checked: boolean) => {
     setIsDepartmentManager(checked);
     if (checked) {
-      setCreateLoginAccount(true);
       setAccountRole("training_manager");
     }
   };
@@ -232,59 +207,20 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       return;
     }
 
-    if (createLoginAccount) {
-      if (!parsed.data.email) {
-        setError("البريد الإلكتروني مطلوب لإنشاء حساب الدخول.");
-        return;
-      }
-      if (!isStrongEmployeeAccountPassword(accountPassword)) {
-        setError(EMPLOYEE_ACCOUNT_PASSWORD_MESSAGE);
-        return;
-      }
-      if (accountPassword !== accountPasswordConfirmation) {
-        setError(EMPLOYEE_ACCOUNT_PASSWORD_CONFIRMATION_MESSAGE);
-        return;
-      }
-    }
-
-    if (!officialFile) {
-      setError("يجب رفع ملف رسمي للموظف قبل إنشاء الموظف.");
+    if (!parsed.data.email) {
+      setError("البريد الإلكتروني مطلوب لإنشاء وتفعيل حساب الدخول.");
       return;
     }
-    if (!isTrainee && !personnelForm.gosi_number.trim()) {
-      setError("رقم التأمينات مطلوب قبل إنشاء الموظف.");
+    if (!parsed.data.hiring_date) {
+      setError("تاريخ بدء العمل مطلوب.");
       return;
     }
-    if (!isTrainee && !personnelForm.scheme_code.trim()) {
-      setError("رمز نظام التأمينات المطبق مطلوب.");
+    if (!isStrongEmployeeAccountPassword(accountPassword)) {
+      setError(EMPLOYEE_ACCOUNT_PASSWORD_MESSAGE);
       return;
     }
-    if (!isTrainee && (Number(personnelForm.contributory_wage) < 0 || !personnelForm.contributory_wage)) {
-      setError("الأجر المسجل الخاضع للتأمينات مطلوب.");
-      return;
-    }
-    if (!isTrainee && (!personnelForm.maximum_contributory_wage || Number(personnelForm.maximum_contributory_wage) <= 0)) {
-      setError("الحد الأعلى للأجر الخاضع للتأمينات مطلوب.");
-      return;
-    }
-    if (!isTrainee && (personnelForm.contribution_rate === "" || Number(personnelForm.contribution_rate) < 0)) {
-      setError("نسبة مساهمة الموظف مطلوبة.");
-      return;
-    }
-    if (!isTrainee && (personnelForm.employer_contribution_rate === "" || Number(personnelForm.employer_contribution_rate) < 0)) {
-      setError("نسبة مساهمة صاحب العمل مطلوبة.");
-      return;
-    }
-    if (!isTrainee && !personnelForm.insurance_effective_from) {
-      setError("تاريخ سريان إعداد التأمينات مطلوب.");
-      return;
-    }
-    if (!personnelForm.contract_start_date) {
-      setError("تاريخ بداية العقد مطلوب قبل إنشاء الموظف.");
-      return;
-    }
-    if (!contractFile) {
-      setError("يجب رفع ملف العقد قبل إنشاء الموظف.");
+    if (accountPassword !== accountPasswordConfirmation) {
+      setError(EMPLOYEE_ACCOUNT_PASSWORD_CONFIRMATION_MESSAGE);
       return;
     }
 
@@ -298,7 +234,12 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       leave_accrual_start_date: parsed.data.hiring_date || todayString(),
     };
 
-    const { data: createdEmployee, error: err } = await createEmployee(payload);
+    const { data: createdEmployee, error: err } = await createEmployee(payload, {
+      email: parsed.data.email,
+      full_name: parsed.data.full_name,
+      role: accountRole,
+      password: accountPassword,
+    });
 
     if (err) {
       setError(err.message);
@@ -308,58 +249,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
     if (createdEmployee?.id) {
       const employeeId = String(createdEmployee.id);
-      const failOnboarding = (message: string) => {
-        setError(`تم حفظ مسودة الموظف بأمان، لكن الإعداد لم يكتمل: ${message}`);
-        setSubmitting(false);
-      };
-      const { error: fileError } = await createPersonnelFile({
-        org_id: currentUser.orgId,
-        employee_id: employeeId,
-        category: personnelForm.file_category || "official",
-        expiry_date: personnelForm.file_expiry_date || undefined,
-      }, officialFile);
-
-      if (fileError) {
-        failOnboarding(fileError.message);
-        return;
-      }
-
-      if (!isTrainee) {
-        const { error: insuranceError } = await upsertSocialInsurance({
-          org_id: currentUser.orgId,
-          employee_id: employeeId,
-          gosi_number: personnelForm.gosi_number.trim(),
-          scheme_code: personnelForm.scheme_code.trim(),
-          contributory_wage: Number(personnelForm.contributory_wage),
-          maximum_contributory_wage: Number(personnelForm.maximum_contributory_wage),
-          employee_rate_percent: Number(personnelForm.contribution_rate),
-          employer_rate_percent: Number(personnelForm.employer_contribution_rate),
-          effective_from: personnelForm.insurance_effective_from,
-          registration_date: personnelForm.insurance_effective_from,
-          status: "active",
-        });
-
-        if (insuranceError) {
-          failOnboarding(insuranceError.message);
-          return;
-        }
-      }
-
-      const { error: contractError } = await createEmployeeContract({
-        org_id: currentUser.orgId,
-        employee_id: employeeId,
-        contract_type: personnelForm.contract_type || "permanent",
-        start_date: personnelForm.contract_start_date,
-        end_date: personnelForm.contract_end_date || undefined,
-        salary_at_signing: parsed.data.base_salary ?? undefined,
-        status: "active",
-      }, contractFile);
-
-      if (contractError) {
-        failOnboarding(contractError.message);
-        return;
-      }
-
       const { error: locationsError } = await replaceEmployeeLocations(
         currentUser.orgId,
         employeeId,
@@ -406,33 +295,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       }
     }
 
-    if (createLoginAccount && createdEmployee?.id && parsed.data.email) {
-      const { error: accountError } = await createEmployeeAccount({
-        employee_id: String(createdEmployee.id),
-        email: parsed.data.email,
-        full_name: parsed.data.full_name,
-        role: accountRole,
-        password: accountPassword,
-      });
-
-      if (accountError) {
-        setError(`تم حفظ الموظف، لكن فشل إنشاء حساب الدخول: ${accountError.message}`);
-        setSubmitting(false);
-        onSuccess();
-        return;
-      }
-    }
-
-    if (createdEmployee?.id) {
-      const { error: finalizeError } = await finalizeEmployeeOnboarding(String(createdEmployee.id));
-      if (finalizeError) {
-        setError(`تم حفظ إعداد الموظف، لكن تعذر تفعيله: ${finalizeError.message}`);
-        setSubmitting(false);
-        onSuccess();
-        return;
-      }
-    }
-
     setSubmitting(false);
     setOpen(false);
     setForm({
@@ -451,7 +313,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       date_of_birth: "",
       date_of_birth_hijri: "",
       gender: "",
-      hiring_date: "",
+      hiring_date: todayString(),
       department_id: "",
       job_title: "",
       manager_id: "",
@@ -479,26 +341,9 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     setSelectedLocationIds([]);
     setPrimaryLocationId("");
     setShiftForm({ shift_id: "", start_date: "", end_date: "" });
-    setCreateLoginAccount(false);
     setAccountRole("employee");
     setAccountPassword("");
     setAccountPasswordConfirmation("");
-    setOfficialFile(null);
-    setContractFile(null);
-    setPersonnelForm({
-      file_category: "official",
-      file_expiry_date: "",
-      gosi_number: "",
-      scheme_code: "",
-      contributory_wage: "",
-      maximum_contributory_wage: "",
-      contribution_rate: "",
-      employer_contribution_rate: "",
-      insurance_effective_from: "",
-      contract_type: "permanent",
-      contract_start_date: "",
-      contract_end_date: "",
-    });
     onSuccess();
   };
 
@@ -809,150 +654,54 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
           <div className="space-y-4">
             <p className="text-sm font-semibold text-slate-700">حساب الدخول</p>
-            <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                className="rounded border-gray-300"
-                checked={createLoginAccount}
-                onChange={(event) => setCreateLoginAccount(event.target.checked)}
-              />
-              <span>إنشاء حساب دخول لهذا الموظف</span>
-            </label>
-            {createLoginAccount && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+              سيتم إنشاء الموظف وحساب الدخول بحالة نشطة فورًا. المستندات والعقد والتأمينات تُستكمل لاحقًا من تبويب استكمال الملفات ولا تمنع الدخول.
+            </div>
+            <div className="space-y-2">
               <div className="space-y-2">
-                <div className="space-y-2">
-                  <Label>نوع الحساب</Label>
-                  <Select value={accountRole} onValueChange={(value) => setAccountRole(value as EmployeeAccountRole)}>
-                    <SelectTrigger>
-                      <SelectValue>
-                        {(value: string | null) => getAccountRoleLabel(value)}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      {accountRoleOptions.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-gray-500">
-                    أدوار المالية تمنح المستخدم صلاحيات داخل وحدة المالية والمحاسبة حسب مستوى الدور.
-                  </p>
-                </div>
-                <div className={twoColumnGridClass}>
-                  <div className="space-y-2">
-                    <Label>كلمة المرور المؤقتة</Label>
-                    <Input
-                      type="password"
-                      dir="ltr"
-                      autoComplete="new-password"
-                      value={accountPassword}
-                      onChange={(event) => setAccountPassword(event.target.value)}
-                      placeholder="12+ characters"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>تأكيد كلمة المرور</Label>
-                    <Input
-                      type="password"
-                      dir="ltr"
-                      autoComplete="new-password"
-                      value={accountPasswordConfirmation}
-                      onChange={(event) => setAccountPasswordConfirmation(event.target.value)}
-                    />
-                  </div>
-                </div>
+                <Label>نوع الحساب *</Label>
+                <Select value={accountRole} onValueChange={(value) => setAccountRole(value as EmployeeAccountRole)}>
+                  <SelectTrigger>
+                    <SelectValue>
+                      {(value: string | null) => getAccountRoleLabel(value)}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accountRoleOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <p className="text-xs text-gray-500">
-                  يجب أن تحتوي على 12 حرفًا على الأقل وحرف كبير وصغير ورقم. شاركها مع الموظف بطريقة آمنة.
+                  يحدد HR كلمة المرور الآن ويستطيع تغييرها أو استبدالها لاحقًا من تعديل الموظف.
                 </p>
               </div>
-            )}
-          </div>
-
-          <div className="space-y-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <div>
-              <p className="text-sm font-semibold text-slate-700">ملفات الموظف المطلوبة</p>
-              <p className="mt-1 text-xs text-gray-500">
-                {isTrainee
-                  ? "لا يمكن إنشاء المتدرب قبل رفع الملف الرسمي والعقد. بيانات التأمينات غير مطلوبة للمتدربين."
-                  : "لا يمكن إنشاء الموظف قبل رفع الملف الرسمي والعقد وإضافة بيانات التأمينات."}
+              <div className={twoColumnGridClass}>
+                <div className="space-y-2">
+                  <Label>كلمة المرور *</Label>
+                  <Input
+                    type="password"
+                    dir="ltr"
+                    autoComplete="new-password"
+                    value={accountPassword}
+                    onChange={(event) => setAccountPassword(event.target.value)}
+                    placeholder="12+ characters"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>تأكيد كلمة المرور *</Label>
+                  <Input
+                    type="password"
+                    dir="ltr"
+                    autoComplete="new-password"
+                    value={accountPasswordConfirmation}
+                    onChange={(event) => setAccountPasswordConfirmation(event.target.value)}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                يجب أن تحتوي على 12 حرفًا على الأقل وحرف كبير وصغير ورقم. لا تُعرض كلمة المرور بعد الحفظ؛ يستطيع HR فقط استبدالها.
               </p>
-            </div>
-            <div className={twoColumnGridClass}>
-              <div className="space-y-2">
-                <Label>الملف الرسمي *</Label>
-                <Input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(event) => setOfficialFile(event.target.files?.[0] ?? null)} />
-              </div>
-              <div className="space-y-2">
-                <Label>تصنيف الملف</Label>
-                <Input value={personnelForm.file_category} onChange={(event) => setPersonnel("file_category", event.target.value)} placeholder="official" />
-              </div>
-            </div>
-            <div className={twoColumnGridClass}>
-              <div className="space-y-2">
-                <Label>تاريخ انتهاء الملف</Label>
-                <Input type="date" value={personnelForm.file_expiry_date} onChange={(event) => setPersonnel("file_expiry_date", event.target.value)} />
-              </div>
-              {!isTrainee && (
-                <div className="space-y-2">
-                  <Label>رقم التأمينات *</Label>
-                  <Input value={personnelForm.gosi_number} onChange={(event) => setPersonnel("gosi_number", event.target.value)} placeholder="GOSI number" />
-                </div>
-              )}
-            </div>
-            {!isTrainee && (
-              <div className={threeColumnGridClass}>
-                <div className="space-y-2">
-                  <Label>رمز النظام / التغطية *</Label>
-                  <Input value={personnelForm.scheme_code} onChange={(event) => setPersonnel("scheme_code", event.target.value)} placeholder="حسب تصنيف GOSI المعتمد" />
-                </div>
-                <div className="space-y-2">
-                  <Label>الأجر الخاضع المسجل *</Label>
-                  <Input type="number" min={0} step="0.01" value={personnelForm.contributory_wage} onChange={(event) => setPersonnel("contributory_wage", event.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>الحد الأعلى الخاضع *</Label>
-                  <Input type="number" min={0} step="0.01" value={personnelForm.maximum_contributory_wage} onChange={(event) => setPersonnel("maximum_contributory_wage", event.target.value)} />
-                </div>
-              </div>
-            )}
-            {!isTrainee && (
-              <div className={threeColumnGridClass}>
-                <div className="space-y-2">
-                  <Label>نسبة الموظف % *</Label>
-                  <Input type="number" min={0} max={100} step="0.01" inputMode="decimal" value={personnelForm.contribution_rate} onChange={(event) => setPersonnel("contribution_rate", event.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>نسبة صاحب العمل % *</Label>
-                  <Input type="number" min={0} max={100} step="0.01" inputMode="decimal" value={personnelForm.employer_contribution_rate} onChange={(event) => setPersonnel("employer_contribution_rate", event.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>سريان الإعداد *</Label>
-                  <Input type="date" value={personnelForm.insurance_effective_from} onChange={(event) => setPersonnel("insurance_effective_from", event.target.value)} />
-                </div>
-              </div>
-            )}
-            <div className={threeColumnGridClass}>
-              {!isTrainee && (
-                <p className="self-end text-xs text-amber-700">راجع التصنيف والأجر والنسب مع مسؤول الرواتب قبل الحفظ؛ النظام لا يفترض نسبة قانونية تلقائياً.</p>
-              )}
-              <div className="space-y-2">
-                <Label>نوع العقد</Label>
-                <Input value={personnelForm.contract_type} onChange={(event) => setPersonnel("contract_type", event.target.value)} placeholder="permanent" />
-              </div>
-              <div className="space-y-2">
-                <Label>بداية العقد *</Label>
-                <Input type="date" value={personnelForm.contract_start_date} onChange={(event) => setPersonnel("contract_start_date", event.target.value)} />
-              </div>
-            </div>
-            <div className={twoColumnGridClass}>
-              <div className="space-y-2">
-                <Label>نهاية العقد</Label>
-                <Input type="date" value={personnelForm.contract_end_date} onChange={(event) => setPersonnel("contract_end_date", event.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>ملف العقد *</Label>
-                <Input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={(event) => setContractFile(event.target.files?.[0] ?? null)} />
-              </div>
             </div>
           </div>
 

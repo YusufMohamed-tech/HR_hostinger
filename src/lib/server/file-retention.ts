@@ -1,11 +1,15 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { deleteManagedFile } from "@/lib/server/personnel-storage";
 
 type ManagedFile = {
   id: string;
   bucket_id: string;
   storage_path: string;
+  storage_provider?: string | null;
+  storage_container?: string | null;
+  storage_version?: string | null;
   deletion_attempts: number;
 };
 
@@ -32,8 +36,7 @@ export async function processFileRetentionBatch(workerId: string, batchSize = 25
   const results = [] as Array<{ id: string; outcome: "deleted" | "failed" | "dead_letter" }>;
   for (const file of files) {
     try {
-      const removed = await admin.storage.from(file.bucket_id).remove([file.storage_path]);
-      if (removed.error) throw new Error(removed.error.message);
+      await deleteManagedFile(admin, file);
       const completed = await rpc(admin, "complete_managed_file_retention", {
         p_file_id: file.id,
         p_worker_id: workerId,

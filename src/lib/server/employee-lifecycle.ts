@@ -38,7 +38,7 @@ function firstRow(data: unknown, fallback: string) {
 
 async function activateEmployeeProfileIfActive(
   admin: AdminClient,
-  values: { orgId: string; userId: string; employee: EmployeeRow }
+  values: { orgId: string; userId: string; employee: EmployeeRow; actorUserId?: string }
 ) {
   const lifecycleStatus = String(values.employee.lifecycle_status || "").toLowerCase();
   const employmentStatus = String(values.employee.status || "").toLowerCase();
@@ -48,7 +48,17 @@ async function activateEmployeeProfileIfActive(
 
   const activation = await admin
     .from("profiles")
-    .update({ account_status: "Active" })
+    .update({
+      account_status: "Active",
+      access_suspended_at: null,
+      access_suspension_reason: null,
+      ...(values.actorUserId
+        ? {
+            password_last_changed_at: new Date().toISOString(),
+            password_last_changed_by: values.actorUserId,
+          }
+        : {}),
+    })
     .eq("org_id", values.orgId)
     .eq("user_id", values.userId)
     .select("user_id")
@@ -215,6 +225,22 @@ export async function inviteAndLinkEmployeeIdentity(
     if (employeeResult.data.user_id && employeeResult.data.user_id !== authUser.id) {
       throw new EmployeeLifecycleError("Employee already has a different login account.", 409);
     }
+    if (values.password) {
+      const passwordUpdate = await admin.auth.admin.updateUserById(authUser.id, {
+        password: values.password,
+        email_confirm: true,
+        user_metadata: {
+          ...authUser.user_metadata,
+          full_name: values.fullName,
+          identity_command_id: values.commandId,
+        },
+      });
+      if (passwordUpdate.error || !passwordUpdate.data.user) {
+        throw new EmployeeLifecycleError(passwordUpdate.error?.message || "Unable to set employee password.", 500);
+      }
+      authUser = passwordUpdate.data.user;
+      createdWithPassword = true;
+    }
   } else {
     const identity = values.password
       ? await admin.auth.admin.createUser({
@@ -278,6 +304,7 @@ export async function inviteAndLinkEmployeeIdentity(
     orgId: values.orgId,
     userId: authUser.id,
     employee: linkedEmployee,
+    actorUserId: createdWithPassword ? values.actorUserId : undefined,
   });
 
   return {
@@ -290,7 +317,7 @@ export async function inviteAndLinkEmployeeIdentity(
 
 export async function setEmployeeIdentityPassword(
   admin: AdminClient,
-  values: { orgId: string; employeeId: string; password: string }
+  values: { orgId: string; employeeId: string; actorUserId: string; password: string }
 ) {
   const employeeResult = await admin
     .from("employees")
@@ -318,6 +345,7 @@ export async function setEmployeeIdentityPassword(
     orgId: values.orgId,
     userId: employeeResult.data.user_id,
     employee: employeeResult.data,
+    actorUserId: values.actorUserId,
   });
 
   return { userId: update.data.user.id };

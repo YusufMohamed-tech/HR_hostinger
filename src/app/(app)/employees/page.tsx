@@ -2,8 +2,8 @@
 
 import React from "react";
 import Link from "next/link";
-import { CircleCheck, Eye, Search, UserX, Users } from "lucide-react";
-import { finalizeEmployeeOnboarding, offboardEmployeeRecord } from "@/lib/services/employees";
+import { Eye, Search, UserX, Users } from "lucide-react";
+import { offboardEmployeeRecord } from "@/lib/services/employees";
 import { EditEmployeeDialog } from "@/components/forms/EditEmployeeDialog";
 import { PromoteEmployeeDialog } from "@/components/forms/PromoteEmployeeDialog";
 import { Button } from "@/components/ui/button";
@@ -166,6 +166,8 @@ export default function EmployeesPage() {
                 const empCode = typeof empRecord.employee_code === "string" ? empRecord.employee_code : empId;
                 const empStatus = typeof empRecord.status === "string" ? empRecord.status : "Active";
                 const lifecycleStatus = typeof empRecord.lifecycle_status === "string" ? empRecord.lifecycle_status : "active";
+                const onboardingProgress = Number(empRecord.onboarding_progress || 0);
+                const onboardingStatus = typeof empRecord.onboarding_status === "string" ? empRecord.onboarding_status : "in_progress";
                 const displayedStatus = lifecycleStatus === "active" ? empStatus : lifecycleStatus;
                 const jobTitle = typeof empRecord.job_title === "string" ? empRecord.job_title : "-";
                 const department = (empRecord.department ?? null) as Record<string, unknown> | null;
@@ -201,6 +203,9 @@ export default function EmployeesPage() {
                       >
                         {statusLabels[displayedStatus] || displayedStatus}
                       </Badge>
+                      {!["complete", "waived"].includes(onboardingStatus) && (
+                        <span className="mt-1 block text-[10px] text-amber-700">الملف {onboardingProgress.toFixed(0)}%</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-gray-600">
                       <span className="block truncate" title={jobTitle}>{jobTitle}</span>
@@ -213,26 +218,6 @@ export default function EmployeesPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-0.5">
-                        {canManageEmployees && lifecycleStatus === "onboarding" && (
-                          <ConfirmActionButton
-                            variant="ghost"
-                            size="icon-xs"
-                            className="text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
-                            title="تفعيل الموظف"
-                            description="سيتم التحقق من الملف الرسمي والعقد والتأمينات وموقع العمل قبل التفعيل. إذا كان أي عنصر ناقص ستبقى حالة الانضمام معلّقة دون وصول للنظام."
-                            confirmLabel="تحقق وفعّل"
-                            onConfirm={async () => {
-                              const result = await finalizeEmployeeOnboarding(empId);
-                              if (result.error) {
-                                setActionError(result.error.message);
-                                return;
-                              }
-                              refetch();
-                            }}
-                          >
-                            <CircleCheck className="h-3.5 w-3.5" />
-                          </ConfirmActionButton>
-                        )}
                         {canManageEmployees && !["offboarded", "archived"].includes(lifecycleStatus) && (
                           <PromoteEmployeeDialog employee={emp} onSuccess={refetch} compact />
                         )}

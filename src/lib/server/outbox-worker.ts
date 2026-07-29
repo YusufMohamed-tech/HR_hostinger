@@ -291,7 +291,7 @@ const assetDepreciationPayload = z.object({
 
 const complianceDeadlinePayload = z.object({
   alert_id: z.string().uuid(),
-  source_type: z.enum(["personnel_file", "contract_end", "probation_end"]),
+  source_type: z.enum(["personnel_file", "contract_end", "probation_end", "onboarding_item"]),
   source_id: z.string().uuid(),
   employee_id: z.string().uuid(),
   employee_name: z.string(),
@@ -299,6 +299,7 @@ const complianceDeadlinePayload = z.object({
   deadline_date: z.string(),
   days_remaining: z.coerce.number().int(),
   business_date: z.string(),
+  employee_can_submit: z.boolean().optional().default(false),
 });
 
 const fileRetentionDeadLetterPayload = z.object({
@@ -1194,7 +1195,9 @@ const handlers: Record<string, OutboxHandler> = {
     if (members.error) throw new Error(`Compliance recipient lookup failed: ${members.error.message}`);
     if (employee.error) throw new Error(`Compliance employee lookup failed: ${employee.error.message}`);
     const recipients = new Set((members.data || []).map((member) => member.user_id));
-    if (employee.data?.user_id) recipients.add(employee.data.user_id);
+    if (employee.data?.user_id && (payload.source_type !== "onboarding_item" || payload.employee_can_submit)) {
+      recipients.add(employee.data.user_id);
+    }
     const timing = payload.days_remaining > 0
       ? `متبقٍ ${payload.days_remaining} يوم`
       : payload.days_remaining === 0 ? "الموعد اليوم" : `متأخر ${Math.abs(payload.days_remaining)} يوم`;
@@ -1202,10 +1205,12 @@ const handlers: Record<string, OutboxHandler> = {
       orgId: event.org_id,
       sourceEventId: event.business_event_id,
       userIds: [...recipients],
-      title: `تنبيه امتثال: ${payload.deadline_label}`,
+      title: payload.source_type === "onboarding_item"
+        ? `مطلوب استكمال: ${payload.deadline_label}`
+        : `تنبيه امتثال: ${payload.deadline_label}`,
       body: `${payload.employee_name} — ${payload.deadline_date} (${timing}).`,
-      type: "sales",
-      link: "/personnel",
+      type: "system",
+      link: payload.source_type === "onboarding_item" ? "/onboarding" : "/personnel",
     });
   },
   "file.retention_dead_letter": async (event) => {

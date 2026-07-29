@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireTenantContext } from "@/lib/server/tenant-context";
-import { inspectUpload, removeUploadedPaths, UploadSecurityError } from "@/lib/server/upload-security";
+import { inspectUpload, UploadSecurityError } from "@/lib/server/upload-security";
+import {
+  createManagedFileDownloadUrl,
+  deletePersonnelObject,
+  uploadPersonnelObject,
+} from "@/lib/server/personnel-storage";
 
 type RpcClient = {
   rpc: (name: string, args: Record<string, unknown>) => Promise<{
@@ -26,6 +31,7 @@ const fileSchema = z.object({
   category: z.string().trim().min(1).max(120).default("other"),
   expiry_date: z.string().date().optional(),
   notes: z.string().trim().max(2000).optional(),
+  onboarding_item_id: z.string().uuid().optional(),
 });
 
 const contractSchema = z.object({
@@ -55,41 +61,101 @@ function statusFor(code?: string) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireTenantContext({ roles: ["admin", "hr_admin"], feature: "personnel" }, request);
+  const auth = await requireTenantContext({ feature: "personnel" }, request);
   if ("error" in auth) return auth.error;
   const formData = await request.formData();
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
-    return NextResponse.json({ message: "A personnel document is required.", requestId: auth.requestId }, { status: 400 });
+    return NextResponse.json({
+      message: "A personnel document is required.",
+      requestId: auth.requestId,
+    }, { status: 400 });
   }
-  const raw = Object.fromEntries(["mode", "row_id", "command_id", "employee_id", "category", "expiry_date",
-    "notes", "contract_type", "start_date", "end_date", "probation_end_date", "salary_at_signing"]
-    .map((key) => [key, formData.get(key)]));
-  for (const key of ["expiry_date", "notes", "end_date", "probation_end_date", "salary_at_signing"]) {
+
+  const raw = Object.fromEntries([
+    "mode", "row_id", "command_id", "employee_id", "category", "expiry_date",
+    "notes", "onboarding_item_id", "contract_type", "start_date", "end_date",
+    "probation_end_date", "salary_at_signing",
+  ].map((key) => [key, formData.get(key)]));
+  for (const key of [
+    "expiry_date", "notes", "onboarding_item_id", "end_date",
+    "probation_end_date", "salary_at_signing",
+  ]) {
     if (!raw[key]) delete raw[key];
   }
+
   const mode = String(raw.mode || "");
-  const parsed = mode === "personnel_file" ? fileSchema.safeParse(raw) : contractSchema.safeParse(raw);
+  const parsed = mode === "personnel_file"
+    ? fileSchema.safeParse(raw)
+    : contractSchema.safeParse(raw);
   if (!parsed.success) {
-    return NextResponse.json({ message: parsed.error.issues[0]?.message || "Personnel record is invalid.", requestId: auth.requestId }, { status: 400 });
+    return NextResponse.json({
+      message: parsed.error.issues[0]?.message || "Personnel record is invalid.",
+      requestId: auth.requestId,
+    }, { status: 400 });
   }
+
   const employee = await auth.admin.from("employees").select("id").eq("org_id", auth.orgId)
     .eq("id", parsed.data.employee_id).maybeSingle();
-  if (employee.error) return NextResponse.json({ message: employee.error.message, requestId: auth.requestId }, { status: 500 });
-  if (!employee.data) return NextResponse.json({ message: "Employee was not found.", requestId: auth.requestId }, { status: 404 });
+  if (employee.error) {
+    return NextResponse.json({ message: employee.error.message, requestId: auth.requestId }, { status: 500 });
+  }
+  if (!employee.data) {
+    return NextResponse.json({ message: "Employee was not found.", requestId: auth.requestId }, { status: 404 });
+  }
 
-  let path = "";
+  const isHr = ["admin", "hr_admin"].includes(auth.role);
+  if (!isHr && (mode !== "personnel_file" || auth.employeeId !== parsed.data.employee_id)) {
+    return NextResponse.json({ message: "File access is forbidden.", requestId: auth.requestId }, { status: 403 });
+  }
+  const onboardingItemId = mode === "personnel_file"
+    ? (parsed.data as z.infer<typeof fileSchema>).onboarding_item_id
+    : undefined;
+  if (!isHr && !onboardingItemId) {
+    return NextResponse.json({
+      message: "Employees may upload only a requested onboarding document.",
+      requestId: auth.requestId,
+    }, { status: 403 });
+  }
+  if (onboardingItemId) {
+    const item = await auth.admin.from("employee_onboarding_items")
+      .select("id, employee_id, evidence_kind, employee_can_submit, status")
+      .eq("org_id", auth.orgId)
+      .eq("id", onboardingItemId)
+      .maybeSingle();
+    if (item.error) {
+      return NextResponse.json({ message: item.error.message, requestId: auth.requestId }, { status: 500 });
+    }
+    if (!item.data
+      || item.data.employee_id !== parsed.data.employee_id
+      || item.data.evidence_kind !== "document"
+      || (!isHr && item.data.employee_can_submit !== true)
+      || (!isHr && !["requested", "rejected"].includes(String(item.data.status)))
+      || ["verified", "waived", "not_applicable"].includes(String(item.data.status))) {
+      return NextResponse.json({
+        message: "Onboarding document request was not found.",
+        requestId: auth.requestId,
+      }, { status: 404 });
+    }
+  }
+
+  let stored: Awaited<ReturnType<typeof uploadPersonnelObject>> | null = null;
   try {
     const inspected = await inspectUpload(file, { allowedMimeTypes, maxBytes });
-    path = `${auth.orgId}/${parsed.data.employee_id}/${parsed.data.command_id}/${crypto.randomUUID()}-${safeFilename(file.name)}`;
-    const upload = await auth.admin.storage.from("personnel-files").upload(path, inspected.bytes, {
+    const path = `${auth.orgId}/${parsed.data.employee_id}/${parsed.data.command_id}/${crypto.randomUUID()}-${safeFilename(file.name)}`;
+    stored = await uploadPersonnelObject({
+      key: path,
+      bytes: inspected.bytes,
       contentType: inspected.detectedMime,
-      upsert: false,
+      sha256: inspected.sha256,
     });
-    if (upload.error) throw new Error(upload.error.message);
     const metadata = {
-      bucket: "personnel-files",
-      path,
+      provider: stored.provider,
+      bucket: stored.bucket,
+      path: stored.path,
+      version: stored.version,
+      etag: stored.etag,
+      encryption_status: stored.encryptionStatus,
       filename: safeFilename(file.name),
       type: inspected.detectedMime,
       size_bytes: file.size,
@@ -125,16 +191,60 @@ export async function POST(request: NextRequest) {
           p_salary: contractData.salary_at_signing ?? null,
         });
     if (result.error) {
-      await removeUploadedPaths(auth.admin, "personnel-files", [path]).catch(() => undefined);
-      return NextResponse.json({ message: result.error.message, requestId: auth.requestId }, { status: statusFor(result.error.code) });
+      await deletePersonnelObject({
+        storage_provider: stored.provider,
+        storage_container: stored.bucket,
+        storage_path: stored.path,
+        storage_version: stored.version,
+        bucket_id: "personnel-files",
+      }).catch(() => undefined);
+      return NextResponse.json({
+        message: result.error.message,
+        requestId: auth.requestId,
+      }, { status: statusFor(result.error.code) });
     }
+
     const data = Array.isArray(result.data) ? result.data[0] ?? null : result.data;
+    if (onboardingItemId && data && typeof data === "object") {
+      const managedFileId = String((data as Record<string, unknown>).managed_file_id || "");
+      const attached = await (auth.admin as unknown as RpcClient).rpc("update_employee_onboarding_item", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_request_id: auth.requestId,
+        p_item_id: onboardingItemId,
+        p_action: "attach_file",
+        p_reason: null,
+        p_due_at: null,
+        p_managed_file_id: managedFileId,
+      });
+      if (attached.error) {
+        return NextResponse.json({
+          message: `File was stored, but the onboarding item could not be linked: ${attached.error.message}`,
+          data,
+          requestId: auth.requestId,
+        }, { status: 409 });
+      }
+    }
     return NextResponse.json({ data, requestId: auth.requestId }, { status: 201 });
   } catch (error) {
-    if (path) await removeUploadedPaths(auth.admin, "personnel-files", [path]).catch(() => undefined);
-    const message = error instanceof UploadSecurityError ? error.message
-      : error instanceof Error ? error.message : "Personnel upload failed.";
-    return NextResponse.json({ message, requestId: auth.requestId }, { status: 422 });
+    if (stored) {
+      await deletePersonnelObject({
+        storage_provider: stored.provider,
+        storage_container: stored.bucket,
+        storage_path: stored.path,
+        storage_version: stored.version,
+        bucket_id: "personnel-files",
+      }).catch(() => undefined);
+    }
+    const message = error instanceof UploadSecurityError
+      ? error.message
+      : error instanceof Error
+        ? error.message
+        : "Personnel upload failed.";
+    const status = error instanceof UploadSecurityError && error.code === "scanner_unavailable"
+      ? 503
+      : 422;
+    return NextResponse.json({ message, requestId: auth.requestId }, { status });
   }
 }
 
@@ -143,22 +253,41 @@ export async function GET(request: NextRequest) {
   if ("error" in auth) return auth.error;
   const id = request.nextUrl.searchParams.get("id") || "";
   const ownerType = request.nextUrl.searchParams.get("owner_type") || "";
-  if (!/^[0-9a-f-]{36}$/i.test(id) || !["personnel_file", "employee_contract", "employee_document"].includes(ownerType)) {
-    return NextResponse.json({ message: "Managed file reference is invalid.", requestId: auth.requestId }, { status: 400 });
+  if (!/^[0-9a-f-]{36}$/i.test(id)
+    || !["personnel_file", "employee_contract", "employee_document"].includes(ownerType)) {
+    return NextResponse.json({
+      message: "Managed file reference is invalid.",
+      requestId: auth.requestId,
+    }, { status: 400 });
   }
-  const managed = await auth.admin.from("managed_files").select("bucket_id, storage_path, employee_id, deleted_at")
-    .eq("org_id", auth.orgId).eq("owner_type", ownerType).eq("owner_id", id).maybeSingle();
-  if (managed.error) return NextResponse.json({ message: managed.error.message, requestId: auth.requestId }, { status: 500 });
+  const managed = await auth.admin.from("managed_files")
+    .select("bucket_id, storage_path, storage_provider, storage_container, storage_version, original_name, employee_id, deleted_at")
+    .eq("org_id", auth.orgId)
+    .eq("owner_type", ownerType)
+    .eq("owner_id", id)
+    .maybeSingle();
+  if (managed.error) {
+    return NextResponse.json({ message: managed.error.message, requestId: auth.requestId }, { status: 500 });
+  }
   if (!managed.data || managed.data.deleted_at) {
     return NextResponse.json({ message: "Managed file was not found.", requestId: auth.requestId }, { status: 404 });
   }
   if (!["admin", "hr_admin"].includes(auth.role) && managed.data.employee_id !== auth.employeeId) {
     return NextResponse.json({ message: "File access is forbidden.", requestId: auth.requestId }, { status: 403 });
   }
-  const signed = await auth.admin.storage.from(String(managed.data.bucket_id))
-    .createSignedUrl(String(managed.data.storage_path), 600);
-  if (signed.error || !signed.data?.signedUrl) {
-    return NextResponse.json({ message: signed.error?.message || "Signed file access failed.", requestId: auth.requestId }, { status: 500 });
+  try {
+    const signedUrl = await createManagedFileDownloadUrl(auth.admin, {
+      bucket_id: String(managed.data.bucket_id),
+      storage_path: String(managed.data.storage_path),
+      storage_provider: typeof managed.data.storage_provider === "string" ? managed.data.storage_provider : null,
+      storage_container: typeof managed.data.storage_container === "string" ? managed.data.storage_container : null,
+      storage_version: typeof managed.data.storage_version === "string" ? managed.data.storage_version : null,
+    }, typeof managed.data.original_name === "string" ? managed.data.original_name : null);
+    return NextResponse.json({ data: { signedUrl }, requestId: auth.requestId });
+  } catch (error) {
+    return NextResponse.json({
+      message: error instanceof Error ? error.message : "Signed file access failed.",
+      requestId: auth.requestId,
+    }, { status: 500 });
   }
-  return NextResponse.json({ data: { signedUrl: signed.data.signedUrl }, requestId: auth.requestId });
 }

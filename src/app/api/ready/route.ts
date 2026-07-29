@@ -3,6 +3,10 @@ import schemaVersion from "@/lib/schema-version.json";
 import { validateRuntimeConfiguration } from "@/lib/runtime-config";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requestIdFromHeaders } from "@/lib/request-id";
+import {
+  checkHostingerPersonnelStorage,
+  personnelStorageIsConfigured,
+} from "@/lib/server/personnel-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +15,12 @@ export async function GET(request: NextRequest) {
   const configuration = validateRuntimeConfiguration();
   let databaseReady = false;
   let migrationsReady = false;
+  let personnelStorageReady = !configuration.production && !personnelStorageIsConfigured();
 
   if (configuration.ready) {
     try {
       const admin = createAdminClient();
-      const [database, migration] = await Promise.all([
+      const [database, migration, personnelStorage] = await Promise.all([
         admin
           .from("organizations")
           .select("id", { head: true, count: "exact" })
@@ -26,12 +31,18 @@ export async function GET(request: NextRequest) {
           .eq("id", schemaVersion.id)
           .abortSignal(AbortSignal.timeout(3_000))
           .maybeSingle(),
+        personnelStorageIsConfigured()
+          ? checkHostingerPersonnelStorage()
+              .then(() => ({ error: null }))
+              .catch((error: unknown) => ({ error }))
+          : Promise.resolve({ error: configuration.production ? new Error("Storage is not configured.") : null }),
       ]);
       databaseReady = !database.error;
       migrationsReady = !migration.error
         && migration.data?.id === schemaVersion.id
         && migration.data.file_path === schemaVersion.file
         && migration.data.checksum_sha256 === schemaVersion.checksumSha256;
+      personnelStorageReady = !personnelStorage.error;
       if (database.error) {
         console.error("Readiness database check failed", { requestId, code: database.error.code });
       }
@@ -40,6 +51,12 @@ export async function GET(request: NextRequest) {
           requestId,
           code: migration.error?.code,
           expectedHead: schemaVersion.id,
+        });
+      }
+      if (personnelStorage.error) {
+        console.error("Readiness personnel storage check failed", {
+          requestId,
+          error: personnelStorage.error instanceof Error ? personnelStorage.error.message : "Unknown error",
         });
       }
     } catch (error) {
@@ -55,7 +72,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const ready = configuration.ready && databaseReady && migrationsReady;
+  const ready = configuration.ready && databaseReady && migrationsReady && personnelStorageReady;
   return NextResponse.json(
     {
       status: ready ? "ready" : "not_ready",
@@ -63,6 +80,7 @@ export async function GET(request: NextRequest) {
         configuration: configuration.ready ? "ok" : "failed",
         database: databaseReady ? "ok" : "failed",
         migrations: migrationsReady ? "ok" : "failed",
+        personnelStorage: personnelStorageReady ? "ok" : "failed",
       },
       schemaHead: schemaVersion.id,
       time: new Date().toISOString(),

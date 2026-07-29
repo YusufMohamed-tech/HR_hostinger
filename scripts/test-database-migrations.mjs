@@ -1111,6 +1111,7 @@ const launchAssertions = `
     replayed_finalized public.employees;
     offboarded public.employees;
     replayed_offboarded public.employees;
+    custom_requirement public.employee_onboarding_items;
     lifecycle_balance_count integer;
     lifecycle_initial_count integer;
     membership_count integer;
@@ -1150,9 +1151,32 @@ const launchAssertions = `
     SELECT count(*) INTO lifecycle_initial_count FROM public.leave_balance_transactions
       WHERE employee_id = onboarding.id AND transaction_type = 'initial';
     IF onboarding.id IS NULL OR onboarding.id <> replayed_onboarding.id
-       OR onboarding.lifecycle_status <> 'onboarding'
+       OR onboarding.lifecycle_status <> 'active'
+       OR onboarding.onboarding_status NOT IN ('in_progress', 'overdue')
+       OR (SELECT count(*) FROM public.employee_onboarding_cases
+           WHERE employee_id = onboarding.id) <> 1
        OR lifecycle_balance_count <> 1 OR lifecycle_initial_count <> 1 THEN
-      RAISE EXCEPTION 'Idempotent employee onboarding did not create exactly one coherent draft.';
+      RAISE EXCEPTION 'Idempotent employee creation did not activate access and create one readiness case.';
+    END IF;
+    SELECT * INTO custom_requirement FROM public.create_employee_onboarding_requirement(
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+      '17272727-1727-4727-8727-172727271727',
+      onboarding.id,
+      'Custom lifecycle document',
+      'Custom lifecycle document',
+      'other',
+      'document',
+      'required',
+      NULL,
+      '2098-01-08',
+      true
+    );
+    IF custom_requirement.id IS NULL
+       OR custom_requirement.employee_id <> onboarding.id
+       OR custom_requirement.employee_can_submit IS NOT TRUE
+       OR custom_requirement.status <> 'missing' THEN
+      RAISE EXCEPTION 'HR-specific employee requirement was not created correctly.';
     END IF;
 
     SELECT * INTO linked FROM public.link_employee_identity(
@@ -3093,11 +3117,11 @@ const launchAssertions = `
         'job_title', 'Integrity Engineer', 'hiring_date', '2099-07-01', 'employment_type', 'full_time'),
       'recruitment', application_row.id
     );
-    IF employee_row.lifecycle_status <> 'onboarding'
+    IF employee_row.lifecycle_status <> 'active'
        OR (SELECT status FROM public.job_applications WHERE id = application_row.id) <> 'hired'
        OR (SELECT count(*) FROM public.event_outbox WHERE topic = 'recruitment.candidate_hired'
          AND payload->>'application_id' = application_row.id::text) <> 1 THEN
-      RAISE EXCEPTION 'Accepted recruitment offer did not atomically enter employee onboarding.';
+      RAISE EXCEPTION 'Accepted recruitment offer did not atomically create an active employee readiness case.';
     END IF;
   END
   $test$;

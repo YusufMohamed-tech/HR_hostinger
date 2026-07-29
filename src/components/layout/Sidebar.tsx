@@ -124,6 +124,7 @@ export function SidebarContent() {
 
     const fullAdminOps: NavLink[] = [
       { name: "الموظفون", href: "/employees", icon: Users },
+      { name: "استكمال ملفات الموظفين", href: "/onboarding", icon: ClipboardList, indent: true },
       { name: "الأقسام", href: "/departments", icon: Layers },
       { name: "ملفات الموظفين", href: "/personnel", icon: FileText },
       { name: "الرواتب", href: "/payroll", icon: Calculator },
@@ -135,6 +136,7 @@ export function SidebarContent() {
     const hrAdminOps = fullAdminOps.filter((link) => link.href !== "/recruitment");
 
     const employeeSelfOps: NavLink[] = [
+      { name: "استكمال ملفي", href: "/onboarding", icon: ClipboardList },
       { name: "الأرصدة والسلف", href: "/balances", icon: WalletCards },
       { name: "العهد المستلمة", href: "/assets", icon: Package },
     ];

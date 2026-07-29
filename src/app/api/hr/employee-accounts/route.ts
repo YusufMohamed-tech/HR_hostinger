@@ -102,6 +102,7 @@ export async function PATCH(request: NextRequest) {
     const result = await setEmployeeIdentityPassword(auth.admin, {
       orgId: auth.orgId,
       employeeId: parsed.data.employee_id,
+      actorUserId: auth.user.id,
       password: parsed.data.password,
     });
     return NextResponse.json({

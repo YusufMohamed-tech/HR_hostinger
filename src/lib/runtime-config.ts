@@ -25,6 +25,14 @@ const productionSecretFields = [
   "RATE_LIMIT_HASH_SECRET",
 ] as const;
 
+const hostingerPersonnelStorageFields = [
+  "HOSTINGER_OBJECT_STORAGE_ENDPOINT",
+  "HOSTINGER_OBJECT_STORAGE_REGION",
+  "HOSTINGER_OBJECT_STORAGE_ACCESS_KEY",
+  "HOSTINGER_OBJECT_STORAGE_SECRET_KEY",
+  "HOSTINGER_OBJECT_STORAGE_BUCKET",
+] as const;
+
 const dangerousProductionFlags = [
   "ALLOW_DESTRUCTIVE_SCHEMA_APPLY",
   "ALLOW_DESTRUCTIVE_MIGRATION",
@@ -78,6 +86,26 @@ export function validateRuntimeConfiguration(
   }
 
   if (production) {
+    for (const field of hostingerPersonnelStorageFields) {
+      const configured = value(environment, field);
+      if (!configured) addIssue(field, "missing");
+      else if (isPlaceholder(configured)) addIssue(field, "placeholder");
+    }
+    const hostingerEndpoint = value(environment, "HOSTINGER_OBJECT_STORAGE_ENDPOINT");
+    if (hostingerEndpoint) {
+      const parsed = parseUrl(hostingerEndpoint);
+      if (!parsed || parsed.protocol !== "https:") {
+        addIssue("HOSTINGER_OBJECT_STORAGE_ENDPOINT", "valid_https_url_required");
+      }
+    }
+    const encryption = value(environment, "HOSTINGER_OBJECT_STORAGE_ENCRYPTION") || "AES256";
+    if (!["AES256", "aws:kms"].includes(encryption)) {
+      addIssue("HOSTINGER_OBJECT_STORAGE_ENCRYPTION", "must_be_AES256_or_aws:kms");
+    }
+    if (encryption === "aws:kms" && !value(environment, "HOSTINGER_OBJECT_STORAGE_KMS_KEY_ID")) {
+      addIssue("HOSTINGER_OBJECT_STORAGE_KMS_KEY_ID", "required_for_aws_kms");
+    }
+
     for (const field of productionSecretFields) {
       const configured = value(environment, field);
       if (!configured) addIssue(field, "missing");

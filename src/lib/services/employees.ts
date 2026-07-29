@@ -52,16 +52,33 @@ export async function getEmployeeById(orgId: string, id: string) {
   return result as unknown as { data: Record<string, unknown> | null; error: { message: string } | null };
 }
 
-export async function createEmployee(values: Record<string, unknown>) {
+export async function createEmployee(
+  values: Record<string, unknown>,
+  account: {
+    email: string;
+    full_name?: string;
+    role: EmployeeAccountRole;
+    password: string;
+  }
+) {
   const employee = { ...values };
   delete employee.org_id;
   const scope = `employee-onboarding:${String(employee.email || employee.employee_code || employee.full_name || "draft")}`;
+  const accountScope = `employee-identity:${String(employee.email || employee.full_name || "draft")}`;
   const response = await fetch("/api/hr/employees", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ command_id: commandId(scope), employee }),
+    body: JSON.stringify({
+      command_id: commandId(scope),
+      employee,
+      account: { ...account, command_id: commandId(accountScope) },
+    }),
   });
   const result = await responseResult(response, "Unable to begin employee onboarding.");
+  if (!result.error) {
+    clearCommandId(scope);
+    clearCommandId(accountScope);
+  }
   return result;
 }
 

@@ -513,6 +513,11 @@ export interface Database {
           username: string | null;
           account_status: string | null;
           last_login_at: string | null;
+          access_activated_at: string | null;
+          access_suspended_at: string | null;
+          access_suspension_reason: string | null;
+          password_last_changed_at: string | null;
+          password_last_changed_by: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -526,6 +531,11 @@ export interface Database {
           username?: string | null;
           account_status?: string | null;
           last_login_at?: string | null;
+          access_activated_at?: string | null;
+          access_suspended_at?: string | null;
+          access_suspension_reason?: string | null;
+          password_last_changed_at?: string | null;
+          password_last_changed_by?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -538,6 +548,11 @@ export interface Database {
           username?: string | null;
           account_status?: string | null;
           last_login_at?: string | null;
+          access_activated_at?: string | null;
+          access_suspended_at?: string | null;
+          access_suspension_reason?: string | null;
+          password_last_changed_at?: string | null;
+          password_last_changed_by?: string | null;
           updated_at?: string;
         };
       };
@@ -649,6 +664,9 @@ export interface Database {
           education_level: string | null;
           lifecycle_status: "onboarding" | "active" | "offboarding" | "offboarded" | "archived";
           lifecycle_version: number;
+          onboarding_status: "not_started" | "in_progress" | "ready" | "overdue";
+          onboarding_progress: number;
+          onboarding_due_at: string | null;
           onboarded_at: string | null;
           offboarding_started_at: string | null;
           offboarded_at: string | null;
@@ -711,6 +729,9 @@ export interface Database {
           education_level?: string | null;
           lifecycle_status?: "onboarding" | "active" | "offboarding" | "offboarded" | "archived";
           lifecycle_version?: number;
+          onboarding_status?: "not_started" | "in_progress" | "ready" | "overdue";
+          onboarding_progress?: number;
+          onboarding_due_at?: string | null;
           onboarded_at?: string | null;
           offboarding_started_at?: string | null;
           offboarded_at?: string | null;
@@ -773,6 +794,9 @@ export interface Database {
           education_level?: string | null;
           lifecycle_status?: "onboarding" | "active" | "offboarding" | "offboarded" | "archived";
           lifecycle_version?: number;
+          onboarding_status?: "not_started" | "in_progress" | "ready" | "overdue";
+          onboarding_progress?: number;
+          onboarding_due_at?: string | null;
           onboarded_at?: string | null;
           offboarding_started_at?: string | null;
           offboarded_at?: string | null;
