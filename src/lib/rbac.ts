@@ -83,6 +83,7 @@ export function isPublicPath(pathname: string): boolean {
     pathname === "/forgot-password" ||
     pathname === "/reset-password" ||
     pathname === "/suspended" ||
+    pathname.startsWith("/ocr/tesseract/") ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/apply/") ||
     pathname.startsWith("/candidate/login") ||
@@ -118,13 +119,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
 
   if (role === "Inventory_Receiver") {
     const commercePath =
-      normalizedPath.startsWith("/sales/inventory/assignments") ||
-      normalizedPath.startsWith("/api/sales/inventory/handovers") ||
       normalizedPath.startsWith("/api/sales/inventory/returns") ||
       normalizedPath.startsWith("/api/sales/inventory/agent-sales") ||
       normalizedPath.startsWith("/api/sales/inventory/agent-collections") ||
       normalizedPath.startsWith("/api/sales/inventory/price-overrides") ||
-      normalizedPath.startsWith("/api/sales/inventory/movements") ||
       normalizedPath.startsWith("/api/sales/inventory/me");
     return (
       (!commercePath && normalizedPath.startsWith("/sales/inventory")) ||

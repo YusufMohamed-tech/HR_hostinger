@@ -20,6 +20,11 @@ export const productInventoryManagerRoles = [
   "onground_agent_manager",
 ] as const;
 
+export const productInventoryHandoverRoles = [
+  ...productInventoryManagerRoles,
+  "inventory_receiver",
+] as const;
+
 export const productInventoryCommerceRoles = [
   ...productInventoryManagerRoles,
   "field_agent",
@@ -42,6 +47,13 @@ export function requireProductInventoryFinanceAccess(request?: NextRequest) {
 export function requireProductInventoryManagerAccess(request?: NextRequest) {
   return requireTenantContext(
     { feature: "sales", roles: productInventoryManagerRoles, requireEmployee: true },
+    request
+  );
+}
+
+export function requireProductInventoryHandoverAccess(request?: NextRequest) {
+  return requireTenantContext(
+    { feature: "sales", roles: productInventoryHandoverRoles, requireEmployee: true },
     request
   );
 }

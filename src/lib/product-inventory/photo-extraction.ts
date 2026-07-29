@@ -1,4 +1,5 @@
 import { normalizeSerial } from "@/lib/product-inventory/normalization";
+import { createLocalEnglishOcrWorker } from "@/lib/ocr/local-tesseract";
 import {
   matchProductCatalog,
   normalizeProductMatchValue,
@@ -181,11 +182,10 @@ export function parseProductPhotoExtraction(
 
 export class LocalOcrProductExtractionProvider implements ProductExtractionProvider {
   async extract(file: File): Promise<ProductPhotoRawExtraction> {
-    const [{ createWorker }, { BrowserMultiFormatReader }] = await Promise.all([
-      import("tesseract.js"),
+    const [worker, { BrowserMultiFormatReader }] = await Promise.all([
+      createLocalEnglishOcrWorker(),
       import("@zxing/browser"),
     ]);
-    const worker = await createWorker("eng");
     const url = URL.createObjectURL(file);
     try {
       const [ocr, barcode] = await Promise.all([

@@ -12,6 +12,10 @@ const sources = {
   receiptRoute: read("src/app/api/sales/inventory/receipts/route.ts"),
   healthRoute: read("src/app/api/internal/product-inventory/route.ts"),
   photoRoute: read("src/app/api/sales/inventory/receipts/[receiptId]/photo-preview/route.ts"),
+  photoExtraction: read("src/lib/product-inventory/photo-extraction.ts"),
+  localTesseract: read("src/lib/ocr/local-tesseract.ts"),
+  prepareOcrAssets: read("scripts/prepare-ocr-assets.mjs"),
+  packageJson: read("package.json"),
   workbookRoute: read("src/app/api/sales/inventory/receipts/[receiptId]/excel-preview/route.ts"),
   databaseTests: read("scripts/test-database-migrations.mjs"),
   runbook: read("docs/PRODUCT_INVENTORY_PHASE_6_UAT_RUNBOOK.md"),
@@ -58,6 +62,12 @@ const checks = [
     sources.photoRoute.includes("inspectUpload")
       && sources.photoRoute.includes("maxTotalBytes")
       && sources.photoRoute.includes("manifestSchema")],
+  ["browser OCR is packaged and loaded from the application origin",
+    sources.photoExtraction.includes("createLocalEnglishOcrWorker")
+      && sources.localTesseract.includes('workerPath: "/ocr/tesseract/worker.min.js"')
+      && sources.localTesseract.includes("workerBlobURL: false")
+      && sources.prepareOcrAssets.includes("eng.traineddata.gz")
+      && sources.packageJson.includes('"prebuild": "npm run prepare:ocr"')],
   ["receipt and sale rollback drills are executable",
     sources.databaseTests.includes("Injected Phase 6 product outbox failure")
       && sources.databaseTests.includes("receipt_failure_observed")

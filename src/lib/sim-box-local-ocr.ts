@@ -1,3 +1,5 @@
+import { createLocalEnglishOcrWorker } from "@/lib/ocr/local-tesseract";
+
 export type ParsedSimBoxLabel = {
   provider: string | null;
   order_number: string | null;
@@ -92,12 +94,16 @@ export function parseSimBoxText(text: string): ParsedSimBoxLabel {
 }
 
 export async function extractTextWithTesseract(file: File): Promise<{ text: string; confidence?: number }> {
-  const { recognize } = await import("tesseract.js");
-  const result = await recognize(file, "eng");
-  return {
-    text: result.data.text || "",
-    confidence: typeof result.data.confidence === "number" ? result.data.confidence : undefined,
-  };
+  const worker = await createLocalEnglishOcrWorker();
+  try {
+    const result = await worker.recognize(file);
+    return {
+      text: result.data.text || "",
+      confidence: typeof result.data.confidence === "number" ? result.data.confidence : undefined,
+    };
+  } finally {
+    await worker.terminate();
+  }
 }
 
 export async function extractBarcodeWithZxing(file: File): Promise<string | null> {

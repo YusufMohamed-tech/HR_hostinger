@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare:ocr": "node scripts/prepare-ocr-assets.mjs",
+    "predev": "npm run prepare:ocr",
     "dev": "next dev",
+    "prebuild": "npm run prepare:ocr",
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
@@ -31,6 +34,7 @@
     "seed:demo": "node scripts/seed-demo-users.mjs",
     "seed:production-users": "node scripts/seed-production-users.mjs",
     "seed:inventory-receiver": "node scripts/seed-inventory-receiver.mjs",
+    "seed:field-agents": "node scripts/seed-field-agents.mjs",
     "seed:saudi-employees": "node scripts/seed-saudi-employees.mjs",
     "seed:sales-mock": "node scripts/seed-sales-mock.mjs",
     "seed:sales-operations": "node scripts/seed-sales-operations.mjs",
@@ -46,11 +50,13 @@
     "verify:ci": "npm run db:verify-migrations && npm run verify:outbox && npm run verify:launch-contract && npm run verify:product-inventory && npm run typecheck && npm run lint:strict && npm run test:unit && npm run test:db && npm run test:sim && npm run verify:accounting && npm run audit:production && npm run build"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "1.0.0",
     "@aws-sdk/client-s3": "^3.1097.0",
     "@aws-sdk/s3-request-presigner": "^3.1097.0",
     "@base-ui/react": "^1.4.1",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.1",
+    "@tesseract.js-data/eng": "1.0.0",
     "@types/leaflet": "^1.9.21",
     "@zxing/browser": "0.1.5",
     "class-variance-authority": "^0.7.1",

@@ -257,6 +257,7 @@ export function SidebarContent() {
           title: "استلام المنتجات",
           links: [
             { name: "مخزون المنتجات", href: "/sales/inventory", icon: Package },
+            { name: "تسليم المنتجات", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
             { name: "استلام بالصور", href: "/sales/inventory/receipts/photo", icon: Camera },
             { name: "استيراد Excel / CSV", href: "/sales/inventory/receipts/import", icon: FileSpreadsheet },
             { name: "استلام يدوي جديد", href: "/sales/inventory/receipts/new", icon: PackagePlus },

@@ -32,7 +32,13 @@ import {
   PRODUCT_PHOTO_EXTRACTION_VERSION,
   type ProductPhotoRawExtraction,
 } from "../src/lib/product-inventory/photo-extraction";
-import { canAccessPath, getDefaultPathForRole, roleFromOrgRole } from "../src/lib/rbac";
+import { LOCAL_TESSERACT_ASSET_PATHS } from "../src/lib/ocr/local-tesseract";
+import {
+  canAccessPath,
+  getDefaultPathForRole,
+  isPublicPath,
+  roleFromOrgRole,
+} from "../src/lib/rbac";
 import type { ProductInventoryProduct } from "../src/types/product-inventory";
 
 test("serial normalization groups formatting variants and removes duplicates", () => {
@@ -260,19 +266,31 @@ test("photo parser applies approved aliases and flags unresolved or duplicate se
   assert.match(unresolved[0]?.validation_errors.join(" ") || "", /Serial number/u);
 });
 
-test("inventory receiver and finance routes follow least-privilege role boundaries", () => {
+test("inventory receiver can receive and hand over stock without finance or agent-commerce access", () => {
   assert.equal(roleFromOrgRole("inventory_receiver"), "Inventory_Receiver");
   assert.equal(getDefaultPathForRole("Inventory_Receiver"), "/sales/inventory");
   assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/receipts/new"), true);
   assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/receipts/import"), true);
   assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/receipts/photo"), true);
   assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/stock"), true);
-  assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/assignments"), false);
-  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/handovers"), false);
+  assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/assignments"), true);
+  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/handovers"), true);
+  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/movements"), true);
+  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/agent-collections"), false);
+  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/price-overrides"), false);
   assert.equal(canAccessPath("Inventory_Receiver", "/sales/products"), false);
   assert.equal(canAccessPath("Inventory_Receiver", "/accounting/inventory"), false);
   assert.equal(canAccessPath("Accountant", "/accounting/inventory"), true);
   assert.equal(canAccessPath("Accountant", "/sales/inventory"), false);
+});
+
+test("browser OCR assets stay on the application origin", () => {
+  for (const assetPath of Object.values(LOCAL_TESSERACT_ASSET_PATHS)) {
+    assert.match(assetPath, /^\/ocr\/tesseract\//u);
+    assert.equal(assetPath.includes("cdn."), false);
+  }
+  assert.equal(isPublicPath("/ocr/tesseract/worker.min.js"), true);
+  assert.equal(isPublicPath("/ocr/tesseract/lang/eng.traineddata.gz"), true);
 });
 
 test("Phase 4 commerce inputs enforce unique custody units, price ranges, and positive money", () => {

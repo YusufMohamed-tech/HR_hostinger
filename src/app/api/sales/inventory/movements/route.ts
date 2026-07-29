@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireProductInventoryManagerAccess } from "@/lib/server/product-inventory-auth";
+import { requireProductInventoryHandoverAccess } from "@/lib/server/product-inventory-auth";
 import {
   productInventoryDb,
   productInventoryError,
@@ -8,7 +8,7 @@ import {
 } from "@/lib/server/product-inventory-api";
 
 export async function GET(request: NextRequest) {
-  const auth = await requireProductInventoryManagerAccess(request);
+  const auth = await requireProductInventoryHandoverAccess(request);
   if ("error" in auth) return auth.error;
   try {
     const paging = productInventoryPage(request, { defaultPageSize: 50, maxPageSize: 200 });

@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MessageDialog } from "@/components/ui/feedback-dialog";
 import { PageSkeleton } from "@/components/Skeletons";
+import { useRoleContext } from "@/providers/RoleProvider";
 import {
   createProductHandover,
   getProductCommerceManager,
@@ -113,6 +114,8 @@ function groupStock(units: ProductInventoryStockRow[]) {
 }
 
 export function ProductInventoryCommerceManagerScreen() {
+  const { currentUser } = useRoleContext();
+  const receiverOnly = currentUser?.role === "Inventory_Receiver";
   const [data, setData] = useState<ProductCommerceManagerData | null>(null);
   const [movements, setMovements] = useState<Array<Record<string, unknown>>>([]);
   const [movementPage, setMovementPage] = useState(1);
@@ -136,7 +139,12 @@ export function ProductInventoryCommerceManagerScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     const [commerce, movementResult] = await Promise.all([
-      getProductCommerceManager({ page: stockPage, pageSize: 200, search: stockSearch }),
+      getProductCommerceManager({
+        page: stockPage,
+        pageSize: 200,
+        search: stockSearch,
+        warehouseId,
+      }),
       getProductInventoryMovements(movementPage, 50),
     ]);
     if (commerce.data) {
@@ -152,7 +160,7 @@ export function ProductInventoryCommerceManagerScreen() {
     }
     setMessage(commerce.error || movementResult.error || "");
     setLoading(false);
-  }, [movementPage, stockPage, stockSearch]);
+  }, [movementPage, stockPage, stockSearch, warehouseId]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { setSelected(new Set()); }, [stockPage, stockSearch]);
@@ -294,7 +302,20 @@ export function ProductInventoryCommerceManagerScreen() {
     await load();
   };
 
-  if (loading || !data) return <PageSkeleton />;
+  if (loading) return <PageSkeleton />;
+  if (!data) {
+    return (
+      <div className="mx-auto max-w-xl space-y-4 p-6" dir="rtl">
+        <Card className="border-red-200">
+          <CardHeader><CardTitle>تعذر تحميل تسليم المنتجات</CardTitle></CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-red-700">{message || "تعذر تحميل بيانات المخزون والمندوبين."}</p>
+            <Button onClick={() => void load()}><RefreshCcw className="ml-2 h-4 w-4" />إعادة المحاولة</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   const pendingOverrides = data.price_overrides.filter((request) => request.status === "pending");
   const activeSales = data.sales.filter((sale) => sale.status === "active");
 
@@ -303,8 +324,14 @@ export function ProductInventoryCommerceManagerScreen() {
       <MessageDialog open={Boolean(message)} onOpenChange={(open) => !open && setMessage("")} description={message} />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-950">تسليم وبيع منتجات المندوبين</h1>
-          <p className="mt-2 text-gray-500">عهدة مسلسلة من المخزن إلى المندوب، مع حدود سعر وتحكم كامل في البيع والتحصيل.</p>
+          <h1 className="text-3xl font-bold text-gray-950">
+            {receiverOnly ? "تسليم المنتجات للمندوبين" : "تسليم وبيع منتجات المندوبين"}
+          </h1>
+          <p className="mt-2 text-gray-500">
+            {receiverOnly
+              ? "اختر المستودع والمندوب والوحدات المسلسلة ثم أصدر عهدة التسليم."
+              : "عهدة مسلسلة من المخزن إلى المندوب، مع حدود سعر وتحكم كامل في البيع والتحصيل."}
+          </p>
         </div>
         <div className="flex gap-2">
           <Button asChild variant="outline"><Link href="/sales/inventory"><ArrowRight className="ml-2 h-4 w-4" />المخزون</Link></Button>
@@ -312,10 +339,10 @@ export function ProductInventoryCommerceManagerScreen() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className={`grid gap-4 ${receiverOnly ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
         <Card className="border-none shadow-sm"><CardContent className="p-5"><p className="text-sm text-gray-500">متاح للتسليم</p><p className="mt-2 text-3xl font-bold">{data.available_units_pagination.total}</p></CardContent></Card>
         <Card className="border-none shadow-sm"><CardContent className="p-5"><p className="text-sm text-gray-500">عهد نشطة</p><p className="mt-2 text-3xl font-bold">{data.handovers.filter((handover) => ["issued", "accepted"].includes(handover.status)).length}</p></CardContent></Card>
-        <Card className="border-none shadow-sm"><CardContent className="p-5"><p className="text-sm text-gray-500">طلبات سعر معلقة</p><p className="mt-2 text-3xl font-bold text-amber-600">{pendingOverrides.length}</p></CardContent></Card>
+        {!receiverOnly && <Card className="border-none shadow-sm"><CardContent className="p-5"><p className="text-sm text-gray-500">طلبات سعر معلقة</p><p className="mt-2 text-3xl font-bold text-amber-600">{pendingOverrides.length}</p></CardContent></Card>}
       </div>
 
       <Card className="border-none shadow-sm">
@@ -323,7 +350,7 @@ export function ProductInventoryCommerceManagerScreen() {
         <CardContent className="space-y-5">
           <div className="grid gap-4 md:grid-cols-4">
             <div className="space-y-2"><Label>المندوب</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={agentId} onChange={(event) => setAgentId(event.target.value)}>{data.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select></div>
-            <div className="space-y-2"><Label>المستودع</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={warehouseId} onChange={(event) => setWarehouseId(event.target.value)}>{data.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name_ar}</option>)}</select></div>
+            <div className="space-y-2"><Label>المستودع</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={warehouseId} onChange={(event) => { setWarehouseId(event.target.value); setStockPage(1); setSelected(new Set()); }}>{data.warehouses.map((warehouse) => <option key={warehouse.id} value={warehouse.id}>{warehouse.name_ar}</option>)}</select></div>
             <div className="space-y-2 md:col-span-2"><Label>ملاحظات التسليم</Label><Input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="رقم إذن أو تعليمات للمندوب" /></div>
           </div>
           <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -337,7 +364,7 @@ export function ProductInventoryCommerceManagerScreen() {
           </form>
           <div className="overflow-x-auto rounded-xl border">
             <Table>
-              <TableHeader><TableRow><TableHead>اختيار</TableHead><TableHead>مجموعة المنتج</TableHead><TableHead>العدد</TableHead><TableHead>التكلفة</TableHead><TableHead>السعر المخطط</TableHead><TableHead>أقل سعر</TableHead><TableHead>أعلى سعر</TableHead><TableHead>فاقد / تلف</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>اختيار</TableHead><TableHead>مجموعة المنتج</TableHead><TableHead>العدد</TableHead><TableHead>التكلفة</TableHead><TableHead>السعر المخطط</TableHead><TableHead>أقل سعر</TableHead><TableHead>أعلى سعر</TableHead>{!receiverOnly && <TableHead>فاقد / تلف</TableHead>}</TableRow></TableHeader>
               <TableBody>{groups.map((group) => {
                 const allSelected = group.units.every((unit) => selected.has(unit.id));
                 return (
@@ -349,7 +376,7 @@ export function ProductInventoryCommerceManagerScreen() {
                     <TableCell>{money(group.plannedPrice, group.currency)}</TableCell>
                     <TableCell><Input type="number" min="0.01" step="0.01" className="w-28" value={ranges[group.key]?.minimum || ""} onChange={(event) => setRanges((current) => ({ ...current, [group.key]: { minimum: event.target.value, maximum: current[group.key]?.maximum || "" } }))} /></TableCell>
                     <TableCell><Input type="number" min="0.01" step="0.01" className="w-28" value={ranges[group.key]?.maximum || ""} onChange={(event) => setRanges((current) => ({ ...current, [group.key]: { minimum: current[group.key]?.minimum || "", maximum: event.target.value } }))} /></TableCell>
-                    <TableCell><Button size="sm" variant="outline" disabled={saving} className="text-red-700" onClick={() => void recordLoss(group)}><AlertTriangle className="ml-1 h-4 w-4" />إثبات</Button></TableCell>
+                    {!receiverOnly && <TableCell><Button size="sm" variant="outline" disabled={saving} className="text-red-700" onClick={() => void recordLoss(group)}><AlertTriangle className="ml-1 h-4 w-4" />إثبات</Button></TableCell>}
                   </TableRow>
                 );
               })}</TableBody>
@@ -361,7 +388,7 @@ export function ProductInventoryCommerceManagerScreen() {
         </CardContent>
       </Card>
 
-      <Card className="border-none shadow-sm">
+      {!receiverOnly && <Card className="border-none shadow-sm">
         <CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-amber-600" />استثناءات السعر المعلقة</CardTitle></CardHeader>
         <CardContent className="p-0">
           <Table><TableHeader><TableRow><TableHead>المندوب</TableHead><TableHead>المنتج / المسلسل</TableHead><TableHead>السعر المخطط</TableHead><TableHead>السعر المطلوب</TableHead><TableHead>السبب</TableHead><TableHead>القرار</TableHead></TableRow></TableHeader>
@@ -369,9 +396,9 @@ export function ProductInventoryCommerceManagerScreen() {
           </Table>
           {pendingOverrides.length === 0 && <p className="p-6 text-center text-sm text-gray-500">لا توجد طلبات سعر معلقة.</p>}
         </CardContent>
-      </Card>
+      </Card>}
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className={`grid gap-6 ${receiverOnly ? "" : "xl:grid-cols-2"}`}>
         <Card className="border-none shadow-sm">
           <CardHeader><CardTitle className="flex items-center gap-2"><ClipboardCheck className="h-5 w-5 text-brand" />عهد التسليم</CardTitle></CardHeader>
           <CardContent className="space-y-3">
@@ -380,7 +407,7 @@ export function ProductInventoryCommerceManagerScreen() {
           </CardContent>
         </Card>
 
-        <Card className="border-none shadow-sm">
+        {!receiverOnly && <Card className="border-none shadow-sm">
           <CardHeader><CardTitle className="flex items-center gap-2"><Coins className="h-5 w-5 text-emerald-600" />تحصيل أرصدة المندوبين</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-3">
@@ -391,10 +418,10 @@ export function ProductInventoryCommerceManagerScreen() {
             <Button disabled={saving} onClick={() => void submitCollection()}><Coins className="ml-2 h-4 w-4" />تسجيل التحصيل</Button>
             <div className="space-y-2 border-t pt-4">{data.balances.map((balance) => <div key={balance.agent_id} className="grid grid-cols-2 gap-2 rounded-lg bg-gray-50 p-3 text-sm sm:grid-cols-4"><span className="font-medium">{balance.agent_name}</span><span>مبيعات {money(balance.active_sales)}</span><span>محصل {money(balance.collected)}</span><span className={balance.outstanding > 0 ? "font-bold text-amber-700" : "text-emerald-700"}>متبقي {money(balance.outstanding)}</span></div>)}</div>
           </CardContent>
-        </Card>
+        </Card>}
       </div>
 
-      <Card className="border-none shadow-sm">
+      {!receiverOnly && <Card className="border-none shadow-sm">
         <CardHeader><CardTitle className="flex items-center gap-2"><RotateCcw className="h-5 w-5 text-red-600" />المبيعات النشطة وإلغاء البيع</CardTitle></CardHeader>
         <CardContent className="p-0">
           <Table><TableHeader><TableRow><TableHead>رقم البيع</TableHead><TableHead>المندوب</TableHead><TableHead>المنتج</TableHead><TableHead>السعر</TableHead><TableHead>العميل</TableHead><TableHead /></TableRow></TableHeader>
@@ -402,7 +429,7 @@ export function ProductInventoryCommerceManagerScreen() {
           </Table>
           {activeSales.length === 0 && <p className="p-6 text-center text-sm text-gray-500">لا توجد مبيعات منتجات نشطة.</p>}
         </CardContent>
-      </Card>
+      </Card>}
 
       <Card className="border-none shadow-sm">
         <CardHeader><CardTitle className="flex items-center gap-2"><PackageCheck className="h-5 w-5 text-brand" />سجل حركة الوحدة</CardTitle></CardHeader>

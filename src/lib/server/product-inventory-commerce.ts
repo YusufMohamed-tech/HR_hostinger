@@ -81,7 +81,7 @@ async function commerceSettings(admin: AdminClient, orgId: string) {
 export async function loadProductCommerceManagerData(
   admin: AdminClient,
   orgId: string,
-  options: { page?: number; pageSize?: number; search?: string } = {}
+  options: { page?: number; pageSize?: number; search?: string; warehouseId?: string } = {}
 ): Promise<ProductCommerceManagerData> {
   const db = productInventoryDb(admin);
   const page = Math.max(1, Math.trunc(options.page || 1));
@@ -99,6 +99,9 @@ export async function loadProductCommerceManagerData(
       "raw_serial_number",
       `%${escapedSearch}%`
     );
+  }
+  if (options.warehouseId) {
+    availableUnitsQuery = availableUnitsQuery.eq("warehouse_id", options.warehouseId);
   }
   const [
     settings,

@@ -202,13 +202,14 @@ export function settleProductAgentCommission(
 }
 
 export function getProductCommerceManager(
-  options: { page?: number; pageSize?: number; search?: string } = {}
+  options: { page?: number; pageSize?: number; search?: string; warehouseId?: string } = {}
 ) {
   const params = new URLSearchParams({
     page: String(options.page || 1),
     page_size: String(options.pageSize || 200),
   });
   if (options.search?.trim()) params.set("search", options.search.trim());
+  if (options.warehouseId?.trim()) params.set("warehouse_id", options.warehouseId.trim());
   return apiFetch<ProductCommerceManagerData>(
     `/api/sales/inventory/handovers?${params.toString()}`
   );
