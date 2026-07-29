@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import SignatureCanvas from "react-signature-canvas";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -121,9 +122,10 @@ export function ProductAgentScreen({ mode }: { mode: Mode }) {
       && Number(request.requested_price) === numericPrice
   );
 
-  const accept = async (handoverId: string, version: number) => {
+  const accept = async (handoverId: string, version: number, signatureData: string) => {
+    if (!signatureData) return setMessage("يجب التوقيع قبل تأكيد الاستلام.");
     setSaving(true);
-    const result = await acceptProductHandover(handoverId, version, newInventoryCommandId());
+    const result = await acceptProductHandover(handoverId, version, newInventoryCommandId(), signatureData);
     setSaving(false);
     if (result.error) return setMessage(result.error);
     await load();
@@ -259,8 +261,61 @@ function Dashboard({ data }: { data: ProductAgentDashboardData }) {
   );
 }
 
-function Receive({ data, saving, onAccept }: { data: ProductAgentDashboardData; saving: boolean; onAccept: (id: string, version: number) => void }) {
-  return <div className="space-y-4">{data.pending_handovers.map((handover) => <Card key={handover.id}><CardHeader><div className="flex items-center justify-between"><CardTitle className="font-mono">{handover.handover_no}</CardTitle><Badge>{handover.lines?.length || 0} وحدة</Badge></div></CardHeader><CardContent className="space-y-4"><div className="space-y-2">{handover.lines?.map((line: ProductAgentHandoverLine) => <div key={line.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm"><span>{line.unit?.product?.name || "منتج"}<br /><span className="font-mono text-xs text-slate-500">{line.unit?.raw_serial_number}</span></span><span>{money(line.planned_sale_price_snapshot, line.currency)}</span></div>)}</div><Button disabled={saving} className="w-full" onClick={() => onAccept(handover.id, handover.version)}><CheckCircle2 className="ml-2 h-4 w-4" />أؤكد استلام الوحدات المطابقة</Button></CardContent></Card>)}{data.pending_handovers.length === 0 && <Card><CardContent className="p-8 text-center text-slate-500">لا توجد تسليمات تنتظر تأكيدك.</CardContent></Card>}</div>;
+function Receive({ data, saving, onAccept }: { data: ProductAgentDashboardData; saving: boolean; onAccept: (id: string, version: number, signatureData: string) => void }) {
+  const sigRefs = useRef<Record<string, SignatureCanvas | null>>({});
+
+  return (
+    <div className="space-y-4">
+      {data.pending_handovers.map((handover) => (
+        <Card key={handover.id}>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="font-mono">{handover.handover_no}</CardTitle>
+              <Badge>{handover.lines?.length || 0} وحدة</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              {handover.lines?.map((line: ProductAgentHandoverLine) => (
+                <div key={line.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm">
+                  <span>{line.unit?.product?.name || "منتج"}<br /><span className="font-mono text-xs text-slate-500">{line.unit?.raw_serial_number}</span></span>
+                  <span>{money(line.planned_sale_price_snapshot, line.currency)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-slate-700">التوقيع الإلكتروني *</p>
+              <p className="text-xs text-slate-500">وقّع أدناه لتأكيد استلامك للمنتجات المذكورة.</p>
+              <div className="rounded-lg border-2 border-dashed border-slate-300 bg-white">
+                <SignatureCanvas
+                  ref={(ref) => { sigRefs.current[handover.id] = ref; }}
+                  penColor="black"
+                  canvasProps={{ className: "w-full h-40 rounded-lg", style: { width: "100%", height: "160px" } }}
+                />
+              </div>
+              <Button variant="ghost" size="sm" className="text-xs text-slate-500" onClick={() => sigRefs.current[handover.id]?.clear()}>
+                مسح التوقيع
+              </Button>
+            </div>
+            <Button
+              disabled={saving}
+              className="w-full"
+              onClick={() => {
+                const sig = sigRefs.current[handover.id];
+                if (!sig || sig.isEmpty()) return;
+                onAccept(handover.id, handover.version, sig.toDataURL("image/png"));
+              }}
+            >
+              <CheckCircle2 className="ml-2 h-4 w-4" />أؤكد استلام الوحدات المطابقة
+            </Button>
+          </CardContent>
+        </Card>
+      ))}
+      {data.pending_handovers.length === 0 && (
+        <Card><CardContent className="p-8 text-center text-slate-500">لا توجد تسليمات تنتظر تأكيدك.</CardContent></Card>
+      )}
+    </div>
+  );
 }
 
 function Balance({ data }: { data: ProductAgentDashboardData }) {

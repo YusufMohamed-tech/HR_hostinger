@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Boxes, Camera, CheckCircle2, ClipboardList, FileImage, FileSpreadsheet, PackagePlus, Plus, RefreshCcw, Save, Send, Settings, Trash2, WalletCards } from "lucide-react";
@@ -87,6 +87,61 @@ function MetricCard({ title, value, icon: Icon }: { title: string; value: string
         <span className="rounded-xl bg-blue-50 p-3 text-blue-700"><Icon className="h-5 w-5" /></span>
       </CardContent>
     </Card>
+  );
+}
+
+function ProductCombobox({ products, value, displayValue, onChange }: {
+  products: ProductInventoryProduct[];
+  value: string;
+  displayValue: string;
+  onChange: (productId: string, productName: string, defaults?: { cost?: number; price?: number }) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const inputValue = value ? (products.find((p) => p.id === value)?.name || displayValue) : displayValue;
+
+  const filtered = useMemo(() => {
+    if (!query) return products;
+    const lower = query.toLowerCase();
+    return products.filter((p) => p.name.toLowerCase().includes(lower) || (p.sku && p.sku.toLowerCase().includes(lower)));
+  }, [products, query]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <input
+        type="text"
+        className="h-10 w-full rounded-lg border bg-white px-3 text-sm"
+        placeholder="اكتب اسم المنتج أو اختر من القائمة"
+        value={open ? query : (inputValue || query)}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setOpen(true);
+          onChange("", e.target.value);
+        }}
+        onFocus={() => { setOpen(true); setQuery(inputValue || ""); }}
+      />
+      {open && filtered.length > 0 && (
+        <ul className="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-white shadow-lg">
+          {filtered.map((p) => (
+            <li key={p.id} className="cursor-pointer px-3 py-2 text-sm hover:bg-blue-50" onClick={() => {
+              onChange(p.id, p.name, { cost: p.default_cost || undefined, price: p.price });
+              setQuery("");
+              setOpen(false);
+            }}>{p.name}{p.sku ? ` — ${p.sku}` : ""}</li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -208,6 +263,7 @@ export function ProductInventoryDashboard() {
 type GroupForm = {
   key: string;
   product_id: string;
+  product_name: string;
   unit_cost: string;
   planned_sale_price: string;
   condition: "new" | "open_box" | "refurbished";
@@ -215,7 +271,7 @@ type GroupForm = {
 };
 
 function emptyGroup(): GroupForm {
-  return { key: crypto.randomUUID(), product_id: "", unit_cost: "", planned_sale_price: "", condition: "new", serials: "" };
+  return { key: crypto.randomUUID(), product_id: "", product_name: "", unit_cost: "", planned_sale_price: "", condition: "new", serials: "" };
 }
 
 export function ManualProductReceiptScreen() {
@@ -265,6 +321,7 @@ export function ManualProductReceiptScreen() {
         setGroups((receipt.data.lines || []).map((line) => ({
           key: line.id,
           product_id: line.product_id,
+          product_name: line.product_name_snapshot || "",
           unit_cost: String(line.unit_cost),
           planned_sale_price: String(line.planned_unit_sale_price),
           condition: line.condition,
@@ -280,6 +337,7 @@ export function ManualProductReceiptScreen() {
   const availableProducts = useMemo(() => products.filter((product) => product.company_id === companyId), [products, companyId]);
   const normalizedGroups = useMemo(() => groups.map((group) => ({
     product_id: group.product_id,
+    product_name: group.product_name,
     unit_cost: Number(group.unit_cost || 0),
     planned_sale_price: Number(group.planned_sale_price || 0),
     currency: "SAR",
@@ -295,7 +353,7 @@ export function ManualProductReceiptScreen() {
 
   const submit = async (confirm: boolean) => {
     if (!companyId || !warehouseId) return setMessage("اختر المورد والمستودع.");
-    if (normalizedGroups.some((group) => !group.product_id || group.unit_cost <= 0 || group.planned_sale_price <= 0 || group.serial_numbers.length === 0)) {
+    if (normalizedGroups.some((group) => (!group.product_id && !group.product_name) || group.unit_cost <= 0 || group.planned_sale_price <= 0 || group.serial_numbers.length === 0)) {
       return setMessage("كل مجموعة تحتاج منتجاً وتكلفة وسعر بيع ورقماً تسلسلياً واحداً على الأقل.");
     }
     setSaving(true);
@@ -356,11 +414,11 @@ export function ManualProductReceiptScreen() {
             <Card key={group.key} className="border-none shadow-sm">
               <CardHeader className="flex flex-row items-center justify-between"><CardTitle className="text-base">مجموعة المنتج {index + 1}</CardTitle>{groups.length > 1 && <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setGroups((current) => current.filter((item) => item.key !== group.key))}><Trash2 className="h-4 w-4" /></Button>}</CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                <div className="space-y-2 xl:col-span-2"><Label>المنتج *</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={group.product_id} onChange={(event) => { const selected = products.find((item) => item.id === event.target.value); updateGroup(group.key, { product_id: event.target.value, unit_cost: selected?.default_cost ? String(selected.default_cost) : group.unit_cost, planned_sale_price: selected?.price ? String(selected.price) : group.planned_sale_price }); }}><option value="">اختر المنتج</option>{availableProducts.map((item) => <option key={item.id} value={item.id}>{item.name}{item.sku ? ` — ${item.sku}` : ""}</option>)}</select></div>
+                <div className="space-y-2 xl:col-span-2"><Label>المنتج *</Label><ProductCombobox products={availableProducts} value={group.product_id} displayValue={group.product_name} onChange={(productId, productName, defaults) => updateGroup(group.key, { product_id: productId, product_name: productName, unit_cost: defaults?.cost ? String(defaults.cost) : group.unit_cost, planned_sale_price: defaults?.price ? String(defaults.price) : group.planned_sale_price })} /></div>
                 <div className="space-y-2"><Label>تكلفة الوحدة *</Label><Input type="number" min="0.01" step="0.01" value={group.unit_cost} onChange={(event) => updateGroup(group.key, { unit_cost: event.target.value })} /></div>
                 <div className="space-y-2"><Label>سعر البيع المخطط *</Label><Input type="number" min="0.01" step="0.01" value={group.planned_sale_price} onChange={(event) => updateGroup(group.key, { planned_sale_price: event.target.value })} /></div>
                 <div className="space-y-2"><Label>الحالة</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={group.condition} onChange={(event) => updateGroup(group.key, { condition: event.target.value as GroupForm["condition"] })}><option value="new">جديد</option><option value="open_box">مفتوح</option><option value="refurbished">مجدد</option></select></div>
-                <div className="space-y-2 md:col-span-2 xl:col-span-5"><div className="flex items-center justify-between"><Label>الأرقام التسلسلية *</Label><Badge variant="outline">{count} وحدة</Badge></div><textarea dir="ltr" className="min-h-32 w-full rounded-lg border bg-white px-3 py-2 font-mono text-sm" placeholder={"SN-0001\nSN-0002\nSN-0003"} value={group.serials} onChange={(event) => updateGroup(group.key, { serials: event.target.value })} /><p className="text-xs text-gray-500">{product ? `${product.name}: ${count} × ${money(Number(group.unit_cost || 0))}` : "سطر واحد لكل رقم، أو افصل بفاصلة."}</p></div>
+                <div className="space-y-2 md:col-span-2 xl:col-span-5"><div className="flex items-center justify-between"><Label>الأرقام التسلسلية *</Label><Badge variant="outline">{count} وحدة</Badge></div><textarea dir="ltr" className="min-h-32 w-full rounded-lg border bg-white px-3 py-2 font-mono text-sm" placeholder={"SN-0001\nSN-0002\nSN-0003"} value={group.serials} onChange={(event) => updateGroup(group.key, { serials: event.target.value })} /><p className="text-xs text-gray-500">{(product || group.product_name) ? `${product?.name || group.product_name}: ${count} × ${money(Number(group.unit_cost || 0))}` : "سطر واحد لكل رقم، أو افصل بفاصلة."}</p></div>
               </CardContent>
             </Card>
           );

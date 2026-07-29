@@ -6,13 +6,17 @@ const money = z.coerce.number().positive().max(999_999_999_999);
 const currency = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/);
 
 export const receiptGroupSchema = z.object({
-  product_id: uuid,
+  product_id: z.string().refine((v) => !v || z.string().uuid().safeParse(v).success, { message: "معرّف المنتج غير صالح." }).optional().default(""),
+  product_name: z.string().trim().max(200).optional(),
   unit_cost: money,
   planned_sale_price: money,
   currency,
   tax_included: z.boolean().default(true),
   condition: z.enum(["new", "open_box", "refurbished"]).default("new"),
   serial_numbers: z.array(z.string().trim().min(1).max(160)).min(1).max(1000),
+}).refine((data) => data.product_id || data.product_name, {
+  message: "يجب اختيار منتج أو كتابة اسم المنتج.",
+  path: ["product_id"],
 });
 
 export const manualReceiptSchema = z
@@ -147,6 +151,7 @@ export const productHandoverSchema = z.object({
 export const productHandoverAcceptSchema = z.object({
   command_id: uuid,
   expected_version: z.coerce.number().int().positive(),
+  signature_data: z.string().min(1, "يجب التوقيع قبل تأكيد الاستلام."),
 });
 
 export const productAgentReturnSchema = z.object({

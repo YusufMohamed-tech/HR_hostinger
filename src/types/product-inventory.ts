@@ -124,6 +124,7 @@ export type ProductInventoryStockRow = {
 
 export type ManualReceiptGroupInput = {
   product_id: string;
+  product_name?: string;
   unit_cost: number;
   planned_sale_price: number;
   currency: string;

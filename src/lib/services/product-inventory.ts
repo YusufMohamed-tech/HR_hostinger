@@ -234,10 +234,10 @@ export function createProductHandover(values: {
   });
 }
 
-export function acceptProductHandover(handoverId: string, expectedVersion: number, commandId: string) {
+export function acceptProductHandover(handoverId: string, expectedVersion: number, commandId: string, signatureData: string) {
   return apiFetch<Record<string, unknown>>(`/api/sales/inventory/handovers/${handoverId}/accept`, {
     method: "POST",
-    body: JSON.stringify({ expected_version: expectedVersion, command_id: commandId }),
+    body: JSON.stringify({ expected_version: expectedVersion, command_id: commandId, signature_data: signatureData }),
   });
 }
 
