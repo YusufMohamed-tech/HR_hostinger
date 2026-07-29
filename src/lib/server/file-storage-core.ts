@@ -325,7 +325,7 @@ export async function checkHostingerFileStorage() {
   if (!root) throw new Error("Hostinger filesystem storage is not configured.");
   await mkdir(root, { recursive: true, mode: 0o700 });
   await chmod(root, 0o700);
-  const probePath = filesystemPath(".storage-probe".replace(".", "storage-probe"), `${crypto.randomUUID()}.txt`);
+  const probePath = filesystemPath("storage-probe", `${crypto.randomUUID()}.txt`);
   const probe = crypto.randomBytes(32);
   try {
     await writeFilesystemObject("storage-probe", path.basename(probePath), probe, false);

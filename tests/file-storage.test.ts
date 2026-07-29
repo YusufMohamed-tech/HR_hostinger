@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  checkHostingerFileStorage,
   createObjectAccessUrl,
   downloadObject,
   removeObjects,
@@ -34,6 +35,10 @@ test("Hostinger filesystem stores, signs, reads, and removes private objects", a
       contentType: "text/plain",
     });
     assert.equal(stored.provider, "hostinger_filesystem");
+    assert.deepEqual(await checkHostingerFileStorage(), {
+      provider: "hostinger_filesystem",
+      root,
+    });
     assert.equal(
       new TextDecoder().decode(await readFile(path.join(root, "personnel-files/org/employee/document.txt"))),
       "stored-on-hostinger",
