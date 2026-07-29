@@ -17,7 +17,7 @@ function includes(file, expectations) {
 includes("src/app/api/ready/route.ts", [
   ["readiness validates runtime configuration", "validateRuntimeConfiguration()"],
   ["readiness verifies the migration ledger", '.from("schema_migrations")'],
-  ["readiness checks the expected schema checksum", "migration.data.checksum_sha256 === schemaVersion.checksumSha256"],
+  ["readiness checks the expected schema checksum", "migrationData?.checksum_sha256 ?? migrationData?.checksum"],
   ["readiness fails when migrations are not current", "configuration.ready && databaseReady && migrationsReady"],
 ]);
 

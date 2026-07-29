@@ -15,7 +15,7 @@ Passwords are never stored in application tables and cannot be displayed later. 
 
 Use this order in staging and then production:
 
-1. Create and secure Hostinger object storage.
+1. Verify the private `personnel-files` Supabase Storage bucket, or configure an external Hostinger S3-compatible store.
 2. Back up PostgreSQL and record the restore point.
 3. Apply database migrations through the migration ledger.
 4. Configure production environment variables.
@@ -25,9 +25,11 @@ Use this order in staging and then production:
 
 Do not deploy the new application before migrations v129–v132 are present. Do not delete legacy Supabase Storage objects during this release.
 
-## 1. Prepare private Hostinger storage
+## 1. Prepare private personnel storage
 
-Provision a private S3-compatible bucket on Hostinger. Public listing and anonymous reads must be disabled. Create a dedicated application access key that can only read, write, and delete objects in this bucket.
+By default, personnel binaries use the private Supabase Storage bucket created by the database migration. Verify that the `personnel-files` bucket exists and remains private.
+
+External S3-compatible storage is optional. If used, public listing and anonymous reads must be disabled, and the dedicated application access key must be restricted to this bucket. Configure the complete variable group below; partial configuration fails readiness:
 
 Set these server-only production variables:
 

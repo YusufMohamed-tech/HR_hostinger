@@ -4,8 +4,8 @@ import { requireTenantContext } from "@/lib/server/tenant-context";
 import { inspectUpload, UploadSecurityError } from "@/lib/server/upload-security";
 import {
   createManagedFileDownloadUrl,
-  deletePersonnelObject,
-  uploadPersonnelObject,
+  deleteManagedFile,
+  storePersonnelObject,
 } from "@/lib/server/personnel-storage";
 
 type RpcClient = {
@@ -139,11 +139,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  let stored: Awaited<ReturnType<typeof uploadPersonnelObject>> | null = null;
+  let stored: Awaited<ReturnType<typeof storePersonnelObject>> | null = null;
   try {
     const inspected = await inspectUpload(file, { allowedMimeTypes, maxBytes });
     const path = `${auth.orgId}/${parsed.data.employee_id}/${parsed.data.command_id}/${crypto.randomUUID()}-${safeFilename(file.name)}`;
-    stored = await uploadPersonnelObject({
+    stored = await storePersonnelObject(auth.admin, {
       key: path,
       bytes: inspected.bytes,
       contentType: inspected.detectedMime,
@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
           p_salary: contractData.salary_at_signing ?? null,
         });
     if (result.error) {
-      await deletePersonnelObject({
+      await deleteManagedFile(auth.admin, {
         storage_provider: stored.provider,
         storage_container: stored.bucket,
         storage_path: stored.path,
@@ -228,7 +228,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ data, requestId: auth.requestId }, { status: 201 });
   } catch (error) {
     if (stored) {
-      await deletePersonnelObject({
+      await deleteManagedFile(auth.admin, {
         storage_provider: stored.provider,
         storage_container: stored.bucket,
         storage_path: stored.path,

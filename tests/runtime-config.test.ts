@@ -32,6 +32,37 @@ test("production runtime configuration accepts independent strong secrets and HT
   });
 });
 
+test("production accepts the private Supabase personnel-storage fallback", () => {
+  const environment = { ...productionEnvironment };
+  for (const field of [
+    "HOSTINGER_OBJECT_STORAGE_ENDPOINT",
+    "HOSTINGER_OBJECT_STORAGE_REGION",
+    "HOSTINGER_OBJECT_STORAGE_ACCESS_KEY",
+    "HOSTINGER_OBJECT_STORAGE_SECRET_KEY",
+    "HOSTINGER_OBJECT_STORAGE_BUCKET",
+    "HOSTINGER_OBJECT_STORAGE_ENCRYPTION",
+  ]) {
+    delete environment[field];
+  }
+
+  assert.deepEqual(validateRuntimeConfiguration(environment), {
+    ready: true,
+    production: true,
+    issues: [],
+  });
+});
+
+test("production rejects a partially configured Hostinger personnel store", () => {
+  const environment = { ...productionEnvironment };
+  delete environment.HOSTINGER_OBJECT_STORAGE_ACCESS_KEY;
+
+  const result = validateRuntimeConfiguration(environment);
+  assert.equal(result.ready, false);
+  assert.deepEqual(result.issues, [
+    { field: "HOSTINGER_OBJECT_STORAGE_ACCESS_KEY", reason: "missing" },
+  ]);
+});
+
 test("production runtime configuration rejects missing and weak operational dependencies", () => {
   const result = validateRuntimeConfiguration({
     ...productionEnvironment,

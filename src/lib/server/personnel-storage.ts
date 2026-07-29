@@ -13,6 +13,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
+const personnelBucket = "personnel-files";
 
 export type ManagedStorageObject = {
   storage_provider?: string | null;
@@ -23,12 +24,12 @@ export type ManagedStorageObject = {
 };
 
 export type PersonnelUploadResult = {
-  provider: "hostinger_s3";
+  provider: "hostinger_s3" | "supabase_storage";
   bucket: string;
   path: string;
   version: string | null;
   etag: string | null;
-  encryptionStatus: "sse_s3" | "sse_kms";
+  encryptionStatus: "sse_s3" | "sse_kms" | "provider_managed";
 };
 
 let hostingerClient: S3Client | null = null;
@@ -105,6 +106,35 @@ export async function uploadPersonnelObject(values: {
     version: response.VersionId || null,
     etag: response.ETag?.replaceAll("\"", "") || null,
     encryptionStatus: config.encryption === "aws:kms" ? "sse_kms" : "sse_s3",
+  } satisfies PersonnelUploadResult;
+}
+
+export async function storePersonnelObject(
+  admin: AdminClient,
+  values: {
+    key: string;
+    bytes: Uint8Array;
+    contentType: string;
+    sha256: string;
+  },
+) {
+  if (personnelStorageIsConfigured()) return uploadPersonnelObject(values);
+
+  const uploaded = await admin.storage.from(personnelBucket).upload(values.key, values.bytes, {
+    contentType: values.contentType,
+    cacheControl: "0",
+    upsert: false,
+  });
+  if (uploaded.error || !uploaded.data?.path) {
+    throw new Error(uploaded.error?.message || "Supabase personnel storage upload failed.");
+  }
+  return {
+    provider: "supabase_storage",
+    bucket: personnelBucket,
+    path: uploaded.data.path,
+    version: null,
+    etag: null,
+    encryptionStatus: "provider_managed",
   } satisfies PersonnelUploadResult;
 }
 
@@ -193,6 +223,19 @@ export async function checkHostingerPersonnelStorage() {
   const config = hostingerConfig();
   await client().send(new HeadBucketCommand({ Bucket: config.bucket }));
   return { provider: "hostinger_s3" as const, bucket: config.bucket };
+}
+
+export async function checkPersonnelStorage(admin: AdminClient) {
+  if (personnelStorageIsConfigured()) return checkHostingerPersonnelStorage();
+
+  const bucket = await admin.storage.getBucket(personnelBucket);
+  if (bucket.error || !bucket.data) {
+    throw new Error(bucket.error?.message || "Supabase personnel storage is unavailable.");
+  }
+  if (bucket.data.public) {
+    throw new Error("Supabase personnel storage bucket must remain private.");
+  }
+  return { provider: "supabase_storage" as const, bucket: personnelBucket };
 }
 
 export function resetPersonnelStorageClientForTests() {

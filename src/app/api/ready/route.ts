@@ -4,8 +4,7 @@ import { validateRuntimeConfiguration } from "@/lib/runtime-config";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requestIdFromHeaders } from "@/lib/request-id";
 import {
-  checkHostingerPersonnelStorage,
-  personnelStorageIsConfigured,
+  checkPersonnelStorage,
 } from "@/lib/server/personnel-storage";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +14,7 @@ export async function GET(request: NextRequest) {
   const configuration = validateRuntimeConfiguration();
   let databaseReady = false;
   let migrationsReady = false;
-  let personnelStorageReady = !configuration.production && !personnelStorageIsConfigured();
+  let personnelStorageReady = false;
 
   if (configuration.ready) {
     try {
@@ -27,21 +26,25 @@ export async function GET(request: NextRequest) {
           .abortSignal(AbortSignal.timeout(3_000)),
         admin
           .from("schema_migrations")
-          .select("id,file_path,checksum_sha256")
+          .select("*")
           .eq("id", schemaVersion.id)
           .abortSignal(AbortSignal.timeout(3_000))
           .maybeSingle(),
-        personnelStorageIsConfigured()
-          ? checkHostingerPersonnelStorage()
-              .then(() => ({ error: null }))
-              .catch((error: unknown) => ({ error }))
-          : Promise.resolve({ error: configuration.production ? new Error("Storage is not configured.") : null }),
+        checkPersonnelStorage(admin)
+          .then(() => ({ error: null }))
+          .catch((error: unknown) => ({ error })),
       ]);
       databaseReady = !database.error;
+      const migrationData = migration.data as (typeof migration.data & {
+        file?: string;
+        checksum?: string;
+      }) | null;
+      const migrationFile = migrationData?.file_path ?? migrationData?.file;
+      const migrationChecksum = migrationData?.checksum_sha256 ?? migrationData?.checksum;
       migrationsReady = !migration.error
         && migration.data?.id === schemaVersion.id
-        && migration.data.file_path === schemaVersion.file
-        && migration.data.checksum_sha256 === schemaVersion.checksumSha256;
+        && migrationFile === schemaVersion.file
+        && migrationChecksum === schemaVersion.checksumSha256;
       personnelStorageReady = !personnelStorage.error;
       if (database.error) {
         console.error("Readiness database check failed", { requestId, code: database.error.code });
