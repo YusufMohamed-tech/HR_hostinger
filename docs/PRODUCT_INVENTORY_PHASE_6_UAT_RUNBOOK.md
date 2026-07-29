@@ -11,6 +11,10 @@ Real Virgin delivery samples, named business approvers, and the controlled
 pilot are external release gates. They must be completed in the target
 environment before production rollout.
 
+For the exact production click-through, expected results, evidence, cleanup,
+and sign-off sequence, use
+`PRODUCT_INVENTORY_PRODUCTION_MANUAL_TESTING_GUIDE.md`.
+
 ## Automated release gates
 
 Run these commands from the repository root:
