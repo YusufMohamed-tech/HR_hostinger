@@ -221,6 +221,7 @@ function UserManagementCard() {
     hr_admin: "موارد بشرية",
     hr_recruitment: "مسؤول توظيف",
     onground_agent_manager: "مدير المندوبين الميدانيين",
+    inventory_receiver: "مستلم مخزون المنتجات",
     promoter: "مروج مبيعات",
     finance_manager: "مدير المالية",
     accountant: "محاسب",

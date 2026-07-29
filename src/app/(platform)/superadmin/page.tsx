@@ -127,6 +127,7 @@ function roleLabel(role: string) {
     sales: "Sales",
     sales_manager: "Sales Manager",
     onground_agent_manager: "On-ground Agent Manager",
+    inventory_receiver: "Inventory Receiver",
     promoter: "Promoter",
     employee: "Employee",
   };

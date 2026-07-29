@@ -221,6 +221,11 @@ export interface AccountingSettings {
   default_accumulated_depreciation_id: string | null;
   default_commission_expense_id: string | null;
   default_commission_payable_id: string | null;
+  default_inventory_asset_id: string | null;
+  default_inventory_grni_id: string | null;
+  default_inventory_cogs_id: string | null;
+  default_inventory_shrinkage_id: string | null;
+  default_agent_receivable_id: string | null;
   // Phase 7: GOSI
   default_gosi_payable_id: string | null;
   default_gosi_expense_id: string | null;
@@ -237,6 +242,10 @@ export interface AccountingSettings {
   auto_post_advances: boolean;
   auto_post_assets: boolean;
   auto_post_eosb: boolean;
+  auto_post_inventory_receipts: boolean;
+  auto_post_product_sales: boolean;
+  auto_post_product_collections: boolean;
+  enable_product_agent_commissions: boolean;
   fiscal_year_start_month: number;
   invoice_prefix: string;
   expense_prefix: string;

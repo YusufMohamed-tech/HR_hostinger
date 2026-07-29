@@ -1,5 +1,5 @@
 {
-  "id": "schema_v121_accounting_reporting_delivery",
-  "file": "db/schema_v121_accounting_reporting_delivery.sql",
-  "checksumSha256": "12fc5808a967257ea9a53e929327cde80100dd2a94135857d0a9964730d9d090"
+  "id": "schema_v128_product_inventory_hardening",
+  "file": "db/schema_v128_product_inventory_hardening.sql",
+  "checksumSha256": "3cf47ae865ec6495d23c07cd66867b49b9017bf8753545fe7315014a67c9bbb3"
 }

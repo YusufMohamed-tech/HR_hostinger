@@ -17,6 +17,8 @@ import {
   CheckSquare,
   ClipboardList,
   Clock,
+  Camera,
+  FileSpreadsheet,
   FileText,
   Landmark,
   Layers,
@@ -27,6 +29,8 @@ import {
   MessageCircle,
   Network,
   Package,
+  PackageCheck,
+  PackagePlus,
   Receipt,
   Settings,
   ShieldAlert,
@@ -66,6 +70,7 @@ export function SidebarContent() {
     const isAdmin = isOrgAdmin || isSuperAdmin;
     const isHRAdmin = role === "HR_Admin";
     const isOngroundAgentManager = role === "Onground_Agent_Manager";
+    const isInventoryReceiver = role === "Inventory_Receiver";
     const isFinance = ["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
     const canSeeFullAccounting = isSuperAdmin || isFinance;
     const canSeeFinanceTeam = isSuperAdmin || isOrgAdmin || isHRAdmin || role === "Finance_Manager";
@@ -148,6 +153,8 @@ export function SidebarContent() {
       { name: "إدارة الترويج", href: "/sales/promoter", icon: Megaphone },
       { name: "المندوبون الميدانيون", href: "/sales/agents", icon: Users },
       { name: "مخزون الشرائح", href: "/sales/stock", icon: Boxes },
+      { name: "مخزون المنتجات", href: "/sales/inventory", icon: Package },
+      { name: "تسليم المنتجات", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
       { name: "التقارير", href: "/sales/reports", icon: ClipboardList },
       { name: "المنتجات", href: "/sales/products", icon: Boxes },
       { name: "فريق المبيعات", href: "/sales/team", icon: Users },
@@ -158,6 +165,8 @@ export function SidebarContent() {
     const ongroundAgentOps: NavLink[] = [
       { name: "المندوبون الميدانيون", href: "/sales/agents", icon: Users },
       { name: "مخزون الشرائح", href: "/sales/stock", icon: Boxes },
+      { name: "مخزون المنتجات", href: "/sales/inventory", icon: Package },
+      { name: "تسليم المنتجات", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
       { name: "التجار", href: "/sales/traders", icon: Store },
       { name: "مبيعات التجار", href: "/sales/trader-sales", icon: Receipt },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
@@ -173,6 +182,7 @@ export function SidebarContent() {
       { name: "الفواتير", href: "/accounting/invoices", icon: FileText },
       { name: "المدفوعات", href: "/accounting/payments", icon: WalletCards },
       { name: "عمولات المبيعات", href: "/accounting/commissions", icon: Receipt },
+      { name: "مخزون المنتجات", href: "/accounting/inventory", icon: Package },
       { name: "مراكز التكلفة", href: "/accounting/cost-centers", icon: Layers },
       { name: "التقارير", href: "/accounting/reports", icon: ClipboardList },
       { name: "فريق المالية", href: "/accounting/team", icon: Users },
@@ -232,6 +242,22 @@ export function SidebarContent() {
             { name: "طلب إجازتي", href: "/leave?view=mine", icon: ClipboardList, match: "leave-mine" },
             ...lmsLearnerOps,
             { name: "الشات", href: "/chat", icon: MessageCircle },
+            { name: "الإشعارات", href: "/notifications", icon: Bell },
+          ],
+        },
+        { title: "النظام", links: system },
+      ];
+    }
+
+    if (isInventoryReceiver) {
+      return [
+        {
+          title: "استلام المنتجات",
+          links: [
+            { name: "مخزون المنتجات", href: "/sales/inventory", icon: Package },
+            { name: "استلام بالصور", href: "/sales/inventory/receipts/photo", icon: Camera },
+            { name: "استيراد Excel / CSV", href: "/sales/inventory/receipts/import", icon: FileSpreadsheet },
+            { name: "استلام يدوي جديد", href: "/sales/inventory/receipts/new", icon: PackagePlus },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],
         },

@@ -10,6 +10,7 @@ export type OrgRole =
   | "sales"
   | "sales_manager"
   | "onground_agent_manager"
+  | "inventory_receiver"
   | "promoter"
   | "field_agent"
   | "merchant"
@@ -26,6 +27,7 @@ export const ALL_ROLES: Role[] = [
   "Sales",
   "Sales_Manager",
   "Onground_Agent_Manager",
+  "Inventory_Receiver",
   "Promoter",
   "Field_Agent",
   "Merchant",
@@ -44,6 +46,7 @@ export function roleFromOrgRole(role: string | null | undefined): Role | null {
   if (role === "sales") return "Sales";
   if (role === "sales_manager") return "Sales_Manager";
   if (role === "onground_agent_manager") return "Onground_Agent_Manager";
+  if (role === "inventory_receiver") return "Inventory_Receiver";
   if (role === "promoter") return "Promoter";
   if (role === "field_agent") return "Field_Agent";
   if (role === "merchant") return "Merchant";
@@ -60,6 +63,7 @@ export function getDefaultPathForRole(role: Role): string {
   if (role === "Sales") return "/sales/dashboard";
   if (role === "Sales_Manager") return "/sales/dashboard";
   if (role === "Onground_Agent_Manager") return "/sales/agents";
+  if (role === "Inventory_Receiver") return "/sales/inventory";
   if (role === "Promoter") return "/promoter";
   if (role === "Field_Agent") return "/agent";
   if (role === "Merchant") return "/merchant";
@@ -109,17 +113,37 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath === "/") {
-    return !["HR_Recruitment", "Sales", "Sales_Manager", "Onground_Agent_Manager", "Promoter", "Field_Agent", "Merchant", "Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+    return !["HR_Recruitment", "Sales", "Sales_Manager", "Onground_Agent_Manager", "Inventory_Receiver", "Promoter", "Field_Agent", "Merchant", "Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+  }
+
+  if (role === "Inventory_Receiver") {
+    const commercePath =
+      normalizedPath.startsWith("/sales/inventory/assignments") ||
+      normalizedPath.startsWith("/api/sales/inventory/handovers") ||
+      normalizedPath.startsWith("/api/sales/inventory/returns") ||
+      normalizedPath.startsWith("/api/sales/inventory/agent-sales") ||
+      normalizedPath.startsWith("/api/sales/inventory/agent-collections") ||
+      normalizedPath.startsWith("/api/sales/inventory/price-overrides") ||
+      normalizedPath.startsWith("/api/sales/inventory/movements") ||
+      normalizedPath.startsWith("/api/sales/inventory/me");
+    return (
+      (!commercePath && normalizedPath.startsWith("/sales/inventory")) ||
+      (!commercePath && normalizedPath.startsWith("/api/sales/inventory")) ||
+      normalizedPath.startsWith("/notifications") ||
+      normalizedPath.startsWith("/settings")
+    );
   }
 
   if (role === "Onground_Agent_Manager") {
     return (
       normalizedPath.startsWith("/sales/agents") ||
       normalizedPath.startsWith("/sales/stock") ||
+      normalizedPath.startsWith("/sales/inventory") ||
       normalizedPath.startsWith("/sales/traders") ||
       normalizedPath.startsWith("/sales/trader-sales") ||
       normalizedPath.startsWith("/api/sales/agents") ||
       normalizedPath.startsWith("/api/sales/merchants") ||
+      normalizedPath.startsWith("/api/sales/inventory") ||
       normalizedPath.startsWith("/notifications") ||
       normalizedPath.startsWith("/settings")
     );
@@ -138,10 +162,17 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (role === "Field_Agent") {
+    const productInventoryAgentApi =
+      normalizedPath.startsWith("/api/sales/inventory/me") ||
+      normalizedPath.startsWith("/api/sales/inventory/handovers/") ||
+      normalizedPath.startsWith("/api/sales/inventory/returns") ||
+      normalizedPath.startsWith("/api/sales/inventory/agent-sales") ||
+      normalizedPath.startsWith("/api/sales/inventory/price-overrides");
     return (
       normalizedPath.startsWith("/agent") ||
       normalizedPath.startsWith("/api/sales/agents") ||
       normalizedPath.startsWith("/api/sales/merchants") ||
+      productInventoryAgentApi ||
       normalizedPath.startsWith("/attendance") ||
       normalizedPath.startsWith("/api/attendance") ||
       normalizedPath.startsWith("/notifications") ||
@@ -203,6 +234,9 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath.startsWith("/api/sales")) {
+    if (normalizedPath.startsWith("/api/sales/inventory")) {
+      return ["Admin", "Sales_Manager", "Onground_Agent_Manager", "Inventory_Receiver"].includes(role);
+    }
     if (normalizedPath.startsWith("/api/sales/agents")) {
       return ["Admin", "Sales_Manager", "Onground_Agent_Manager", "Field_Agent"].includes(role);
     }
@@ -246,6 +280,9 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath.startsWith("/sales")) {
+    if (normalizedPath.startsWith("/sales/inventory")) {
+      return ["Sales_Manager", "Admin", "Onground_Agent_Manager", "Inventory_Receiver"].includes(role);
+    }
     if (
       normalizedPath.startsWith("/sales/agents") ||
       normalizedPath.startsWith("/sales/stock") ||

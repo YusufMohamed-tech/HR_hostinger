@@ -29,6 +29,10 @@ const dynamicTopicsByFile = new Map([
     "payroll.deduction_policy_saved",
     "payroll.deduction_policy_deleted",
   ])],
+  ["db/schema_v127_product_inventory_accounting.sql", new Set([
+    "product_inventory.damage_recorded",
+    "product_inventory.loss_recorded",
+  ])],
 ]);
 
 function splitSqlList(value) {

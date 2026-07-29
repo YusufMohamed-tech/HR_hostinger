@@ -6,6 +6,12 @@ export type SalesProduct = {
   description: string | null;
   unit: string | null;
   category: string | null;
+  sku: string | null;
+  barcode: string | null;
+  model: string | null;
+  tracking_mode: "none" | "serialized";
+  inventory_enabled: boolean;
+  default_cost: number;
   price: number;
   revenue_account_id: string | null;
   is_active: boolean;

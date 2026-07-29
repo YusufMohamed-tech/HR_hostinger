@@ -57,6 +57,7 @@ const accountRoleOptions: Array<{ value: EmployeeAccountRole; label: string }> =
   { value: "hr_recruitment", label: "مسؤول التوظيف" },
   { value: "training_manager", label: "مدير تدريب / موقع" },
   { value: "onground_agent_manager", label: "مدير المندوبين الميدانيين" },
+  { value: "inventory_receiver", label: "مستلم مخزون المنتجات" },
   { value: "promoter", label: "مروج مبيعات" },
   { value: "finance_manager", label: "مدير المالية" },
   { value: "accountant", label: "محاسب" },

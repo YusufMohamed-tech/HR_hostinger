@@ -24,7 +24,20 @@ import {
 import { formatCurrency } from "@/lib/utils/currency";
 import { PageSkeleton } from "@/components/Skeletons";
 
-const emptyForm = { company_id: "", name: "", description: "", unit: "", category: "", price: "0", revenue_account_id: "" };
+const emptyForm = {
+  company_id: "",
+  name: "",
+  description: "",
+  unit: "",
+  category: "",
+  price: "0",
+  revenue_account_id: "",
+  sku: "",
+  barcode: "",
+  model: "",
+  inventory_enabled: false,
+  default_cost: "0",
+};
 
 export default function SalesProductsPage() {
   const [products, setProducts] = useState<SalesProduct[]>([]);
@@ -72,6 +85,7 @@ export default function SalesProductsPage() {
                 <TableHead>المنتج</TableHead>
                 <TableHead>الشركة</TableHead>
                 <TableHead>الفئة</TableHead>
+                <TableHead>المخزون</TableHead>
                 <TableHead>حساب الإيراد</TableHead>
                 <TableHead>الوحدة</TableHead>
                 <TableHead>السعر</TableHead>
@@ -97,6 +111,14 @@ export default function SalesProductsPage() {
                       </div>
                     </TableCell>
                     <TableCell>{product.category || "-"}</TableCell>
+                    <TableCell>
+                      {product.inventory_enabled ? (
+                        <div>
+                          <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">تسلسلي</Badge>
+                          <p className="mt-1 text-xs text-gray-500">{product.sku || product.model || "بدون SKU"}</p>
+                        </div>
+                      ) : "-"}
+                    </TableCell>
                     <TableCell>
                       {product.revenue_account_id
                         ? `${revenueAccountById.get(product.revenue_account_id)?.code || ""} ${revenueAccountById.get(product.revenue_account_id)?.name_ar || product.revenue_account_id}`.trim()
@@ -187,6 +209,11 @@ function ProductDialog({
       category: product.category || "",
       price: String(product.price || 0),
       revenue_account_id: product.revenue_account_id || "",
+      sku: product.sku || "",
+      barcode: product.barcode || "",
+      model: product.model || "",
+      inventory_enabled: product.inventory_enabled,
+      default_cost: String(product.default_cost || 0),
     } : { ...emptyForm, company_id: defaultCompanyId });
   }, [open, product, companies]);
 
@@ -208,6 +235,11 @@ function ProductDialog({
       category: form.category.trim(),
       price: Number(form.price || 0),
       revenue_account_id: form.revenue_account_id || null,
+      sku: form.sku.trim(),
+      barcode: form.barcode.trim(),
+      model: form.model.trim(),
+      inventory_enabled: form.inventory_enabled,
+      default_cost: Number(form.default_cost || 0),
     };
     const result = product ? await updateSalesProduct(product.id, values) : await createSalesProduct(values);
     setSaving(false);
@@ -276,6 +308,37 @@ function ProductDialog({
               <Label>الفئة</Label>
               <Input value={form.category} onChange={(event) => setForm((prev) => ({ ...prev, category: event.target.value }))} placeholder="إنترنت / اتصال" />
             </div>
+          </div>
+          <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-4">
+            <label className="flex items-center gap-3 text-sm font-medium text-gray-900">
+              <input
+                type="checkbox"
+                checked={form.inventory_enabled}
+                onChange={(event) => setForm((prev) => ({ ...prev, inventory_enabled: event.target.checked }))}
+                className="h-4 w-4 accent-blue-600"
+              />
+              تفعيل المخزون التسلسلي لهذا المنتج
+            </label>
+            {form.inventory_enabled && (
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>SKU</Label>
+                  <Input value={form.sku} onChange={(event) => setForm((prev) => ({ ...prev, sku: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>الموديل</Label>
+                  <Input value={form.model} onChange={(event) => setForm((prev) => ({ ...prev, model: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>الباركود</Label>
+                  <Input value={form.barcode} onChange={(event) => setForm((prev) => ({ ...prev, barcode: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>التكلفة الافتراضية</Label>
+                  <Input type="number" min={0} step="0.01" value={form.default_cost} onChange={(event) => setForm((prev) => ({ ...prev, default_cost: event.target.value }))} />
+                </div>
+              </div>
+            )}
           </div>
           <div className="space-y-2">
             <Label>الوصف</Label>

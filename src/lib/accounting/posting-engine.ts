@@ -33,11 +33,20 @@ export interface AccountingSettings {
   default_allowances_expense_id?: string | null;
   default_commission_expense_id?: string | null;
   default_commission_payable_id?: string | null;
+  default_inventory_asset_id?: string | null;
+  default_inventory_grni_id?: string | null;
+  default_inventory_cogs_id?: string | null;
+  default_inventory_shrinkage_id?: string | null;
+  default_agent_receivable_id?: string | null;
   auto_post_sales?: boolean;
   auto_post_payroll?: boolean;
   auto_post_advances?: boolean;
   auto_post_assets?: boolean;
   auto_post_eosb?: boolean;
+  auto_post_inventory_receipts?: boolean;
+  auto_post_product_sales?: boolean;
+  auto_post_product_collections?: boolean;
+  enable_product_agent_commissions?: boolean;
   [key: string]: unknown;
 }
 

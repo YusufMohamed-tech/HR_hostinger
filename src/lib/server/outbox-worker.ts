@@ -15,6 +15,13 @@ import {
   autoReverseSalesLogRevision,
   autoReverseSimSale,
 } from "@/lib/accounting/auto-posting";
+import {
+  autoPostProductCollection,
+  autoPostProductInventoryLoss,
+  autoPostProductReceipt,
+  autoPostProductSale,
+  autoReverseProductSale,
+} from "@/lib/accounting/product-inventory-posting";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database, Json } from "@/types/database";
 
@@ -67,6 +74,7 @@ const accountingJournalEventPayload = z.object({
   description: z.string().min(1),
   status: z.enum(["pending_approval", "posted", "reversed"]),
   source_module: z.string().min(1),
+  source_id: z.string().uuid().optional(),
   total_debit: z.coerce.number().nonnegative(),
   total_credit: z.coerce.number().nonnegative(),
   version: z.coerce.number().int().nonnegative(),
@@ -346,6 +354,102 @@ const salesCashPayload = z.object({
   actor_user_id: z.string().uuid(),
 });
 
+const productReceiptEventPayload = z.object({
+  receipt_id: z.string().uuid(),
+  receipt_no: z.string().min(1),
+  ownership_type: z.enum(["purchased", "consignment"]),
+  total_units: z.coerce.number().int().nonnegative(),
+  total_cost: z.coerce.number().nonnegative(),
+  expected_sales_value: z.coerce.number().nonnegative(),
+  accounting_status: z.enum(["pending", "pending_approval", "not_required", "posted", "failed", "reversed"]).optional(),
+  version: z.coerce.number().int().positive(),
+});
+
+const productHandoverEventPayload = z.object({
+  handover_id: z.string().uuid(),
+  handover_no: z.string().min(1),
+  agent_id: z.string().uuid(),
+  agent_user_id: z.string().uuid(),
+  unit_count: z.coerce.number().int().positive(),
+  status: z.enum(["issued", "accepted", "completed", "cancelled"]),
+  version: z.coerce.number().int().positive(),
+});
+
+const productReturnEventPayload = z.object({
+  return_id: z.string().uuid(),
+  agent_id: z.string().uuid(),
+  warehouse_id: z.string().uuid(),
+  unit_count: z.coerce.number().int().positive(),
+  reason: z.string().min(1),
+  version: z.coerce.number().int().positive(),
+});
+
+const productPriceOverrideEventPayload = z.object({
+  request_id: z.string().uuid(),
+  unit_id: z.string().uuid(),
+  agent_id: z.string().uuid(),
+  requested_price: z.coerce.number().positive(),
+  currency: z.string().length(3),
+  decision: z.enum(["approved", "rejected"]).optional(),
+  version: z.coerce.number().int().positive(),
+});
+
+const productSaleEventPayload = z.object({
+  sale_id: z.string().uuid(),
+  sale_no: z.string().min(1),
+  unit_id: z.string().uuid(),
+  agent_id: z.string().uuid(),
+  agent_user_id: z.string().uuid().optional(),
+  total_amount: z.coerce.number().positive(),
+  unit_cost: z.coerce.number().positive().optional(),
+  gross_profit: z.coerce.number().optional(),
+  return_disposition: z.enum(["sellable", "damaged"]).optional(),
+  reason: z.string().optional(),
+  version: z.coerce.number().int().positive(),
+});
+
+const productCollectionEventPayload = z.object({
+  collection_id: z.string().uuid(),
+  agent_id: z.string().uuid(),
+  amount: z.coerce.number().positive(),
+  payment_method: z.string().min(1),
+  collection_date: z.string().min(1),
+  outstanding_after: z.coerce.number(),
+  version: z.coerce.number().int().positive(),
+});
+
+const productInventoryLossEventPayload = z.object({
+  loss_id: z.string().uuid(),
+  unit_id: z.string().uuid(),
+  loss_type: z.enum(["damage", "loss"]),
+  serial_number: z.string().min(1),
+  product_name: z.string().min(1),
+  unit_cost: z.coerce.number().positive(),
+  ownership_type: z.enum(["purchased", "consignment"]),
+  reason: z.string().min(1),
+  version: z.coerce.number().int().positive(),
+});
+
+const productInventoryAccountingFailedPayload = z.object({
+  source_type: z.enum(["receipt", "sale", "collection", "loss"]),
+  source_id: z.string().uuid(),
+  error: z.string().min(1),
+  attempt_count: z.coerce.number().int().positive(),
+  version: z.coerce.number().int().positive(),
+});
+
+const productCommissionSettledPayload = z.object({
+  settlement_id: z.string().uuid(),
+  commission_id: z.string().uuid(),
+  sale_id: z.string().uuid(),
+  agent_id: z.string().uuid(),
+  amount: z.coerce.number().positive(),
+  currency: z.string().length(3),
+  payment_id: z.string().uuid(),
+  journal_entry_id: z.string().uuid(),
+  version: z.coerce.number().int().positive(),
+});
+
 async function financeManagerUserId(orgId: string) {
   const admin = createAdminClient();
   const { data, error } = await admin.from("org_members").select("user_id")
@@ -393,6 +497,22 @@ async function financeManagerUserIds(orgId: string) {
     .eq("org_id", orgId).eq("role", "finance_manager");
   if (error) throw new Error(`Finance Manager recipient lookup failed: ${error.message}`);
   return (data || []).map((row) => row.user_id);
+}
+
+async function productInventoryManagerUserIds(orgId: string) {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("org_members").select("user_id")
+    .eq("org_id", orgId).in("role", ["admin", "sales_manager", "onground_agent_manager"]);
+  if (error) throw new Error(`Product inventory manager recipient lookup failed: ${error.message}`);
+  return (data || []).map((row) => row.user_id);
+}
+
+async function productAgentUserId(orgId: string, agentId: string) {
+  const admin = createAdminClient();
+  const { data, error } = await admin.from("field_agents").select("user_id")
+    .eq("organization_id", orgId).eq("id", agentId).maybeSingle();
+  if (error) throw new Error(`Product field-agent recipient lookup failed: ${error.message}`);
+  return typeof data?.user_id === "string" ? data.user_id : null;
 }
 
 async function employeeUserId(orgId: string, employeeId: string) {
@@ -692,6 +812,41 @@ const handlers: Record<string, OutboxHandler> = {
   },
   "accounting.journal_posted": async (event) => {
     const payload = accountingJournalEventPayload.parse(event.payload);
+    const inventorySourceType = ({
+      product_inventory_receipt: "receipt",
+      product_inventory_sale: "sale",
+      product_inventory_collection: "collection",
+      product_inventory_loss: "loss",
+    } as const)[payload.source_module as
+      | "product_inventory_receipt"
+      | "product_inventory_sale"
+      | "product_inventory_collection"
+      | "product_inventory_loss"];
+    if (inventorySourceType && payload.source_id) {
+      const admin = createAdminClient();
+      const { error: markError } = await admin.rpc("mark_product_inventory_accounting", {
+        p_org_id: event.org_id,
+        p_source_type: inventorySourceType,
+        p_source_id: payload.source_id,
+        p_status: "posted",
+        p_journal_entry_id: payload.journal_entry_id,
+        p_reversal_entry_id: null,
+        p_error: null,
+        p_amounts: {},
+      });
+      if (markError) throw new Error(`Inventory accounting activation failed: ${markError.message}`);
+      if (inventorySourceType === "sale") {
+        const { error: commissionError } = await admin.rpc(
+          "record_product_agent_commission_accrual",
+          {
+            p_org_id: event.org_id,
+            p_sale_id: payload.source_id,
+            p_journal_entry_id: payload.journal_entry_id,
+          }
+        );
+        if (commissionError) throw new Error(`Product commission activation failed: ${commissionError.message}`);
+      }
+    }
     await deliverNotifications({
       orgId: event.org_id,
       sourceEventId: event.business_event_id,
@@ -1140,6 +1295,226 @@ const handlers: Record<string, OutboxHandler> = {
   "organization.location_deleted": async () => {},
   "sales.identity_provisioned": async () => {},
   "sales.team_configured": async () => {},
+  "product_inventory.workbook_previewed": async () => {},
+  "product_inventory.workbook_committed": async () => {},
+  "product_inventory.photo_previewed": async () => {},
+  "product_inventory.photo_committed": async () => {},
+  "product_inventory.receipt_draft_saved": async () => {},
+  "product_inventory.receipt_cancelled": async () => {},
+  "product_inventory.receipt_confirmed": async (event) => {
+    const payload = productReceiptEventPayload.parse(event.payload);
+    const posting = await autoPostProductReceipt(
+      createAdminClient(),
+      event.org_id,
+      await financeManagerUserId(event.org_id),
+      payload.receipt_id
+    );
+    if (!posting.success) {
+      throw new Error(posting.error || "Product receipt accounting failed.");
+    }
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: `تم تأكيد استلام منتجات ${payload.receipt_no}`,
+      body: `${payload.total_units} وحدة، تكلفة ${payload.total_cost.toFixed(2)} ر.س، وقيمة بيع مخططة ${payload.expected_sales_value.toFixed(2)} ر.س.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
+  "product_inventory.handover_issued": async (event) => {
+    const payload = productHandoverEventPayload.parse(event.payload);
+    if (payload.status !== "issued") return;
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [payload.agent_user_id],
+      title: `عهدة منتجات جديدة ${payload.handover_no}`,
+      body: `${payload.unit_count} وحدة مسلسلة تنتظر مراجعتك وتأكيد الاستلام.`,
+      type: "sales",
+      link: "/agent/products/receive",
+    });
+  },
+  "product_inventory.handover_accepted": async (event) => {
+    const payload = productHandoverEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await productInventoryManagerUserIds(event.org_id),
+      title: `تم استلام العهدة ${payload.handover_no}`,
+      body: `أكد المندوب استلام ${payload.unit_count} وحدة مسلسلة.`,
+      type: "sales",
+      link: "/sales/inventory/assignments",
+    });
+  },
+  "product_inventory.agent_returned": async (event) => {
+    const payload = productReturnEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await productInventoryManagerUserIds(event.org_id),
+      title: "تم إرجاع منتجات إلى المخزن",
+      body: `${payload.unit_count} وحدة — ${payload.reason}`,
+      type: "sales",
+      link: "/sales/inventory/assignments",
+    });
+  },
+  "product_inventory.price_override_requested": async (event) => {
+    const payload = productPriceOverrideEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await productInventoryManagerUserIds(event.org_id),
+      title: "طلب استثناء سعر منتج",
+      body: `السعر المطلوب ${payload.requested_price.toFixed(2)} ${payload.currency}.`,
+      type: "sales",
+      link: "/sales/inventory/assignments",
+    });
+  },
+  "product_inventory.price_override_reviewed": async (event) => {
+    const payload = productPriceOverrideEventPayload.parse(event.payload);
+    const agentUserId = await productAgentUserId(event.org_id, payload.agent_id);
+    if (!agentUserId) return;
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [agentUserId],
+      title: payload.decision === "approved" ? "تم اعتماد سعر المنتج" : "تم رفض سعر المنتج",
+      body: `السعر المطلوب ${payload.requested_price.toFixed(2)} ${payload.currency}.`,
+      type: "sales",
+      link: "/agent/products/sell",
+    });
+  },
+  "product_inventory.sale_recorded": async (event) => {
+    const payload = productSaleEventPayload.parse(event.payload);
+    const posting = await autoPostProductSale(
+      createAdminClient(),
+      event.org_id,
+      await financeManagerUserId(event.org_id),
+      payload.sale_id
+    );
+    if (!posting.success) {
+      throw new Error(posting.error || "Product sale accounting failed.");
+    }
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: `مبيعة منتج جديدة ${payload.sale_no}`,
+      body: `قيمة البيع ${payload.total_amount.toFixed(2)} ر.س، والتكلفة ${Number(payload.unit_cost || 0).toFixed(2)} ر.س.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
+  "product_inventory.sale_voided": async (event) => {
+    const payload = productSaleEventPayload.parse(event.payload);
+    const posting = await autoReverseProductSale(
+      createAdminClient(),
+      event.org_id,
+      await financeManagerUserId(event.org_id),
+      payload.sale_id,
+      payload.reason || "Product sale voided."
+    );
+    if (!posting.success) {
+      throw new Error(posting.error || "Product sale reversal failed.");
+    }
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: `إلغاء مبيعة منتج ${payload.sale_no}`,
+      body: `${payload.total_amount.toFixed(2)} ر.س — ${payload.reason || "بدون تفاصيل"}.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
+  "product_inventory.collection_posted": async (event) => {
+    const payload = productCollectionEventPayload.parse(event.payload);
+    const posting = await autoPostProductCollection(
+      createAdminClient(),
+      event.org_id,
+      await financeManagerUserId(event.org_id),
+      payload.collection_id
+    );
+    if (!posting.success) {
+      throw new Error(posting.error || "Product collection accounting failed.");
+    }
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: "تحصيل جديد من مندوب منتجات",
+      body: `${payload.amount.toFixed(2)} ر.س — المتبقي ${payload.outstanding_after.toFixed(2)} ر.س.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
+  "product_inventory.damage_recorded": async (event) => {
+    const payload = productInventoryLossEventPayload.parse(event.payload);
+    const posting = await autoPostProductInventoryLoss(
+      createAdminClient(),
+      event.org_id,
+      await financeManagerUserId(event.org_id),
+      payload.loss_id
+    );
+    if (!posting.success) {
+      throw new Error(posting.error || "Product damage accounting failed.");
+    }
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: `إثبات تلف ${payload.product_name}`,
+      body: `${payload.serial_number} — تكلفة ${payload.unit_cost.toFixed(2)} ر.س.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
+  "product_inventory.loss_recorded": async (event) => {
+    const payload = productInventoryLossEventPayload.parse(event.payload);
+    const posting = await autoPostProductInventoryLoss(
+      createAdminClient(),
+      event.org_id,
+      await financeManagerUserId(event.org_id),
+      payload.loss_id
+    );
+    if (!posting.success) {
+      throw new Error(posting.error || "Product loss accounting failed.");
+    }
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: `إثبات فقد ${payload.product_name}`,
+      body: `${payload.serial_number} — تكلفة ${payload.unit_cost.toFixed(2)} ر.س.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
+  "product_inventory.accounting_failed": async (event) => {
+    const payload = productInventoryAccountingFailedPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeManagerUserIds(event.org_id),
+      title: "تعذر ترحيل حركة مخزون منتجات",
+      body: `${payload.source_type} — المحاولة ${payload.attempt_count}: ${payload.error}`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
+  "product_inventory.commission_settled": async (event) => {
+    const payload = productCommissionSettledPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeUserIds(event.org_id),
+      title: "تم سداد عمولة مندوب منتجات",
+      body: `${payload.amount.toFixed(2)} ${payload.currency} — مرتبطة بالمبيعة ${payload.sale_id}.`,
+      type: "accounting",
+      link: "/accounting/inventory",
+    });
+  },
   "sales.cash_submitted": async () => {},
   "sales.cash_rejected": async () => {},
   "sales.cash_confirmed": async (event) => {

@@ -137,6 +137,7 @@ function MessageBanner({ message }: { message: Message }) {
 const navItems = [
   { name: "الرئيسية", href: "/agent", icon: LayoutDashboard },
   { name: "شرائحي", href: "/agent/sims", icon: Smartphone },
+  { name: "المنتجات", href: "/agent/products", icon: Package },
   { name: "تسجيل مبيعة", href: "/agent/sell", icon: ShoppingCart },
   { name: "التجار", href: "/agent/merchants", icon: Store },
   { name: "طلب شرائح", href: "/agent/requests", icon: Package },
@@ -144,7 +145,7 @@ const navItems = [
   { name: "عمولاتي", href: "/agent/commissions", icon: BadgePercent },
 ];
 
-function AgentShell({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+export function AgentShell({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { logout } = useRoleContext();

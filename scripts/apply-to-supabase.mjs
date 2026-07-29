@@ -13,14 +13,23 @@ import { readFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
+dotenv.config({ path: resolve(ROOT, ".env.local") });
 
-const PROJECT_ID = process.env.SUPABASE_PROJECT_ID || "mxifsvgrkxoyskkiaqzs";
-const ACCESS_TOKEN =
-  process.env.SUPABASE_ACCESS_TOKEN ||
-  "sbp_fed15bb3ad755b5ca0eccdea09c26a2e6d5f7652";
+const PROJECT_ID = process.env.SUPABASE_PROJECT_ID
+  || process.env.SUPABASE_PROJECT_REF
+  || process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/^https:\/\/([^.]+)\./)?.[1];
+const ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
+
+if (!PROJECT_ID || !ACCESS_TOKEN) {
+  console.error(
+    "Missing SUPABASE_PROJECT_ID/SUPABASE_PROJECT_REF/NEXT_PUBLIC_SUPABASE_URL or SUPABASE_ACCESS_TOKEN."
+  );
+  process.exit(1);
+}
 
 const API = `https://api.supabase.com/v1/projects/${PROJECT_ID}/database/query`;
 

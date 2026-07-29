@@ -7,6 +7,20 @@ function asNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function productInventoryValues(body: Record<string, unknown>) {
+  const inventoryEnabled = body.inventory_enabled === true;
+  const defaultCost = asNumber(body.default_cost);
+  if (defaultCost < 0) throw new Error("تكلفة المنتج الافتراضية لا يمكن أن تكون أقل من صفر.");
+  return {
+    sku: String(body.sku || "").trim() || null,
+    barcode: String(body.barcode || "").trim() || null,
+    model: String(body.model || "").trim() || null,
+    inventory_enabled: inventoryEnabled,
+    tracking_mode: inventoryEnabled ? "serialized" : "none",
+    default_cost: defaultCost,
+  };
+}
+
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -85,6 +99,12 @@ export async function POST(request: NextRequest) {
   if (!companyId) return NextResponse.json({ message: "اختر شركة المنتج." }, { status: 400 });
   if (name.length < 2) return NextResponse.json({ message: "اسم المنتج مطلوب." }, { status: 400 });
   if (price < 0) return NextResponse.json({ message: "السعر لا يمكن أن يكون أقل من صفر." }, { status: 400 });
+  let inventoryValues: ReturnType<typeof productInventoryValues>;
+  try {
+    inventoryValues = productInventoryValues(body);
+  } catch (error) {
+    return NextResponse.json({ message: error instanceof Error ? error.message : "بيانات المخزون غير صالحة." }, { status: 400 });
+  }
 
   const admin = createAdminClient();
   if (!(await canManageCompany(admin, auth, companyId))) {
@@ -101,6 +121,7 @@ export async function POST(request: NextRequest) {
       unit: String(body.unit || "").trim() || null,
       category: String(body.category || "").trim() || null,
       price,
+      ...inventoryValues,
       revenue_account_id: String(body.revenue_account_id || "").trim() || null,
       is_active: body.is_active !== false,
       created_by: auth.user.id,
@@ -123,7 +144,7 @@ export async function PATCH(request: NextRequest) {
   const admin = createAdminClient();
   const currentResult = await admin
     .from("sales_products")
-    .select("id, company_id")
+    .select("id, company_id, sku, barcode, model, inventory_enabled, default_cost, inventory_version")
     .eq("id", id)
     .eq("organization_id", auth.orgId)
     .maybeSingle();
@@ -152,6 +173,21 @@ export async function PATCH(request: NextRequest) {
     values.price = price;
   }
   if ("is_active" in body) values.is_active = Boolean(body.is_active);
+  if (["sku", "barcode", "model", "inventory_enabled", "default_cost"].some((key) => key in body)) {
+    const current = currentResult.data as Record<string, unknown>;
+    try {
+      Object.assign(values, productInventoryValues({
+        sku: "sku" in body ? body.sku : current.sku,
+        barcode: "barcode" in body ? body.barcode : current.barcode,
+        model: "model" in body ? body.model : current.model,
+        inventory_enabled: "inventory_enabled" in body ? body.inventory_enabled : current.inventory_enabled,
+        default_cost: "default_cost" in body ? body.default_cost : current.default_cost,
+      }));
+      values.inventory_version = Number(current.inventory_version || 1) + 1;
+    } catch (error) {
+      return NextResponse.json({ message: error instanceof Error ? error.message : "بيانات المخزون غير صالحة." }, { status: 400 });
+    }
+  }
 
   const { data, error } = await admin
     .from("sales_products")
