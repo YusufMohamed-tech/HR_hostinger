@@ -157,6 +157,7 @@
     { "id": "schema_v129_progressive_employee_onboarding", "file": "db/schema_v129_progressive_employee_onboarding.sql" },
     { "id": "schema_v130_hostinger_personnel_storage", "file": "db/schema_v130_hostinger_personnel_storage.sql" },
     { "id": "schema_v131_onboarding_readiness_reminders", "file": "db/schema_v131_onboarding_readiness_reminders.sql" },
-    { "id": "schema_v132_custom_employee_requirements", "file": "db/schema_v132_custom_employee_requirements.sql" }
+    { "id": "schema_v132_custom_employee_requirements", "file": "db/schema_v132_custom_employee_requirements.sql" },
+    { "id": "schema_v133_employee_master_noop_versioning", "file": "db/schema_v133_employee_master_noop_versioning.sql" }
   ]
 }

@@ -4214,7 +4214,8 @@ const launchAssertions = `
   $test$;
 
   DO $test$
-  DECLARE version_value integer; updated jsonb; replayed jsonb; conflict_denied boolean:=false;
+  DECLARE version_value integer; updated jsonb; replayed jsonb; noop_updated jsonb;
+    noop_version integer; conflict_denied boolean:=false;
   BEGIN
     SELECT lifecycle_version INTO version_value FROM public.employees
     WHERE id='12121212-1212-4212-8212-121212121212';
@@ -4242,9 +4243,19 @@ const launchAssertions = `
         '55555555-5555-4555-8555-555555555555',NULL);
     EXCEPTION WHEN unique_violation THEN conflict_denied:=true;
     END;
+    SELECT lifecycle_version INTO noop_version FROM public.employees
+    WHERE id='12121212-1212-4212-8212-121212121212';
+    noop_updated:=public.update_employee_master(
+      '11111111-1111-4111-8111-111111111111','22222222-2222-4222-8222-222222222222',
+      'ab200000-0000-4000-8000-000000000004','ab200000-0000-4000-8000-000000000004',
+      '12121212-1212-4212-8212-121212121212',noop_version,
+      '{"full_name":"Atomic Employee Master Proof"}'::jsonb,
+      ARRAY['55555555-5555-4555-8555-555555555555'::uuid],
+      '55555555-5555-4555-8555-555555555555',NULL);
     IF updated IS DISTINCT FROM replayed OR NOT conflict_denied
        OR updated->>'full_name'<>'Atomic Employee Master Proof'
        OR (updated->>'lifecycle_version')::integer<>version_value+1
+       OR (noop_updated->>'lifecycle_version')::integer<>noop_version+1
        OR (SELECT count(*) FROM public.employee_lifecycle_commands
          WHERE idempotency_key='ab200000-0000-4000-8000-000000000001')<>1
        OR (SELECT count(*) FROM public.employee_locations
@@ -4252,9 +4263,10 @@ const launchAssertions = `
        OR (SELECT count(*) FROM public.event_outbox outbox
          JOIN public.business_events event ON event.id=outbox.business_event_id
          WHERE outbox.topic='employee.updated' AND event.request_id='ab200000-0000-4000-8000-000000000002')<>1 THEN
-      RAISE EXCEPTION 'Employee master proof failed: same %, conflict %, name %, version % expected %, commands %, locations %, events %.',
+      RAISE EXCEPTION 'Employee master proof failed: same %, conflict %, name %, version % expected %, no-op version % expected %, commands %, locations %, events %.',
         updated IS NOT DISTINCT FROM replayed, conflict_denied, updated->>'full_name',
         updated->>'lifecycle_version', version_value+1,
+        noop_updated->>'lifecycle_version', noop_version+1,
         (SELECT count(*) FROM public.employee_lifecycle_commands WHERE idempotency_key='ab200000-0000-4000-8000-000000000001'),
         (SELECT count(*) FROM public.employee_locations WHERE employee_id='12121212-1212-4212-8212-121212121212' AND assigned_to IS NULL AND is_primary),
         (SELECT count(*) FROM public.event_outbox outbox JOIN public.business_events event ON event.id=outbox.business_event_id
