@@ -5,6 +5,8 @@ import {
   executeReceiptCommand,
   productInventoryDb,
   productInventoryError,
+  productInventoryPage,
+  productInventoryPagination,
 } from "@/lib/server/product-inventory-api";
 
 export async function GET(request: NextRequest) {
@@ -12,14 +14,25 @@ export async function GET(request: NextRequest) {
   if ("error" in auth) return auth.error;
 
   try {
-    const { data, error } = await productInventoryDb(auth.admin)
+    const paging = productInventoryPage(request, { defaultPageSize: 20, maxPageSize: 100 });
+    const { data, error, count } = await productInventoryDb(auth.admin)
       .from("product_receipts")
-      .select("*, company:supplier_company_id(id, name, code, brand_color), warehouse:warehouse_id(id, code, name_ar, name_en, is_default)")
+      .select("*, company:supplier_company_id(id, name, code, brand_color), warehouse:warehouse_id(id, code, name_ar, name_en, is_default)", { count: "exact" })
       .eq("organization_id", auth.orgId)
       .order("created_at", { ascending: false })
-      .limit(100);
+      .order("id", { ascending: false })
+      .range(paging.from, paging.to);
     if (error) throw Object.assign(new Error(error.message), { code: error.code });
-    return NextResponse.json({ data: data ?? [] });
+    return NextResponse.json({
+      data: {
+        rows: data ?? [],
+        pagination: productInventoryPagination(
+          paging.page,
+          paging.pageSize,
+          count ?? 0
+        ),
+      },
+    });
   } catch (error) {
     return productInventoryError(error, "تعذر تحميل سندات استلام المنتجات.");
   }

@@ -19,6 +19,12 @@ import type {
 } from "@/types/product-inventory";
 
 type ApiResult<T> = { data: T | null; error: string | null };
+export type ProductInventoryPagination = {
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+};
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<ApiResult<T>> {
   try {
@@ -52,8 +58,10 @@ export function getProductInventorySetup() {
   }>("/api/sales/inventory/setup");
 }
 
-export function getProductReceipts() {
-  return apiFetch<ProductReceipt[]>("/api/sales/inventory/receipts");
+export function getProductReceipts(page = 1, pageSize = 20) {
+  return apiFetch<{ rows: ProductReceipt[]; pagination: ProductInventoryPagination }>(
+    `/api/sales/inventory/receipts?page=${page}&page_size=${pageSize}`
+  );
 }
 
 export function getProductReceipt(receiptId: string) {
@@ -81,9 +89,13 @@ export function cancelProductReceipt(receiptId: string, expectedVersion: number,
   });
 }
 
-export function getProductStock() {
-  return apiFetch<{ rows: ProductInventoryStockRow[]; totals: { units: number; cost: number; expectedSales: number; margin: number } }>(
-    "/api/sales/inventory/stock"
+export function getProductStock(page = 1, pageSize = 20) {
+  return apiFetch<{
+    rows: ProductInventoryStockRow[];
+    totals: { units: number; cost: number; expectedSales: number; margin: number };
+    pagination: ProductInventoryPagination;
+  }>(
+    `/api/sales/inventory/stock?page=${page}&page_size=${pageSize}`
   );
 }
 
@@ -189,8 +201,17 @@ export function settleProductAgentCommission(
   );
 }
 
-export function getProductCommerceManager() {
-  return apiFetch<ProductCommerceManagerData>("/api/sales/inventory/handovers");
+export function getProductCommerceManager(
+  options: { page?: number; pageSize?: number; search?: string } = {}
+) {
+  const params = new URLSearchParams({
+    page: String(options.page || 1),
+    page_size: String(options.pageSize || 200),
+  });
+  if (options.search?.trim()) params.set("search", options.search.trim());
+  return apiFetch<ProductCommerceManagerData>(
+    `/api/sales/inventory/handovers?${params.toString()}`
+  );
 }
 
 export function createProductHandover(values: {
@@ -313,8 +334,11 @@ export function recordAgentProductCollection(values: {
   });
 }
 
-export function getProductInventoryMovements() {
-  return apiFetch<Array<Record<string, unknown>>>("/api/sales/inventory/movements");
+export function getProductInventoryMovements(page = 1, pageSize = 50) {
+  return apiFetch<{
+    rows: Array<Record<string, unknown>>;
+    pagination: ProductInventoryPagination;
+  }>(`/api/sales/inventory/movements?page=${page}&page_size=${pageSize}`);
 }
 
 export function recordProductInventoryLoss(values: {

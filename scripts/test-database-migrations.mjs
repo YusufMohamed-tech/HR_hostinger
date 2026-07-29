@@ -183,6 +183,110 @@ async function testConcurrentProductSale(connectionString) {
   }
 }
 
+async function testConcurrentProductReceiptConfirmation(connectionString) {
+  const clients = [new Client({ connectionString }), new Client({ connectionString })];
+  try {
+    await Promise.all(clients.map(async (client) => {
+      await client.connect();
+      await client.query("SELECT set_config('request.jwt.claim.role', 'service_role', false)");
+    }));
+    const warehouseResult = await clients[0].query(
+      `SELECT id FROM public.inventory_warehouses
+       WHERE organization_id = $1 AND is_default = true LIMIT 1`,
+      ["11111111-1111-4111-8111-111111111111"]
+    );
+    const warehouseId = warehouseResult.rows[0]?.id;
+    if (!warehouseId) throw new Error("Concurrent receipt test warehouse was not prepared.");
+
+    const saveSql = `SELECT public.execute_product_receipt_command(
+      $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'receipt_draft_save', $5::jsonb
+    ) AS value`;
+    const common = [
+      "11111111-1111-4111-8111-111111111111",
+      "61616161-6161-4161-8161-616161616161",
+    ];
+    const payload = (receiptId) => JSON.stringify({
+      receipt_id: receiptId,
+      expected_version: 0,
+      supplier_company_id: "e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1",
+      warehouse_id: warehouseId,
+      ownership_type: "purchased",
+      receipt_date: "2099-07-20",
+      currency: "SAR",
+      groups: [{
+        product_id: "e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2",
+        unit_cost: 60,
+        planned_sale_price: 100,
+        currency: "SAR",
+        tax_included: true,
+        condition: "new",
+        serial_numbers: ["VG-PHASE6-CONCURRENT-0001"],
+      }],
+    });
+    await Promise.all([
+      clients[0].query(saveSql, [...common,
+        "af600001-0000-4000-8000-000000000001",
+        "af600002-0000-4000-8000-000000000002",
+        payload("af600003-0000-4000-8000-000000000003")]),
+      clients[1].query(saveSql, [...common,
+        "af600004-0000-4000-8000-000000000004",
+        "af600005-0000-4000-8000-000000000005",
+        payload("af600006-0000-4000-8000-000000000006")]),
+    ]);
+
+    const confirmSql = `SELECT public.execute_product_receipt_command(
+      $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'receipt_confirm', $5::jsonb
+    ) AS value`;
+    const attempts = await Promise.allSettled([
+      clients[0].query(confirmSql, [...common,
+        "af600007-0000-4000-8000-000000000007",
+        "af600008-0000-4000-8000-000000000008",
+        JSON.stringify({
+          receipt_id: "af600003-0000-4000-8000-000000000003",
+          expected_version: 1,
+        })]),
+      clients[1].query(confirmSql, [...common,
+        "af600009-0000-4000-8000-000000000009",
+        "af600010-0000-4000-8000-000000000010",
+        JSON.stringify({
+          receipt_id: "af600006-0000-4000-8000-000000000006",
+          expected_version: 1,
+        })]),
+    ]);
+    if (attempts.filter((attempt) => attempt.status === "fulfilled").length !== 1) {
+      throw new Error(
+        `Concurrent receipt confirmation did not produce exactly one winner: ${
+          attempts.map((attempt) => attempt.status).join(", ")
+        }`
+      );
+    }
+    const check = await clients[0].query(
+      `SELECT
+        (SELECT count(*)::integer FROM public.product_inventory_units
+          WHERE organization_id = $1
+            AND normalized_serial_number = 'VG-PHASE6-CONCURRENT-0001') AS units,
+        (SELECT count(*)::integer FROM public.product_receipts
+          WHERE id IN ($2::uuid, $3::uuid) AND status = 'confirmed') AS confirmed,
+        (SELECT count(*)::integer FROM public.product_receipts
+          WHERE id IN ($2::uuid, $3::uuid) AND status = 'ready_to_confirm') AS retryable`,
+      [
+        "11111111-1111-4111-8111-111111111111",
+        "af600003-0000-4000-8000-000000000003",
+        "af600006-0000-4000-8000-000000000006",
+      ]
+    );
+    if (
+      check.rows[0]?.units !== 1
+      || check.rows[0]?.confirmed !== 1
+      || check.rows[0]?.retryable !== 1
+    ) {
+      throw new Error(`Concurrent receipt confirmation control failed: ${JSON.stringify(check.rows[0])}`);
+    }
+  } finally {
+    await Promise.all(clients.map((client) => client.end().catch(() => undefined)));
+  }
+}
+
 async function testConcurrentLmsQuizAttempt(connectionString) {
   const clients = [new Client({ connectionString }), new Client({ connectionString })];
   try {
@@ -5526,6 +5630,234 @@ const launchAssertions = `
   END
   $test$;
 
+  -- Phase 6 product inventory: tenant/suspension guards, transaction rollback
+  -- under injected outbox failures, accounting failure atomicity, and exact
+  -- uncapped summary functions remain independently verifiable.
+  INSERT INTO public.sales_companies (
+    id, organization_id, name, slug, code
+  ) VALUES (
+    'af6b0001-0000-4000-8000-000000000001',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'Tenant B Inventory Supplier', 'tenant-b-inventory-supplier', 'TBIS'
+  );
+  INSERT INTO public.sales_products (
+    id, organization_id, company_id, name, sku, price,
+    default_cost, inventory_enabled, tracking_mode, created_by
+  ) VALUES (
+    'af6b0002-0000-4000-8000-000000000002',
+    'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    'af6b0001-0000-4000-8000-000000000001',
+    'Tenant B Serialized Product', 'TENANT-B-SERIAL', 100,
+    60, true, 'serialized', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+  );
+
+  DO $test$
+  DECLARE
+    warehouse_id_value uuid;
+    cross_tenant_denied boolean := false;
+    suspended_denied boolean := false;
+    receipt_failure_observed boolean := false;
+    sale_failure_observed boolean := false;
+    accounting_failure_observed boolean := false;
+    receipt_payload jsonb;
+    stock_summary jsonb;
+    finance_summary jsonb;
+    agent_balance_count integer := 0;
+    sale_test_unit_id uuid;
+  BEGIN
+    SELECT id INTO warehouse_id_value
+    FROM public.inventory_warehouses
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+      AND is_default = true
+    LIMIT 1;
+
+    receipt_payload := jsonb_build_object(
+      'receipt_id', 'af610001-0000-4000-8000-000000000001',
+      'expected_version', 0,
+      'supplier_company_id', 'e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1',
+      'warehouse_id', warehouse_id_value,
+      'ownership_type', 'purchased',
+      'receipt_date', '2099-07-18',
+      'currency', 'SAR',
+      'groups', jsonb_build_array(jsonb_build_object(
+        'product_id', 'af6b0002-0000-4000-8000-000000000002',
+        'unit_cost', 60,
+        'planned_sale_price', 100,
+        'currency', 'SAR',
+        'tax_included', true,
+        'condition', 'new',
+        'serial_numbers', jsonb_build_array('VG-PHASE6-CROSS-TENANT')
+      ))
+    );
+    BEGIN
+      PERFORM public.execute_product_receipt_command(
+        '11111111-1111-4111-8111-111111111111',
+        '61616161-6161-4161-8161-616161616161',
+        'af610002-0000-4000-8000-000000000002',
+        'af610003-0000-4000-8000-000000000003',
+        'receipt_draft_save', receipt_payload
+      );
+    EXCEPTION WHEN check_violation THEN
+      cross_tenant_denied := true;
+    END;
+
+    UPDATE public.profiles
+    SET account_status = 'suspended'
+    WHERE org_id = '11111111-1111-4111-8111-111111111111'
+      AND user_id = '61616161-6161-4161-8161-616161616161';
+    BEGIN
+      PERFORM public.execute_product_receipt_command(
+        '11111111-1111-4111-8111-111111111111',
+        '61616161-6161-4161-8161-616161616161',
+        'af610004-0000-4000-8000-000000000004',
+        'af610005-0000-4000-8000-000000000005',
+        'receipt_draft_save',
+        receipt_payload
+          || '{"receipt_id":"af610006-0000-4000-8000-000000000006","groups":[{"product_id":"e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2","unit_cost":60,"planned_sale_price":100,"currency":"SAR","tax_included":true,"condition":"new","serial_numbers":["VG-PHASE6-SUSPENDED"]}]}'::jsonb
+      );
+    EXCEPTION WHEN insufficient_privilege THEN
+      suspended_denied := true;
+    END;
+    UPDATE public.profiles
+    SET account_status = 'active'
+    WHERE org_id = '11111111-1111-4111-8111-111111111111'
+      AND user_id = '61616161-6161-4161-8161-616161616161';
+
+    receipt_payload := receipt_payload
+      || '{"receipt_id":"af610007-0000-4000-8000-000000000007","groups":[{"product_id":"e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2","unit_cost":60,"planned_sale_price":100,"currency":"SAR","tax_included":true,"condition":"new","serial_numbers":["VG-PHASE6-ROLLBACK-RECEIPT"]}]}'::jsonb;
+    PERFORM public.execute_product_receipt_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'af610008-0000-4000-8000-000000000008',
+      'af610009-0000-4000-8000-000000000009',
+      'receipt_draft_save', receipt_payload
+    );
+
+    CREATE FUNCTION pg_temp.reject_phase6_product_outbox()
+    RETURNS trigger LANGUAGE plpgsql AS $fn$
+    BEGIN
+      IF (
+        NEW.topic = 'product_inventory.receipt_confirmed'
+        AND NEW.payload->>'receipt_id' = 'af610007-0000-4000-8000-000000000007'
+      ) OR (
+        NEW.topic = 'product_inventory.sale_recorded'
+        AND NEW.payload->>'sale_id' = 'af610012-0000-4000-8000-000000000012'
+      ) OR NEW.topic = 'product_inventory.accounting_failed' THEN
+        RAISE EXCEPTION 'Injected Phase 6 product outbox failure';
+      END IF;
+      RETURN NEW;
+    END
+    $fn$;
+    CREATE TRIGGER reject_phase6_product_outbox_trigger
+      BEFORE INSERT ON public.event_outbox
+      FOR EACH ROW EXECUTE FUNCTION pg_temp.reject_phase6_product_outbox();
+
+    BEGIN
+      PERFORM public.execute_product_receipt_command(
+        '11111111-1111-4111-8111-111111111111',
+        '61616161-6161-4161-8161-616161616161',
+        'af610010-0000-4000-8000-000000000010',
+        'af610011-0000-4000-8000-000000000011',
+        'receipt_confirm',
+        '{"receipt_id":"af610007-0000-4000-8000-000000000007","expected_version":1}'::jsonb
+      );
+    EXCEPTION WHEN raise_exception THEN
+      receipt_failure_observed := SQLERRM = 'Injected Phase 6 product outbox failure';
+    END;
+
+    SELECT id INTO sale_test_unit_id
+    FROM public.product_inventory_units
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+      AND raw_serial_number = 'VG-PHASE3-0003'
+      AND status = 'with_agent';
+    BEGIN
+      PERFORM public.execute_product_commerce_command(
+        '11111111-1111-4111-8111-111111111111',
+        '71717171-7171-4171-8171-717171717171',
+        'af610013-0000-4000-8000-000000000013',
+        'af610014-0000-4000-8000-000000000014',
+        'sale',
+        jsonb_build_object(
+          'sale_id', 'af610012-0000-4000-8000-000000000012',
+          'unit_id', sale_test_unit_id,
+          'actual_sale_price', 110,
+          'sale_date', '2099-07-18',
+          'payment_method', 'cash',
+          'customer_name', 'Rollback drill buyer'
+        )
+      );
+    EXCEPTION WHEN raise_exception THEN
+      sale_failure_observed := SQLERRM = 'Injected Phase 6 product outbox failure';
+    END;
+
+    BEGIN
+      PERFORM public.mark_product_inventory_accounting(
+        '11111111-1111-4111-8111-111111111111',
+        'receipt',
+        'ae100001-0000-4000-8000-000000000001',
+        'failed',
+        NULL, NULL,
+        'Injected accounting failure drill',
+        '{}'::jsonb
+      );
+    EXCEPTION WHEN raise_exception THEN
+      accounting_failure_observed := SQLERRM = 'Injected Phase 6 product outbox failure';
+    END;
+
+    DROP TRIGGER reject_phase6_product_outbox_trigger ON public.event_outbox;
+
+    stock_summary := public.get_product_inventory_stock_summary(
+      '11111111-1111-4111-8111-111111111111'
+    );
+    finance_summary := public.get_product_inventory_finance_summary(
+      '11111111-1111-4111-8111-111111111111'
+    );
+    SELECT count(*) INTO agent_balance_count
+    FROM public.get_product_inventory_agent_balances(
+      '11111111-1111-4111-8111-111111111111',
+      NULL
+    );
+
+    IF NOT cross_tenant_denied
+       OR NOT suspended_denied
+       OR NOT receipt_failure_observed
+       OR NOT sale_failure_observed
+       OR NOT accounting_failure_observed
+       OR EXISTS (
+         SELECT 1 FROM public.product_receipts
+         WHERE id = 'af610006-0000-4000-8000-000000000006'
+       )
+       OR (SELECT status FROM public.product_receipts
+           WHERE id = 'af610007-0000-4000-8000-000000000007') <> 'ready_to_confirm'
+       OR EXISTS (
+         SELECT 1 FROM public.product_inventory_units
+         WHERE receipt_id = 'af610007-0000-4000-8000-000000000007'
+       )
+       OR EXISTS (
+         SELECT 1 FROM public.product_inventory_movements
+         WHERE receipt_id = 'af610007-0000-4000-8000-000000000007'
+       )
+       OR (SELECT status FROM public.product_inventory_units
+           WHERE id = sale_test_unit_id) <> 'with_agent'
+       OR EXISTS (
+         SELECT 1 FROM public.agent_product_sales
+         WHERE id = 'af610012-0000-4000-8000-000000000012'
+       )
+       OR (SELECT accounting_status FROM public.product_receipts
+           WHERE id = 'ae100001-0000-4000-8000-000000000001') <> 'pending'
+       OR EXISTS (
+         SELECT 1 FROM public.product_inventory_accounting_postings
+         WHERE source_type = 'receipt'
+           AND source_id = 'ae100001-0000-4000-8000-000000000001'
+       )
+       OR (stock_summary->>'units')::integer < 1
+       OR (finance_summary ? 'inventoryGlBalance') IS FALSE
+       OR agent_balance_count < 1 THEN
+      RAISE EXCEPTION 'Phase 6 product hardening or rollback drill failed.';
+    END IF;
+  END
+  $test$;
+
   -- Browser clients cannot bypass the new command boundaries or invoke their
   -- service-only functions directly.
   DO $test$
@@ -5535,6 +5867,8 @@ const launchAssertions = `
     workbook_rows_denied boolean:=false; workbook_function_denied boolean:=false;
     photo_rows_denied boolean:=false; photo_function_denied boolean:=false;
     commerce_rows_denied boolean:=false; commerce_function_denied boolean:=false;
+    posting_rows_denied boolean:=false; accounting_function_denied boolean:=false;
+    summary_function_denied boolean:=false;
     product_inventory_rows integer:=0; workbook_rows integer:=0; photo_rows integer:=0;
   BEGIN
     SET LOCAL ROLE authenticated;
@@ -5639,12 +5973,37 @@ const launchAssertions = `
       );
     EXCEPTION WHEN insufficient_privilege THEN commerce_function_denied:=true;
     END;
+    BEGIN
+      INSERT INTO public.product_inventory_accounting_postings (
+        organization_id, source_type, source_id, status
+      ) VALUES (
+        '11111111-1111-4111-8111-111111111111',
+        'receipt', 'ae100001-0000-4000-8000-000000000001', 'pending'
+      );
+    EXCEPTION WHEN insufficient_privilege THEN posting_rows_denied:=true;
+    END;
+    BEGIN
+      PERFORM public.mark_product_inventory_accounting(
+        '11111111-1111-4111-8111-111111111111',
+        'receipt', 'ae100001-0000-4000-8000-000000000001',
+        'failed', NULL, NULL, 'Forbidden browser accounting call', '{}'::jsonb
+      );
+    EXCEPTION WHEN insufficient_privilege THEN accounting_function_denied:=true;
+    END;
+    BEGIN
+      PERFORM public.get_product_inventory_finance_summary(
+        '11111111-1111-4111-8111-111111111111'
+      );
+    EXCEPTION WHEN insufficient_privilege THEN summary_function_denied:=true;
+    END;
     RESET ROLE;
     IF NOT sim_denied OR NOT accounting_denied OR NOT promoter_denied OR NOT eosb_denied
        OR NOT function_denied OR NOT product_inventory_denied OR NOT product_function_denied
        OR NOT workbook_rows_denied OR NOT workbook_function_denied
        OR NOT photo_rows_denied OR NOT photo_function_denied
-       OR NOT commerce_rows_denied OR NOT commerce_function_denied THEN
+       OR NOT commerce_rows_denied OR NOT commerce_function_denied
+       OR NOT posting_rows_denied OR NOT accounting_function_denied
+       OR NOT summary_function_denied THEN
       RAISE EXCEPTION 'One or more atomic command boundaries allowed a direct browser write.';
     END IF;
   END
@@ -5706,6 +6065,7 @@ try {
   await testConcurrentAccountingNumbers(databaseUrl);
   await testConcurrentLmsQuizAttempt(databaseUrl);
   await testConcurrentProductSale(databaseUrl);
+  await testConcurrentProductReceiptConfirmation(databaseUrl);
   console.log("Database migration/RLS smoke test passed on disposable PostgreSQL 16.");
 } finally {
   if (containerStarted) {

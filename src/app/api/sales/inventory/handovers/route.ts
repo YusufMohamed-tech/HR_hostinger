@@ -1,14 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { productHandoverSchema } from "@/lib/product-inventory/schemas";
 import { requireProductInventoryManagerAccess } from "@/lib/server/product-inventory-auth";
-import { executeProductCommerceCommand, productInventoryError } from "@/lib/server/product-inventory-api";
+import {
+  executeProductCommerceCommand,
+  productInventoryError,
+  productInventoryPage,
+} from "@/lib/server/product-inventory-api";
 import { loadProductCommerceManagerData } from "@/lib/server/product-inventory-commerce";
 
 export async function GET(request: NextRequest) {
   const auth = await requireProductInventoryManagerAccess(request);
   if ("error" in auth) return auth.error;
   try {
-    return NextResponse.json({ data: await loadProductCommerceManagerData(auth.admin, auth.orgId) });
+    const paging = productInventoryPage(request, { defaultPageSize: 200, maxPageSize: 200 });
+    const search = (request.nextUrl.searchParams.get("search") || "").trim().slice(0, 160);
+    return NextResponse.json({
+      data: await loadProductCommerceManagerData(auth.admin, auth.orgId, {
+        page: paging.page,
+        pageSize: paging.pageSize,
+        search,
+      }),
+    });
   } catch (error) {
     return productInventoryError(error, "تعذر تحميل حركة تسليم المنتجات.");
   }

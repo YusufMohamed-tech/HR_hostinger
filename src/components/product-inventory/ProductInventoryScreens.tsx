@@ -94,20 +94,31 @@ export function ProductInventoryDashboard() {
   const [receipts, setReceipts] = useState<ProductReceipt[]>([]);
   const [stock, setStock] = useState<ProductInventoryStockRow[]>([]);
   const [totals, setTotals] = useState({ units: 0, cost: 0, expectedSales: 0, margin: 0 });
+  const [receiptPage, setReceiptPage] = useState(1);
+  const [stockPage, setStockPage] = useState(1);
+  const [receiptPages, setReceiptPages] = useState(1);
+  const [stockPages, setStockPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [receiptResult, stockResult] = await Promise.all([getProductReceipts(), getProductStock()]);
-    if (receiptResult.data) setReceipts(receiptResult.data);
+    const [receiptResult, stockResult] = await Promise.all([
+      getProductReceipts(receiptPage, 20),
+      getProductStock(stockPage, 20),
+    ]);
+    if (receiptResult.data) {
+      setReceipts(receiptResult.data.rows);
+      setReceiptPages(receiptResult.data.pagination.total_pages);
+    }
     if (stockResult.data) {
       setStock(stockResult.data.rows);
       setTotals(stockResult.data.totals);
+      setStockPages(stockResult.data.pagination.total_pages);
     }
     setMessage(receiptResult.error || stockResult.error || "");
     setLoading(false);
-  }, []);
+  }, [receiptPage, stockPage]);
 
   useEffect(() => { void load(); }, [load]);
   if (loading) return <PageSkeleton />;
@@ -164,6 +175,7 @@ export function ProductInventoryDashboard() {
             </TableBody>
           </Table>
           {receipts.length === 0 && <p className="p-8 text-center text-sm text-gray-500">لا توجد سندات استلام بعد.</p>}
+          {receiptPages > 1 && <div className="flex items-center justify-between border-t p-4"><Button variant="outline" size="sm" disabled={receiptPage <= 1} onClick={() => setReceiptPage((value) => value - 1)}>السابق</Button><span className="text-sm text-gray-500">صفحة {receiptPage} من {receiptPages}</span><Button variant="outline" size="sm" disabled={receiptPage >= receiptPages} onClick={() => setReceiptPage((value) => value + 1)}>التالي</Button></div>}
         </CardContent>
       </Card>
 
@@ -173,7 +185,7 @@ export function ProductInventoryDashboard() {
           <Table>
             <TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>الرقم التسلسلي</TableHead><TableHead>الموقع / العهدة</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع المخطط</TableHead><TableHead>الحالة</TableHead></TableRow></TableHeader>
             <TableBody>
-              {stock.slice(0, 20).map((unit) => (
+              {stock.map((unit) => (
                 <TableRow key={unit.id}>
                   <TableCell>{unit.product?.name || "-"}</TableCell>
                   <TableCell className="font-mono" dir="ltr">{unit.raw_serial_number}</TableCell>
@@ -186,6 +198,7 @@ export function ProductInventoryDashboard() {
             </TableBody>
           </Table>
           {stock.length === 0 && <p className="p-8 text-center text-sm text-gray-500">يظهر المخزون هنا بعد تأكيد أول سند.</p>}
+          {stockPages > 1 && <div className="flex items-center justify-between border-t p-4"><Button variant="outline" size="sm" disabled={stockPage <= 1} onClick={() => setStockPage((value) => value - 1)}>السابق</Button><span className="text-sm text-gray-500">صفحة {stockPage} من {stockPages}</span><Button variant="outline" size="sm" disabled={stockPage >= stockPages} onClick={() => setStockPage((value) => value + 1)}>التالي</Button></div>}
         </CardContent>
       </Card>
     </div>

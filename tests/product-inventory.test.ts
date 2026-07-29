@@ -13,6 +13,7 @@ import {
   productPriceOverrideReviewSchema,
   productInventoryLossSchema,
   manualReceiptSchema,
+  workbookCommitSchema,
 } from "../src/lib/product-inventory/schemas";
 import {
   buildProductCollectionAccountingLines,
@@ -421,4 +422,59 @@ test("Phase 5 collection and loss postings are balanced and loss input is explic
     loss_type: "damage",
     reason: "bad",
   }).success, false);
+});
+
+test("Phase 6 validates and previews the 10,000-row workbook target without partial limits", {
+  timeout: 15_000,
+}, () => {
+  const workbook = [
+    ["product_sku", "serial_number", "unit_cost", "planned_sale_price", "currency"],
+    ...Array.from({ length: 10_000 }, (_, index) => [
+      "VHR-5G",
+      `VG-PERF-${String(index + 1).padStart(6, "0")}`,
+      60,
+      100,
+      "SAR",
+    ]),
+  ];
+  const startedAt = performance.now();
+  const parsed = parseProductInventoryWorkbookRows(workbook, {
+    products: workbookProducts,
+  });
+  const elapsedMs = performance.now() - startedAt;
+  assert.equal(parsed.rows.length, 10_000);
+  assert.equal(parsed.rows.every((row) => row.status === "valid"), true);
+  assert.ok(elapsedMs < 5_000, `10,000-row preview took ${elapsedMs.toFixed(1)}ms`);
+
+  const command = {
+    source_id: "10000000-0000-4000-8000-000000000501",
+    expected_version: 1,
+    command_id: "10000000-0000-4000-8000-000000000502",
+    rows: parsed.rows,
+  };
+  assert.equal(workbookCommitSchema.safeParse(command).success, true);
+  assert.equal(workbookCommitSchema.safeParse({
+    ...command,
+    rows: [...parsed.rows, parsed.rows[0]],
+  }).success, false);
+});
+
+test("Phase 6 keeps handovers bounded to the documented 200-unit chunk", () => {
+  const units = Array.from({ length: 201 }, (_, index) => ({
+    unit_id: `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    minimum_sale_price: 90,
+    maximum_sale_price: 110,
+  }));
+  const input = {
+    handover_id: "10000000-0000-4000-8000-000000000601",
+    command_id: "10000000-0000-4000-8000-000000000602",
+    warehouse_id: "10000000-0000-4000-8000-000000000603",
+    agent_id: "10000000-0000-4000-8000-000000000604",
+    units,
+  };
+  assert.equal(productHandoverSchema.safeParse(input).success, false);
+  assert.equal(productHandoverSchema.safeParse({
+    ...input,
+    units: units.slice(0, 200),
+  }).success, true);
 });

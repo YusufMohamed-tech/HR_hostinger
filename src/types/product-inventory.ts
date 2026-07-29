@@ -399,6 +399,12 @@ export type ProductCommerceManagerData = {
   agents: ProductInventoryFieldAgent[];
   warehouses: ProductInventoryWarehouse[];
   available_units: ProductInventoryStockRow[];
+  available_units_pagination: {
+    page: number;
+    page_size: number;
+    total: number;
+    total_pages: number;
+  };
   handovers: ProductHandover[];
   sales: AgentProductSale[];
   collections: AgentProductCollection[];
@@ -414,6 +420,31 @@ export type ProductCommerceManagerData = {
   }>;
 };
 
+export type ProductAgentInventoryUnit = Omit<
+  ProductInventoryStockRow,
+  "unit_cost_snapshot" | "agent"
+>;
+
+export type ProductAgentHandoverLine = Omit<ProductHandoverLine, "unit"> & {
+  unit?: ProductAgentInventoryUnit | null;
+};
+
+export type ProductAgentHandover = Omit<ProductHandover, "agent" | "lines"> & {
+  lines?: ProductAgentHandoverLine[];
+};
+
+type AgentProductSaleLine = NonNullable<AgentProductSale["lines"]>[number];
+export type ProductAgentSale = Omit<AgentProductSale, "agent" | "lines"> & {
+  lines?: Array<Omit<AgentProductSaleLine, "unit_cost_snapshot" | "gross_profit">>;
+};
+
+export type ProductAgentPriceOverride = Omit<
+  ProductPriceOverrideRequest,
+  "agent" | "unit"
+> & {
+  unit?: ProductAgentInventoryUnit | null;
+};
+
 export type ProductAgentDashboardData = {
   agent: ProductInventoryFieldAgent;
   settings: {
@@ -421,19 +452,17 @@ export type ProductAgentDashboardData = {
     default_price_tolerance_percent: number;
   };
   warehouses: ProductInventoryWarehouse[];
-  pending_handovers: ProductHandover[];
-  units: ProductInventoryStockRow[];
-  handover_lines: ProductHandoverLine[];
-  sales: AgentProductSale[];
+  pending_handovers: ProductAgentHandover[];
+  units: ProductAgentInventoryUnit[];
+  handover_lines: ProductAgentHandoverLine[];
+  sales: ProductAgentSale[];
   collections: AgentProductCollection[];
-  price_overrides: ProductPriceOverrideRequest[];
+  price_overrides: ProductAgentPriceOverride[];
   totals: {
     custody_units: number;
-    custody_cost: number;
     custody_retail: number;
     active_sales: number;
     collected: number;
     outstanding: number;
-    gross_profit: number;
   };
 };

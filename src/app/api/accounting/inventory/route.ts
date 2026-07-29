@@ -2,19 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireProductInventoryFinanceAccess } from "@/lib/server/product-inventory-auth";
 import { productInventoryDb, productInventoryError } from "@/lib/server/product-inventory-api";
 
-const assetStatuses = new Set([
-  "in_stock",
-  "reserved",
-  "in_transit",
-  "with_agent",
-  "returned",
-  "quarantine",
-  "damaged",
-]);
-
-function relation(value: unknown): Record<string, unknown> | null {
-  if (Array.isArray(value)) return (value[0] as Record<string, unknown> | undefined) || null;
-  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+function amount(value: unknown) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export async function GET(request: NextRequest) {
@@ -33,7 +23,7 @@ export async function GET(request: NextRequest) {
       postingsResult,
       commissionsResult,
       settingsResult,
-      productAccountsResult,
+      financeSummaryResult,
     ] = await Promise.all([
       db.from("product_receipts")
         .select("*, company:supplier_company_id(id, name, code, brand_color), warehouse:warehouse_id(id, code, name_ar, name_en, is_default)")
@@ -45,7 +35,7 @@ export async function GET(request: NextRequest) {
         .select("id, product_id, raw_serial_number, status, condition, ownership_type, unit_cost_snapshot, planned_sale_price_snapshot, currency, current_agent_id, current_handover_id, current_sale_id, assigned_at, sold_at, created_at, product:product_id(name, sku, model), warehouse:warehouse_id(name_ar, name_en), agent:current_agent_id(full_name)")
         .eq("organization_id", auth.orgId)
         .order("created_at", { ascending: false })
-        .limit(5000),
+        .limit(500),
       db.from("agent_product_sales")
         .select("id, sale_no, agent_id, sale_date, customer_name, customer_phone, customer_reference, payment_method, subtotal, vat_amount, total_amount, status, accounting_status, accounting_journal_entry_id, accounting_reversal_entry_id, accounting_posting_error, accounting_attempt_count, accounting_last_attempt_at, version, created_at, agent:agent_id(id, full_name, phone)")
         .eq("organization_id", auth.orgId)
@@ -80,10 +70,7 @@ export async function GET(request: NextRequest) {
         .select("id, version, default_inventory_asset_id, default_inventory_grni_id, default_inventory_cogs_id, default_inventory_shrinkage_id, default_agent_receivable_id, default_accounts_payable_id, default_sales_revenue_id, default_vat_payable_id, default_cash_account_id, default_bank_account_id, default_commission_expense_id, default_commission_payable_id, auto_post_inventory_receipts, auto_post_product_sales, auto_post_product_collections, enable_product_agent_commissions")
         .eq("organization_id", auth.orgId)
         .maybeSingle(),
-      db.from("sales_products")
-        .select("inventory_account_id")
-        .eq("organization_id", auth.orgId)
-        .not("inventory_account_id", "is", null),
+      db.rpc("get_product_inventory_finance_summary", { p_org_id: auth.orgId }),
     ]);
 
     [
@@ -96,7 +83,7 @@ export async function GET(request: NextRequest) {
       postingsResult,
       commissionsResult,
       settingsResult,
-      productAccountsResult,
+      financeSummaryResult,
     ].forEach((result) => {
       if (result.error) throw Object.assign(new Error(result.error.message), { code: result.error.code });
     });
@@ -113,80 +100,7 @@ export async function GET(request: NextRequest) {
     const postings = postingsResult.data ?? [];
     const commissions = commissionsResult.data ?? [];
     const settings = settingsResult.data as Record<string, unknown> | null;
-    const inventoryAccountIds = new Set<string>(
-      [
-        settings?.default_inventory_asset_id,
-        ...(productAccountsResult.data || []).map((row: Record<string, unknown>) => row.inventory_account_id),
-        ...saleLines.map((line: Record<string, unknown>) => line.inventory_account_id),
-      ].filter(Boolean).map(String)
-    );
-    const ledgerAccountIds = [
-      ...inventoryAccountIds,
-      settings?.default_agent_receivable_id,
-    ].filter(Boolean).map(String);
-    const ledgerLinesResult = ledgerAccountIds.length
-      ? await db.from("accounting_journal_lines")
-        .select("account_id, debit, credit, entry:journal_entry_id!inner(status, source_module)")
-        .eq("organization_id", auth.orgId)
-        .in("account_id", ledgerAccountIds)
-      : { data: [], error: null };
-    if (ledgerLinesResult.error) {
-      throw Object.assign(new Error(ledgerLinesResult.error.message), { code: ledgerLinesResult.error.code });
-    }
-    const ledgerLines = (ledgerLinesResult.data || []).filter((line: Record<string, unknown>) => {
-      const entry = relation(line.entry);
-      return entry && ["posted", "reversed"].includes(String(entry.status));
-    });
-    const balanceFor = (ids: Set<string>) => ledgerLines
-      .filter((line: Record<string, unknown>) => ids.has(String(line.account_id)))
-      .reduce(
-        (sum: number, line: Record<string, unknown>) =>
-          sum + Number(line.debit || 0) - Number(line.credit || 0),
-        0
-      );
-
-    const ownedOnHand = inventory.filter((unit: Record<string, unknown>) =>
-      unit.ownership_type === "purchased" && assetStatuses.has(String(unit.status))
-    );
-    const consignmentOnHand = inventory.filter((unit: Record<string, unknown>) =>
-      unit.ownership_type === "consignment" && assetStatuses.has(String(unit.status))
-    );
-    const activeSales = sales.filter((sale: Record<string, unknown>) => sale.status === "active");
-    const companyOwnedActiveSales = activeSales.filter(
-      (sale: Record<string, unknown>) => sale.accounting_status !== "not_required"
-    );
-    const consignmentActiveSales = activeSales.filter(
-      (sale: Record<string, unknown>) => sale.accounting_status === "not_required"
-    );
-    const postedCollections = collections.filter((collection: Record<string, unknown>) => collection.status === "posted");
-    const salesRevenue = activeSales.reduce(
-      (sum: number, sale: Record<string, unknown>) => sum + Number(sale.total_amount || 0),
-      0
-    );
-    const companyOwnedSalesRevenue = companyOwnedActiveSales.reduce(
-      (sum: number, sale: Record<string, unknown>) => sum + Number(sale.total_amount || 0),
-      0
-    );
-    const consignmentSalesRevenue = consignmentActiveSales.reduce(
-      (sum: number, sale: Record<string, unknown>) => sum + Number(sale.total_amount || 0),
-      0
-    );
-    const salesCost = activeSales
-      .flatMap((sale: Record<string, unknown>) => sale.lines as Record<string, unknown>[])
-      .reduce((sum: number, line: Record<string, unknown>) => sum + Number(line.unit_cost_snapshot || 0), 0);
-    const collected = postedCollections.reduce(
-      (sum: number, collection: Record<string, unknown>) => sum + Number(collection.amount || 0),
-      0
-    );
-    const stockCost = ownedOnHand.reduce(
-      (sum: number, unit: Record<string, unknown>) => sum + Number(unit.unit_cost_snapshot || 0),
-      0
-    );
-    const inventoryGlBalance = balanceFor(inventoryAccountIds);
-    const agentReceivableIds = new Set<string>(
-      settings?.default_agent_receivable_id ? [String(settings.default_agent_receivable_id)] : []
-    );
-    const agentReceivableGlBalance = balanceFor(agentReceivableIds);
+    const summary = (financeSummaryResult.data || {}) as Record<string, unknown>;
     const postingExceptions = postings.filter((posting: Record<string, unknown>) =>
       ["pending", "pending_approval", "failed"].includes(String(posting.status))
     );
@@ -245,65 +159,30 @@ export async function GET(request: NextRequest) {
     ];
 
     const totals = {
-      units: ownedOnHand.length,
-      cost: stockCost,
-      expectedSales: ownedOnHand.reduce(
-        (sum: number, unit: Record<string, unknown>) =>
-          sum + Number(unit.planned_sale_price_snapshot || 0),
-        0
-      ),
-      margin: ownedOnHand.reduce(
-        (sum: number, unit: Record<string, unknown>) =>
-          sum + Number(unit.planned_sale_price_snapshot || 0)
-          - Number(unit.unit_cost_snapshot || 0),
-        0
-      ),
-      consignmentUnits: consignmentOnHand.length,
-      consignmentMemoCost: consignmentOnHand.reduce(
-        (sum: number, unit: Record<string, unknown>) => sum + Number(unit.unit_cost_snapshot || 0),
-        0
-      ),
-      salesRevenue,
-      companyOwnedSalesRevenue,
-      consignmentSalesRevenue,
-      salesCost,
-      grossProfit: activeSales
-        .flatMap((sale: Record<string, unknown>) => sale.lines as Record<string, unknown>[])
-        .reduce((sum: number, line: Record<string, unknown>) => sum + Number(line.gross_profit || 0), 0),
-      vat: activeSales.reduce(
-        (sum: number, sale: Record<string, unknown>) => sum + Number(sale.vat_amount || 0),
-        0
-      ),
-      commission: activeSales
-        .flatMap((sale: Record<string, unknown>) => sale.lines as Record<string, unknown>[])
-        .reduce(
-          (sum: number, line: Record<string, unknown>) =>
-            sum + Number(line.agent_commission_amount || 0),
-          0
-        ),
-      commissionAccrued: commissions
-        .filter((commission: Record<string, unknown>) => commission.status === "accrued")
-        .reduce(
-          (sum: number, commission: Record<string, unknown>) =>
-            sum + Number(commission.commission_amount || 0),
-          0
-        ),
-      commissionSettled: commissions
-        .filter((commission: Record<string, unknown>) => commission.status === "settled")
-        .reduce(
-          (sum: number, commission: Record<string, unknown>) =>
-            sum + Number(commission.commission_amount || 0),
-          0
-        ),
-      collected,
-      outstanding: salesRevenue - collected,
-      failedPostings: postingExceptions.filter(
-        (posting: Record<string, unknown>) => posting.status === "failed"
-      ).length,
-      pendingPostings: postingExceptions.filter(
-        (posting: Record<string, unknown>) => posting.status !== "failed"
-      ).length + missingPostingSources.length,
+      units: amount(summary.units),
+      cost: amount(summary.cost),
+      expectedSales: amount(summary.expectedSales),
+      margin: amount(summary.margin),
+      consignmentUnits: amount(summary.consignmentUnits),
+      consignmentMemoCost: amount(summary.consignmentMemoCost),
+      salesRevenue: amount(summary.salesRevenue),
+      companyOwnedSalesRevenue: amount(summary.companyOwnedSalesRevenue),
+      consignmentSalesRevenue: amount(summary.consignmentSalesRevenue),
+      salesCost: amount(summary.salesCost),
+      grossProfit: amount(summary.grossProfit),
+      vat: amount(summary.vat),
+      commission: amount(summary.commission),
+      commissionAccrued: amount(summary.commissionAccrued),
+      commissionSettled: amount(summary.commissionSettled),
+      collected: amount(summary.collected),
+      outstanding: amount(summary.outstanding),
+      failedPostings: amount(summary.failedPostings),
+      pendingPostings: amount(summary.pendingPostings),
     };
+    const stockCost = totals.cost;
+    const inventoryGlBalance = amount(summary.inventoryGlBalance);
+    const operationalAgentReceivable = totals.outstanding;
+    const agentReceivableGlBalance = amount(summary.agentReceivableGlBalance);
 
     return NextResponse.json({
       data: {
@@ -318,19 +197,19 @@ export async function GET(request: NextRequest) {
         settings,
         totals,
         reconciliation: {
-          stockUnits: ownedOnHand.length,
+          stockUnits: totals.units,
           stockCost,
           inventoryGlBalance,
           inventoryDifference: inventoryGlBalance - stockCost,
-          operationalAgentReceivable: salesRevenue - collected,
+          operationalAgentReceivable,
           agentReceivableGlBalance,
-          agentReceivableDifference: agentReceivableGlBalance - (salesRevenue - collected),
-          consignmentUnits: consignmentOnHand.length,
+          agentReceivableDifference: agentReceivableGlBalance - operationalAgentReceivable,
+          consignmentUnits: totals.consignmentUnits,
           consignmentMemoCost: totals.consignmentMemoCost,
-          consignmentSalesRevenue,
-          collectionAllocationBlocked: consignmentSalesRevenue > 0,
+          consignmentSalesRevenue: totals.consignmentSalesRevenue,
+          collectionAllocationBlocked: totals.consignmentSalesRevenue > 0,
           balanced: Math.abs(inventoryGlBalance - stockCost) < 0.01
-            && Math.abs(agentReceivableGlBalance - (salesRevenue - collected)) < 0.01
+            && Math.abs(agentReceivableGlBalance - operationalAgentReceivable) < 0.01
             && totals.failedPostings === 0
             && totals.pendingPostings === 0,
         },

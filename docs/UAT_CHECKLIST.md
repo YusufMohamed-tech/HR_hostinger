@@ -103,3 +103,19 @@ Attach screenshots, request IDs, test-data references, reconciliation outputs, d
 
 Final decision: [ ] GO  [ ] CONDITIONAL GO  [ ] NO-GO
 Open conditions and owners: ________________________________________________
+
+## 7. Product inventory Phase 6 release evidence
+
+- [ ] `npm run verify:product-inventory`, unit tests, database integration
+  tests, strict lint, typecheck, and production build pass on the release
+  commit.
+- [ ] Concurrent receipt confirmation has exactly one winner and creates one
+  stock unit for the duplicated serial.
+- [ ] Injected receipt, sale, and accounting-event failures roll back all
+  partial state.
+- [ ] Large stock, receipt, movement, agent-balance, and Finance totals remain
+  exact while detail feeds are paginated.
+- [ ] The authenticated product inventory monitoring endpoint alerts on stale
+  commands/outbox events and failed or delayed accounting postings.
+- [ ] All scenarios and named approvals in
+  `PRODUCT_INVENTORY_PHASE_6_UAT_RUNBOOK.md` are complete.

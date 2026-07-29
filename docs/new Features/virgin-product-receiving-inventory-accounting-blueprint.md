@@ -1104,6 +1104,16 @@ Use the actual next numbers at implementation time.
 
 **Exit:** UAT sign-off, support runbook, rollback/reversal procedures, and production monitoring.
 
+**Repository implementation complete (2026-07-29):**
+`schema_v128_product_inventory_hardening` adds exact service-only operational
+and finance summaries plus large-feed indexes. The application adds bounded
+pagination, least-privilege agent DTOs, authenticated production monitoring,
+rollback/concurrency drills, and a release verifier. Operational procedures and
+the external release gates are documented in
+`../PRODUCT_INVENTORY_PHASE_6_UAT_RUNBOOK.md`. Real Virgin sample UAT, the
+controlled pilot, and named receiver, Sales, Finance, support, and product
+sign-off remain required in the target environment.
+
 ---
 
 ## 20. Test plan

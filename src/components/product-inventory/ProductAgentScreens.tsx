@@ -30,8 +30,8 @@ import {
 } from "@/lib/services/product-inventory";
 import type {
   ProductAgentDashboardData,
-  ProductHandoverLine,
-  ProductInventoryStockRow,
+  ProductAgentHandoverLine,
+  ProductAgentInventoryUnit,
 } from "@/types/product-inventory";
 
 type Mode = "dashboard" | "receive" | "sell" | "returns" | "balance";
@@ -63,7 +63,7 @@ function ProductNav({ mode }: { mode: Mode }) {
   );
 }
 
-function unitLabel(unit: ProductInventoryStockRow) {
+function unitLabel(unit: ProductAgentInventoryUnit) {
   return `${unit.product?.name || "منتج"} · ${unit.raw_serial_number}`;
 }
 
@@ -260,7 +260,7 @@ function Dashboard({ data }: { data: ProductAgentDashboardData }) {
 }
 
 function Receive({ data, saving, onAccept }: { data: ProductAgentDashboardData; saving: boolean; onAccept: (id: string, version: number) => void }) {
-  return <div className="space-y-4">{data.pending_handovers.map((handover) => <Card key={handover.id}><CardHeader><div className="flex items-center justify-between"><CardTitle className="font-mono">{handover.handover_no}</CardTitle><Badge>{handover.lines?.length || 0} وحدة</Badge></div></CardHeader><CardContent className="space-y-4"><div className="space-y-2">{handover.lines?.map((line: ProductHandoverLine) => <div key={line.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm"><span>{line.unit?.product?.name || "منتج"}<br /><span className="font-mono text-xs text-slate-500">{line.unit?.raw_serial_number}</span></span><span>{money(line.planned_sale_price_snapshot, line.currency)}</span></div>)}</div><Button disabled={saving} className="w-full" onClick={() => onAccept(handover.id, handover.version)}><CheckCircle2 className="ml-2 h-4 w-4" />أؤكد استلام الوحدات المطابقة</Button></CardContent></Card>)}{data.pending_handovers.length === 0 && <Card><CardContent className="p-8 text-center text-slate-500">لا توجد تسليمات تنتظر تأكيدك.</CardContent></Card>}</div>;
+  return <div className="space-y-4">{data.pending_handovers.map((handover) => <Card key={handover.id}><CardHeader><div className="flex items-center justify-between"><CardTitle className="font-mono">{handover.handover_no}</CardTitle><Badge>{handover.lines?.length || 0} وحدة</Badge></div></CardHeader><CardContent className="space-y-4"><div className="space-y-2">{handover.lines?.map((line: ProductAgentHandoverLine) => <div key={line.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-sm"><span>{line.unit?.product?.name || "منتج"}<br /><span className="font-mono text-xs text-slate-500">{line.unit?.raw_serial_number}</span></span><span>{money(line.planned_sale_price_snapshot, line.currency)}</span></div>)}</div><Button disabled={saving} className="w-full" onClick={() => onAccept(handover.id, handover.version)}><CheckCircle2 className="ml-2 h-4 w-4" />أؤكد استلام الوحدات المطابقة</Button></CardContent></Card>)}{data.pending_handovers.length === 0 && <Card><CardContent className="p-8 text-center text-slate-500">لا توجد تسليمات تنتظر تأكيدك.</CardContent></Card>}</div>;
 }
 
 function Balance({ data }: { data: ProductAgentDashboardData }) {

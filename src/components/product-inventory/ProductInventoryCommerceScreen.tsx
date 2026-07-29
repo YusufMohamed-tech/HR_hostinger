@@ -115,6 +115,11 @@ function groupStock(units: ProductInventoryStockRow[]) {
 export function ProductInventoryCommerceManagerScreen() {
   const [data, setData] = useState<ProductCommerceManagerData | null>(null);
   const [movements, setMovements] = useState<Array<Record<string, unknown>>>([]);
+  const [movementPage, setMovementPage] = useState(1);
+  const [movementPages, setMovementPages] = useState(1);
+  const [stockPage, setStockPage] = useState(1);
+  const [stockSearchInput, setStockSearchInput] = useState("");
+  const [stockSearch, setStockSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -131,8 +136,8 @@ export function ProductInventoryCommerceManagerScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     const [commerce, movementResult] = await Promise.all([
-      getProductCommerceManager(),
-      getProductInventoryMovements(),
+      getProductCommerceManager({ page: stockPage, pageSize: 200, search: stockSearch }),
+      getProductInventoryMovements(movementPage, 50),
     ]);
     if (commerce.data) {
       setData(commerce.data);
@@ -141,12 +146,16 @@ export function ProductInventoryCommerceManagerScreen() {
       setCollectionAgentId((value) => value || commerce.data?.agents[0]?.id || "");
       setRequireAcknowledgment(commerce.data.settings.require_agent_acknowledgment);
     }
-    if (movementResult.data) setMovements(movementResult.data);
+    if (movementResult.data) {
+      setMovements(movementResult.data.rows);
+      setMovementPages(movementResult.data.pagination.total_pages);
+    }
     setMessage(commerce.error || movementResult.error || "");
     setLoading(false);
-  }, []);
+  }, [movementPage, stockPage, stockSearch]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { setSelected(new Set()); }, [stockPage, stockSearch]);
 
   const groups = useMemo(() => groupStock(data?.available_units || []), [data?.available_units]);
   useEffect(() => {
@@ -304,7 +313,7 @@ export function ProductInventoryCommerceManagerScreen() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-none shadow-sm"><CardContent className="p-5"><p className="text-sm text-gray-500">متاح للتسليم</p><p className="mt-2 text-3xl font-bold">{data.available_units.length}</p></CardContent></Card>
+        <Card className="border-none shadow-sm"><CardContent className="p-5"><p className="text-sm text-gray-500">متاح للتسليم</p><p className="mt-2 text-3xl font-bold">{data.available_units_pagination.total}</p></CardContent></Card>
         <Card className="border-none shadow-sm"><CardContent className="p-5"><p className="text-sm text-gray-500">عهد نشطة</p><p className="mt-2 text-3xl font-bold">{data.handovers.filter((handover) => ["issued", "accepted"].includes(handover.status)).length}</p></CardContent></Card>
         <Card className="border-none shadow-sm"><CardContent className="p-5"><p className="text-sm text-gray-500">طلبات سعر معلقة</p><p className="mt-2 text-3xl font-bold text-amber-600">{pendingOverrides.length}</p></CardContent></Card>
       </div>
@@ -321,6 +330,11 @@ export function ProductInventoryCommerceManagerScreen() {
             <input type="checkbox" checked={requireAcknowledgment} onChange={(event) => setRequireAcknowledgment(event.target.checked)} />
             يجب على المندوب تأكيد الاستلام قبل البيع
           </label>
+          <form className="flex flex-col gap-2 sm:flex-row" onSubmit={(event) => { event.preventDefault(); setStockPage(1); setStockSearch(stockSearchInput.trim()); }}>
+            <Input dir="ltr" value={stockSearchInput} onChange={(event) => setStockSearchInput(event.target.value)} placeholder="ابحث بالرقم التسلسلي" className="sm:max-w-sm" />
+            <Button type="submit" variant="outline">بحث في المخزون</Button>
+            {stockSearch && <Button type="button" variant="ghost" onClick={() => { setStockSearchInput(""); setStockSearch(""); setStockPage(1); }}>مسح البحث</Button>}
+          </form>
           <div className="overflow-x-auto rounded-xl border">
             <Table>
               <TableHeader><TableRow><TableHead>اختيار</TableHead><TableHead>مجموعة المنتج</TableHead><TableHead>العدد</TableHead><TableHead>التكلفة</TableHead><TableHead>السعر المخطط</TableHead><TableHead>أقل سعر</TableHead><TableHead>أعلى سعر</TableHead><TableHead>فاقد / تلف</TableHead></TableRow></TableHeader>
@@ -342,6 +356,7 @@ export function ProductInventoryCommerceManagerScreen() {
             </Table>
           </div>
           {groups.length === 0 && <p className="rounded-lg bg-gray-50 p-5 text-center text-sm text-gray-500">لا توجد وحدات مؤكدة ومتاحة في المخزن.</p>}
+          {data.available_units_pagination.total_pages > 1 && <div className="flex items-center justify-between"><Button variant="outline" size="sm" disabled={stockPage <= 1} onClick={() => setStockPage((value) => value - 1)}>السابق</Button><span className="text-sm text-gray-500">صفحة {stockPage} من {data.available_units_pagination.total_pages}</span><Button variant="outline" size="sm" disabled={stockPage >= data.available_units_pagination.total_pages} onClick={() => setStockPage((value) => value + 1)}>التالي</Button></div>}
           <div className="flex items-center justify-between"><p className="text-sm text-gray-500">تم اختيار {selected.size} وحدة.</p><Button disabled={saving || selected.size === 0} onClick={() => void submitHandover()} className="bg-brand text-white hover:bg-brand-dark"><Send className="ml-2 h-4 w-4" />إصدار التسليم</Button></div>
         </CardContent>
       </Card>
@@ -393,7 +408,7 @@ export function ProductInventoryCommerceManagerScreen() {
         <CardHeader><CardTitle className="flex items-center gap-2"><PackageCheck className="h-5 w-5 text-brand" />سجل حركة الوحدة</CardTitle></CardHeader>
         <CardContent className="p-0">
           <Table><TableHeader><TableRow><TableHead>التوقيت</TableHead><TableHead>الحركة</TableHead><TableHead>المنتج</TableHead><TableHead>المسلسل</TableHead><TableHead>من / إلى</TableHead></TableRow></TableHeader>
-            <TableBody>{movements.slice(0, 50).map((movement) => {
+            <TableBody>{movements.map((movement) => {
               const unit = movement.unit as { raw_serial_number?: string; product?: { name?: string } } | null;
               const fromAgent = movement.from_agent as { full_name?: string } | null;
               const toAgent = movement.to_agent as { full_name?: string } | null;
@@ -402,6 +417,7 @@ export function ProductInventoryCommerceManagerScreen() {
               return <TableRow key={String(movement.id)}><TableCell>{new Date(String(movement.movement_at)).toLocaleString("ar-EG")}</TableCell><TableCell>{String(movement.movement_type)}</TableCell><TableCell>{unit?.product?.name || "-"}</TableCell><TableCell className="font-mono">{unit?.raw_serial_number || "-"}</TableCell><TableCell>{fromAgent?.full_name || fromWarehouse?.name_ar || "المورد"} ← {toAgent?.full_name || toWarehouse?.name_ar || "العميل"}</TableCell></TableRow>;
             })}</TableBody>
           </Table>
+          {movementPages > 1 && <div className="flex items-center justify-between border-t p-4"><Button variant="outline" size="sm" disabled={movementPage <= 1} onClick={() => setMovementPage((value) => value - 1)}>السابق</Button><span className="text-sm text-gray-500">صفحة {movementPage} من {movementPages}</span><Button variant="outline" size="sm" disabled={movementPage >= movementPages} onClick={() => setMovementPage((value) => value + 1)}>التالي</Button></div>}
         </CardContent>
       </Card>
     </div>

@@ -1,10 +1,48 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 export function productInventoryDb(admin: ReturnType<typeof createAdminClient>) {
   // Supabase's generated map has not yet been regenerated for the Phase 1 tables.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return admin as any;
+}
+
+export function productInventoryPage(
+  request: NextRequest,
+  options: { defaultPageSize?: number; maxPageSize?: number } = {}
+) {
+  const defaultPageSize = options.defaultPageSize ?? 50;
+  const maxPageSize = options.maxPageSize ?? 200;
+  const requestedPage = Number(request.nextUrl.searchParams.get("page") || 1);
+  const requestedPageSize = Number(
+    request.nextUrl.searchParams.get("page_size") || defaultPageSize
+  );
+  const page = Number.isFinite(requestedPage)
+    ? Math.max(1, Math.trunc(requestedPage))
+    : 1;
+  const pageSize = Number.isFinite(requestedPageSize)
+    ? Math.min(Math.max(1, Math.trunc(requestedPageSize)), maxPageSize)
+    : defaultPageSize;
+  return {
+    page,
+    pageSize,
+    from: (page - 1) * pageSize,
+    to: page * pageSize - 1,
+  };
+}
+
+export function productInventoryPagination(
+  page: number,
+  pageSize: number,
+  total: number
+) {
+  return {
+    page,
+    page_size: pageSize,
+    total,
+    total_pages: Math.max(1, Math.ceil(total / pageSize)),
+  };
 }
 
 export function productInventoryError(error: unknown, fallback = "تعذر تنفيذ عملية مخزون المنتجات.") {
