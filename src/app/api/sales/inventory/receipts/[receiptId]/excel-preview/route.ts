@@ -5,6 +5,7 @@ import { requireProductInventoryAccess } from "@/lib/server/product-inventory-au
 import { productInventoryDb, productInventoryError } from "@/lib/server/product-inventory-api";
 import { readProductInventoryWorkbook } from "@/lib/product-inventory/workbook-server";
 import { parseProductInventoryWorkbookRows } from "@/lib/product-inventory/workbook";
+import { storeObject } from "@/lib/server/file-storage";
 
 type RouteContext = { params: Promise<{ receiptId: string }> };
 type RpcResult = { data: unknown; error: { message: string; code?: string } | null };
@@ -149,12 +150,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
 
     const safeName = safeFilename(file.name);
     storagePath = `${auth.orgId}/${receiptId}/${parsedHeader.data.command_id}/${inspected.sha256}-${safeName}`;
-    const upload = await auth.admin.storage.from("product-inventory-imports").upload(
-      storagePath,
-      inspected.bytes,
-      { contentType: inspected.detectedMime, upsert: true }
-    );
-    if (upload.error) throw new Error(upload.error.message);
+    await storeObject(auth.admin, {
+      bucket: "product-inventory-imports",
+      path: storagePath,
+      bytes: inspected.bytes,
+      contentType: inspected.detectedMime,
+      upsert: true,
+    });
 
     const counts = preview.rows.reduce((value, row) => {
       value[row.status] += 1;

@@ -7,6 +7,7 @@ import {
   parseProductPhotoExtraction,
   PRODUCT_PHOTO_EXTRACTION_VERSION,
 } from "@/lib/product-inventory/photo-extraction";
+import { storeObject } from "@/lib/server/file-storage";
 
 type RouteContext = { params: Promise<{ receiptId: string }> };
 type RpcResult = { data: unknown; error: { message: string; code?: string } | null };
@@ -169,12 +170,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (!photo || !file || !inspected) throw new Error("Photo inspection result is incomplete.");
       const safeName = safeFilename(file.name);
       const path = `${auth.orgId}/${receiptId}/${parsedHeader.data.command_id}/${inspected.sha256}-${safeName}`;
-      const upload = await auth.admin.storage.from("product-inventory-photos").upload(
+      await storeObject(auth.admin, {
+        bucket: "product-inventory-photos",
         path,
-        inspected.bytes,
-        { contentType: inspected.detectedMime, upsert: true }
-      );
-      if (upload.error) throw new Error(upload.error.message);
+        bytes: inspected.bytes,
+        contentType: inspected.detectedMime,
+        upsert: true,
+      });
       uploadedPaths.push(path);
       sources.push({
         source_id: photo.source_id,

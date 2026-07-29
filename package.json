@@ -24,6 +24,7 @@
     "db:verify-migrations": "node scripts/verify-migrations.mjs",
     "db:migrate": "node scripts/apply-migrations.mjs",
     "migrate:personnel-files": "node scripts/migrate-personnel-files-to-hostinger.mjs",
+    "export:hostinger-files": "node scripts/export-all-files-to-hostinger.mjs",
     "verify:outbox": "node scripts/verify-outbox-topics.mjs",
     "verify:launch-contract": "node scripts/verify-launch-contract.mjs",
     "verify:accounting": "node scripts/verify-accounting-module.mjs",
@@ -50,7 +51,6 @@
     "verify:ci": "npm run db:verify-migrations && npm run verify:outbox && npm run verify:launch-contract && npm run verify:product-inventory && npm run typecheck && npm run lint:strict && npm run test:unit && npm run test:db && npm run test:sim && npm run verify:accounting && npm run audit:production && npm run build"
   },
   "dependencies": {
-    "@tesseract.js-data/eng": "1.0.0",
     "@aws-sdk/client-s3": "^3.1097.0",
     "@aws-sdk/s3-request-presigner": "^3.1097.0",
     "@base-ui/react": "^1.4.1",
@@ -70,6 +70,7 @@
     "react-dom": "^18.3.1",
     "read-excel-file": "9.3.2",
     "recharts": "^3.8.1",
+    "server-only": "0.0.1",
     "shadcn": "^4.6.0",
     "tailwind-merge": "^3.5.0",
     "tesseract.js": "^7.0.0",

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireProductInventoryAccess } from "@/lib/server/product-inventory-auth";
 import { productInventoryDb, productInventoryError } from "@/lib/server/product-inventory-api";
+import { createObjectAccessUrl } from "@/lib/server/file-storage";
 
 type RouteContext = { params: Promise<{ receiptId: string; sourceId: string }> };
 
@@ -30,13 +31,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (!["product-inventory-imports", "product-inventory-photos"].includes(bucket)) {
       return NextResponse.json({ message: "مصدر الاستلام غير مسجل كملف خاص." }, { status: 404 });
     }
-    const signed = await auth.admin.storage.from(bucket)
-      .createSignedUrl(String(data.storage_path), 600);
-    if (signed.error || !signed.data?.signedUrl) {
-      throw new Error(signed.error?.message || "تعذر إنشاء رابط الملف.");
-    }
+    const signedUrl = createObjectAccessUrl(bucket, String(data.storage_path), {
+      expiresIn: 600,
+      downloadName: typeof data.original_name === "string" ? data.original_name : null,
+    });
     return NextResponse.json({
-      data: { signed_url: signed.data.signedUrl, original_name: data.original_name },
+      data: { signed_url: signedUrl, original_name: data.original_name },
     }, { headers: { "cache-control": "private, no-store" } });
   } catch (error) {
     return productInventoryError(error, "تعذر فتح ملف المصدر.");

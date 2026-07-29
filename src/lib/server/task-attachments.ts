@@ -1,4 +1,5 @@
 import { inspectUpload, removeUploadedPaths, UploadSecurityError } from "@/lib/server/upload-security";
+import { createObjectAccessUrl, storeObject } from "@/lib/server/file-storage";
 
 const allowedAttachmentTypes = new Set([
   "image/jpeg", "image/png", "image/gif", "application/pdf",
@@ -36,13 +37,13 @@ export async function uploadTaskAttachments(
       const inspected = await inspectUpload(file, { allowedMimeTypes: allowedAttachmentTypes, maxBytes: maxAttachmentBytes });
       const filename = safeFilename(file.name);
       const path = `${values.orgId}/${values.taskId}/${values.uploadScopeId}/${crypto.randomUUID()}-${filename}`;
-      const upload = await admin.storage.from("task-attachments").upload(path, inspected.bytes, {
+      await storeObject(admin, {
+        bucket: "task-attachments", path, bytes: inspected.bytes,
         contentType: inspected.detectedMime, upsert: false,
       });
-      if (upload.error) throw new Error("فشل رفع الملف. يرجى المحاولة مرة أخرى.");
       paths.push(path);
-      const signedUrl = await admin.storage.from("task-attachments").createSignedUrl(path, 3600);
-      attachments.push({ bucket: "task-attachments", path, filename, url: signedUrl.data?.signedUrl || "",
+      attachments.push({ bucket: "task-attachments", path, filename,
+        url: createObjectAccessUrl("task-attachments", path, { expiresIn: 3600 }),
         type: inspected.detectedMime, size_bytes: file.size, sha256: inspected.sha256,
         scan_status: inspected.scanStatus, scan_engine: inspected.engine, scanned_at: inspected.scannedAt });
     }

@@ -1,5 +1,5 @@
 {
-  "id": "schema_v134_inventory_receiver_handover",
-  "file": "db/schema_v134_inventory_receiver_handover.sql",
-  "checksumSha256": "24b7f683861d2b4a7c26b82a143e29f1a975b532449c05bb892c41b9c80b9fb8"
+  "id": "schema_v135_hostinger_filesystem_storage",
+  "file": "db/schema_v135_hostinger_filesystem_storage.sql",
+  "checksumSha256": "76c8d16ffc58df95f4df1a13421b969733ae8e7ed7dc0da06413a3984c87702e"
 }

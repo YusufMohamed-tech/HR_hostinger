@@ -159,6 +159,7 @@
     { "id": "schema_v131_onboarding_readiness_reminders", "file": "db/schema_v131_onboarding_readiness_reminders.sql" },
     { "id": "schema_v132_custom_employee_requirements", "file": "db/schema_v132_custom_employee_requirements.sql" },
     { "id": "schema_v133_employee_master_noop_versioning", "file": "db/schema_v133_employee_master_noop_versioning.sql" },
-    { "id": "schema_v134_inventory_receiver_handover", "file": "db/schema_v134_inventory_receiver_handover.sql" }
+    { "id": "schema_v134_inventory_receiver_handover", "file": "db/schema_v134_inventory_receiver_handover.sql" },
+    { "id": "schema_v135_hostinger_filesystem_storage", "file": "db/schema_v135_hostinger_filesystem_storage.sql" }
   ]
 }

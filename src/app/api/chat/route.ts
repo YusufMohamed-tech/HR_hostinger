@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireTenantContext } from "@/lib/server/tenant-context";
 import type { TenantAuthContext } from "@/lib/server/tenant-context";
 import { inspectUpload, removeUploadedPaths, UploadSecurityError } from "@/lib/server/upload-security";
+import { createObjectAccessUrl, storeObject } from "@/lib/server/file-storage";
 
 const allowedAttachmentTypes = new Set([
   "image/jpeg", "image/png", "image/gif", "application/pdf",
@@ -33,8 +34,11 @@ async function signAttachments(auth: TenantAuthContext, attachments: RecordMap[]
   return Promise.all(attachments.map(async (attachment) => {
     const path = String(attachment.path || "");
     if (!path || attachment.scan_status !== "clean") return { ...attachment, url: "" };
-    const signed = await auth.admin.storage.from("chat-attachments").createSignedUrl(path, 3600);
-    return { ...attachment, bucket: "chat-attachments", url: signed.data?.signedUrl || "" };
+    return {
+      ...attachment,
+      bucket: "chat-attachments",
+      url: createObjectAccessUrl("chat-attachments", path, { expiresIn: 3600 }),
+    };
   }));
 }
 
@@ -144,10 +148,10 @@ export async function POST(request: NextRequest) {
       const inspected = await inspectUpload(file, { allowedMimeTypes: allowedAttachmentTypes, maxBytes: maxAttachmentBytes });
       const filename = safeFilename(file.name);
       const path = `${auth.orgId}/${conversationId}/${crypto.randomUUID()}-${filename}`;
-      const upload = await auth.admin.storage.from("chat-attachments").upload(path, inspected.bytes, {
+      await storeObject(auth.admin, {
+        bucket: "chat-attachments", path, bytes: inspected.bytes,
         contentType: inspected.detectedMime, upsert: false,
       });
-      if (upload.error) throw new Error(upload.error.message);
       uploadedPaths.push(path);
       attachments.push({ bucket: "chat-attachments", path, filename, type: inspected.detectedMime,
         size_bytes: file.size, sha256: inspected.sha256, scan_status: inspected.scanStatus,

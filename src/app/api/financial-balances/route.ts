@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireTenantContext } from "@/lib/server/tenant-context";
 import { inspectUpload, removeUploadedPaths, UploadSecurityError } from "@/lib/server/upload-security";
+import { storeObject } from "@/lib/server/file-storage";
 
 type RpcClient = { rpc: (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string; code?: string } | null }> };
 const schema = z.object({
@@ -34,9 +35,10 @@ export async function POST(request: NextRequest) {
       const inspected = await inspectUpload(file, { allowedMimeTypes: allowedTypes, maxBytes: 10 * 1024 * 1024 });
       const filename = file.name.replace(/[^\w.\-()[\]\u0600-\u06FF ]+/g, "_").slice(0, 160) || "attachment";
       path = `balances/${auth.orgId}/${parsed.data.balance_id}/${parsed.data.command_id}/${crypto.randomUUID()}-${filename}`;
-      const upload = await auth.admin.storage.from("balance-attachments").upload(path, inspected.bytes,
-        { contentType: inspected.detectedMime, upsert: false });
-      if (upload.error) throw new Error(upload.error.message);
+      await storeObject(auth.admin, {
+        bucket: "balance-attachments", path, bytes: inspected.bytes,
+        contentType: inspected.detectedMime, upsert: false,
+      });
       attachment = { path, filename, type: inspected.detectedMime, size_bytes: file.size,
         sha256: inspected.sha256, scan_status: inspected.scanStatus, scan_engine: inspected.engine,
         scanned_at: inspected.scannedAt };

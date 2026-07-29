@@ -10,6 +10,7 @@ const productionEnvironment: RuntimeEnvironment = {
   OUTBOX_WORKER_SECRET: "outbox-worker-secret-000000000000001",
   COMPLIANCE_WORKER_SECRET: "compliance-worker-secret-0000000001",
   FILE_RETENTION_WORKER_SECRET: "retention-worker-secret-00000000001",
+  FILE_ACCESS_SIGNING_SECRET: "file-access-signing-secret-0000000001",
   AUDIT_EVIDENCE_SECRET: "audit-evidence-secret-0000000000001",
   RATE_LIMIT_HASH_SECRET: "rate-limit-hash-secret-000000000001",
   HOSTINGER_OBJECT_STORAGE_ENDPOINT: "https://s3.eu-central-1.hostingerusercontent.com",

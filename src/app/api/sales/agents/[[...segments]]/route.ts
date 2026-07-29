@@ -17,6 +17,7 @@ import {
 } from "@/lib/field-agents/schemas";
 import { normalizeProvider, validateSimBoxImportInput } from "@/lib/sim-box-import";
 import { inspectUpload } from "@/lib/server/upload-security";
+import { storeObject } from "@/lib/server/file-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -66,18 +67,6 @@ type AdminAuthClient = {
   };
 };
 
-type StorageClient = {
-  storage: {
-    from: (bucket: string) => {
-      upload: (
-        path: string,
-        body: Buffer,
-        options?: { contentType?: string; upsert?: boolean }
-      ) => Promise<{ data: { path: string } | null; error: { message?: string } | null }>;
-    };
-  };
-};
-
 type AuthContext = {
   user: User;
   orgId: string;
@@ -99,10 +88,6 @@ function database(admin: unknown) {
 
 function adminAuth(admin: unknown) {
   return admin as AdminAuthClient;
-}
-
-function storage(admin: unknown) {
-  return admin as StorageClient;
 }
 
 // Returns the auth user id for an email, or null if none exists.
@@ -226,12 +211,11 @@ async function resolveAgentId(auth: AuthContext): Promise<string | null> {
 
 async function uploadSimBoxImage(auth: AuthContext, file: File, buffer: Buffer, contentType: string) {
   const path = `orgs/${auth.orgId}/sales/sim-box-imports/temp/${auth.requestId}/${crypto.randomUUID()}-${safeFilename(file.name)}`;
-  const upload = await storage(auth.admin).storage.from("sim-box-imports").upload(path, buffer, {
-    contentType,
-    upsert: false,
+  const uploaded = await storeObject(auth.admin as Parameters<typeof storeObject>[0], {
+    bucket: "sim-box-imports", path, bytes: buffer,
+    contentType, upsert: false,
   });
-  if (upload.error || !upload.data) throw new Error(upload.error?.message || "Unable to upload SIM box image.");
-  return upload.data.path;
+  return uploaded.path;
 }
 
 async function duplicateKitCodes(auth: AuthContext, provider: string, kitCodes: string[]) {

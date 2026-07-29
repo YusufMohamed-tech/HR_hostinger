@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireTenantContext, type TenantAuthContext } from "@/lib/server/tenant-context";
+import { createObjectAccessUrl } from "@/lib/server/file-storage";
 
 const inputSchema = z.object({
   bucket: z.enum(["balance-attachments", "recruitment", "task-attachments", "chat-attachments"]),
@@ -84,10 +85,7 @@ export async function POST(request: NextRequest) {
       : bucket === "recruitment" ? await canReadRecruitment(auth, path)
         : await canReadBalanceAttachment(auth, path);
   if (!allowed) return NextResponse.json({ message: "Attachment access is forbidden.", requestId: auth.requestId }, { status: 403 });
-  const signed = await auth.admin.storage.from(bucket).createSignedUrl(path, 600);
-  if (signed.error || !signed.data?.signedUrl) {
-    return NextResponse.json({ message: signed.error?.message || "Unable to sign attachment.", requestId: auth.requestId }, { status: 500 });
-  }
-  return NextResponse.json({ data: { signedUrl: signed.data.signedUrl }, requestId: auth.requestId },
+  const signedUrl = createObjectAccessUrl(bucket, path, { expiresIn: 600 });
+  return NextResponse.json({ data: { signedUrl }, requestId: auth.requestId },
     { headers: { "cache-control": "no-store", "x-request-id": auth.requestId } });
 }

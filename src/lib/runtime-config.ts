@@ -21,6 +21,7 @@ const productionSecretFields = [
   "OUTBOX_WORKER_SECRET",
   "COMPLIANCE_WORKER_SECRET",
   "FILE_RETENTION_WORKER_SECRET",
+  "FILE_ACCESS_SIGNING_SECRET",
   "AUDIT_EVIDENCE_SECRET",
   "RATE_LIMIT_HASH_SECRET",
 ] as const;
@@ -86,6 +87,11 @@ export function validateRuntimeConfiguration(
   }
 
   if (production) {
+    const hostingerFilesystemRoot = value(environment, "HOSTINGER_FILE_STORAGE_ROOT");
+    if (hostingerFilesystemRoot && !hostingerFilesystemRoot.startsWith("/")) {
+      addIssue("HOSTINGER_FILE_STORAGE_ROOT", "absolute_path_required");
+    }
+
     const hostingerPersonnelStorageRequested = hostingerPersonnelStorageFields
       .some((field) => Boolean(value(environment, field)));
     if (hostingerPersonnelStorageRequested) {

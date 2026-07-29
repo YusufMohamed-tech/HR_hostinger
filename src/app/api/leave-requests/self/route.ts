@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getValidationMessage, leaveRequestFormSchema } from "@/lib/validation";
 import { requireTenantContext } from "@/lib/server/tenant-context";
 import { inspectUpload, removeUploadedPaths, UploadSecurityError } from "@/lib/server/upload-security";
+import { storeObject } from "@/lib/server/file-storage";
 
 const allowedSelfServiceRoles = new Set(["employee", "training_manager", "hr_admin", "hr_recruitment", "sales", "sales_manager"]);
 const allowedLeaveAttachmentTypes = new Set([
@@ -71,11 +72,10 @@ export async function POST(request: NextRequest) {
       });
       attachmentName = safeFilename(attachment.name);
       uploadedPath = `leave-requests/${auth.orgId}/${auth.employeeId}/${commandId}/${crypto.randomUUID()}-${attachmentName}`;
-      const upload = await auth.admin.storage.from("balance-attachments").upload(uploadedPath, inspected.bytes, {
-        contentType: inspected.detectedMime,
-        upsert: false,
+      await storeObject(auth.admin, {
+        bucket: "balance-attachments", path: uploadedPath, bytes: inspected.bytes,
+        contentType: inspected.detectedMime, upsert: false,
       });
-      if (upload.error) throw new Error(upload.error.message);
     }
     const result = await (auth.admin as unknown as RpcClient).rpc("submit_leave_request", {
       p_org_id: auth.orgId,

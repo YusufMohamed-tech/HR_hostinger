@@ -1,6 +1,7 @@
 import "server-only";
 
 import crypto from "node:crypto";
+import { removeObjects } from "@/lib/server/file-storage";
 
 const executableExtensions = new Set([
   "exe", "dll", "com", "scr", "msi", "jar", "apk", "app", "dmg", "iso",
@@ -107,8 +108,9 @@ export async function removeUploadedPaths(
   bucket: string,
   paths: string[]
 ) {
-  const unique = [...new Set(paths.filter(Boolean))];
-  if (unique.length === 0) return;
-  const result = await admin.storage.from(bucket).remove(unique);
-  if (result.error) throw new Error(`Unable to clean uploaded files: ${result.error.message}`);
+  try {
+    await removeObjects(admin, bucket, paths);
+  } catch (error) {
+    throw new Error(`Unable to clean uploaded files: ${error instanceof Error ? error.message : "Unknown storage error"}`);
+  }
 }

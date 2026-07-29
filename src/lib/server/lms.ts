@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { TenantAuthContext } from "@/lib/server/tenant-context";
-import { inspectUpload, removeUploadedPaths } from "@/lib/server/upload-security";
+import { inspectUpload } from "@/lib/server/upload-security";
 import { safeExternalUrl, sanitizeRichTextHtml } from "@/lib/rich-text";
+import { createObjectAccessUrl, storeObject } from "@/lib/server/file-storage";
 
 type Db = {
   from: (table: string) => any;
@@ -1354,16 +1355,10 @@ export async function uploadLmsFile(auth: LmsAuth, formData: FormData) {
   if (postId || kind === "community") path = `orgs/${auth.orgId}/lms/courses/${courseId || "general"}/community/${postId || "general"}/${filename}`;
 
   const inspected = await inspectUpload(file, { allowedMimeTypes: allowedLmsMimeTypes, maxBytes: maxLmsUploadBytes });
-  const upload = await db(auth).storage.from("lms-content").upload(path, inspected.bytes, {
-    contentType: inspected.detectedMime,
-    upsert: false,
+  await storeObject(auth.admin, {
+    bucket: "lms-content", path, bytes: inspected.bytes,
+    contentType: inspected.detectedMime, upsert: false,
   });
-  if (upload.error) throw new Error(upload.error.message);
-  const signed = await db(auth).storage.from("lms-content").createSignedUrl(path, 60 * 60);
-  if (signed.error) {
-    await removeUploadedPaths(auth.admin, "lms-content", [path]).catch(() => undefined);
-    throw new Error(signed.error.message);
-  }
   return {
     bucket: "lms-content",
     path,
@@ -1371,7 +1366,7 @@ export async function uploadLmsFile(auth: LmsAuth, formData: FormData) {
     mime_type: inspected.detectedMime,
     size_bytes: file.size,
     sha256: inspected.sha256,
-    signed_url: signed.data?.signedUrl || "",
+    signed_url: createObjectAccessUrl("lms-content", path, { expiresIn: 60 * 60 }),
   };
 }
 
@@ -1395,9 +1390,9 @@ export async function createSignedLmsUrl(auth: LmsAuth, path: string) {
     throw new Error("Forbidden");
   }
 
-  const signed = await db(auth).storage.from("lms-content").createSignedUrl(path, 60 * 60);
-  if (signed.error) throw new Error(signed.error.message);
-  return signed.data;
+  return {
+    signedUrl: createObjectAccessUrl("lms-content", path, { expiresIn: 60 * 60 }),
+  };
 }
 
 export async function upsertLearningPath(auth: LmsAuth, values: RecordMap, pathId?: string) {

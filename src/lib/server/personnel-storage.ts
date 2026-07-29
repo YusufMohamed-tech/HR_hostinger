@@ -11,6 +11,14 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  checkHostingerFileStorage,
+  createObjectAccessUrl,
+  downloadObject,
+  hostingerFileStorageIsConfigured,
+  removeObjects,
+  storeObject,
+} from "@/lib/server/file-storage";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 const personnelBucket = "personnel-files";
@@ -24,7 +32,7 @@ export type ManagedStorageObject = {
 };
 
 export type PersonnelUploadResult = {
-  provider: "hostinger_s3" | "supabase_storage";
+  provider: "hostinger_filesystem" | "hostinger_s3" | "supabase_storage";
   bucket: string;
   path: string;
   version: string | null;
@@ -72,13 +80,17 @@ function client() {
   return hostingerClient;
 }
 
-export function personnelStorageIsConfigured() {
+function personnelS3StorageIsConfigured() {
   return Boolean(
     process.env.HOSTINGER_OBJECT_STORAGE_ENDPOINT?.trim()
     && process.env.HOSTINGER_OBJECT_STORAGE_ACCESS_KEY?.trim()
     && process.env.HOSTINGER_OBJECT_STORAGE_SECRET_KEY?.trim()
     && process.env.HOSTINGER_OBJECT_STORAGE_BUCKET?.trim()
   );
+}
+
+export function personnelStorageIsConfigured() {
+  return hostingerFileStorageIsConfigured() || personnelS3StorageIsConfigured();
 }
 
 export async function uploadPersonnelObject(values: {
@@ -118,7 +130,25 @@ export async function storePersonnelObject(
     sha256: string;
   },
 ) {
-  if (personnelStorageIsConfigured()) return uploadPersonnelObject(values);
+  if (hostingerFileStorageIsConfigured()) {
+    const stored = await storeObject(admin, {
+      bucket: personnelBucket,
+      path: values.key,
+      bytes: values.bytes,
+      contentType: values.contentType,
+      cacheControl: "0",
+      upsert: false,
+    });
+    return {
+      provider: stored.provider,
+      bucket: personnelBucket,
+      path: stored.path,
+      version: null,
+      etag: null,
+      encryptionStatus: "provider_managed",
+    } satisfies PersonnelUploadResult;
+  }
+  if (personnelS3StorageIsConfigured()) return uploadPersonnelObject(values);
 
   const uploaded = await admin.storage.from(personnelBucket).upload(values.key, values.bytes, {
     contentType: values.contentType,
@@ -151,7 +181,13 @@ export async function deletePersonnelObject(object: ManagedStorageObject) {
 }
 
 export async function deleteManagedFile(admin: AdminClient, object: ManagedStorageObject) {
-  if ((object.storage_provider || "supabase_storage") === "hostinger_s3") {
+  const provider = object.storage_provider || "supabase_storage";
+  if (provider === "hostinger_filesystem"
+    || (provider === "supabase_storage" && hostingerFileStorageIsConfigured())) {
+    await removeObjects(admin, object.bucket_id, [object.storage_path]);
+    return;
+  }
+  if (provider === "hostinger_s3") {
     await deletePersonnelObject(object);
     return;
   }
@@ -164,7 +200,15 @@ export async function createManagedFileDownloadUrl(
   object: ManagedStorageObject,
   originalName?: string | null
 ) {
-  if ((object.storage_provider || "supabase_storage") === "hostinger_s3") {
+  const provider = object.storage_provider || "supabase_storage";
+  if (provider === "hostinger_filesystem"
+    || (provider === "supabase_storage" && hostingerFileStorageIsConfigured())) {
+    return createObjectAccessUrl(object.bucket_id, object.storage_path, {
+      expiresIn: 60,
+      downloadName: originalName || "employee-document",
+    });
+  }
+  if (provider === "hostinger_s3") {
     const bucket = object.storage_container?.trim() || hostingerConfig().bucket;
     const dispositionName = (originalName || "employee-document")
       .replace(/[\r\n"]/gu, "_")
@@ -204,7 +248,12 @@ export async function downloadManagedFileBytes(
   admin: AdminClient,
   object: ManagedStorageObject
 ) {
-  if ((object.storage_provider || "supabase_storage") === "hostinger_s3") {
+  const provider = object.storage_provider || "supabase_storage";
+  if (provider === "hostinger_filesystem"
+    || (provider === "supabase_storage" && hostingerFileStorageIsConfigured())) {
+    return downloadObject(admin, object.bucket_id, object.storage_path);
+  }
+  if (provider === "hostinger_s3") {
     const bucket = object.storage_container?.trim() || hostingerConfig().bucket;
     return outputBytes(await client().send(new GetObjectCommand({
       Bucket: bucket,
@@ -226,7 +275,8 @@ export async function checkHostingerPersonnelStorage() {
 }
 
 export async function checkPersonnelStorage(admin: AdminClient) {
-  if (personnelStorageIsConfigured()) return checkHostingerPersonnelStorage();
+  if (hostingerFileStorageIsConfigured()) return checkHostingerFileStorage();
+  if (personnelS3StorageIsConfigured()) return checkHostingerPersonnelStorage();
 
   const bucket = await admin.storage.getBucket(personnelBucket);
   if (bucket.error || !bucket.data) {

@@ -6,6 +6,7 @@ import { businessDateAt } from "@/lib/business-time";
 import { inspectUpload, removeUploadedPaths, UploadSecurityError } from "@/lib/server/upload-security";
 import { consumeRateLimit, rateLimitResponse, requestIp } from "@/lib/server/rate-limit";
 import { requestIdFromHeaders } from "@/lib/request-id";
+import { StoredObjectConflictError, storeObject } from "@/lib/server/file-storage";
 
 const allowedCvTypes = new Set([
   "application/pdf",
@@ -182,17 +183,14 @@ export async function POST(request: NextRequest) {
       const inspected = await inspectUpload(cvFile, { allowedMimeTypes: allowedCvTypes, maxBytes: maxCvBytes });
       const filename = safeFilename(cvFile.name);
       const path = `${String(p.org_id)}/cv/${String(p.id)}/${applicationId}/${commandId}/${inspected.sha256}-${filename}`;
-      const upload = await admin.storage.from("recruitment").upload(path, inspected.bytes, {
-        contentType: inspected.detectedMime,
-        upsert: false,
-      });
-      if (upload.error) {
-        const storageError = upload.error as typeof upload.error & { statusCode?: string | number };
-        const duplicate = String(storageError.statusCode || "") === "409"
-          || /duplicate|already exists/i.test(storageError.message);
-        if (!duplicate) throw new Error(upload.error.message);
-      } else {
+      try {
+        await storeObject(admin, {
+          bucket: "recruitment", path, bytes: inspected.bytes,
+          contentType: inspected.detectedMime, upsert: false,
+        });
         uploadedNewPaths.push(path);
+      } catch (error) {
+        if (!(error instanceof StoredObjectConflictError)) throw error;
       }
       cvMetadata = {
         path,
@@ -216,17 +214,14 @@ export async function POST(request: NextRequest) {
       const inspected = await inspectUpload(file, { allowedMimeTypes: allowedAnswerFileTypes, maxBytes: maxAnswerFileBytes });
       const filename = safeFilename(file.name);
       const path = `${String(p.org_id)}/application-files/${String(p.id)}/${applicationId}/${questionId}/${inspected.sha256}-${filename}`;
-      const upload = await admin.storage.from("recruitment").upload(path, inspected.bytes, {
-        contentType: inspected.detectedMime,
-        upsert: false,
-      });
-      if (upload.error) {
-        const storageError = upload.error as typeof upload.error & { statusCode?: string | number };
-        const duplicate = String(storageError.statusCode || "") === "409"
-          || /duplicate|already exists/i.test(storageError.message);
-        if (!duplicate) throw new Error(upload.error.message);
-      } else {
+      try {
+        await storeObject(admin, {
+          bucket: "recruitment", path, bytes: inspected.bytes,
+          contentType: inspected.detectedMime, upsert: false,
+        });
         uploadedNewPaths.push(path);
+      } catch (error) {
+        if (!(error instanceof StoredObjectConflictError)) throw error;
       }
       commandAnswers[questionId] = {
         path,

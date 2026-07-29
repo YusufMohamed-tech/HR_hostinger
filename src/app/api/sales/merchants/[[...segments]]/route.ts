@@ -3,6 +3,11 @@ import type { User } from "@supabase/supabase-js";
 import { requireMerchantAccess } from "@/lib/server/merchant-auth";
 import { inspectUpload, removeUploadedPaths } from "@/lib/server/upload-security";
 import {
+  createObjectAccessUrl,
+  createPublicObjectUrl,
+  storeObject,
+} from "@/lib/server/file-storage";
+import {
   assignSimsToMerchantByQuantitySchema,
   assignSimsToMerchantSchema,
   collectMerchantCashSchema,
@@ -63,21 +68,6 @@ type AdminAuthClient = {
   };
 };
 
-type StorageClient = {
-  storage: {
-    from: (bucket: string) => {
-      upload: (
-        path: string,
-        file: File | Uint8Array,
-        options?: { contentType?: string; upsert?: boolean }
-      ) => Promise<{ data: { path: string } | null; error: { message?: string } | null }>;
-      getPublicUrl: (path: string) => { data: { publicUrl: string } };
-      createSignedUrl: (path: string, expiresIn: number) => Promise<{ data: { signedUrl?: string } | null; error: { message?: string } | null }>;
-      remove: (paths: string[]) => Promise<{ error: { message?: string } | null }>;
-    };
-  };
-};
-
 type AuthContext = {
   user: User;
   orgId: string;
@@ -96,9 +86,6 @@ function database(admin: unknown) {
 }
 function adminAuth(admin: unknown) {
   return admin as AdminAuthClient;
-}
-function storage(admin: unknown) {
-  return admin as StorageClient;
 }
 function json(data: unknown, status = 200) {
   return NextResponse.json({ data }, { status });
@@ -232,14 +219,13 @@ async function uploadMerchantFile(auth: AuthContext, bucket: string, folder: str
     maxBytes: maxMerchantUploadBytes,
   });
   const path = `${auth.orgId}/${folder}/${auth.requestId}/${crypto.randomUUID()}-${safeFilename(file.name)}`;
-  const upload = await storage(auth.admin).storage.from(bucket).upload(path, inspected.bytes, {
-    contentType: inspected.detectedMime,
-    upsert: false,
+  const uploaded = await storeObject(auth.admin as Parameters<typeof storeObject>[0], {
+    bucket, path, bytes: inspected.bytes,
+    contentType: inspected.detectedMime, upsert: false,
   });
-  if (upload.error || !upload.data) throw new Error(upload.error?.message || "Unable to upload file.");
   return {
-    path: upload.data.path,
-    value: isPublic ? storage(auth.admin).storage.from(bucket).getPublicUrl(upload.data.path).data.publicUrl : upload.data.path,
+    path: uploaded.path,
+    value: isPublic ? createPublicObjectUrl(bucket, uploaded.path) : uploaded.path,
   };
 }
 
@@ -247,9 +233,7 @@ async function signPaymentProof(auth: AuthContext, value: unknown) {
   const path = asString(value);
   if (!path || /^https?:\/\//i.test(path)) return path || null;
   if (!path.startsWith(`${auth.orgId}/payments/`)) return null;
-  const signed = await storage(auth.admin).storage.from("merchant-payment-proofs").createSignedUrl(path, 600);
-  if (signed.error) throw new Error(signed.error.message || "Unable to sign payment proof.");
-  return signed.data?.signedUrl || null;
+  return createObjectAccessUrl("merchant-payment-proofs", path, { expiresIn: 600 });
 }
 
 async function signPaymentRows(auth: AuthContext, values: Record<string, unknown>[]) {
