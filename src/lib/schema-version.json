@@ -1,5 +1,5 @@
 {
-  "id": "schema_v136_handover_signatures",
-  "file": "db/schema_v136_handover_signatures.sql",
-  "checksumSha256": "e126077c20d2f9fd75ac67616ab1f4dc4c19a70c923aa0cdce4a0efcc50116cf"
+  "id": "schema_v137_chatbot",
+  "file": "db/schema_v137_chatbot.sql",
+  "checksumSha256": "5833dc87a690bd4b378ec23c1c936956936b33ed924a80f82eaab40bba69ccb4"
 }
