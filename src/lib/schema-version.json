@@ -1,5 +1,5 @@
 {
-  "id": "schema_v135_hostinger_filesystem_storage",
-  "file": "db/schema_v135_hostinger_filesystem_storage.sql",
-  "checksumSha256": "76c8d16ffc58df95f4df1a13421b969733ae8e7ed7dc0da06413a3984c87702e"
+  "id": "schema_v136_handover_signatures",
+  "file": "db/schema_v136_handover_signatures.sql",
+  "checksumSha256": "e126077c20d2f9fd75ac67616ab1f4dc4c19a70c923aa0cdce4a0efcc50116cf"
 }
