@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireTenantContext } from "@/lib/server/tenant-context";
-import { openai } from "@/lib/chatbot/openai";
+import { openai, CHAT_MODEL } from "@/lib/chatbot/openai";
 import { buildSystemPrompt } from "@/lib/chatbot/system-prompt";
 import { searchGuides } from "@/lib/chatbot/knowledge-base";
 import type { ChatContext } from "@/lib/chatbot/system-prompt";
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
 
   // Stream the response
   const stream = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: CHAT_MODEL,
     messages: openaiMessages,
     stream: true,
     max_tokens: 4096,
