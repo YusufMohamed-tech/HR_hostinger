@@ -36,10 +36,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ message: parsed.success ? "No employee fields were provided." : getValidationMessage(parsed.error) }, { status: 400 });
   }
 
+  const { location_id: _stripLocationId, ...employeeUpdates } = parsed.data.employee;
   const { data, error } = await auth.admin.rpc("update_employee_master", {
     p_org_id: auth.orgId, p_actor_user_id: auth.user.id, p_request_id: auth.requestId,
     p_command_id: parsed.data.command_id, p_employee_id: id,
-    p_expected_version: parsed.data.expected_version, p_updates: parsed.data.employee,
+    p_expected_version: parsed.data.expected_version, p_updates: employeeUpdates,
     p_location_ids: parsed.data.location_ids ?? null,
     p_primary_location_id: parsed.data.primary_location_id ?? null,
     p_managed_department_ids: parsed.data.managed_department_ids ?? null,
