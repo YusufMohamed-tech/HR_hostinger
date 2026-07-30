@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { requireTenantContext } from "@/lib/server/tenant-context";
-import { getGeminiModel } from "@/lib/chatbot/gemini";
+import { openai } from "@/lib/chatbot/openai";
 import { buildSystemPrompt } from "@/lib/chatbot/system-prompt";
 import { searchGuides } from "@/lib/chatbot/knowledge-base";
 import type { ChatContext } from "@/lib/chatbot/system-prompt";
@@ -65,30 +65,33 @@ export async function POST(req: NextRequest) {
 
   const systemPrompt = buildSystemPrompt(context) + knowledgeContext;
 
-  // Build conversation history for Gemini
-  const geminiHistory = messages.slice(0, -1).map((msg) => ({
-    role: msg.role === "assistant" ? ("model" as const) : ("user" as const),
-    parts: [{ text: msg.content }],
-  }));
-
-  const model = getGeminiModel();
-  const chat = model.startChat({
-    history: geminiHistory,
-    systemInstruction: { role: "user", parts: [{ text: systemPrompt }] },
-  });
+  // Build OpenAI messages
+  const openaiMessages: { role: "system" | "user" | "assistant"; content: string }[] = [
+    { role: "system", content: systemPrompt },
+    ...messages.map((msg) => ({
+      role: msg.role as "user" | "assistant",
+      content: msg.content,
+    })),
+  ];
 
   // Stream the response
-  const result = await chat.sendMessageStream(lastMessage);
+  const stream = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: openaiMessages,
+    stream: true,
+    max_tokens: 4096,
+    temperature: 0.7,
+  });
 
   const encoder = new TextEncoder();
-  const stream = new ReadableStream({
+  const responseStream = new ReadableStream({
     async start(controller) {
       try {
-        for await (const chunk of result.stream) {
-          const text = chunk.text();
-          if (text) {
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content;
+          if (content) {
             controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ type: "text", content: text })}\n\n`)
+              encoder.encode(`data: ${JSON.stringify({ type: "text", content })}\n\n`)
             );
           }
         }
@@ -104,7 +107,7 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return new Response(stream, {
+  return new Response(responseStream, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
