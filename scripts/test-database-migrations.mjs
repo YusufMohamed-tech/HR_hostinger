@@ -30,11 +30,13 @@ function delay(milliseconds) {
 }
 
 async function waitForPostgres() {
+  // pg_isready can return 0 during the init-phase restart cycle, so verify
+  // with an actual query that survives the container's initialization restart.
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const result = spawnSync(
       "docker",
-      ["exec", containerName, "pg_isready", "-U", "postgres"],
-      { encoding: "utf8" }
+      ["exec", containerName, "psql", "-U", "postgres", "-c", "SELECT 1"],
+      { encoding: "utf8", timeout: 5_000 }
     );
     if (result.status === 0) return;
     await delay(500);
