@@ -30,16 +30,16 @@ function delay(milliseconds) {
 }
 
 async function waitForPostgres() {
-  for (let attempt = 0; attempt < 60; attempt += 1) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
     const result = spawnSync(
       "docker",
       ["exec", containerName, "pg_isready", "-U", "postgres"],
       { encoding: "utf8" }
     );
     if (result.status === 0) return;
-    await delay(250);
+    await delay(500);
   }
-  throw new Error("Disposable PostgreSQL did not become ready within 15 seconds.");
+  throw new Error("Disposable PostgreSQL did not become ready within 60 seconds.");
 }
 
 async function waitForHostPostgres(connectionString) {
