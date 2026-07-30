@@ -6,7 +6,7 @@ const money = z.coerce.number().positive().max(999_999_999_999);
 const currency = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/);
 
 export const receiptGroupSchema = z.object({
-  product_id: z.string().refine((v) => !v || z.string().uuid().safeParse(v).success, { message: "معرّف المنتج غير صالح." }).optional().default(""),
+  product_id: z.string().optional().default("").transform((v) => (v && z.string().uuid().safeParse(v).success ? v : null)),
   product_name: z.string().trim().max(200).optional(),
   unit_cost: money,
   planned_sale_price: money,
