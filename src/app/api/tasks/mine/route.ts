@@ -32,8 +32,11 @@ export async function PATCH(request: NextRequest) {
   if (contentType.includes("multipart/form-data")) {
     const formData = await request.formData();
     files = getFormFiles(formData);
-    body = Object.fromEntries(["assignment_id", "expected_version", "command_id", "status", "note"]
-      .map((key) => [key, formData.get(key)]));
+    body = {};
+    for (const key of ["assignment_id", "expected_version", "command_id", "status", "note"]) {
+      const val = formData.get(key);
+      if (val !== null) body[key] = val;
+    }
   } else body = await request.json().catch(() => ({}));
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ message: "Task transition data is invalid.", requestId: auth.requestId }, { status: 400 });

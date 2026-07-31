@@ -29,11 +29,12 @@ async function save(request: NextRequest, mode: "create" | "update") {
   if (contentType.includes("multipart/form-data")) {
     const formData = await request.formData();
     files = getFormFiles(formData);
-    body = Object.fromEntries([
-      "task_id", "command_id", "expected_version", "title", "description", "priority",
-      "due_date", "employee_id", "initial_message",
-    ].map((key) => [key, formData.get(key)]));
-    if (!body.expected_version) delete body.expected_version;
+    body = {};
+    for (const key of ["task_id", "command_id", "expected_version", "title", "description", "priority",
+      "due_date", "employee_id", "initial_message"]) {
+      const val = formData.get(key);
+      if (val !== null) body[key] = val;
+    }
   } else {
     body = await request.json().catch(() => ({}));
   }

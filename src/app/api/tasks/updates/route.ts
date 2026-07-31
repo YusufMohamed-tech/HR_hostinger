@@ -36,9 +36,11 @@ export async function POST(request: NextRequest) {
   if (contentType.includes("multipart/form-data")) {
     const formData = await request.formData();
     files = getFormFiles(formData);
-    body = Object.fromEntries(
-      ["task_id", "command_id", "note", "progress"].map((key) => [key, formData.get(key)])
-    );
+    body = {};
+    for (const key of ["task_id", "command_id", "note", "progress"]) {
+      const val = formData.get(key);
+      if (val !== null) body[key] = val;
+    }
   } else {
     body = await request.json().catch(() => ({}));
   }

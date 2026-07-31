@@ -40,8 +40,11 @@ export async function POST(request: NextRequest) {
   if (contentType.includes("multipart/form-data")) {
     const formData = await request.formData();
     files = getFormFiles(formData);
-    body = Object.fromEntries(["task_id", "employee_id", "command_id", "message"]
-      .map((key) => [key, formData.get(key)]));
+    body = {};
+    for (const key of ["task_id", "employee_id", "command_id", "message"]) {
+      const val = formData.get(key);
+      if (val !== null) body[key] = val;
+    }
   } else body = await request.json().catch(() => ({}));
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
