@@ -14,7 +14,8 @@ export type Role =
   | "Merchant"
   | "Finance_Manager"
   | "Accountant"
-  | "Finance_Viewer";
+  | "Finance_Viewer"
+  | "Supervisor";
 export type SystemRole = "Superadmin" | null;
 export type WorkspaceRole = Exclude<Role, "Superadmin">;
 export type OrgMembershipRole =
@@ -34,6 +35,7 @@ export type OrgMembershipRole =
   | "finance_manager"
   | "accountant"
   | "finance_viewer"
+  | "supervisor"
   | null;
 
 export interface User {

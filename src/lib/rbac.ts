@@ -16,7 +16,8 @@ export type OrgRole =
   | "merchant"
   | "finance_manager"
   | "accountant"
-  | "finance_viewer";
+  | "finance_viewer"
+  | "supervisor";
 
 export const ALL_ROLES: Role[] = [
   "Superadmin",
@@ -34,6 +35,7 @@ export const ALL_ROLES: Role[] = [
   "Finance_Manager",
   "Accountant",
   "Finance_Viewer",
+  "Supervisor",
   "Employee",
 ];
 
@@ -53,6 +55,7 @@ export function roleFromOrgRole(role: string | null | undefined): Role | null {
   if (role === "finance_manager") return "Finance_Manager";
   if (role === "accountant") return "Accountant";
   if (role === "finance_viewer") return "Finance_Viewer";
+  if (role === "supervisor") return "Supervisor";
   if (role === "employee") return "Employee";
   return null;
 }
@@ -67,6 +70,7 @@ export function getDefaultPathForRole(role: Role): string {
   if (role === "Promoter") return "/promoter";
   if (role === "Field_Agent") return "/agent";
   if (role === "Merchant") return "/merchant";
+  if (role === "Supervisor") return "/supervisor";
   if (["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role)) return "/accounting";
   return "/";
 }
@@ -114,7 +118,7 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath === "/") {
-    return !["HR_Recruitment", "Sales", "Sales_Manager", "Onground_Agent_Manager", "Inventory_Receiver", "Promoter", "Field_Agent", "Merchant", "Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+    return !["HR_Recruitment", "Sales", "Sales_Manager", "Onground_Agent_Manager", "Inventory_Receiver", "Promoter", "Field_Agent", "Merchant", "Supervisor", "Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
   }
 
   if (role === "Inventory_Receiver") {
@@ -178,6 +182,21 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     );
   }
 
+  if (role === "Supervisor") {
+    return (
+      normalizedPath.startsWith("/supervisor") ||
+      normalizedPath.startsWith("/api/supervisor") ||
+      normalizedPath.startsWith("/attendance") ||
+      normalizedPath.startsWith("/api/attendance") ||
+      normalizedPath.startsWith("/tasks") ||
+      normalizedPath.startsWith("/api/tasks") ||
+      normalizedPath.startsWith("/leave") ||
+      normalizedPath.startsWith("/api/leave") ||
+      normalizedPath.startsWith("/notifications") ||
+      normalizedPath.startsWith("/settings")
+    );
+  }
+
   if (role === "Merchant") {
     return (
       normalizedPath.startsWith("/merchant") ||
@@ -217,6 +236,14 @@ export function canAccessPath(role: Role, pathname: string): boolean {
       normalizedPath.startsWith("/notifications") ||
       normalizedPath.startsWith("/settings")
     );
+  }
+
+  if (normalizedPath.startsWith("/api/supervisor/evaluations") && normalizedPath.includes("/review")) {
+    return ["Admin", "HR_Admin"].includes(role);
+  }
+
+  if (normalizedPath.startsWith("/evaluations")) {
+    return ["Admin", "HR_Admin"].includes(role);
   }
 
   if (normalizedPath.startsWith("/api/hr")) {
