@@ -13,6 +13,7 @@ const allowedRoles = new Set([
   "finance_manager",
   "accountant",
   "finance_viewer",
+  "supervisor",
 ]);
 const allowedCreationRoles = new Set(["admin"]);
 const allowedActions = new Set(["suspend", "activate", "reset_password", "update_role"]);

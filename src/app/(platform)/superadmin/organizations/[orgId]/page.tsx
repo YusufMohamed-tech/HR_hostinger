@@ -51,6 +51,7 @@ const roleLabels: Record<string, string> = {
   sales_manager: "مدير المبيعات",
   training_manager: "مدير تدريب",
   employee: "موظف",
+  supervisor: "مشرف مواقع",
   super_admin: "مشرف عام",
 };
 
