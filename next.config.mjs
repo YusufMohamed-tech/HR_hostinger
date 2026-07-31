@@ -16,6 +16,7 @@ const securityHeaders = [
 
 const nextConfig = {
   output: "standalone",
+  instrumentationHook: true,
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "*.supabase.co" },
