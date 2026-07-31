@@ -203,24 +203,18 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
     setForm((prev) => ({ ...prev, full_name_ar: value, full_name: value }));
   };
   const setWorkCity = (value: string | null) => {
-    setSelectedLocationIds([]);
-    setPrimaryLocationId("");
     setForm((prev) => ({
       ...prev,
       work_city: value ?? "",
       city: value ?? "",
       province: value ?? "",
-      location_id: "",
     }));
   };
   const setProject = (value: string | null) => {
-    setSelectedLocationIds([]);
-    setPrimaryLocationId("");
     setForm((prev) => ({
       ...prev,
       project_id: value ?? "",
       company_id: value ?? "",
-      location_id: "",
     }));
   };
   const setIban = (value: string) => {
@@ -232,12 +226,14 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
   );
   const filteredLocations = useMemo(() => {
     return locations.filter((location) => {
+      const locationId = String(location.id);
+      if (selectedLocationIds.includes(locationId)) return true;
       const locationCity = inferLocationCity(location);
       const matchesCity = !form.work_city || locationCity === form.work_city;
       const matchesProject = !form.project_id || locationMatchesCompany(location, selectedProject);
       return matchesCity && matchesProject;
     });
-  }, [form.project_id, form.work_city, locations, selectedProject]);
+  }, [form.project_id, form.work_city, locations, selectedProject, selectedLocationIds]);
 
   const toggleLocation = (locationId: string, checked: boolean) => {
     setSelectedLocationIds((prev) => {
@@ -479,6 +475,7 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                 <Select value={form.work_city} onValueChange={(value) => setWorkCity(value)}>
                   <SelectTrigger><SelectValue placeholder="اختر المدينة" /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="">كل المدن</SelectItem>
                     {saudiCityOptions.map((city) => (
                       <SelectItem key={city} value={city}>{city}</SelectItem>
                     ))}
@@ -592,6 +589,7 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="">كل المشاريع</SelectItem>
                     {companies.map((company) => (
                       <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
                     ))}

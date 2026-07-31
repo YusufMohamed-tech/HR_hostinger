@@ -416,6 +416,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Select value={form.work_city} onValueChange={(value) => setWorkCity(value)}>
                   <SelectTrigger><SelectValue placeholder="اختر المدينة" /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="">كل المدن</SelectItem>
                     {saudiCityOptions.map((city) => (
                       <SelectItem key={city} value={city}>{city}</SelectItem>
                     ))}
@@ -557,6 +558,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="">كل المشاريع</SelectItem>
                     {companies.map((company) => (
                       <SelectItem key={company.id} value={company.id}>{company.name}</SelectItem>
                     ))}
