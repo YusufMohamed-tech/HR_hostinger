@@ -378,6 +378,46 @@ export const lmsBuilderOverviewSchema = z.object({
   certificate_signatory: optionalTrimmedString,
 });
 
+const fieldLabels: Record<string, string> = {
+  full_name: "الاسم الكامل",
+  full_name_ar: "الاسم بالعربي",
+  full_name_en: "الاسم بالإنجليزي",
+  employee_code: "الرقم الوظيفي",
+  email: "البريد الإلكتروني",
+  phone: "رقم الهاتف",
+  address: "العنوان",
+  work_city: "مدينة العمل",
+  national_address_code: "العنوان الوطني",
+  national_id: "رقم الهوية",
+  date_of_birth: "تاريخ الميلاد",
+  gender: "الجنس",
+  hiring_date: "تاريخ بدء العمل",
+  department_id: "القسم",
+  job_title: "المسمى الوظيفي",
+  manager_id: "المدير المباشر",
+  location_id: "الموقع",
+  employment_type: "نوع التوظيف",
+  status: "الحالة",
+  base_salary: "الراتب الأساسي",
+  bonus: "البدلات / المكافآت",
+  deductions: "الخصومات",
+  payment_method: "طريقة الدفع",
+  bank_account: "رقم الحساب البنكي",
+  bank_account_name: "اسم صاحب الحساب",
+  bank_name: "اسم البنك",
+  iban: "رقم الآيبان",
+  leave_type: "نوع الإجازة",
+  start_date: "تاريخ البداية",
+  end_date: "تاريخ النهاية",
+};
+
 export function getValidationMessage(error: z.ZodError) {
-  return error.issues[0]?.message ?? "Please check the form and try again.";
+  const issue = error.issues[0];
+  if (!issue) return "يرجى مراجعة البيانات والمحاولة مرة أخرى.";
+  const fieldPath = issue.path.join(".");
+  const label = fieldLabels[fieldPath] || fieldPath;
+  const message = issue.message === "Invalid input" || issue.message === "Required"
+    ? "قيمة غير صالحة"
+    : issue.message;
+  return `${label}: ${message}`;
 }
