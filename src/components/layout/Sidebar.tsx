@@ -322,6 +322,7 @@ export function SidebarContent() {
             { name: "الحضور", href: "/attendance", icon: Clock },
             { name: "المهام", href: "/tasks", icon: CheckSquare },
             { name: "الإجازات", href: "/leave", icon: CalendarDays },
+            { name: "الشات", href: "/chat", icon: MessageCircle },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],
         },

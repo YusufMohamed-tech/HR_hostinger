@@ -23,6 +23,7 @@ function roleLabel(role: string) {
     sales: "Sales",
     sales_manager: "Sales Manager",
     promoter: "Promoter",
+    supervisor: "مشرف مواقع",
   };
   return labels[role] || role;
 }
