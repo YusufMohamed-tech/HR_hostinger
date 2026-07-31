@@ -236,7 +236,9 @@ export function canAccessPath(role: Role, pathname: string): boolean {
       normalizedPath.startsWith("/balances") ||
       normalizedPath.startsWith("/api/advance-requests") ||
       normalizedPath.startsWith("/notifications") ||
-      normalizedPath.startsWith("/settings")
+      normalizedPath.startsWith("/settings") ||
+      normalizedPath.startsWith("/chat") ||
+      normalizedPath.startsWith("/api/chat")
     );
   }
 

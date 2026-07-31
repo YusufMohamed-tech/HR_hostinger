@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Paperclip, Plus, Search, Send, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useRoleContext } from "@/providers/RoleProvider";
-import { getChatInbox, markChatConversationRead, sendChatMessage, type ChatConversation, type ChatPage, type ChatUser } from "@/lib/services/chat";
+import { getChatInbox, markChatConversationRead, sendChatMessage, type ChatConversation, type ChatMessage, type ChatPage, type ChatUser } from "@/lib/services/chat";
 import { AttachmentLink } from "@/components/AttachmentLink";
 import { createClient } from "@/lib/supabase/client";
 
@@ -24,6 +24,9 @@ function roleLabel(role: string) {
     sales_manager: "Sales Manager",
     promoter: "Promoter",
     supervisor: "مشرف مواقع",
+    finance_manager: "مدير مالية",
+    accountant: "محاسب",
+    finance_viewer: "مشاهد مالية",
   };
   return labels[role] || role;
 }
@@ -54,10 +57,11 @@ function formatTime(value?: string) {
 export default function ChatPage() {
   const { currentUser } = useRoleContext();
   const supabase = useMemo(() => createClient(), []);
+
   const [conversations, setConversations] = useState<ChatConversation[]>([]);
   const [availableUsers, setAvailableUsers] = useState<ChatUser[]>([]);
   const [selectedId, setSelectedId] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [initializing, setInitializing] = useState(true);
   const [sending, setSending] = useState(false);
   const [body, setBody] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -67,93 +71,151 @@ export default function ChatPage() {
   const [conversationSearch, setConversationSearch] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [page, setPage] = useState<ChatPage | null>(null);
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
   const canCreateGroup = ["Admin", "HR_Admin", "Superadmin"].includes(currentUser?.role || "");
 
-  const load = async (conversationId?: string) => {
-    setLoading(true);
-    const result = await getChatInbox(conversationId);
-    setLoading(false);
+  // ─── Data fetching ────────────────────────────────────────────────────────
+
+  // Full inbox + user list refresh. Only shows the spinner on initial load.
+  const loadInbox = useCallback(async (silent = false) => {
+    if (!silent) setInitializing(true);
+    const result = await getChatInbox();
+    setInitializing(false);
     if (result.error || !result.data) {
       setError(result.error?.message || "تعذر تحميل الشات.");
       return;
     }
     setConversations(result.data.conversations);
-    setAvailableUsers(result.data.available_users.filter((user) => user.user_id !== currentUser?.id));
-    setPage(result.data.page);
-    setSelectedId(conversationId || result.data.page.conversation_id || result.data.conversations[0]?.id || "");
-  };
+    setAvailableUsers(result.data.available_users.filter((u) => u.user_id !== currentUser?.id));
+  }, [currentUser?.id]);
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Silently refresh messages for one conversation, updating page cursor too.
+  const loadMessages = useCallback(async (conversationId: string) => {
+    const result = await getChatInbox(conversationId);
+    if (result.error || !result.data) return;
+    setConversations(result.data.conversations);
+    setPage(result.data.page);
+  }, []);
+
+  // On mount, load full inbox then resolve the selected conversation.
+  const initialLoad = useCallback(async () => {
+    setInitializing(true);
+    const result = await getChatInbox();
+    setInitializing(false);
+    if (result.error || !result.data) {
+      setError(result.error?.message || "تعذر تحميل الشات.");
+      return;
+    }
+    setConversations(result.data.conversations);
+    setAvailableUsers(result.data.available_users.filter((u) => u.user_id !== currentUser?.id));
+    setPage(result.data.page);
+    const firstId = result.data.page.conversation_id || result.data.conversations[0]?.id || "";
+    setSelectedId(firstId);
   }, [currentUser?.id]);
 
   useEffect(() => {
-    if (!selectedId) return;
-    const channel = supabase.channel(`chat:${selectedId}`)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `conversation_id=eq.${selectedId}` }, () => {
-        void load(selectedId);
-      })
+    void initialLoad();
+  }, [initialLoad]);
+
+  // ─── Realtime subscriptions ───────────────────────────────────────────────
+
+  // Channel 1: inbox-level — fires when any conversation the user is in gets
+  // updated_at bumped (i.e. a new message was sent to any conversation).
+  // Silently refreshes the sidebar list and unread counts.
+  useEffect(() => {
+    const inboxChannel = supabase
+      .channel("chat:inbox")
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "chat_conversations" },
+        () => { void loadInbox(true); }
+      )
       .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId, supabase]);
+    return () => { void supabase.removeChannel(inboxChannel); };
+  }, [supabase, loadInbox]);
+
+  // Channel 2: message-level — fires only for INSERTs in the open conversation,
+  // keeping the message thread up-to-date in real time.
+  useEffect(() => {
+    if (!selectedId) return;
+    const messageChannel = supabase
+      .channel(`chat:messages:${selectedId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_messages", filter: `conversation_id=eq.${selectedId}` },
+        () => { void loadMessages(selectedId); }
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(messageChannel); };
+  }, [selectedId, supabase, loadMessages]);
+
+  // ─── Scroll to bottom ─────────────────────────────────────────────────────
 
   const selectedConversation = useMemo(
-    () => conversations.find((conversation) => conversation.id === selectedId) || null,
+    () => conversations.find((c) => c.id === selectedId) || null,
     [conversations, selectedId]
   );
 
-  const filteredConversations = useMemo(() => {
-    const query = conversationSearch.trim().toLowerCase();
-    if (!query) return conversations;
-    return conversations.filter((conversation) =>
-      conversationName(conversation, currentUser?.id).toLowerCase().includes(query)
-      || lastMessage(conversation).toLowerCase().includes(query)
-    );
-  }, [conversationSearch, conversations, currentUser?.id]);
+  // Scroll to the latest message whenever the active conversation's messages change.
+  // Skip if the user has scrolled up to read older messages (> 150px from bottom).
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    if (nearBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [selectedConversation?.messages]);
 
-  const filteredUsers = useMemo(() => {
-    const query = userSearch.trim().toLowerCase();
-    if (!query) return availableUsers;
-    return availableUsers.filter((user) =>
-      user.full_name.toLowerCase().includes(query)
-      || (user.email || "").toLowerCase().includes(query)
-      || (user.title || "").toLowerCase().includes(query)
-      || roleLabel(user.role).toLowerCase().includes(query)
-    );
-  }, [availableUsers, userSearch]);
+  // Always scroll to bottom when switching conversations.
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
+  }, [selectedId]);
+
+  // ─── Actions ──────────────────────────────────────────────────────────────
 
   const submitMessage = async () => {
     if (!selectedConversation || (!body.trim() && files.length === 0)) return;
     setSending(true);
     setError("");
+    const messageBody = body.trim();
+    setBody("");
+    setFiles([]);
+
     const result = await sendChatMessage({
       conversation_id: selectedConversation.id,
-      body: body.trim(),
+      body: messageBody,
       attachments: files,
     });
     setSending(false);
+
     if (result.error) {
       setError(result.error.message);
+      setBody(messageBody); // restore on failure
       return;
     }
-    setBody("");
-    setFiles([]);
-    await load(selectedConversation.id);
-    setSelectedId(result.data?.conversation_id || selectedConversation.id);
+
+    // Optimistically append the sent message from the API response so the UI
+    // updates instantly without waiting for the realtime INSERT event.
+    const newMessage = result.data?.message;
+    if (newMessage) {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === selectedConversation.id
+            ? { ...c, messages: [...c.messages, newMessage], updated_at: newMessage.created_at }
+            : c
+        )
+      );
+    }
   };
 
   const startChat = async (type: "direct" | "group") => {
     const participants = type === "direct" ? selectedUsers.slice(0, 1) : selectedUsers;
-    if (participants.length === 0) {
-      setError("اختر مشاركًا واحدًا على الأقل.");
-      return;
-    }
-    if (type === "group" && !groupTitle.trim()) {
-      setError("اكتب اسم الجروب.");
-      return;
-    }
+    if (participants.length === 0) { setError("اختر مشاركًا واحدًا على الأقل."); return; }
+    if (type === "group" && !groupTitle.trim()) { setError("اكتب اسم الجروب."); return; }
     setSending(true);
     setError("");
     const result = await sendChatMessage({
@@ -163,38 +225,60 @@ export default function ChatPage() {
       body: type === "group" ? "تم إنشاء الجروب." : "بدأت المحادثة.",
     });
     setSending(false);
-    if (result.error) {
-      setError(result.error.message);
-      return;
-    }
+    if (result.error) { setError(result.error.message); return; }
     setSelectedUsers([]);
     setGroupTitle("");
-    const nextConversationId = result.data?.conversation_id || "";
-    await load(nextConversationId);
-    setSelectedId(nextConversationId);
+    const nextId = result.data?.conversation_id || "";
+    await loadMessages(nextId);
+    setSelectedId(nextId);
   };
 
   const toggleUser = (userId: string) => {
-    setSelectedUsers((current) =>
-      current.includes(userId) ? current.filter((id) => id !== userId) : [...current, userId]
+    setSelectedUsers((curr) =>
+      curr.includes(userId) ? curr.filter((id) => id !== userId) : [...curr, userId]
     );
   };
 
   const selectConversation = async (conversationId: string) => {
     setSelectedId(conversationId);
-    await markChatConversationRead(conversationId);
-    await load(conversationId);
+    void markChatConversationRead(conversationId);
+    await loadMessages(conversationId);
   };
 
   const loadOlder = async () => {
     if (!selectedId || !page?.next_before || !page.next_before_id) return;
     const result = await getChatInbox(selectedId, { before: page.next_before, beforeId: page.next_before_id });
     if (result.error || !result.data) return setError(result.error?.message || "تعذر تحميل الرسائل السابقة.");
-    const older = result.data.conversations.find((conversation) => conversation.id === selectedId)?.messages || [];
-    setConversations((current) => current.map((conversation) => conversation.id === selectedId
-      ? { ...conversation, messages: [...older, ...conversation.messages] } : conversation));
+    const older = result.data.conversations.find((c) => c.id === selectedId)?.messages || [];
+    setConversations((curr) =>
+      curr.map((c) => c.id === selectedId ? { ...c, messages: [...older, ...c.messages] } : c)
+    );
     setPage(result.data.page);
   };
+
+  // ─── Derived state ────────────────────────────────────────────────────────
+
+  const filteredConversations = useMemo(() => {
+    const query = conversationSearch.trim().toLowerCase();
+    if (!query) return conversations;
+    return conversations.filter((c) =>
+      conversationName(c, currentUser?.id).toLowerCase().includes(query) ||
+      lastMessage(c).toLowerCase().includes(query)
+    );
+  }, [conversationSearch, conversations, currentUser?.id]);
+
+  const filteredUsers = useMemo(() => {
+    const query = userSearch.trim().toLowerCase();
+    if (!query) return availableUsers;
+    return availableUsers.filter((u) =>
+      u.full_name.toLowerCase().includes(query) ||
+      (u.email || "").toLowerCase().includes(query) ||
+      (u.title || "").toLowerCase().includes(query) ||
+      roleLabel(u.role).toLowerCase().includes(query)
+    );
+  }, [availableUsers, userSearch]);
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="flex flex-col gap-5" dir="rtl">
@@ -222,6 +306,7 @@ export default function ChatPage() {
       {error && <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
 
       <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)_320px]">
+        {/* ── Conversation list ── */}
         <Card className="h-[72vh] min-h-[620px] border-none shadow-sm">
           <CardContent className="flex h-full flex-col p-0">
             <div className="border-b px-4 py-3">
@@ -233,15 +318,15 @@ export default function ChatPage() {
                 <Search className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400" />
                 <Input
                   value={conversationSearch}
-                  onChange={(event) => setConversationSearch(event.target.value)}
+                  onChange={(e) => setConversationSearch(e.target.value)}
                   placeholder="ابحث في المحادثات..."
                   className="pr-9"
                 />
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-3">
-              {loading && <p className="py-8 text-center text-sm text-gray-500">جار التحميل...</p>}
-              {!loading && filteredConversations.length === 0 && (
+              {initializing && <p className="py-8 text-center text-sm text-gray-500">جار التحميل...</p>}
+              {!initializing && filteredConversations.length === 0 && (
                 <div className="py-10 text-center text-sm text-gray-500">
                   <MessageCircle className="mx-auto mb-2 h-8 w-8 text-gray-300" />
                   لا توجد محادثات بعد.
@@ -274,6 +359,7 @@ export default function ChatPage() {
           </CardContent>
         </Card>
 
+        {/* ── Message thread ── */}
         <Card className="h-[72vh] min-h-[620px] border-none shadow-sm">
           <CardContent className="flex h-full flex-col p-0">
             {selectedConversation ? (
@@ -286,14 +372,14 @@ export default function ChatPage() {
                   <Badge variant="outline">{selectedConversation.type === "group" ? "جروب" : "فردي"}</Badge>
                 </div>
 
-                <div className="flex-1 overflow-y-auto bg-gray-50 px-4 py-4">
+                <div ref={messagesContainerRef} className="flex-1 overflow-y-auto bg-gray-50 px-4 py-4">
                   <div className="space-y-3">
                     {page?.conversation_id === selectedId && page.has_more && (
                       <Button type="button" variant="ghost" size="sm" className="mx-auto block" onClick={() => void loadOlder()}>
                         تحميل رسائل أقدم
                       </Button>
                     )}
-                    {selectedConversation.messages.map((message) => {
+                    {selectedConversation.messages.map((message: ChatMessage) => {
                       const mine = message.sender_user_id === currentUser?.id;
                       return (
                         <div key={message.id} className={`flex ${mine ? "justify-start" : "justify-end"}`}>
@@ -323,6 +409,8 @@ export default function ChatPage() {
                         </div>
                       );
                     })}
+                    {/* Scroll anchor */}
+                    <div ref={messagesEndRef} />
                   </div>
                 </div>
 
@@ -332,7 +420,7 @@ export default function ChatPage() {
                       {files.map((file) => (
                         <Badge key={`${file.name}-${file.size}`} variant="outline" className="gap-1">
                           {file.name}
-                          <button onClick={() => setFiles((current) => current.filter((item) => item !== file))}>
+                          <button onClick={() => setFiles((curr) => curr.filter((f) => f !== file))}>
                             <X className="h-3 w-3" />
                           </button>
                         </Badge>
@@ -346,21 +434,25 @@ export default function ChatPage() {
                         type="file"
                         multiple
                         className="hidden"
-                        onChange={(event) => setFiles(Array.from(event.target.files || []))}
+                        onChange={(e) => setFiles(Array.from(e.target.files || []))}
                       />
                     </label>
                     <Input
                       value={body}
-                      onChange={(event) => setBody(event.target.value)}
+                      onChange={(e) => setBody(e.target.value)}
                       placeholder="اكتب رسالتك..."
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault();
-                          submitMessage();
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void submitMessage();
                         }
                       }}
                     />
-                    <Button className="bg-brand text-white hover:bg-brand-dark" disabled={sending || (!body.trim() && files.length === 0)} onClick={submitMessage}>
+                    <Button
+                      className="bg-brand text-white hover:bg-brand-dark"
+                      disabled={sending || (!body.trim() && files.length === 0)}
+                      onClick={() => void submitMessage()}
+                    >
                       <Send className="ml-2 h-4 w-4" /> إرسال
                     </Button>
                   </div>
@@ -375,6 +467,7 @@ export default function ChatPage() {
           </CardContent>
         </Card>
 
+        {/* ── New conversation panel ── */}
         <Card className="h-[72vh] min-h-[620px] border-none shadow-sm">
           <CardContent className="flex h-full flex-col p-0">
             <div className="border-b px-4 py-3">
@@ -384,7 +477,7 @@ export default function ChatPage() {
                 <Search className="absolute right-2.5 top-2.5 h-4 w-4 text-gray-400" />
                 <Input
                   value={userSearch}
-                  onChange={(event) => setUserSearch(event.target.value)}
+                  onChange={(e) => setUserSearch(e.target.value)}
                   placeholder="ابحث عن مستخدم..."
                   className="pr-9"
                 />
@@ -396,7 +489,7 @@ export default function ChatPage() {
                 <Label>اسم الجروب</Label>
                 <Input
                   value={groupTitle}
-                  onChange={(event) => setGroupTitle(event.target.value)}
+                  onChange={(e) => setGroupTitle(e.target.value)}
                   placeholder="مثال: فريق HR"
                   className="mt-2"
                 />
@@ -432,10 +525,18 @@ export default function ChatPage() {
 
             <div className="border-t bg-white p-3">
               <div className="grid grid-cols-2 gap-2">
-                <Button className="bg-brand text-white hover:bg-brand-dark" disabled={sending || selectedUsers.length === 0} onClick={() => startChat("direct")}>
+                <Button
+                  className="bg-brand text-white hover:bg-brand-dark"
+                  disabled={sending || selectedUsers.length === 0}
+                  onClick={() => void startChat("direct")}
+                >
                   <Plus className="ml-2 h-4 w-4" /> فردي
                 </Button>
-                <Button variant="outline" disabled={!canCreateGroup || sending || selectedUsers.length === 0} onClick={() => startChat("group")}>
+                <Button
+                  variant="outline"
+                  disabled={!canCreateGroup || sending || selectedUsers.length === 0}
+                  onClick={() => void startChat("group")}
+                >
                   <Users className="ml-2 h-4 w-4" /> جروب
                 </Button>
               </div>
