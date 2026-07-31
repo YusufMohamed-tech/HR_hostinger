@@ -216,11 +216,14 @@ export default function LeavePage() {
           <h1 className="text-2xl font-bold tracking-tight">{pageTitle}</h1>
           <p className="text-gray-500 text-sm mt-1">{pageDescription}</p>
         </div>
-        {isSelfServiceView && (
+        {isSelfServiceView && currentUser?.employeeId && (
           <CreateLeaveDialog
             onSuccess={refetch}
             description={isHRAdmin ? "إرسال طلب إجازة لاعتماد المشرف العام." : undefined}
           />
+        )}
+        {isSelfServiceView && !currentUser?.employeeId && (
+          <p className="text-sm text-amber-600">لا يمكنك تقديم طلب إجازة — لم يتم ربط ملفك الوظيفي بحسابك بعد.</p>
         )}
       </div>
 
