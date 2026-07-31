@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireTenantContext } from "@/lib/server/tenant-context";
+import { processOutboxBatch } from "@/lib/server/outbox-worker";
 
 const updateSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("mark_one"), id: z.string().uuid(), is_read: z.boolean().default(true) }),
@@ -10,6 +11,8 @@ const updateSchema = z.discriminatedUnion("action", [
 export async function GET(request: NextRequest) {
   const auth = await requireTenantContext({}, request);
   if ("error" in auth) return auth.error;
+
+  await processOutboxBatch(`notify:${auth.requestId}`, 25).catch(() => {});
 
   const { data, error } = await auth.admin
     .from("notifications")
