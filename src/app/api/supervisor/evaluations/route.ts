@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireTenantContext } from "@/lib/server/tenant-context";
-import { createBusinessEvent } from "@/lib/server/business-events";
+import { createBusinessEvent, enqueueOutboxEvent } from "@/lib/server/business-events";
 
 const createEvaluationSchema = z.object({
   location_id: z.string().uuid(),
@@ -144,20 +144,37 @@ export async function POST(request: NextRequest) {
   }
 
   const evaluationId = String(data.id ?? "");
-  await createBusinessEvent({
-    orgId: auth.orgId,
-    sourceType: "site_evaluation.submitted",
-    businessKey: `evaluation:${evaluationId}`,
-    payload: {
-      evaluation_id: evaluationId,
-      supervisor_id: auth.employeeId,
-      location_id: parsed.data.location_id,
-      evaluation_date: parsed.data.evaluation_date,
-      overall_score: parsed.data.overall_score ?? null,
-    },
-    actorUserId: auth.user.id,
-    requestId: auth.requestId,
-  }).catch(() => {});
+  try {
+    const { event } = await createBusinessEvent({
+      orgId: auth.orgId,
+      sourceType: "site_evaluation.submitted",
+      businessKey: `evaluation:${evaluationId}`,
+      payload: {
+        evaluation_id: evaluationId,
+        supervisor_id: auth.employeeId,
+        location_id: parsed.data.location_id,
+        evaluation_date: parsed.data.evaluation_date,
+        overall_score: parsed.data.overall_score ?? null,
+      },
+      actorUserId: auth.user.id,
+      requestId: auth.requestId,
+    });
+    await enqueueOutboxEvent({
+      orgId: auth.orgId,
+      businessEventId: event.id,
+      topic: "site_evaluation.submitted",
+      payload: {
+        evaluation_id: evaluationId,
+        supervisor_id: auth.employeeId,
+        supervisor_user_id: auth.user.id,
+        location_id: parsed.data.location_id,
+        evaluation_date: parsed.data.evaluation_date,
+        overall_score: parsed.data.overall_score ?? null,
+      },
+    });
+  } catch {
+    // non-critical: evaluation is saved even if notification fails
+  }
 
   return NextResponse.json(
     { evaluation: data, requestId: auth.requestId },

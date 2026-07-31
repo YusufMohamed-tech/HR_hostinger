@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireTenantContext } from "@/lib/server/tenant-context";
-import { createBusinessEvent } from "@/lib/server/business-events";
+import { createBusinessEvent, enqueueOutboxEvent } from "@/lib/server/business-events";
 
 const reviewSchema = z.object({
   status: z.enum(["reviewed", "flagged"]),
@@ -69,19 +69,35 @@ export async function POST(
     );
   }
 
-  await createBusinessEvent({
-    orgId: auth.orgId,
-    sourceType: `site_evaluation.${parsed.data.status}`,
-    businessKey: `evaluation:${id}:${parsed.data.status}`,
-    payload: {
-      evaluation_id: id,
-      reviewer_id: auth.employeeId,
-      supervisor_id: String(existing.supervisor_id),
-      status: parsed.data.status,
-    },
-    actorUserId: auth.user.id,
-    requestId: auth.requestId,
-  }).catch(() => {});
+  try {
+    const { event } = await createBusinessEvent({
+      orgId: auth.orgId,
+      sourceType: `site_evaluation.${parsed.data.status}`,
+      businessKey: `evaluation:${id}:${parsed.data.status}`,
+      payload: {
+        evaluation_id: id,
+        reviewer_id: auth.employeeId,
+        supervisor_id: String(existing.supervisor_id),
+        status: parsed.data.status,
+      },
+      actorUserId: auth.user.id,
+      requestId: auth.requestId,
+    });
+    await enqueueOutboxEvent({
+      orgId: auth.orgId,
+      businessEventId: event.id,
+      topic: `site_evaluation.${parsed.data.status}`,
+      payload: {
+        evaluation_id: id,
+        reviewer_id: auth.employeeId,
+        supervisor_id: String(existing.supervisor_id),
+        reviewer_user_id: auth.user.id,
+        status: parsed.data.status,
+      },
+    });
+  } catch {
+    // non-critical
+  }
 
   return NextResponse.json(
     { evaluation: data, requestId: auth.requestId },

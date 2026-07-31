@@ -1734,6 +1734,66 @@ const handlers: Record<string, OutboxHandler> = {
       link: "/accounting/commissions",
     });
   },
+  "site_evaluation.submitted": async (event) => {
+    const payload = event.payload as Record<string, unknown>;
+    const admin = createAdminClient();
+    const supervisorId = String(payload.supervisor_id || "");
+    const locationId = String(payload.location_id || "");
+    const [supervisorResult, locationResult, hrResult] = await Promise.all([
+      admin.from("employees").select("full_name, manager_id").eq("org_id", event.org_id).eq("id", supervisorId).maybeSingle(),
+      admin.from("locations").select("name").eq("id", locationId).maybeSingle(),
+      admin.from("org_members").select("user_id").eq("org_id", event.org_id).in("role", ["admin", "hr_admin"]),
+    ]);
+    const supervisorName = supervisorResult.data?.full_name || "مشرف";
+    const locationName = locationResult.data?.name || "موقع";
+    const recipients = new Set((hrResult.data || []).map((r) => r.user_id));
+    if (supervisorResult.data?.manager_id) {
+      const managerResult = await admin.from("employees").select("user_id").eq("org_id", event.org_id).eq("id", supervisorResult.data.manager_id).maybeSingle();
+      if (managerResult.data?.user_id) recipients.add(managerResult.data.user_id);
+    }
+    recipients.delete(String(payload.supervisor_user_id || ""));
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [...recipients],
+      title: `تقييم موقع جديد: ${locationName}`,
+      body: `قدّم ${supervisorName} تقييماً لموقع ${locationName}.`,
+      type: "system",
+      link: `/evaluations/${String(payload.evaluation_id || "")}`,
+    });
+  },
+  "site_evaluation.reviewed": async (event) => {
+    const payload = event.payload as Record<string, unknown>;
+    const admin = createAdminClient();
+    const supervisorId = String(payload.supervisor_id || "");
+    const supervisorResult = await admin.from("employees").select("user_id").eq("org_id", event.org_id).eq("id", supervisorId).maybeSingle();
+    if (!supervisorResult.data?.user_id) return;
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [supervisorResult.data.user_id],
+      title: "تم اعتماد تقييمك",
+      body: "تمت مراجعة واعتماد تقييم الموقع الذي قدمته.",
+      type: "system",
+      link: `/supervisor/evaluations`,
+    });
+  },
+  "site_evaluation.flagged": async (event) => {
+    const payload = event.payload as Record<string, unknown>;
+    const admin = createAdminClient();
+    const supervisorId = String(payload.supervisor_id || "");
+    const supervisorResult = await admin.from("employees").select("user_id").eq("org_id", event.org_id).eq("id", supervisorId).maybeSingle();
+    if (!supervisorResult.data?.user_id) return;
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [supervisorResult.data.user_id],
+      title: "تقييمك يحتاج متابعة",
+      body: "تم تحديد تقييم الموقع الذي قدمته للمتابعة.",
+      type: "system",
+      link: `/supervisor/evaluations`,
+    });
+  },
 };
 
 export async function processOutboxBatch(workerId: string, batchSize = 25) {
