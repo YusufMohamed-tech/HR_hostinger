@@ -19,7 +19,8 @@ export type OrgRole =
   | "finance_manager"
   | "accountant"
   | "finance_viewer"
-  | "supervisor";
+  | "supervisor"
+  | "account_manager";
 export type EmploymentType = "full_time" | "part_time" | "intern" | "contract";
 export type AttendanceStatus = "present" | "late" | "absent" | "on_leave" | "half_day";
 export type TaskStatus = "pending" | "in_progress" | "completed" | "rejected" | "delayed";

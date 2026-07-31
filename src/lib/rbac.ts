@@ -56,6 +56,7 @@ export function roleFromOrgRole(role: string | null | undefined): Role | null {
   if (role === "accountant") return "Accountant";
   if (role === "finance_viewer") return "Finance_Viewer";
   if (role === "supervisor") return "Supervisor";
+  if (role === "account_manager") return "Account_Manager";
   if (role === "employee") return "Employee";
   return null;
 }
@@ -71,6 +72,7 @@ export function getDefaultPathForRole(role: Role): string {
   if (role === "Field_Agent") return "/agent";
   if (role === "Merchant") return "/merchant";
   if (role === "Supervisor") return "/supervisor";
+  if (role === "Account_Manager") return "/chat";
   if (["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role)) return "/accounting";
   return "/";
 }
@@ -118,7 +120,7 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (normalizedPath === "/") {
-    return !["HR_Recruitment", "Sales", "Sales_Manager", "Onground_Agent_Manager", "Inventory_Receiver", "Promoter", "Field_Agent", "Merchant", "Supervisor", "Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+    return !["HR_Recruitment", "Sales", "Sales_Manager", "Onground_Agent_Manager", "Inventory_Receiver", "Promoter", "Field_Agent", "Merchant", "Supervisor", "Finance_Manager", "Accountant", "Finance_Viewer", "Account_Manager"].includes(role);
   }
 
   if (role === "Inventory_Receiver") {
@@ -196,6 +198,15 @@ export function canAccessPath(role: Role, pathname: string): boolean {
       normalizedPath.startsWith("/settings") ||
       normalizedPath.startsWith("/chat") ||
       normalizedPath.startsWith("/api/chat")
+    );
+  }
+
+  if (role === "Account_Manager") {
+    return (
+      normalizedPath.startsWith("/chat") ||
+      normalizedPath.startsWith("/api/chat") ||
+      normalizedPath.startsWith("/notifications") ||
+      normalizedPath.startsWith("/settings")
     );
   }
 

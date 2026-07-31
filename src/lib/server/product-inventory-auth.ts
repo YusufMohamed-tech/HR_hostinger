@@ -39,7 +39,7 @@ export function requireProductInventoryAccess(request?: NextRequest) {
 
 export function requireProductInventoryFinanceAccess(request?: NextRequest) {
   return requireTenantContext(
-    { feature: "accounting", roles: productInventoryFinanceRoles, requireEmployee: true },
+    { feature: "accounting", roles: productInventoryFinanceRoles },
     request
   );
 }

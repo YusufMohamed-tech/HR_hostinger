@@ -176,7 +176,8 @@ export function LmsInstructorDashboardScreen() {
     setLoading(true);
     const result = await getLmsInstructorDashboard();
     if (result.error) {
-      setStatus({ type: "error", message: result.error.message });
+      const isDbError = /uuid|syntax|invalid input/i.test(result.error.message);
+      setStatus({ type: "error", message: isDbError ? "لا يوجد ملف مدرب مرتبط بهذا الحساب." : result.error.message });
       setData(null);
       setLoading(false);
       return;

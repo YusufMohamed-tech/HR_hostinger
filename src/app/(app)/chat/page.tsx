@@ -27,6 +27,7 @@ function roleLabel(role: string) {
     finance_manager: "مدير مالية",
     accountant: "محاسب",
     finance_viewer: "مشاهد مالية",
+    account_manager: "مدير حسابات",
   };
   return labels[role] || role;
 }

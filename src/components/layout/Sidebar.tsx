@@ -330,6 +330,19 @@ export function SidebarContent() {
       ];
     }
 
+    if (role === "Account_Manager") {
+      return [
+        {
+          title: "مدير الحسابات",
+          links: [
+            { name: "الشات", href: "/chat", icon: MessageCircle },
+            { name: "الإشعارات", href: "/notifications", icon: Bell },
+          ],
+        },
+        { title: "النظام", links: system },
+      ];
+    }
+
     if (role === "Merchant") {
       return [
         {

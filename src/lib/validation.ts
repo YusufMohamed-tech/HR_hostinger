@@ -9,6 +9,29 @@ const emptyToUndefined = (value: unknown) => {
 
 const optionalTrimmedString = z.preprocess(emptyToUndefined, z.string().max(255).optional());
 const optionalLongString = z.preprocess(emptyToUndefined, z.string().max(1000).optional());
+
+// ─── Language guards ─────────────────────────────────────────────────────────
+
+const ARABIC_RE = /^[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿\s\d.,،؛:؟!()"\-]+$/;
+const ENGLISH_RE = /^[A-Za-z\s\d.,;:?!()"'\-]+$/;
+
+export function isArabicOnly(value: string) {
+  return !value || ARABIC_RE.test(value);
+}
+
+export function isEnglishOnly(value: string) {
+  return !value || ENGLISH_RE.test(value);
+}
+
+export const optionalArabicString = z.preprocess(
+  emptyToUndefined,
+  z.string().max(255).refine((v) => isArabicOnly(v), { message: "يرجى إدخال النص باللغة العربية فقط." }).optional()
+);
+
+export const optionalEnglishString = z.preprocess(
+  emptyToUndefined,
+  z.string().max(255).refine((v) => isEnglishOnly(v), { message: "Please enter the text in English only." }).optional()
+);
 const optionalDate = z.preprocess(
   emptyToUndefined,
   z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date.").optional()
@@ -21,8 +44,8 @@ const optionalMoney = z.preprocess(
 
 export const employeeFormSchema = z.object({
   full_name: z.string().trim().min(2, "Full name is required.").max(160),
-  full_name_ar: optionalTrimmedString,
-  full_name_en: optionalTrimmedString,
+  full_name_ar: optionalArabicString,
+  full_name_en: optionalEnglishString,
   employee_code: optionalTrimmedString,
   email: z.preprocess(emptyToUndefined, z.string().email("Use a valid email address.").optional()),
   phone: optionalTrimmedString,

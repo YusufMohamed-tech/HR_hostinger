@@ -273,6 +273,7 @@ export async function listLmsCourses(auth: LmsAuth, mode = "manage") {
     return result.data ?? [];
   }
   if (mode === "my") {
+    if (!employeeId) return [];
     const result = await db(auth)
       .from("lms_enrollments")
       .select("*, course:course_id(*, category:category_id(name, color))")
@@ -298,6 +299,7 @@ export async function listLmsCourses(auth: LmsAuth, mode = "manage") {
   if (result.error) throw new Error(result.error.message);
 
   if (!isManagement(auth) && !isTrainingManager(auth)) {
+    if (!employeeId) return [];
     const ownInstructor = await db(auth)
       .from("lms_course_instructors")
       .select("course_id")
