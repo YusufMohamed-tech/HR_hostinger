@@ -75,10 +75,8 @@ export async function createEmployee(
     }),
   });
   const result = await responseResult(response, "Unable to begin employee onboarding.");
-  if (!result.error) {
-    clearCommandId(scope);
-    clearCommandId(accountScope);
-  }
+  clearCommandId(scope);
+  clearCommandId(accountScope);
   return result;
 }
 

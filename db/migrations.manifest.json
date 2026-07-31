@@ -164,6 +164,7 @@
     { "id": "schema_v136_handover_signatures", "file": "db/schema_v136_handover_signatures.sql" },
     { "id": "schema_v137_chatbot", "file": "db/schema_v137_chatbot.sql" },
     { "id": "schema_v138_supervisor_module", "file": "db/schema_v138_supervisor_module.sql" },
-    { "id": "schema_v139_supervisor_tables", "file": "db/schema_v139_supervisor_tables.sql" }
+    { "id": "schema_v139_supervisor_tables", "file": "db/schema_v139_supervisor_tables.sql" },
+    { "id": "schema_v140_fix_supervisor_identity_link", "file": "db/schema_v140_fix_supervisor_identity_link.sql" }
   ]
 }
