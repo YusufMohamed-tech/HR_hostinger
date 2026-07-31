@@ -82,6 +82,7 @@ const managedRoleOptions: Array<{ value: ManagedOrgRole; label: string }> = [
   { value: "finance_manager", label: "مدير المالية" },
   { value: "accountant", label: "محاسب" },
   { value: "finance_viewer", label: "مشاهد المالية" },
+  { value: "supervisor", label: "مشرف مواقع" },
 ];
 
 export default function SuperadminOrganizationDetailPage() {

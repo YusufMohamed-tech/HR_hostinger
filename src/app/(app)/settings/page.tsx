@@ -229,6 +229,7 @@ function UserManagementCard() {
     sales: "مبيعات",
     sales_manager: "مدير المبيعات",
     training_manager: "مدير تدريب",
+    supervisor: "مشرف مواقع",
     employee: "موظف",
   };
 

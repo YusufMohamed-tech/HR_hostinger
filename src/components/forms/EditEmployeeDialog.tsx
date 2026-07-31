@@ -62,6 +62,7 @@ const accountRoleOptions: Array<{ value: EmployeeAccountRole; label: string }> =
   { value: "finance_manager", label: "مدير المالية" },
   { value: "accountant", label: "محاسب" },
   { value: "finance_viewer", label: "مشاهد المالية" },
+  { value: "supervisor", label: "مشرف مواقع" },
 ];
 const getAccountRoleLabel = (value: string | null) =>
   accountRoleOptions.find((option) => option.value === value)?.label || "موظف";

@@ -15,7 +15,7 @@ const accountSchema = z.object({
   employee_id: z.string().uuid(),
   email: z.string().trim().email().max(255),
   full_name: z.string().trim().min(2).max(160).optional(),
-  role: z.enum(["employee", "hr_admin", "hr_recruitment", "training_manager", "onground_agent_manager", "inventory_receiver", "promoter", "finance_manager", "accountant", "finance_viewer"]),
+  role: z.enum(["employee", "hr_admin", "hr_recruitment", "training_manager", "onground_agent_manager", "inventory_receiver", "promoter", "finance_manager", "accountant", "finance_viewer", "supervisor"]),
   password: passwordSchema,
 });
 const passwordUpdateSchema = z.object({

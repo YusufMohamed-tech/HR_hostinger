@@ -7,7 +7,8 @@ export type ManagedOrgRole =
   | "promoter"
   | "finance_manager"
   | "accountant"
-  | "finance_viewer";
+  | "finance_viewer"
+  | "supervisor";
 
 export async function createManagedUser(values: {
   full_name: string;

@@ -111,7 +111,8 @@ export type EmployeeAccountRole =
   | "promoter"
   | "finance_manager"
   | "accountant"
-  | "finance_viewer";
+  | "finance_viewer"
+  | "supervisor";
 
 export async function createEmployeeAccount(values: {
   employee_id: string;
