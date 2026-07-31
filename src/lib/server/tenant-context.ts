@@ -58,6 +58,7 @@ const ORG_ROLES = new Set<OrgRole>([
   "finance_manager",
   "accountant",
   "finance_viewer",
+  "supervisor",
 ]);
 
 const FEATURE_COLUMNS = {

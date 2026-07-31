@@ -18,7 +18,8 @@ export type OrgRole =
   | "merchant"
   | "finance_manager"
   | "accountant"
-  | "finance_viewer";
+  | "finance_viewer"
+  | "supervisor";
 export type EmploymentType = "full_time" | "part_time" | "intern" | "contract";
 export type AttendanceStatus = "present" | "late" | "absent" | "on_leave" | "half_day";
 export type TaskStatus = "pending" | "in_progress" | "completed" | "rejected" | "delayed";
