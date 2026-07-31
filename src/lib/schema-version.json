@@ -1,5 +1,5 @@
 {
-  "id": "schema_v137_chatbot",
-  "file": "db/schema_v137_chatbot.sql",
-  "checksumSha256": "5833dc87a690bd4b378ec23c1c936956936b33ed924a80f82eaab40bba69ccb4"
+  "id": "schema_v139_supervisor_tables",
+  "file": "db/schema_v139_supervisor_tables.sql",
+  "checksumSha256": "bc4a0698fd27d461dd1aa10f04a68ad26571aadfd52fd1bd98ab39d874e09ca8"
 }

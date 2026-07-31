@@ -162,6 +162,8 @@
     { "id": "schema_v134_inventory_receiver_handover", "file": "db/schema_v134_inventory_receiver_handover.sql" },
     { "id": "schema_v135_hostinger_filesystem_storage", "file": "db/schema_v135_hostinger_filesystem_storage.sql" },
     { "id": "schema_v136_handover_signatures", "file": "db/schema_v136_handover_signatures.sql" },
-    { "id": "schema_v137_chatbot", "file": "db/schema_v137_chatbot.sql" }
+    { "id": "schema_v137_chatbot", "file": "db/schema_v137_chatbot.sql" },
+    { "id": "schema_v138_supervisor_module", "file": "db/schema_v138_supervisor_module.sql" },
+    { "id": "schema_v139_supervisor_tables", "file": "db/schema_v139_supervisor_tables.sql" }
   ]
 }

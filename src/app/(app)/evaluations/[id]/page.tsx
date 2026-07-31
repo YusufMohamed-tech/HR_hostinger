@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { PageSkeleton } from "@/components/Skeletons";
-import { ArrowRight, CheckCircle, AlertTriangle, Star, FileText, Image } from "lucide-react";
+import { ArrowRight, CheckCircle, AlertTriangle, Star, FileText, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
 
 const statusLabels: Record<string, string> = {
@@ -194,7 +194,7 @@ export default function EvaluationDetailPage() {
               {evaluation.attachments.map((att) => (
                 <div key={att.id} className="flex items-center gap-2 rounded border p-2">
                   {att.file_type.startsWith("image/") ? (
-                    <Image className="h-4 w-4 text-blue-500" />
+                    <ImageIcon className="h-4 w-4 text-blue-500" />
                   ) : (
                     <FileText className="h-4 w-4 text-gray-500" />
                   )}
