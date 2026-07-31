@@ -193,7 +193,9 @@ export function canAccessPath(role: Role, pathname: string): boolean {
       normalizedPath.startsWith("/leave") ||
       normalizedPath.startsWith("/api/leave") ||
       normalizedPath.startsWith("/notifications") ||
-      normalizedPath.startsWith("/settings")
+      normalizedPath.startsWith("/settings") ||
+      normalizedPath.startsWith("/chat") ||
+      normalizedPath.startsWith("/api/chat")
     );
   }
 
