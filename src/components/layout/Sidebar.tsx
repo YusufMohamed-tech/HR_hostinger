@@ -127,6 +127,7 @@ export function SidebarContent() {
       { name: "استكمال ملفات الموظفين", href: "/onboarding", icon: ClipboardList, indent: true },
       { name: "الأقسام", href: "/departments", icon: Layers },
       { name: "ملفات الموظفين", href: "/personnel", icon: FileText },
+      { name: "تقييمات المواقع", href: "/evaluations", icon: ClipboardList },
       { name: "الرواتب", href: "/payroll", icon: Calculator },
       { name: "مجموعات الخصم", href: "/settings/deduction-rules", icon: ShieldAlert, indent: true },
       { name: "التوظيف", href: "/recruitment", icon: Briefcase },
