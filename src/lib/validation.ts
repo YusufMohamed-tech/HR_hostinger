@@ -409,6 +409,11 @@ const fieldLabels: Record<string, string> = {
   leave_type: "نوع الإجازة",
   start_date: "تاريخ البداية",
   end_date: "تاريخ النهاية",
+  "account.role": "دور حساب الدخول",
+  "account.email": "بريد حساب الدخول",
+  "account.password": "كلمة مرور حساب الدخول",
+  "employee.email": "البريد الإلكتروني",
+  "employee.hiring_date": "تاريخ بدء العمل",
 };
 
 export function getValidationMessage(error: z.ZodError) {
