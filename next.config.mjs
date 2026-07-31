@@ -16,6 +16,12 @@ const securityHeaders = [
 
 const nextConfig = {
   output: "standalone",
+  images: {
+    remotePatterns: [
+      { protocol: "https", hostname: "*.supabase.co" },
+    ],
+  },
+  serverExternalPackages: ["sharp"],
   async headers() {
     return [
       {
