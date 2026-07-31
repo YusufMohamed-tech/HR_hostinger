@@ -267,9 +267,14 @@ export default function TasksPage() {
   if (loading) return <PageSkeleton />;
 
   const allTaskRecords = tasks as TaskRecord[];
+  const activeEmployees = employees.filter((emp) => {
+    const status = String((emp as Record<string, unknown>).status || "").toLowerCase();
+    const lifecycle = String((emp as Record<string, unknown>).lifecycle_status || "").toLowerCase();
+    return status === "active" && lifecycle === "active";
+  });
   const teamEmployees = isManager
-    ? employees.filter((employee) => isEmployeeManagedBy(employee as TaskRecord, currentUser?.employeeId))
-    : employees;
+    ? activeEmployees.filter((employee) => isEmployeeManagedBy(employee as TaskRecord, currentUser?.employeeId))
+    : activeEmployees;
   const teamEmployeeIds = new Set(teamEmployees.map((employee) => String((employee as TaskRecord).id || "")));
 
   const myTasks = allTaskRecords.filter((t) => {
