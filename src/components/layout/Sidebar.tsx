@@ -310,6 +310,23 @@ export function SidebarContent() {
       ];
     }
 
+    if (role === "Supervisor") {
+      return [
+        {
+          title: "المشرف",
+          links: [
+            { name: "الرئيسية", href: "/supervisor", icon: LayoutDashboard },
+            { name: "التقييمات", href: "/supervisor/evaluations", icon: ClipboardList },
+            { name: "الحضور", href: "/attendance", icon: Clock },
+            { name: "المهام", href: "/tasks", icon: CheckSquare },
+            { name: "الإجازات", href: "/leave", icon: CalendarDays },
+            { name: "الإشعارات", href: "/notifications", icon: Bell },
+          ],
+        },
+        { title: "النظام", links: system },
+      ];
+    }
+
     if (role === "Merchant") {
       return [
         {
