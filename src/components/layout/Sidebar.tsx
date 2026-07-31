@@ -128,6 +128,7 @@ export function SidebarContent() {
       { name: "الأقسام", href: "/departments", icon: Layers },
       { name: "ملفات الموظفين", href: "/personnel", icon: FileText },
       { name: "تقييمات المواقع", href: "/evaluations", icon: ClipboardList },
+      { name: "نماذج التقييم", href: "/settings/checklist-templates", icon: ClipboardList, indent: true },
       { name: "الرواتب", href: "/payroll", icon: Calculator },
       { name: "مجموعات الخصم", href: "/settings/deduction-rules", icon: ShieldAlert, indent: true },
       { name: "التوظيف", href: "/recruitment", icon: Briefcase },
