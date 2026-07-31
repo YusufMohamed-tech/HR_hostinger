@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/outbox",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/compliance",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/file-retention",
+      "schedule": "0 */6 * * *"
+    }
+  ]
+}
