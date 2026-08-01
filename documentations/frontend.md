@@ -113,7 +113,7 @@ The product-inventory frontend is implemented with shared client screens under `
 | `/sales/inventory/employee-custody?tab=report` | تقرير العهد |
 | `/sales/inventory/employee-custody?tab=history` | سجل التسليمات |
 
-`src/components/layout/Sidebar.tsx` renders the four links indented beneath `تسليم وعهد الموظفين` for Finance Manager users. The inventory links are separated from the `المالية والمحاسبة` section. The original route without a query remains the handover default. The change is navigation-only and does not change custody authorization or command behavior.
+`src/components/layout/Sidebar.tsx` renders the parent link plus three child links beneath `تسليم وعهد الموظفين` for Finance Manager users. The parent opens the handover view, so there is no separate `إصدار تسليم` child link. The inventory links are separated from the `المالية والمحاسبة` section. The original route without a query remains the handover default. The change is navigation-only and does not change custody authorization or command behavior.
 
 ### Workbook recognition UI contract
 

@@ -29,7 +29,7 @@ This document records the delivered implementation process and the code/database
 | `d208930` | Navigation label correction | `src/components/layout/Sidebar.tsx` | Renamed `تسليم المندوبين القديم` to `تسليم المندوبين`. |
 | `14cc654` | Nested employee-custody tabs | `Sidebar.tsx`; `ProductEmployeeCustodyScreens.tsx` | Added nested links for إصدار تسليم, التكليفات التشغيلية, تقرير العهد, and سجل التسليمات, synchronized through `?tab=` URLs. |
 | `1efe1d2` | Replace JSON mappings with Excel analysis | Migration v149; analysis routes; import-profile screen/service | Released the Excel sample upload, recognition review, Finance confirmation, immutable profile creation, idempotency, and database smoke coverage. |
-| Current delivery | Sidebar-only inventory navigation | `Sidebar.tsx`; `ProductEmployeeCustodyScreens.tsx` | Removes the duplicate page tab bar and groups inventory links under `المخزون`, separate from `المالية والمحاسبة`. |
+| Current delivery | Sidebar-only inventory navigation | `Sidebar.tsx`; `ProductEmployeeCustodyScreens.tsx` | Removes the duplicate page tab bar, uses the parent custody link for handover, and groups inventory links under `المخزون`, separate from `المالية والمحاسبة`. |
 
 ## End-to-end implementation process
 
@@ -62,7 +62,7 @@ The manager screen is implemented in `src/components/product-inventory/ProductEm
 - `report` — تقرير العهد
 - `history` — سجل التسليمات
 
-The sidebar links use `/sales/inventory/employee-custody?tab=<value>`. The page reads the same query parameter and renders only the selected view; the visible tab controls live exclusively in the sidebar.
+The parent sidebar link opens the handover view without a query. The three child links use `/sales/inventory/employee-custody?tab=<value>`, and the page renders only the selected view; the visible tab controls live exclusively in the sidebar.
 
 ### 5. Add evidence-backed returns
 

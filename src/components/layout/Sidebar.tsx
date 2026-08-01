@@ -184,7 +184,6 @@ export function SidebarContent() {
       ...(role === "Finance_Manager" ? [
         { name: "عمليات مخزون المنتجات", href: "/sales/inventory", icon: Package },
         { name: "تسليم وعهد الموظفين", href: "/sales/inventory/employee-custody", icon: PackageCheck, match: "employee-custody-parent" },
-        { name: "إصدار تسليم", href: "/sales/inventory/employee-custody?tab=handover", icon: PackagePlus, indent: true, match: "employee-custody-handover" },
         { name: "التكليفات التشغيلية", href: "/sales/inventory/employee-custody?tab=assignments", icon: ClipboardList, indent: true, match: "employee-custody-assignments" },
         { name: "تقرير العهد", href: "/sales/inventory/employee-custody?tab=report", icon: FileText, indent: true, match: "employee-custody-report" },
         { name: "سجل التسليمات", href: "/sales/inventory/employee-custody?tab=history", icon: ClipboardList, indent: true, match: "employee-custody-history" },

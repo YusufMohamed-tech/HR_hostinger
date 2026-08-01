@@ -326,7 +326,7 @@ Kit-code generation preserves leading zeros, supports quantity `1` only when fir
 
 ### Employee custody
 
-The Finance Manager custody screen contains four views selected only from the sidebar:
+The Finance Manager custody screen contains four views selected only from the sidebar. The parent `تسليم وعهد الموظفين` link opens the handover view, while the other three views are child links:
 
 | Query value | Arabic tab | Purpose |
 |---|---|---|
@@ -335,7 +335,7 @@ The Finance Manager custody screen contains four views selected only from the si
 | `report` | تقرير العهد | View custody totals by project, city, recipient, and unit state. |
 | `history` | سجل التسليمات | Review immutable handover records, serial counts, status, and dates. |
 
-The sidebar exposes these as nested Finance navigation links under `تسليم وعهد الموظفين`, inside the separate `المخزون` section. Links use `/sales/inventory/employee-custody?tab=<value>`, and the page uses the parameter to render the selected view without showing an additional tab bar.
+The sidebar exposes the custody parent and three nested Finance navigation links under `تسليم وعهد الموظفين`, inside the separate `المخزون` section. The parent route opens the handover view; the three child links use `/sales/inventory/employee-custody?tab=<value>`. The page uses the parameter to render the selected view without showing an additional tab bar.
 
 ### Returns and audit
 
