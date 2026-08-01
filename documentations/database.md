@@ -126,6 +126,54 @@ Migration v53 adds package-level commission rules and Finance settlement metadat
 - Merchants can see their own SIMs, requests, payments, commissions, and submitted sale records.
 - `sim_sales` is org-scoped and readable by managers, owning agents, and the selling merchant. The manager-only API exposes enriched trader sale activation records.
 
+## Serialized Product Inventory, Custody, and Returns
+
+The product-inventory schema is delivered through additive migrations v122–v149. It uses organization-scoped serialized units and append-only movements rather than mutable quantity-only counters.
+
+### Core tables and evidence
+
+| Table | Purpose |
+|---|---|
+| `inventory_warehouses` | Tenant/entity/branch-scoped warehouse master. |
+| `product_receipts`, `product_receipt_lines`, `product_receipt_candidates` | Receipt headers, priced groups, and staged serial candidates. |
+| `product_inventory_units` | Canonical serialized unit, current state, cost, planned price, condition, ownership, and custody snapshots. |
+| `product_inventory_movements` | Append-only serialized movement history. |
+| `product_inventory_commands` | Replay protection and command results for receiving operations. |
+| `product_inventory_import_rows`, `product_inventory_import_commands` | Workbook rows, source values, corrections, validation, and command replay. |
+| `product_inventory_photo_candidates`, `product_inventory_photo_commands` | Photo extraction candidates, corrections, confidence, and replay. |
+| `product_inventory_import_profiles` | Versioned supplier/workbook mappings and commercial defaults. |
+| `product_inventory_commercial_terms`, `product_inventory_commercial_term_commands` | Versioned cost, price, commission, currency, and tax terms. |
+| `product_inventory_operational_assignments` | Employee OGPM/OGSV1 project/city/location assignments and capabilities. |
+| `product_inventory_custody_commands` | Employee-custody command replay and results. |
+| `product_handovers`, `product_handover_lines`, `product_handover_signatures` | Handover headers, exact serial lines, and recipient acknowledgment evidence. |
+| `product_return_requests`, `product_return_request_lines`, `product_return_attachments` | Evidence-backed return requests and private attachments. |
+| `product_return_approvals`, `product_return_receipts`, `product_return_receipt_lines` | Approval decisions, physical receipt, serial scans, and dispositions. |
+| `product_inventory_import_analyses` | v148 workbook sheet/header recognition, confidence, warnings, layout, and source evidence. |
+
+### Key command functions
+
+- `execute_product_receipt_command` — atomically save/confirm/cancel serialized receipts.
+- `execute_product_workbook_preview` and `execute_product_workbook_commit` — validate workbook evidence and build receipt groups.
+- `execute_product_photo_preview` and `execute_product_photo_commit` — persist photo evidence and build receipt groups.
+- `execute_product_employee_custody_command` — save operational assignments and issue/accept employee handovers.
+- `execute_product_return_command` — submit, review, cancel, and physically receive evidence-backed returns.
+- `get_product_inventory_employee_custody_report` — aggregate custody state by assignment/project/city.
+- `save_product_inventory_import_analysis` — persist v148 workbook recognition evidence.
+- `confirm_product_inventory_import_analysis` — v149 Finance confirmation/profile activation function.
+
+### Security and state invariants
+
+- RLS and service-side checks enforce organization scope and role capabilities.
+- Service-only functions reject `anon` and `authenticated` direct execution where mutation authority is required.
+- Private source files are referenced through managed-file metadata and short-lived authorized URLs.
+- Serial normalization prevents formatting variants from creating duplicate confirmed units.
+- Open return requests reserve units against sale and repeated handover.
+- Command IDs, payload hashes, optimistic versions, and deterministic unit locks protect retries and concurrent operations.
+
+### Migration status
+
+v122–v149 are part of the released product-inventory history. Migration v149 adds confirmation metadata, tenant-safe profile linkage, confirmation idempotency, profile versioning, Finance authorization, and evidence retention.
+
 ## Tenant Platform Tables
 
 Migration v42 adds these tenant platform tables:

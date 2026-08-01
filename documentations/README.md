@@ -33,6 +33,7 @@
 | [Configuration](./configuration.md) | Environment variables, Next.js config, Tailwind setup |
 | [Dependencies](./dependencies.md) | All packages and external integrations |
 | [Development Guide](./development.md) | Development workflows, conventions, scripts |
+| [Implementation Change History](./IMPLEMENTATION_CHANGE_HISTORY.md) | Complete inventory/custody/returns/Excel-recognition delivery history and release process |
 | [Known Issues](./known-issues.md) | Bugs, limitations, and assumptions |
 | [Multi-Tenancy Audit](./audit.md) | Full multi-tenancy readiness audit and phased roadmap |
 | [Audit Remediation](./audit-remediation.md) | Remediation progress, completed fixes, and rollout checks |
@@ -75,3 +76,5 @@ The repository also includes the on-ground SIM distribution workflow: manager st
 ## Current State
 
 The project is a **functional Phase 1+ prototype** with multiple active modules (HR core, Sales, Recruitment, Accounting, Chat, LMS, promoter kiosk, and on-ground SIM distribution). The frontend is well-structured with consistent patterns and the database schema is comprehensive with Row Level Security properly configured. See [Known Issues](./known-issues.md) for production-readiness gaps.
+
+For the latest serialized product-inventory implementation timeline, including employee custody, evidence-backed returns, automatic Excel recognition, navigation updates, verification, and pending work, see [Implementation Change History](./IMPLEMENTATION_CHANGE_HISTORY.md).

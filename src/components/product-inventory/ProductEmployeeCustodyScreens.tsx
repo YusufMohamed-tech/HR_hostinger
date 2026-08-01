@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import SignatureCanvas from "react-signature-canvas";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   acceptProductEmployeeHandover,
@@ -68,7 +68,6 @@ const employeeCustodyTabs = ["handover", "assignments", "report", "history"] as 
 type EmployeeCustodyTab = (typeof employeeCustodyTabs)[number];
 
 export function ProductEmployeeCustodyManagerScreen() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [data, setData] = useState<ProductEmployeeCustodyManagerData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -175,11 +174,6 @@ export function ProductEmployeeCustodyManagerScreen() {
     ? requestedTab as EmployeeCustodyTab
     : "handover";
 
-  function selectTab(value: string | null) {
-    if (!value || !employeeCustodyTabs.includes(value as EmployeeCustodyTab)) return;
-    router.replace(`/sales/inventory/employee-custody?tab=${value}`, { scroll: false });
-  }
-
   return (
     <div dir="rtl" className="space-y-6 p-4 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -194,14 +188,7 @@ export function ProductEmployeeCustodyManagerScreen() {
       </div>
       {message && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">{message}</div>}
 
-      <Tabs value={activeTab} onValueChange={selectTab} className="space-y-4">
-        <TabsList className="h-auto flex-wrap">
-          <TabsTrigger value="handover">إصدار تسليم</TabsTrigger>
-          <TabsTrigger value="assignments">التكليفات التشغيلية</TabsTrigger>
-          <TabsTrigger value="report">تقرير العهد</TabsTrigger>
-          <TabsTrigger value="history">سجل التسليمات</TabsTrigger>
-        </TabsList>
-
+      <Tabs value={activeTab} className="space-y-4">
         <TabsContent value="handover" className="space-y-4">
           <Card>
             <CardHeader><CardTitle className="flex items-center gap-2"><Send className="h-5 w-5" />بيانات التسليم</CardTitle></CardHeader>

@@ -180,8 +180,7 @@ export function SidebarContent() {
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 
-    const accountingOps: NavLink[] = [
-      { name: "لوحة المحاسبة", href: "/accounting", icon: BarChart3 },
+    const inventoryOps: NavLink[] = [
       ...(role === "Finance_Manager" ? [
         { name: "عمليات مخزون المنتجات", href: "/sales/inventory", icon: Package },
         { name: "تسليم وعهد الموظفين", href: "/sales/inventory/employee-custody", icon: PackageCheck, match: "employee-custody-parent" },
@@ -196,6 +195,13 @@ export function SidebarContent() {
         { name: "إصدارات قالب الاستيراد", href: "/sales/inventory/import-profiles", icon: FileSpreadsheet, indent: true },
         { name: "استلام يدوي جديد", href: "/sales/inventory/receipts/new", icon: PackagePlus, indent: true },
       ] : []),
+      ...(canSeeFullAccounting ? [
+        { name: "مخزون المنتجات", href: "/accounting/inventory", icon: Package },
+      ] : []),
+    ];
+
+    const accountingOps: NavLink[] = [
+      { name: "لوحة المحاسبة", href: "/accounting", icon: BarChart3 },
       { name: "دليل الحسابات", href: "/accounting/chart-of-accounts", icon: BookOpen },
       { name: "القيود اليومية", href: "/accounting/journal-entries", icon: Landmark },
       { name: "المصروفات", href: "/accounting/expenses", icon: Receipt },
@@ -204,7 +210,6 @@ export function SidebarContent() {
       { name: "الفواتير", href: "/accounting/invoices", icon: FileText },
       { name: "المدفوعات", href: "/accounting/payments", icon: WalletCards },
       { name: "عمولات المبيعات", href: "/accounting/commissions", icon: Receipt },
-      { name: "مخزون المنتجات", href: "/accounting/inventory", icon: Package },
       { name: "مراكز التكلفة", href: "/accounting/cost-centers", icon: Layers },
       { name: "التقارير", href: "/accounting/reports", icon: ClipboardList },
       { name: "فريق المالية", href: "/accounting/team", icon: Users },
@@ -390,6 +395,7 @@ export function SidebarContent() {
                 : [],
       },
       { title: "المبيعات", links: isAdmin ? salesManagementOps : isHRAdmin ? hrSalesManagementOps : [] },
+      { title: "المخزون", links: inventoryOps },
       { title: "المالية والمحاسبة", links: canSeeFullAccounting ? accountingOps : canSeeFinanceTeam ? accountingTeamOps : [] },
       { title: "النظام", links: system },
     ];

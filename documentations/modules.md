@@ -301,6 +301,64 @@ Kit-code generation preserves leading zeros, supports quantity `1` only when fir
 
 ---
 
+## 10b. Serialized Product Inventory, Employee Custody, and Returns
+
+**Manager paths:** `/sales/inventory`, `/sales/inventory/receipts/new`, `/sales/inventory/receipts/import`, `/sales/inventory/receipts/photo`, `/sales/inventory/import-profiles`, `/sales/inventory/employee-custody`, `/sales/inventory/returns`, `/sales/inventory/assignments`
+
+**Finance path:** `/accounting/inventory`
+
+**Access:** Finance_Manager, Accountant, Finance_Viewer, Admin, Sales_Manager, Onground_Agent_Manager, Inventory_Receiver, Project Manager/OGPM, Supervisor/OGSV1, and scoped recipients according to the route and command capability.
+
+**Services and screens:** `src/lib/services/product-inventory.ts`, `src/lib/server/product-inventory-*.ts`, `src/components/product-inventory/`, `src/lib/product-inventory/workbook*.ts`
+
+### Receiving and valuation
+
+- Manual, Excel/CSV, and photo/OCR receiving all produce the same serialized receipt, unit, movement, valuation, and evidence model.
+- Each physical unit has a normalized serial and immutable cost, planned-sale-price, currency, condition, ownership, and source snapshots.
+- Finance sees confirmed stock, cost, planned value, margin, accounting status, and inventory movements without re-entering receipt data.
+- Receipts require explicit confirmation; invalid, duplicate, unmatched, or warning-only rows cannot be silently discarded.
+
+### Commercial terms and import profiles
+
+- Versioned supplier/workbook profiles store header mappings, required fields, defaults, layout fingerprints, and approval metadata.
+- Commercial terms support cost, planned sale price, minimum/maximum sale price, commission type/value/base, currency, and tax settings.
+- Terms are snapshotted at receipt, unit, handover, and sale boundaries so later catalog changes do not rewrite history.
+
+### Employee custody
+
+The Finance Manager custody screen contains four views selected only from the sidebar:
+
+| Query value | Arabic tab | Purpose |
+|---|---|---|
+| `handover` | إصدار تسليم | Issue exact serialized units to an eligible employee assignment. |
+| `assignments` | التكليفات التشغيلية | Manage OGPM/OGSV1 employee, project, location, city, and capability assignments. |
+| `report` | تقرير العهد | View custody totals by project, city, recipient, and unit state. |
+| `history` | سجل التسليمات | Review immutable handover records, serial counts, status, and dates. |
+
+The sidebar exposes these as nested Finance navigation links under `تسليم وعهد الموظفين`, inside the separate `المخزون` section. Links use `/sales/inventory/employee-custody?tab=<value>`, and the page uses the parameter to render the selected view without showing an additional tab bar.
+
+### Returns and audit
+
+- Recipients submit exact serialized return requests with notes and private evidence photos.
+- Finance/authorized project managers approve, reject, cancel, or physically receive returns.
+- Physical receipt verifies serials and classifies units as sellable, quarantine, or damaged.
+- Return requests reserve units against sale and repeated handover until the workflow resolves.
+- Movement records, business events, outbox events, approval history, and attachment metadata remain durable.
+
+### Automatic workbook recognition
+
+`src/lib/product-inventory/workbook-recognition.ts` detects sheets, header rows, Arabic/English field aliases, catalog matches, workbook shape, layout fingerprints, warnings, and confidence. It stores the source file privately and preserves the recognition result for Finance review. Migration v148 provides recognition, and migration v149 adds the released Finance confirmation/profile-creation flow.
+
+### Business rules
+
+- All inventory writes are tenant-scoped service commands with role, state, version, and replay validation.
+- Browser clients cannot directly execute service-only database mutation functions.
+- Serialized units cannot be simultaneously in warehouse stock and active custody.
+- Command IDs and payload hashes make identical retries safe and changed replays fail.
+- Inventory custody and returns do not silently create general-ledger entries; accounting posting remains governed by the accounting workflow.
+
+---
+
 ## 11. Accounting / Finance Module
 
 **Path:** `/accounting/*`  

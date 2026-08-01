@@ -81,6 +81,46 @@ The trader sell flow is package-first: the trader selects an active package, sel
 
 ---
 
+## Serialized Product Inventory Frontend
+
+The product-inventory frontend is implemented with shared client screens under `src/components/product-inventory/` and protected App Router pages under `src/app/(app)/sales/inventory/`.
+
+### Receiving routes
+
+- `/sales/inventory` — serialized stock and receipt dashboard.
+- `/sales/inventory/receipts/new` — manual grouped receipt entry.
+- `/sales/inventory/receipts/import` — XLSX/CSV upload, preview, correction, and commit.
+- `/sales/inventory/receipts/photo` — local OCR/barcode extraction, correction, grouping, and commit.
+- `/sales/inventory/receipts/[id]` — receipt review, source evidence, pricing, confirmation, and cancellation.
+- `/sales/inventory/import-profiles` — Finance-managed reusable import profiles.
+
+### Custody and returns routes
+
+- `/sales/inventory/employee-custody` — Finance employee-custody manager screen.
+- `/sales/inventory/custody` — recipient custody view and acknowledgment workflow.
+- `/sales/inventory/returns` — evidence-backed return request/review/physical-receipt workflow.
+- `/sales/inventory/assignments` — legacy field-agent handover and commerce workflow.
+- `/accounting/inventory` — Finance operational inventory and valuation view.
+
+### Sidebar-only employee-custody navigation
+
+`ProductEmployeeCustodyManagerScreen` uses the URL query parameter `tab` to render one custody view at a time. The page no longer renders a visible tab bar; users select these views only from the nested sidebar links under the `المخزون` section:
+
+| URL | View |
+|---|---|
+| `/sales/inventory/employee-custody?tab=handover` | إصدار تسليم |
+| `/sales/inventory/employee-custody?tab=assignments` | التكليفات التشغيلية |
+| `/sales/inventory/employee-custody?tab=report` | تقرير العهد |
+| `/sales/inventory/employee-custody?tab=history` | سجل التسليمات |
+
+`src/components/layout/Sidebar.tsx` renders the four links indented beneath `تسليم وعهد الموظفين` for Finance Manager users. The inventory links are separated from the `المالية والمحاسبة` section. The original route without a query remains the handover default. The change is navigation-only and does not change custody authorization or command behavior.
+
+### Workbook recognition UI contract
+
+The released recognition engine returns a human-readable structure containing selected sheet, header row, workbook shape, layout fingerprint, field proposals, confidence/status, product evidence, and warnings. The import-profile screen uploads a representative sample, lets Finance review uncertain mappings, and confirms an immutable profile without exposing JSON mapping input.
+
+---
+
 ## Technology Stack
 
 | Layer | Technology |

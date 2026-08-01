@@ -358,6 +358,56 @@ Direct field-agent sale uses `POST /api/sales/agents/sims/sell`. It loads the se
 
 ---
 
+## Serialized Product Inventory APIs
+
+All product-inventory mutation endpoints require authenticated organization access and route business writes through service-side command functions. The exact role capability is checked per operation; Finance Manager access is required for profile confirmation and manager custody operations.
+
+### Receiving and evidence
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/sales/inventory/setup` | Load suppliers, warehouses, products, and receiving settings. |
+| `GET/POST /api/sales/inventory/receipts` | List receipts or save a draft through the atomic receipt command. |
+| `GET /api/sales/inventory/receipts/[id]` | Load tenant-scoped receipt details. |
+| `POST /api/sales/inventory/receipts/[receiptId]/confirm` | Confirm a complete receipt and create serialized stock. |
+| `POST /api/sales/inventory/receipts/[receiptId]/cancel` | Cancel an unconfirmed receipt with a reason. |
+| `POST /api/sales/inventory/receipts/[receiptId]/excel-preview` | Securely inspect and preview an XLSX/CSV workbook. |
+| `POST /api/sales/inventory/receipts/[receiptId]/excel-commit` | Validate all workbook rows and build receipt groups. |
+| `POST /api/sales/inventory/receipts/[receiptId]/photo-preview` | Persist private photo evidence and extracted candidates. |
+| `POST /api/sales/inventory/receipts/[receiptId]/photo-commit` | Validate all photo candidates and build receipt groups. |
+| `GET /api/sales/inventory/receipts/[receiptId]/sources/[sourceId]` | Return an authorized short-lived source URL. |
+| `GET /api/sales/inventory/stock` | Return serialized stock and valuation totals. |
+| `GET /api/accounting/inventory` | Return Finance inventory, valuation, custody, sales, and accounting visibility. |
+
+### Commercial terms and workbook profiles
+
+| Endpoint | Purpose |
+|---|---|
+| `GET/POST /api/sales/inventory/import-profiles` | List or create controlled import profiles. |
+| `PATCH /api/sales/inventory/import-profiles/[profileId]/activate` | Activate a reviewed profile version. |
+| `GET/POST /api/sales/inventory/import-profiles/[profileId]/commercial-terms` | Read or set profile/product commercial terms. |
+| `POST /api/sales/inventory/import-profiles/analyze` | Securely upload and recognize an XLSX/CSV profile sample. |
+| `POST /api/sales/inventory/import-profiles/analyses/[analysisId]/confirm` | Finance confirms mapping and creates an immutable active profile. |
+
+The analysis endpoints reject unsupported legacy `.xls`/macro `.xlsm` files, enforce upload/row/column/sheet limits, inspect file signatures, store private evidence, and return recognition proposals. The confirmation endpoint validates required serial/product/cost/sale-price fields, profile defaults, Finance authority, tenant-safe analysis linkage, and idempotency.
+
+### Employee custody and returns
+
+| Endpoint | Purpose |
+|---|---|
+| `GET/POST /api/sales/inventory/employee-handovers` | Load Finance custody workspace or issue an employee handover. |
+| `POST /api/sales/inventory/custody/handovers/[handoverId]/accept` | Recipient accepts a current handover with signature evidence. |
+| `GET /api/sales/inventory/custody` | Load the authenticated recipient's custody dashboard. |
+| `GET/POST /api/sales/inventory/operational-assignments` | List or save project/city-scoped operational assignments. |
+| `GET/POST /api/sales/inventory/return-requests` | List or submit evidence-backed return requests. |
+| `GET /api/sales/inventory/return-requests/[requestId]` | Load return details and authorized evidence. |
+| `POST /api/sales/inventory/return-requests/[requestId]/review` | Approve, reject, or hold a return. |
+| `POST /api/sales/inventory/return-requests/[requestId]/receive` | Physically receive and classify returned serials. |
+| `POST /api/sales/inventory/return-requests/[requestId]/cancel` | Cancel a return when the requester is allowed to do so. |
+| `GET /api/sales/inventory/return-requests/[requestId]/attachments/[attachmentId]` | Return authorized private return evidence. |
+
+---
+
 ## Accounting Module
 
 ### `GET/POST/PUT/DELETE /api/accounting/[...segments]`
