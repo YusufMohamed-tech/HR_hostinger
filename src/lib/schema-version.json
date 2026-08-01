@@ -1,5 +1,5 @@
 {
-  "id": "schema_v139_supervisor_tables",
-  "file": "db/schema_v139_supervisor_tables.sql",
-  "checksumSha256": "bc4a0698fd27d461dd1aa10f04a68ad26571aadfd52fd1bd98ab39d874e09ca8"
+  "id": "schema_v142_finance_managed_product_inventory",
+  "file": "db/schema_v142_finance_managed_product_inventory.sql",
+  "checksumSha256": "3c6fdd42f574dcbe21f94821d2a6bf45ee337b53242b26e0d57f697789f453ae"
 }

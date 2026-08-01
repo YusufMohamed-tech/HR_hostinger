@@ -8,7 +8,6 @@ const allowedRoles = new Set([
   "hr_admin",
   "hr_recruitment",
   "onground_agent_manager",
-  "inventory_receiver",
   "promoter",
   "finance_manager",
   "accountant",

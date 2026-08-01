@@ -266,20 +266,19 @@ test("photo parser applies approved aliases and flags unresolved or duplicate se
   assert.match(unresolved[0]?.validation_errors.join(" ") || "", /Serial number/u);
 });
 
-test("inventory receiver can receive and hand over stock without finance or agent-commerce access", () => {
+test("finance manager owns receiving and legacy inventory receiver is retired", () => {
   assert.equal(roleFromOrgRole("inventory_receiver"), "Inventory_Receiver");
-  assert.equal(getDefaultPathForRole("Inventory_Receiver"), "/sales/inventory");
-  assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/receipts/new"), true);
-  assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/receipts/import"), true);
-  assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/receipts/photo"), true);
-  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/stock"), true);
-  assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/assignments"), true);
-  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/handovers"), true);
-  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/movements"), true);
+  assert.equal(getDefaultPathForRole("Inventory_Receiver"), "/notifications");
+  assert.equal(canAccessPath("Inventory_Receiver", "/sales/inventory/receipts/new"), false);
+  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/stock"), false);
+  assert.equal(canAccessPath("Inventory_Receiver", "/notifications"), true);
   assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/agent-collections"), false);
-  assert.equal(canAccessPath("Inventory_Receiver", "/api/sales/inventory/price-overrides"), false);
   assert.equal(canAccessPath("Inventory_Receiver", "/sales/products"), false);
   assert.equal(canAccessPath("Inventory_Receiver", "/accounting/inventory"), false);
+  assert.equal(canAccessPath("Finance_Manager", "/sales/inventory/receipts/new"), true);
+  assert.equal(canAccessPath("Finance_Manager", "/sales/inventory/assignments"), true);
+  assert.equal(canAccessPath("Finance_Manager", "/api/sales/inventory/handovers"), true);
+  assert.equal(canAccessPath("Finance_Manager", "/api/sales/inventory/price-overrides"), true);
   assert.equal(canAccessPath("Accountant", "/accounting/inventory"), true);
   assert.equal(canAccessPath("Accountant", "/sales/inventory"), false);
 });

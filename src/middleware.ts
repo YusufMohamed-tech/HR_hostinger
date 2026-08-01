@@ -33,21 +33,24 @@ function contentSecurityPolicy(nonce: string) {
   ].join("; ");
 }
 
-function requiredFeatureForPath(pathname: string) {
+function requiredFeaturesForPath(pathname: string) {
   const normalized = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
-  if (normalized.startsWith("/promoter")) return "sales";
-  if (normalized.startsWith("/agent")) return "sales";
-  if (normalized.startsWith("/merchant")) return "sales";
-  if (normalized.startsWith("/sales") || normalized.startsWith("/api/sales")) return "sales";
-  if (normalized.startsWith("/recruitment") || normalized.startsWith("/api/recruitment")) return "recruitment";
-  if (normalized.startsWith("/accounting") || normalized.startsWith("/api/accounting")) return "accounting";
-  if (normalized.startsWith("/chat") || normalized.startsWith("/api/chat")) return "chat";
-  if (normalized.startsWith("/assets") || normalized.startsWith("/api/assets")) return "assets";
-  if (normalized.startsWith("/payroll")) return "payroll";
-  if (normalized.startsWith("/personnel")) return "personnel";
-  if (normalized.startsWith("/lms") || normalized.startsWith("/api/lms")) return "lms";
-  if (normalized.startsWith("/learn") || normalized.startsWith("/api/learn")) return "lms";
-  return null;
+  if (normalized.startsWith("/sales/inventory") || normalized.startsWith("/api/sales/inventory")) {
+    return ["sales", "accounting"];
+  }
+  if (normalized.startsWith("/promoter")) return ["sales"];
+  if (normalized.startsWith("/agent")) return ["sales"];
+  if (normalized.startsWith("/merchant")) return ["sales"];
+  if (normalized.startsWith("/sales") || normalized.startsWith("/api/sales")) return ["sales"];
+  if (normalized.startsWith("/recruitment") || normalized.startsWith("/api/recruitment")) return ["recruitment"];
+  if (normalized.startsWith("/accounting") || normalized.startsWith("/api/accounting")) return ["accounting"];
+  if (normalized.startsWith("/chat") || normalized.startsWith("/api/chat")) return ["chat"];
+  if (normalized.startsWith("/assets") || normalized.startsWith("/api/assets")) return ["assets"];
+  if (normalized.startsWith("/payroll")) return ["payroll"];
+  if (normalized.startsWith("/personnel")) return ["personnel"];
+  if (normalized.startsWith("/lms") || normalized.startsWith("/api/lms")) return ["lms"];
+  if (normalized.startsWith("/learn") || normalized.startsWith("/api/learn")) return ["lms"];
+  return [];
 }
 
 function featureEnabled(featureRecord: Record<string, unknown> | null, feature: string) {
@@ -303,9 +306,11 @@ export async function middleware(request: NextRequest) {
           : NextResponse.redirect(new URL("/suspended", request.url)));
       }
 
-      const requiredFeature = requiredFeatureForPath(pathname);
-      if (requiredFeature) {
-        if (!featureEnabled(organizationFeatures, requiredFeature) || !planAllowsFeature(plan, requiredFeature)) {
+      const requiredFeatures = requiredFeaturesForPath(pathname);
+      if (requiredFeatures.length > 0) {
+        if (!requiredFeatures.some(
+          (feature) => featureEnabled(organizationFeatures, feature) && planAllowsFeature(plan, feature)
+        )) {
           if (isApi) {
             return secure(NextResponse.json({ message: "This module is not enabled for the organization plan." }, { status: 403 }));
           }

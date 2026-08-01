@@ -37,7 +37,6 @@
     "seed:dr-amr": "node scripts/seed-dr-amr-admin.mjs",
     "seed:demo": "node scripts/seed-demo-users.mjs",
     "seed:production-users": "node scripts/seed-production-users.mjs",
-    "seed:inventory-receiver": "node scripts/seed-inventory-receiver.mjs",
     "seed:field-agents": "node scripts/seed-field-agents.mjs",
     "seed:saudi-employees": "node scripts/seed-saudi-employees.mjs",
     "seed:sales-mock": "node scripts/seed-sales-mock.mjs",

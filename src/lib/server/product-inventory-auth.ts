@@ -3,9 +3,7 @@ import { requireTenantContext } from "@/lib/server/tenant-context";
 
 export const productInventoryReceivingRoles = [
   "admin",
-  "sales_manager",
-  "onground_agent_manager",
-  "inventory_receiver",
+  "finance_manager",
 ] as const;
 
 export const productInventoryFinanceRoles = [
@@ -16,13 +14,11 @@ export const productInventoryFinanceRoles = [
 
 export const productInventoryManagerRoles = [
   "admin",
-  "sales_manager",
-  "onground_agent_manager",
+  "finance_manager",
 ] as const;
 
 export const productInventoryHandoverRoles = [
   ...productInventoryManagerRoles,
-  "inventory_receiver",
 ] as const;
 
 export const productInventoryCommerceRoles = [
@@ -32,7 +28,7 @@ export const productInventoryCommerceRoles = [
 
 export function requireProductInventoryAccess(request?: NextRequest) {
   return requireTenantContext(
-    { feature: "sales", roles: productInventoryReceivingRoles, requireEmployee: true },
+    { anyFeatures: ["sales", "accounting"], roles: productInventoryReceivingRoles },
     request
   );
 }
@@ -46,21 +42,21 @@ export function requireProductInventoryFinanceAccess(request?: NextRequest) {
 
 export function requireProductInventoryManagerAccess(request?: NextRequest) {
   return requireTenantContext(
-    { feature: "sales", roles: productInventoryManagerRoles, requireEmployee: true },
+    { anyFeatures: ["sales", "accounting"], roles: productInventoryManagerRoles },
     request
   );
 }
 
 export function requireProductInventoryHandoverAccess(request?: NextRequest) {
   return requireTenantContext(
-    { feature: "sales", roles: productInventoryHandoverRoles, requireEmployee: true },
+    { anyFeatures: ["sales", "accounting"], roles: productInventoryHandoverRoles },
     request
   );
 }
 
 export function requireProductInventoryCommerceAccess(request?: NextRequest) {
   return requireTenantContext(
-    { feature: "sales", roles: productInventoryCommerceRoles, requireEmployee: true },
+    { anyFeatures: ["sales", "accounting"], roles: productInventoryCommerceRoles },
     request
   );
 }

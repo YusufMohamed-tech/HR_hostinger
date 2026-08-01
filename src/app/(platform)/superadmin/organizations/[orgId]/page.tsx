@@ -77,7 +77,6 @@ const managedRoleOptions: Array<{ value: ManagedOrgRole; label: string }> = [
   { value: "hr_admin", label: "مدير الموارد البشرية" },
   { value: "hr_recruitment", label: "مسؤول التوظيف" },
   { value: "onground_agent_manager", label: "مدير المندوبين الميدانيين" },
-  { value: "inventory_receiver", label: "مستلم مخزون المنتجات" },
   { value: "promoter", label: "مروج مبيعات" },
   { value: "finance_manager", label: "مدير المالية" },
   { value: "accountant", label: "محاسب" },

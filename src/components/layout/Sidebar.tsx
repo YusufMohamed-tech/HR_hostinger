@@ -178,6 +178,13 @@ export function SidebarContent() {
 
     const accountingOps: NavLink[] = [
       { name: "لوحة المحاسبة", href: "/accounting", icon: BarChart3 },
+      ...(role === "Finance_Manager" ? [
+        { name: "عمليات مخزون المنتجات", href: "/sales/inventory", icon: Package },
+        { name: "تسليم وعهد المنتجات", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
+        { name: "استلام بالصور", href: "/sales/inventory/receipts/photo", icon: Camera, indent: true },
+        { name: "استيراد Excel / CSV", href: "/sales/inventory/receipts/import", icon: FileSpreadsheet, indent: true },
+        { name: "استلام يدوي جديد", href: "/sales/inventory/receipts/new", icon: PackagePlus, indent: true },
+      ] : []),
       { name: "دليل الحسابات", href: "/accounting/chart-of-accounts", icon: BookOpen },
       { name: "القيود اليومية", href: "/accounting/journal-entries", icon: Landmark },
       { name: "المصروفات", href: "/accounting/expenses", icon: Receipt },
@@ -256,13 +263,8 @@ export function SidebarContent() {
     if (isInventoryReceiver) {
       return [
         {
-          title: "استلام المنتجات",
+          title: "الدور المتقاعد",
           links: [
-            { name: "مخزون المنتجات", href: "/sales/inventory", icon: Package },
-            { name: "تسليم المنتجات", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
-            { name: "استلام بالصور", href: "/sales/inventory/receipts/photo", icon: Camera },
-            { name: "استيراد Excel / CSV", href: "/sales/inventory/receipts/import", icon: FileSpreadsheet },
-            { name: "استلام يدوي جديد", href: "/sales/inventory/receipts/new", icon: PackagePlus },
             { name: "الإشعارات", href: "/notifications", icon: Bell },
           ],
         },

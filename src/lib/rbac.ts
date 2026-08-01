@@ -67,7 +67,7 @@ export function getDefaultPathForRole(role: Role): string {
   if (role === "Sales") return "/sales/dashboard";
   if (role === "Sales_Manager") return "/sales/dashboard";
   if (role === "Onground_Agent_Manager") return "/sales/agents";
-  if (role === "Inventory_Receiver") return "/sales/inventory";
+  if (role === "Inventory_Receiver") return "/notifications";
   if (role === "Promoter") return "/promoter";
   if (role === "Field_Agent") return "/agent";
   if (role === "Merchant") return "/merchant";
@@ -124,15 +124,7 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (role === "Inventory_Receiver") {
-    const commercePath =
-      normalizedPath.startsWith("/api/sales/inventory/returns") ||
-      normalizedPath.startsWith("/api/sales/inventory/agent-sales") ||
-      normalizedPath.startsWith("/api/sales/inventory/agent-collections") ||
-      normalizedPath.startsWith("/api/sales/inventory/price-overrides") ||
-      normalizedPath.startsWith("/api/sales/inventory/me");
     return (
-      (!commercePath && normalizedPath.startsWith("/sales/inventory")) ||
-      (!commercePath && normalizedPath.startsWith("/api/sales/inventory")) ||
       normalizedPath.startsWith("/notifications") ||
       normalizedPath.startsWith("/settings")
     );
@@ -220,6 +212,15 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   }
 
   if (["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role)) {
+    if (
+      role === "Finance_Manager"
+      && (
+        normalizedPath.startsWith("/sales/inventory")
+        || normalizedPath.startsWith("/api/sales/inventory")
+      )
+    ) {
+      return true;
+    }
     if (normalizedPath.startsWith("/accounting/settings")) {
       return role === "Finance_Manager";
     }

@@ -165,6 +165,8 @@
     { "id": "schema_v137_chatbot", "file": "db/schema_v137_chatbot.sql" },
     { "id": "schema_v138_supervisor_module", "file": "db/schema_v138_supervisor_module.sql" },
     { "id": "schema_v139_supervisor_tables", "file": "db/schema_v139_supervisor_tables.sql" },
-    { "id": "schema_v140_fix_supervisor_identity_link", "file": "db/schema_v140_fix_supervisor_identity_link.sql" }
+    { "id": "schema_v140_fix_supervisor_identity_link", "file": "db/schema_v140_fix_supervisor_identity_link.sql" },
+    { "id": "schema_v141_chat_realtime", "file": "db/schema_v141_chat_realtime.sql" },
+    { "id": "schema_v142_finance_managed_product_inventory", "file": "db/schema_v142_finance_managed_product_inventory.sql" }
   ]
 }

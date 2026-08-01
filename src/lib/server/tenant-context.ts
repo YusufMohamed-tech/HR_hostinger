@@ -35,6 +35,7 @@ type TenantContextOptions = {
   capability?: TenantCapability;
   feature?: string;
   features?: readonly string[];
+  anyFeatures?: readonly string[];
   requireEmployee?: boolean;
 };
 
@@ -273,6 +274,16 @@ export async function requireTenantContext(
   if (requiredFeatures.some(
     (feature) => !moduleIsEnabled(features, feature) || !planAllowsModule(plan.features, feature)
   )) {
+    return { error: jsonError("This module is not enabled for the organization plan.", 403, requestId) };
+  }
+
+  const alternativeFeatures = [...new Set(options.anyFeatures ?? [])];
+  if (
+    alternativeFeatures.length > 0
+    && !alternativeFeatures.some(
+      (feature) => moduleIsEnabled(features, feature) && planAllowsModule(plan.features, feature)
+    )
+  ) {
     return { error: jsonError("This module is not enabled for the organization plan.", 403, requestId) };
   }
 

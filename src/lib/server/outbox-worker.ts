@@ -503,7 +503,7 @@ async function financeManagerUserIds(orgId: string) {
 async function productInventoryManagerUserIds(orgId: string) {
   const admin = createAdminClient();
   const { data, error } = await admin.from("org_members").select("user_id")
-    .eq("org_id", orgId).in("role", ["admin", "sales_manager", "onground_agent_manager"]);
+    .eq("org_id", orgId).in("role", ["admin", "finance_manager"]);
   if (error) throw new Error(`Product inventory manager recipient lookup failed: ${error.message}`);
   return (data || []).map((row) => row.user_id);
 }

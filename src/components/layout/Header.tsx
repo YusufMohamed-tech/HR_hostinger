@@ -50,6 +50,12 @@ const HR_ADMIN_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter(
 const FINANCE_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
   item.href.startsWith("/accounting") || item.href === "/notifications" || item.href === "/settings"
 );
+const FINANCE_MANAGER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
+  item.href.startsWith("/accounting")
+  || item.href === "/sales/inventory"
+  || item.href === "/notifications"
+  || item.href === "/settings"
+);
 const PROMOTER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
   ["/promoter", "/sales/leads", "/attendance", "/notifications", "/settings"].includes(item.href)
 );
@@ -57,7 +63,7 @@ const ONGROUND_AGENT_MANAGER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
   ["/sales/agents", "/sales/stock", "/sales/inventory", "/notifications", "/settings"].includes(item.href)
 );
 const INVENTORY_RECEIVER_SEARCH_ITEMS = ALL_SEARCH_ITEMS.filter((item) =>
-  ["/sales/inventory", "/notifications", "/settings"].includes(item.href)
+  ["/notifications", "/settings"].includes(item.href)
 );
 
 const ROLE_LABELS: Record<string, string> = {
@@ -91,7 +97,8 @@ export function Header() {
     if (currentUser?.role === "HR_Admin") return HR_ADMIN_SEARCH_ITEMS;
     if (currentUser?.role === "Onground_Agent_Manager") return ONGROUND_AGENT_MANAGER_SEARCH_ITEMS;
     if (currentUser?.role === "Inventory_Receiver") return INVENTORY_RECEIVER_SEARCH_ITEMS;
-    if (["Finance_Manager", "Accountant", "Finance_Viewer"].includes(currentUser?.role || "")) return FINANCE_SEARCH_ITEMS;
+    if (currentUser?.role === "Finance_Manager") return FINANCE_MANAGER_SEARCH_ITEMS;
+    if (["Accountant", "Finance_Viewer"].includes(currentUser?.role || "")) return FINANCE_SEARCH_ITEMS;
     if (currentUser?.role === "Promoter") return PROMOTER_SEARCH_ITEMS;
     if (currentUser?.role === "Employee") {
       return ALL_SEARCH_ITEMS.map((item) =>
