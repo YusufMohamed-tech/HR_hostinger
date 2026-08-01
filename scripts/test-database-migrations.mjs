@@ -6322,6 +6322,109 @@ const launchAssertions = `
   END
   $test$;
 
+  -- Automatic workbook-recognition evidence is private, clean-file backed,
+  -- Finance-owned, and idempotent before any profile or inventory mutation.
+  DO $test$
+  DECLARE
+    first_result jsonb;
+    replay_result jsonb;
+  BEGIN
+    first_result := public.save_product_inventory_import_analysis(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'af700001-0000-4000-8000-000000000001',
+      'af700002-0000-4000-8000-000000000002',
+      'af700003-0000-4000-8000-000000000003',
+      'af700004-0000-4000-8000-000000000004',
+      NULL,
+      'Automatic 5G router workbook',
+      jsonb_build_object(
+        'bucket', 'product-inventory-imports',
+        'path', '11111111-1111-4111-8111-111111111111/profile-analysis/af700003-0000-4000-8000-000000000003/af700002-0000-4000-8000-000000000002/sample.xlsx',
+        'filename', 'sample.xlsx',
+        'type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'size_bytes', 2048,
+        'sha256', repeat('c', 64),
+        'scan_status', 'clean',
+        'scan_engine', 'database-smoke-test',
+        'scanned_at', now(),
+        'source_type', 'excel'
+      ),
+      jsonb_build_object(
+        'algorithm_version', 'product-inventory-recognition-v1',
+        'status', 'ready',
+        'sheet_name', 'Devices',
+        'header_row', 3,
+        'shape', 'row_per_device',
+        'layout_fingerprint', repeat('d', 64),
+        'confidence', 0.97,
+        'header_mapping', jsonb_build_object(
+          'SKU', 'product_sku', 'Serial', 'serial_number',
+          'Cost', 'unit_cost', 'Sale Price', 'planned_sale_price'
+        ),
+        'field_proposals', '[]'::jsonb,
+        'metadata', '{}'::jsonb,
+        'sheet_scores', '[]'::jsonb,
+        'sample_rows', '[]'::jsonb,
+        'blocking_errors', '[]'::jsonb,
+        'warnings', '[]'::jsonb
+      )
+    );
+    replay_result := public.save_product_inventory_import_analysis(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'af700001-0000-4000-8000-000000000001',
+      'af700002-0000-4000-8000-000000000002',
+      'af700003-0000-4000-8000-000000000003',
+      'af700004-0000-4000-8000-000000000004',
+      NULL,
+      'Automatic 5G router workbook',
+      jsonb_build_object(
+        'bucket', 'product-inventory-imports',
+        'path', '11111111-1111-4111-8111-111111111111/profile-analysis/af700003-0000-4000-8000-000000000003/af700002-0000-4000-8000-000000000002/sample.xlsx',
+        'filename', 'sample.xlsx',
+        'type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'size_bytes', 2048,
+        'sha256', repeat('c', 64),
+        'scan_status', 'clean',
+        'scan_engine', 'database-smoke-test',
+        'scanned_at', now(),
+        'source_type', 'excel'
+      ),
+      jsonb_build_object(
+        'algorithm_version', 'product-inventory-recognition-v1',
+        'status', 'ready',
+        'sheet_name', 'Devices',
+        'header_row', 3,
+        'shape', 'row_per_device',
+        'layout_fingerprint', repeat('d', 64),
+        'confidence', 0.97,
+        'header_mapping', jsonb_build_object(
+          'SKU', 'product_sku', 'Serial', 'serial_number',
+          'Cost', 'unit_cost', 'Sale Price', 'planned_sale_price'
+        ),
+        'field_proposals', '[]'::jsonb,
+        'metadata', '{}'::jsonb,
+        'sheet_scores', '[]'::jsonb,
+        'sample_rows', '[]'::jsonb,
+        'blocking_errors', '[]'::jsonb,
+        'warnings', '[]'::jsonb
+      )
+    );
+    IF first_result IS DISTINCT FROM replay_result
+       OR first_result->>'analysis_id' <> 'af700003-0000-4000-8000-000000000003'
+       OR (SELECT status FROM public.product_inventory_import_analyses
+           WHERE id = 'af700003-0000-4000-8000-000000000003') <> 'ready'
+       OR (SELECT owner_type FROM public.managed_files
+           WHERE id = 'af700004-0000-4000-8000-000000000004')
+          <> 'product_inventory_import_profile_sample'
+       OR (SELECT count(*) FROM public.product_inventory_import_analyses
+           WHERE command_id = 'af700002-0000-4000-8000-000000000002') <> 1 THEN
+      RAISE EXCEPTION 'Automatic workbook recognition persistence or replay proof failed.';
+    END IF;
+  END
+  $test$;
+
   -- Phase 6 product inventory: tenant/suspension guards, transaction rollback
   -- under injected outbox failures, accounting failure atomicity, and exact
   -- uncapped summary functions remain independently verifiable.

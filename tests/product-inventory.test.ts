@@ -34,6 +34,10 @@ import {
   parseProductInventoryWorkbookRows,
 } from "../src/lib/product-inventory/workbook";
 import {
+  PRODUCT_INVENTORY_RECOGNITION_VERSION,
+  recognizeProductInventoryWorkbook,
+} from "../src/lib/product-inventory/workbook-recognition";
+import {
   parseProductPhotoExtraction,
   PRODUCT_PHOTO_EXTRACTION_VERSION,
   type ProductPhotoRawExtraction,
@@ -226,6 +230,102 @@ test("CSV parser handles quoted values and error export neutralizes spreadsheet 
   ], { products: workbookProducts });
   const exported = buildInventoryImportCsv(parsed.rows);
   assert.match(exported, /"'=HYPERLINK/u);
+});
+
+test("automatic workbook recognition finds an Arabic header row below title content", () => {
+  const recognition = recognizeProductInventoryWorkbook([{
+    name: "الأجهزة",
+    rows: [
+      ["كشف استلام أجهزة الراوتر 5G"],
+      ["المورد", "Virgin"],
+      ["كود المنتج", "الرقم التسلسلي", "تكلفة الوحدة", "سعر البيع", "العملة"],
+      ["VHR-5G", "00001234", 60, 100, "SAR"],
+      ["VHR-5G", "00001235", 60, 100, "SAR"],
+    ],
+  }], { products: workbookProducts });
+
+  assert.equal(recognition.algorithm_version, PRODUCT_INVENTORY_RECOGNITION_VERSION);
+  assert.equal(recognition.sheet_name, "الأجهزة");
+  assert.equal(recognition.header_row, 3);
+  assert.equal(recognition.header_mapping["الرقم التسلسلي"], "serial_number");
+  assert.equal(recognition.header_mapping["كود المنتج"], "product_sku");
+  assert.equal(recognition.header_mapping["تكلفة الوحدة"], "unit_cost");
+  assert.equal(recognition.header_mapping["سعر البيع"], "planned_sale_price");
+  assert.equal(recognition.metadata.supplier_code, "Virgin");
+  assert.equal(recognition.blocking_errors.length, 0);
+  assert.equal(recognition.status, "ready");
+});
+
+test("automatic workbook recognition selects the device sheet instead of a summary", () => {
+  const recognition = recognizeProductInventoryWorkbook([
+    {
+      name: "Summary",
+      rows: [["Total", "Value"], [2, 200]],
+    },
+    {
+      name: "Devices",
+      rows: [
+        ["SKU", "Serial No", "Cost", "Selling Price"],
+        ["VHR-5G", "VG-AUTO-1", 60, 100],
+        ["VHR-5G", "VG-AUTO-2", 60, 100],
+      ],
+    },
+  ], { products: workbookProducts });
+
+  assert.equal(recognition.sheet_name, "Devices");
+  assert.equal(recognition.sheet_index, 1);
+  assert.equal(recognition.sheet_scores[0]?.sheet_name, "Devices");
+  assert.equal(recognition.compatible_sheets.includes("Summary"), false);
+});
+
+test("automatic workbook recognition detects continuation rows and serial columns", () => {
+  const continuation = recognizeProductInventoryWorkbook([{
+    name: "Continuation",
+    rows: [
+      ["SKU", "Serial", "Cost", "Sale Price"],
+      ["VHR-5G", "VG-CONT-1", 60, 100],
+      [null, "VG-CONT-2", 60, 100],
+      [null, "VG-CONT-3", 60, 100],
+    ],
+  }], { products: workbookProducts });
+  assert.equal(continuation.shape, "continuation_rows");
+
+  const serialColumns = recognizeProductInventoryWorkbook([{
+    name: "Wide",
+    rows: [
+      ["SKU", "Serial 1", "Serial 2", "Cost", "Sale Price"],
+      ["VHR-5G", "VG-WIDE-1", "VG-WIDE-2", 60, 100],
+      ["VHR-5G", "VG-WIDE-3", "VG-WIDE-4", 60, 100],
+    ],
+  }], { products: workbookProducts });
+  assert.equal(serialColumns.shape, "serial_columns");
+  assert.deepEqual(serialColumns.serial_column_indexes, [1, 2]);
+});
+
+test("automatic workbook recognition blocks unclear required financial columns", () => {
+  const recognition = recognizeProductInventoryWorkbook([{
+    name: "Unknown layout",
+    rows: [
+      ["Router", "Identifier", "Amount A", "Amount B"],
+      ["VHR-5G", "VG-UNCLEAR-1", 60, 100],
+      ["VHR-5G", "VG-UNCLEAR-2", 60, 100],
+    ],
+  }], { products: workbookProducts });
+
+  assert.equal(recognition.status, "needs_review");
+  assert.ok(recognition.blocking_errors.some((error) => error.includes("unit_cost")));
+  assert.ok(recognition.blocking_errors.some((error) => error.includes("planned_sale_price")));
+});
+
+test("automatic workbook layout fingerprints ignore data-row changes", () => {
+  const recognize = (serial: string) => recognizeProductInventoryWorkbook([{
+    name: "Devices",
+    rows: [
+      ["SKU", "Serial", "Cost", "Sale Price"],
+      ["VHR-5G", serial, 60, 100],
+    ],
+  }], { products: workbookProducts });
+  assert.equal(recognize("VG-FP-1").layout_fingerprint, recognize("VG-FP-2").layout_fingerprint);
 });
 
 test("photo parser extracts labeled product, model, serials, and catalog prices", () => {

@@ -172,6 +172,7 @@
     { "id": "schema_v144_product_inventory_employee_custody", "file": "db/schema_v144_product_inventory_employee_custody.sql" },
     { "id": "schema_v145_product_inventory_return_workflow", "file": "db/schema_v145_product_inventory_return_workflow.sql" },
     { "id": "schema_v146_product_inventory_return_events_reporting", "file": "db/schema_v146_product_inventory_return_events_reporting.sql" },
-    { "id": "schema_v147_product_inventory_return_hardening", "file": "db/schema_v147_product_inventory_return_hardening.sql" }
+    { "id": "schema_v147_product_inventory_return_hardening", "file": "db/schema_v147_product_inventory_return_hardening.sql" },
+    { "id": "schema_v148_product_inventory_excel_recognition", "file": "db/schema_v148_product_inventory_excel_recognition.sql" }
   ]
 }

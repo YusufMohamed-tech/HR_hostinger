@@ -1,5 +1,5 @@
 {
-  "id": "schema_v147_product_inventory_return_hardening",
-  "file": "db/schema_v147_product_inventory_return_hardening.sql",
-  "checksumSha256": "8ffe837f211309145eb03f2ed3b8b8bb45cdb00b4ed7934eac97c244b4d29dd6"
+  "id": "schema_v148_product_inventory_excel_recognition",
+  "file": "db/schema_v148_product_inventory_excel_recognition.sql",
+  "checksumSha256": "f9d46041c3dacc3071a757ec737c9a6be7d72d80ac59e9789cd50e4205f5601e"
 }

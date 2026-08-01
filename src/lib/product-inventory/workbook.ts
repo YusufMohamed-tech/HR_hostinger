@@ -27,11 +27,13 @@ export const PRODUCT_INVENTORY_WORKBOOK_HEADERS = [
   "notes",
 ] as const;
 
-type WorkbookField = typeof PRODUCT_INVENTORY_WORKBOOK_HEADERS[number];
-type RawCell = string | number | boolean | Date | null | undefined;
+export type ProductInventoryWorkbookField = typeof PRODUCT_INVENTORY_WORKBOOK_HEADERS[number];
+type WorkbookField = ProductInventoryWorkbookField;
+export type ProductInventoryWorkbookCell = string | number | boolean | Date | null | undefined;
+type RawCell = ProductInventoryWorkbookCell;
 export type CatalogAlias = { product_id: string; normalized_value: string };
 
-const HEADER_ALIASES: Record<WorkbookField, string[]> = {
+export const PRODUCT_INVENTORY_HEADER_ALIASES: Record<WorkbookField, string[]> = {
   supplier_code: ["supplier_code", "supplier", "suppliercode", "رمز المورد", "كود المورد", "المورد"],
   receipt_reference: ["receipt_reference", "receipt", "reference", "مرجع الاستلام", "رقم الاستلام"],
   product_sku: ["product_sku", "sku", "product code", "رمز المنتج", "كود المنتج"],
@@ -79,7 +81,7 @@ function headerMap(row: RawCell[], profileMapping: Record<string, string> = {}) 
   });
   for (const field of PRODUCT_INVENTORY_WORKBOOK_HEADERS) {
     if (mapping.has(field)) continue;
-    const aliases = new Set(HEADER_ALIASES[field].map(normalizeWorkbookHeader));
+    const aliases = new Set(PRODUCT_INVENTORY_HEADER_ALIASES[field].map(normalizeWorkbookHeader));
     const index = normalized.findIndex((header) => aliases.has(header));
     if (index >= 0) mapping.set(field, index);
   }

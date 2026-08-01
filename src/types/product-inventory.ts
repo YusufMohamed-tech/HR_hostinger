@@ -58,7 +58,66 @@ export type ProductInventoryImportProfile = {
   is_active: boolean;
   sample_file_sha256: string | null;
   approval_note: string | null;
+  recognition_mode: "manual" | "automatic" | "reviewed";
+  layout_fingerprint: string | null;
+  source_analysis_id: string | null;
+  mapping_confidence: Record<string, number>;
+  workbook_shape: "row_per_device" | "continuation_rows" | "serial_columns" | null;
+  recognition_version: string | null;
   approved_at: string | null;
+  created_at: string;
+};
+
+export type ProductInventoryImportAnalysisStatus =
+  | "analyzing"
+  | "needs_review"
+  | "ready"
+  | "confirmed"
+  | "failed"
+  | "expired";
+
+export type ProductInventoryImportFieldProposal = {
+  field: string;
+  header: string;
+  column_index: number;
+  column_letter: string;
+  confidence: number;
+  status: "confirmed" | "needs_review" | "unrecognized";
+  evidence: string[];
+};
+
+export type ProductInventoryImportAnalysis = {
+  id: string;
+  template_name: string;
+  supplier_company_id: string | null;
+  managed_file_id: string;
+  source_type: "excel" | "csv";
+  original_name: string;
+  file_sha256: string;
+  status: ProductInventoryImportAnalysisStatus;
+  algorithm_version: string;
+  detected_sheet_name: string;
+  detected_header_row: number;
+  workbook_shape: "row_per_device" | "continuation_rows" | "serial_columns";
+  layout_fingerprint: string;
+  confidence: number;
+  detected_mapping: Record<string, string>;
+  field_proposals: ProductInventoryImportFieldProposal[];
+  detected_metadata: Record<string, string>;
+  sheet_scores: Array<{
+    sheet_name: string;
+    sheet_index: number;
+    header_row: number;
+    confidence: number;
+    data_rows: number;
+    recognized_fields: number;
+    required_coverage: number;
+  }>;
+  sample_rows: Array<{ row_number: number; values: Array<string | number | boolean | null> }>;
+  blocking_errors: string[];
+  warnings: string[];
+  expires_at: string;
+  confirmed_at: string | null;
   created_at: string;
 };
 
