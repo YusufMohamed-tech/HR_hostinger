@@ -23,6 +23,7 @@ import type {
   ProductReturnWorkspaceData,
   ProductReceipt,
 } from "@/types/product-inventory";
+import type { ProductInventoryWorkbookRecognition } from "@/lib/product-inventory/workbook-recognition";
 
 type ApiResult<T> = { data: T | null; error: string | null };
 export type ProductInventoryPagination = {
@@ -711,6 +712,60 @@ export function updateProductInventoryCommercialTerms(
 
 export function getProductInventoryImportProfiles() {
   return apiFetch<ProductInventoryImportProfile[]>("/api/sales/inventory/import-profiles");
+}
+
+export type ProductInventoryImportAnalysisPreview = {
+  analysis_id: string;
+  managed_file_id: string;
+  recognition: ProductInventoryWorkbookRecognition;
+};
+
+export async function analyzeProductInventoryImportProfile(
+  file: File,
+  values: {
+    analysis_id: string;
+    managed_file_id: string;
+    command_id: string;
+    template_name: string;
+    supplier_company_id?: string;
+  }
+): Promise<ApiResult<ProductInventoryImportAnalysisPreview>> {
+  try {
+    const form = new FormData();
+    form.set("file", file);
+    for (const [key, value] of Object.entries(values)) form.set(key, String(value ?? ""));
+    const response = await fetch("/api/sales/inventory/import-profiles/analyze", {
+      method: "POST",
+      body: form,
+    });
+    const payload = await response.json().catch(() => ({})) as {
+      data?: ProductInventoryImportAnalysisPreview;
+      message?: string;
+    };
+    if (!response.ok) return { data: null, error: payload.message || "تعذر تحليل ملف القالب." };
+    return { data: payload.data ?? null, error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error.message : "تعذر رفع ملف القالب." };
+  }
+}
+
+export function confirmProductInventoryImportProfile(
+  analysisId: string,
+  values: {
+    command_id: string;
+    profile_id: string;
+    name: string;
+    header_mapping: Record<string, string>;
+    default_currency: string;
+    default_condition: "new" | "open_box" | "refurbished";
+    default_ownership_type: "purchased" | "consignment";
+    approval_note?: string;
+  }
+) {
+  return apiFetch<ProductInventoryImportProfile>(
+    `/api/sales/inventory/import-profiles/analyses/${analysisId}/confirm`,
+    { method: "POST", body: JSON.stringify(values) }
+  );
 }
 
 export function createProductInventoryImportProfile(values: {

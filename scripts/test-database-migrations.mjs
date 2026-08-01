@@ -6328,6 +6328,8 @@ const launchAssertions = `
   DECLARE
     first_result jsonb;
     replay_result jsonb;
+    confirmed_profile public.product_inventory_import_profiles;
+    replayed_profile public.product_inventory_import_profiles;
   BEGIN
     first_result := public.save_product_inventory_import_analysis(
       '11111111-1111-4111-8111-111111111111',
@@ -6421,6 +6423,66 @@ const launchAssertions = `
        OR (SELECT count(*) FROM public.product_inventory_import_analyses
            WHERE command_id = 'af700002-0000-4000-8000-000000000002') <> 1 THEN
       RAISE EXCEPTION 'Automatic workbook recognition persistence or replay proof failed.';
+    END IF;
+    SELECT * INTO confirmed_profile
+    FROM public.confirm_product_inventory_import_analysis(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'af700005-0000-4000-8000-000000000005',
+      'af700003-0000-4000-8000-000000000003',
+      'af700006-0000-4000-8000-000000000006',
+      jsonb_build_object(
+        'name', 'Automatic 5G router workbook',
+        'header_mapping', jsonb_build_object(
+          'SKU', 'product_sku', 'Serial', 'serial_number',
+          'Cost', 'unit_cost', 'Sale Price', 'planned_sale_price'
+        ),
+        'mapping_confidence', jsonb_build_object(
+          'product_sku', 0.99, 'serial_number', 0.99,
+          'unit_cost', 0.98, 'planned_sale_price', 0.98
+        ),
+        'has_corrections', false,
+        'default_currency', 'SAR',
+        'default_condition', 'new',
+        'default_ownership_type', 'purchased',
+        'approval_note', 'Database smoke approval'
+      )
+    );
+    SELECT * INTO replayed_profile
+    FROM public.confirm_product_inventory_import_analysis(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'af700005-0000-4000-8000-000000000005',
+      'af700003-0000-4000-8000-000000000003',
+      'af700006-0000-4000-8000-000000000006',
+      jsonb_build_object(
+        'name', 'Automatic 5G router workbook',
+        'header_mapping', jsonb_build_object(
+          'SKU', 'product_sku', 'Serial', 'serial_number',
+          'Cost', 'unit_cost', 'Sale Price', 'planned_sale_price'
+        ),
+        'mapping_confidence', jsonb_build_object(
+          'product_sku', 0.99, 'serial_number', 0.99,
+          'unit_cost', 0.98, 'planned_sale_price', 0.98
+        ),
+        'has_corrections', false,
+        'default_currency', 'SAR',
+        'default_condition', 'new',
+        'default_ownership_type', 'purchased',
+        'approval_note', 'Database smoke approval'
+      )
+    );
+    IF confirmed_profile.id IS DISTINCT FROM replayed_profile.id
+       OR confirmed_profile.recognition_mode <> 'automatic'
+       OR confirmed_profile.source_analysis_id <> 'af700003-0000-4000-8000-000000000003'
+       OR confirmed_profile.layout_fingerprint <> repeat('d', 64)
+       OR confirmed_profile.is_active IS NOT TRUE
+       OR (SELECT status FROM public.product_inventory_import_analyses
+           WHERE id = 'af700003-0000-4000-8000-000000000003') <> 'confirmed'
+       OR (SELECT profile_id FROM public.product_inventory_import_analyses
+           WHERE id = 'af700003-0000-4000-8000-000000000003')
+          <> 'af700006-0000-4000-8000-000000000006' THEN
+      RAISE EXCEPTION 'Automatic workbook profile confirmation or replay proof failed.';
     END IF;
   END
   $test$;

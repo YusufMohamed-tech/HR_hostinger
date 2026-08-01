@@ -173,6 +173,7 @@
     { "id": "schema_v145_product_inventory_return_workflow", "file": "db/schema_v145_product_inventory_return_workflow.sql" },
     { "id": "schema_v146_product_inventory_return_events_reporting", "file": "db/schema_v146_product_inventory_return_events_reporting.sql" },
     { "id": "schema_v147_product_inventory_return_hardening", "file": "db/schema_v147_product_inventory_return_hardening.sql" },
-    { "id": "schema_v148_product_inventory_excel_recognition", "file": "db/schema_v148_product_inventory_excel_recognition.sql" }
+    { "id": "schema_v148_product_inventory_excel_recognition", "file": "db/schema_v148_product_inventory_excel_recognition.sql" },
+    { "id": "schema_v149_product_inventory_excel_profile_confirmation", "file": "db/schema_v149_product_inventory_excel_profile_confirmation.sql" }
   ]
 }
