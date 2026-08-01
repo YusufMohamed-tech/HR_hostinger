@@ -92,6 +92,15 @@ async function apply(entry) {
     console.log(`Applied ${item.id} (${Date.now() - started} ms)`);
   } catch (error) {
     await client.query("ROLLBACK");
+    if (error && typeof error === "object" && "position" in error && error.position) {
+      const position = Number(error.position);
+      if (Number.isFinite(position) && position > 0) {
+        const prefix = item.sql.slice(0, position - 1);
+        const line = prefix.split("\n").length;
+        const column = position - prefix.lastIndexOf("\n");
+        console.error(`${entry.file}:${line}:${column}`);
+      }
+    }
     throw error;
   }
 }

@@ -438,6 +438,121 @@ export type ProductEmployeeCustodyDashboardData = {
   units: ProductInventoryStockRow[];
 };
 
+export type ProductReturnRequestStatus =
+  | "pending_approval"
+  | "approved_awaiting_delivery"
+  | "rejected"
+  | "partially_received"
+  | "received"
+  | "cancelled";
+
+export type ProductReturnLineStatus =
+  | "pending"
+  | "awaiting_delivery"
+  | "rejected"
+  | "cancelled"
+  | "received_sellable"
+  | "received_quarantine"
+  | "received_damaged";
+
+export type ProductReturnAttachment = {
+  id: string;
+  return_request_id: string;
+  return_line_id: string;
+  original_name: string;
+  detected_mime: "image/jpeg" | "image/png" | "image/webp";
+  size_bytes: number;
+  sha256: string;
+  evidence_type: "requester_photo" | "finance_inspection_photo";
+  captured_at: string | null;
+  created_at: string;
+};
+
+export type ProductReturnApproval = {
+  id: string;
+  return_request_id: string;
+  approver_type: "finance_manager" | "project_manager";
+  assigned_approver_user_id: string | null;
+  decision: "pending" | "approved" | "rejected";
+  decision_note: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
+  version: number;
+  is_assigned_to_me?: boolean;
+};
+
+export type ProductReturnRequestLine = {
+  id: string;
+  return_request_id: string;
+  unit_id: string;
+  handover_id: string;
+  serial_snapshot: string;
+  product_name_snapshot: string;
+  requester_note: string;
+  claimed_condition: "sealed" | "good" | "open_box" | "damaged" | "unknown";
+  status: ProductReturnLineStatus;
+  requested_at: string;
+  received_at: string | null;
+  inspection_note: string | null;
+  version: number;
+  attachments?: ProductReturnAttachment[];
+};
+
+export type ProductReturnReceipt = {
+  id: string;
+  return_request_id: string;
+  warehouse_id: string;
+  received_by: string;
+  received_at: string;
+  notes: string | null;
+  status: "completed" | "discrepancy";
+};
+
+export type ProductReturnRequest = {
+  id: string;
+  return_no: string;
+  requester_user_id: string;
+  requester_employee_id: string;
+  custodian_assignment_id: string;
+  custodian_employee_id: string;
+  project_id: string;
+  project_name_snapshot: string;
+  location_id: string | null;
+  city_snapshot: string;
+  position_code_snapshot: "OGPM" | "OGSV1";
+  warehouse_id: string;
+  approval_mode_snapshot: "both" | "project_manager" | "finance_manager" | "either";
+  status: ProductReturnRequestStatus;
+  reason_summary: string;
+  version: number;
+  submitted_at: string;
+  approved_at: string | null;
+  rejected_at: string | null;
+  completed_at: string | null;
+  lines?: ProductReturnRequestLine[];
+  approvals?: ProductReturnApproval[];
+  receipts?: ProductReturnReceipt[];
+  can_cancel?: boolean;
+};
+
+export type ProductReturnWorkspaceData = {
+  access: {
+    role: string;
+    can_submit: boolean;
+    can_review_finance: boolean;
+    can_receive: boolean;
+  };
+  settings: {
+    return_approval_mode: "both" | "project_manager" | "finance_manager" | "either";
+    require_return_photo: boolean;
+    minimum_return_photos: number;
+    maximum_return_photos: number;
+  };
+  warehouses: ProductInventoryWarehouse[];
+  eligible_units: ProductInventoryStockRow[];
+  requests: ProductReturnRequest[];
+};
+
 export type ProductPriceOverrideRequest = {
   id: string;
   unit_id: string;

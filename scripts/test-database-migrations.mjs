@@ -22,6 +22,8 @@ function psql(sql) {
     "postgres",
     "-v",
     "ON_ERROR_STOP=1",
+    "-v",
+    "VERBOSITY=verbose",
   ], { input: sql });
 }
 
@@ -5850,6 +5852,192 @@ const launchAssertions = `
        OR report_row.ready_to_sell_units <> 1
        OR report_row.physically_held_units <> 1 THEN
       RAISE EXCEPTION 'Employee custody assignment, issue, acceptance, replay, signature, or report proof failed.';
+    END IF;
+  END
+  $test$;
+
+  -- Evidence-backed employee return: custody remains with the supervisor through
+  -- OGPM and Finance approval, then clears only after Finance scans the serial.
+  DO $test$
+  DECLARE
+    supervisor_assignment public.product_inventory_operational_assignments;
+    pm_assignment public.product_inventory_operational_assignments;
+    warehouse_id_value uuid;
+    unit_id_value uuid;
+    serial_value text;
+    submitted jsonb;
+    submitted_replay jsonb;
+    pm_reviewed jsonb;
+    finance_reviewed jsonb;
+    received jsonb;
+    received_replay jsonb;
+  BEGIN
+    SELECT * INTO supervisor_assignment
+    FROM public.product_inventory_operational_assignments
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+      AND employee_id = '12121212-1212-4212-8212-121212121212'
+      AND position_code = 'OGSV1' AND status = 'active'
+    LIMIT 1;
+    SELECT * INTO pm_assignment
+    FROM public.save_product_inventory_operational_assignment(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      NULL, NULL,
+      jsonb_build_object(
+        'employee_id', '33333333-3333-4333-8333-333333333333',
+        'project_id', supervisor_assignment.project_id,
+        'location_id', supervisor_assignment.location_id,
+        'city', supervisor_assignment.city, 'position_code', 'OGPM',
+        'responsibility', 'project_manager', 'can_receive_custody', false,
+        'can_sell', false, 'can_request_return', false,
+        'can_approve_return', true, 'effective_from', '2020-01-01'
+      )
+    );
+    SELECT id INTO warehouse_id_value FROM public.inventory_warehouses
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111' AND is_default LIMIT 1;
+    SELECT id, raw_serial_number INTO unit_id_value, serial_value
+    FROM public.product_inventory_units
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+      AND current_custodian_assignment_id = supervisor_assignment.id
+      AND status = 'with_custodian'
+    LIMIT 1;
+
+    submitted := public.execute_product_return_command(
+      '11111111-1111-4111-8111-111111111111',
+      '99999999-9999-4999-8999-999999999999',
+      'aed00001-0000-4000-8000-000000000001',
+      'aed00002-0000-4000-8000-000000000002',
+      'return_request_submit',
+      jsonb_build_object(
+        'return_request_id', 'aed00003-0000-4000-8000-000000000003',
+        'warehouse_id', warehouse_id_value,
+        'reason_summary', 'Router is ready to be returned to Finance',
+        'lines', jsonb_build_array(jsonb_build_object(
+          'line_id', 'aed00004-0000-4000-8000-000000000004',
+          'unit_id', unit_id_value,
+          'requester_note', 'Sealed device returned after field reassignment',
+          'claimed_condition', 'sealed',
+          'attachments', jsonb_build_array(jsonb_build_object(
+            'attachment_id', 'aed00005-0000-4000-8000-000000000005',
+            'managed_file_id', 'aed00006-0000-4000-8000-000000000006',
+            'file', jsonb_build_object(
+              'bucket', 'product-return-evidence',
+              'path', '11111111-1111-4111-8111-111111111111/aed00003-0000-4000-8000-000000000003/aed00004-0000-4000-8000-000000000004/router.jpg',
+              'filename', 'router.jpg', 'type', 'image/jpeg', 'size_bytes', 1024,
+              'sha256', repeat('a', 64), 'scan_status', 'clean',
+              'scan_engine', 'database-smoke-test', 'scanned_at', now(),
+              'provider', 'supabase_storage'
+            )
+          ))
+        ))
+      )
+    );
+    submitted_replay := public.execute_product_return_command(
+      '11111111-1111-4111-8111-111111111111',
+      '99999999-9999-4999-8999-999999999999',
+      'aed00001-0000-4000-8000-000000000001',
+      'aed00002-0000-4000-8000-000000000002',
+      'return_request_submit',
+      jsonb_build_object(
+        'return_request_id', 'aed00003-0000-4000-8000-000000000003',
+        'warehouse_id', warehouse_id_value,
+        'reason_summary', 'Router is ready to be returned to Finance',
+        'lines', jsonb_build_array(jsonb_build_object(
+          'line_id', 'aed00004-0000-4000-8000-000000000004',
+          'unit_id', unit_id_value,
+          'requester_note', 'Sealed device returned after field reassignment',
+          'claimed_condition', 'sealed',
+          'attachments', jsonb_build_array(jsonb_build_object(
+            'attachment_id', 'aed00005-0000-4000-8000-000000000005',
+            'managed_file_id', 'aed00006-0000-4000-8000-000000000006',
+            'file', jsonb_build_object(
+              'bucket', 'product-return-evidence',
+              'path', '11111111-1111-4111-8111-111111111111/aed00003-0000-4000-8000-000000000003/aed00004-0000-4000-8000-000000000004/router.jpg',
+              'filename', 'router.jpg', 'type', 'image/jpeg', 'size_bytes', 1024,
+              'sha256', repeat('a', 64), 'scan_status', 'clean',
+              'scan_engine', 'database-smoke-test', 'scanned_at', now(),
+              'provider', 'supabase_storage'
+            )
+          ))
+        ))
+      )
+    );
+    pm_reviewed := public.execute_product_return_command(
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+      'aed00007-0000-4000-8000-000000000007',
+      'aed00008-0000-4000-8000-000000000008',
+      'return_request_review',
+      '{"return_request_id":"aed00003-0000-4000-8000-000000000003","expected_version":1,"decision":"approved","decision_note":"OGPM approved"}'::jsonb
+    );
+    finance_reviewed := public.execute_product_return_command(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'aed00009-0000-4000-8000-000000000009',
+      'aed00010-0000-4000-8000-000000000010',
+      'return_request_review',
+      '{"return_request_id":"aed00003-0000-4000-8000-000000000003","expected_version":2,"decision":"approved","decision_note":"Finance approved delivery"}'::jsonb
+    );
+    received := public.execute_product_return_command(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'aed00011-0000-4000-8000-000000000011',
+      'aed00012-0000-4000-8000-000000000012',
+      'return_physical_receive',
+      jsonb_build_object(
+        'return_request_id', 'aed00003-0000-4000-8000-000000000003',
+        'expected_version', 3,
+        'receipt_id', 'aed00013-0000-4000-8000-000000000013',
+        'warehouse_id', warehouse_id_value,
+        'notes', 'Finance scanned and physically received the router',
+        'lines', jsonb_build_array(jsonb_build_object(
+          'request_line_id', 'aed00004-0000-4000-8000-000000000004',
+          'scanned_serial', serial_value, 'disposition', 'sellable',
+          'condition_received', 'sealed', 'inspection_note', 'Serial and seal verified'
+        ))
+      )
+    );
+    received_replay := public.execute_product_return_command(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'aed00011-0000-4000-8000-000000000011',
+      'aed00012-0000-4000-8000-000000000012',
+      'return_physical_receive',
+      jsonb_build_object(
+        'return_request_id', 'aed00003-0000-4000-8000-000000000003',
+        'expected_version', 3,
+        'receipt_id', 'aed00013-0000-4000-8000-000000000013',
+        'warehouse_id', warehouse_id_value,
+        'notes', 'Finance scanned and physically received the router',
+        'lines', jsonb_build_array(jsonb_build_object(
+          'request_line_id', 'aed00004-0000-4000-8000-000000000004',
+          'scanned_serial', serial_value, 'disposition', 'sellable',
+          'condition_received', 'sealed', 'inspection_note', 'Serial and seal verified'
+        ))
+      )
+    );
+
+    IF submitted IS DISTINCT FROM submitted_replay
+       OR received IS DISTINCT FROM received_replay
+       OR submitted->'return_request'->>'status' <> 'pending_approval'
+       OR pm_reviewed->'return_request'->>'status' <> 'pending_approval'
+       OR finance_reviewed->'return_request'->>'status' <> 'approved_awaiting_delivery'
+       OR received->'return_request'->>'status' <> 'received'
+       OR (SELECT status FROM public.product_inventory_units WHERE id = unit_id_value) <> 'in_stock'
+       OR (SELECT current_custodian_employee_id FROM public.product_inventory_units WHERE id = unit_id_value) IS NOT NULL
+       OR (SELECT active_return_request_line_id FROM public.product_inventory_units WHERE id = unit_id_value) IS NOT NULL
+       OR (SELECT count(*) FROM public.product_return_attachments
+           WHERE return_request_id = 'aed00003-0000-4000-8000-000000000003') <> 1
+       OR (SELECT count(*) FROM public.product_return_approvals
+           WHERE return_request_id = 'aed00003-0000-4000-8000-000000000003'
+             AND decision = 'approved') <> 2
+       OR (SELECT count(*) FROM public.product_return_receipt_lines
+           WHERE receipt_id = 'aed00013-0000-4000-8000-000000000013'
+             AND disposition = 'sellable') <> 1
+       OR (SELECT count(*) FROM public.product_inventory_movements
+           WHERE return_request_id = 'aed00003-0000-4000-8000-000000000003'
+             AND movement_type IN ('return_reserved', 'return_approved', 'return_received')) <> 3 THEN
+      RAISE EXCEPTION 'Evidence, approvals, custody retention, Finance scan, receipt, or replay proof failed.';
     END IF;
   END
   $test$;

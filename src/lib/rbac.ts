@@ -112,7 +112,9 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   const normalizedPath = normalizePath(pathname);
   const employeeCustodySelfService =
     normalizedPath === "/sales/inventory/custody"
-    || normalizedPath.startsWith("/api/sales/inventory/custody");
+    || normalizedPath === "/sales/inventory/returns"
+    || normalizedPath.startsWith("/api/sales/inventory/custody")
+    || normalizedPath.startsWith("/api/sales/inventory/return-requests");
 
   if (role === "Superadmin") {
     return true;

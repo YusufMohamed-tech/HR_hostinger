@@ -336,3 +336,64 @@ export const productInventoryLossSchema = z.object({
   loss_type: z.enum(["damage", "loss"]),
   reason: z.string().trim().min(5).max(1000),
 });
+
+export const productReturnSubmissionManifestSchema = z.object({
+  return_request_id: uuid,
+  command_id: uuid,
+  warehouse_id: uuid,
+  reason_summary: z.string().trim().min(3).max(2000),
+  lines: z.array(z.object({
+    line_id: uuid,
+    unit_id: uuid,
+    requester_note: z.string().trim().min(3).max(2000),
+    claimed_condition: z.enum(["sealed", "good", "open_box", "damaged", "unknown"]),
+    photos: z.array(z.object({
+      field: z.string().trim().regex(/^photo_[0-9]+_[0-9]+$/),
+      attachment_id: uuid,
+      managed_file_id: uuid,
+      captured_at: z.iso.datetime().optional(),
+    })).min(1).max(3),
+  })).min(1).max(50),
+}).superRefine((value, context) => {
+  if (new Set(value.lines.map((line) => line.line_id)).size !== value.lines.length) {
+    context.addIssue({ code: "custom", path: ["lines"], message: "معرّفات سطور المرتجع يجب أن تكون فريدة." });
+  }
+  if (new Set(value.lines.map((line) => line.unit_id)).size !== value.lines.length) {
+    context.addIssue({ code: "custom", path: ["lines"], message: "لا يمكن طلب مرتجع للسيريال أكثر من مرة." });
+  }
+  const fields = value.lines.flatMap((line) => line.photos.map((photo) => photo.field));
+  if (new Set(fields).size !== fields.length) {
+    context.addIssue({ code: "custom", path: ["lines"], message: "حقول صور المرتجع يجب أن تكون فريدة." });
+  }
+});
+
+export const productReturnReviewSchema = z.object({
+  command_id: uuid,
+  expected_version: z.coerce.number().int().positive(),
+  decision: z.enum(["approved", "rejected"]),
+  decision_note: z.string().trim().max(2000).default(""),
+});
+
+export const productReturnCancelSchema = z.object({
+  command_id: uuid,
+  expected_version: z.coerce.number().int().positive(),
+});
+
+export const productReturnPhysicalReceiptSchema = z.object({
+  command_id: uuid,
+  receipt_id: uuid,
+  expected_version: z.coerce.number().int().positive(),
+  warehouse_id: uuid,
+  notes: z.string().trim().max(2000).default(""),
+  lines: z.array(z.object({
+    request_line_id: uuid,
+    scanned_serial: z.string().trim().min(1).max(160),
+    disposition: z.enum(["sellable", "quarantine", "damaged"]),
+    condition_received: z.enum(["sealed", "good", "open_box", "damaged", "unknown"]),
+    inspection_note: z.string().trim().max(2000).default(""),
+  })).min(1).max(50),
+}).superRefine((value, context) => {
+  if (new Set(value.lines.map((line) => line.request_line_id)).size !== value.lines.length) {
+    context.addIssue({ code: "custom", path: ["lines"], message: "لا يمكن استلام نفس السطر مرتين." });
+  }
+});

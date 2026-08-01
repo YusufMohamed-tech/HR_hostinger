@@ -15,6 +15,9 @@ import {
   productInventoryOperationalAssignmentSchema,
   productEmployeeHandoverSchema,
   productEmployeeHandoverAcceptSchema,
+  productReturnPhysicalReceiptSchema,
+  productReturnReviewSchema,
+  productReturnSubmissionManifestSchema,
   manualReceiptSchema,
   workbookCommitSchema,
 } from "../src/lib/product-inventory/schemas";
@@ -387,6 +390,64 @@ test("employee and supervisor can access only their own router custody surface",
   assert.equal(canAccessPath("Supervisor", "/api/sales/inventory/custody/handovers/abc/accept"), true);
   assert.equal(canAccessPath("Supervisor", "/api/sales/inventory/employee-handovers"), false);
   assert.equal(canAccessPath("Finance_Manager", "/sales/inventory/employee-custody"), true);
+});
+
+test("return workflow validates evidence, decisions, serial receipts, and scoped access", () => {
+  const line = {
+    line_id: "10000000-0000-4000-8000-000000000031",
+    unit_id: "10000000-0000-4000-8000-000000000032",
+    requester_note: "الجهاز مغلق وجاهز للتسليم",
+    claimed_condition: "sealed",
+    photos: [{
+      field: "photo_0_0",
+      attachment_id: "10000000-0000-4000-8000-000000000033",
+      managed_file_id: "10000000-0000-4000-8000-000000000034",
+    }],
+  };
+  const submission = {
+    return_request_id: "10000000-0000-4000-8000-000000000035",
+    command_id: "10000000-0000-4000-8000-000000000036",
+    warehouse_id: "10000000-0000-4000-8000-000000000037",
+    reason_summary: "إعادة توزيع العهدة",
+    lines: [line],
+  };
+  assert.equal(productReturnSubmissionManifestSchema.safeParse(submission).success, true);
+  assert.equal(productReturnSubmissionManifestSchema.safeParse({
+    ...submission,
+    lines: [line, { ...line, line_id: "10000000-0000-4000-8000-000000000038" }],
+  }).success, false);
+  assert.equal(productReturnReviewSchema.safeParse({
+    command_id: submission.command_id,
+    expected_version: 1,
+    decision: "approved",
+  }).success, true);
+  const receiptLine = {
+    request_line_id: line.line_id,
+    scanned_serial: "ROUTER-0001",
+    disposition: "sellable",
+    condition_received: "sealed",
+  };
+  assert.equal(productReturnPhysicalReceiptSchema.safeParse({
+    command_id: submission.command_id,
+    receipt_id: "10000000-0000-4000-8000-000000000039",
+    expected_version: 3,
+    warehouse_id: submission.warehouse_id,
+    lines: [receiptLine],
+  }).success, true);
+  assert.equal(productReturnPhysicalReceiptSchema.safeParse({
+    command_id: submission.command_id,
+    receipt_id: "10000000-0000-4000-8000-000000000039",
+    expected_version: 3,
+    warehouse_id: submission.warehouse_id,
+    lines: [receiptLine, receiptLine],
+  }).success, false);
+
+  assert.equal(canAccessPath("Employee", "/sales/inventory/returns"), true);
+  assert.equal(canAccessPath("Employee", "/api/sales/inventory/return-requests"), true);
+  assert.equal(canAccessPath("Supervisor", "/api/sales/inventory/return-requests/abc/review"), true);
+  assert.equal(canAccessPath("Finance_Manager", "/sales/inventory/returns"), true);
+  assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/return-requests"), false);
+  assert.equal(canAccessPath("Accountant", "/sales/inventory/returns"), false);
 });
 
 test("browser OCR assets stay on the application origin", () => {

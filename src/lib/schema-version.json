@@ -1,5 +1,5 @@
 {
-  "id": "schema_v144_product_inventory_employee_custody",
-  "file": "db/schema_v144_product_inventory_employee_custody.sql",
-  "checksumSha256": "6c388f49f6b39dc07c96d1b7161ddff021f13a773556a54f18a070f87d4aec0c"
+  "id": "schema_v145_product_inventory_return_workflow",
+  "file": "db/schema_v145_product_inventory_return_workflow.sql",
+  "checksumSha256": "4b0e4476beccef9a481f2623715f3034e820912549d9dc89172353b8383d60b8"
 }

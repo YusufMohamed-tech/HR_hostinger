@@ -32,6 +32,7 @@ import {
   PackageCheck,
   PackagePlus,
   Receipt,
+  RotateCcw,
   Settings,
   ShieldAlert,
   Smartphone,
@@ -142,6 +143,7 @@ export function SidebarContent() {
       { name: "الأرصدة والسلف", href: "/balances", icon: WalletCards },
       { name: "العهد المستلمة", href: "/assets", icon: Package },
       { name: "عهدة أجهزة الراوتر", href: "/sales/inventory/custody", icon: PackageCheck },
+      { name: "مرتجعات أجهزة الراوتر", href: "/sales/inventory/returns", icon: RotateCcw },
     ];
 
     const recruitmentOps: NavLink[] = [
@@ -160,6 +162,7 @@ export function SidebarContent() {
       { name: "مخزون الشرائح", href: "/sales/stock", icon: Boxes },
       { name: "مخزون المنتجات", href: "/sales/inventory", icon: Package },
       { name: "تسليم المنتجات", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
+      { name: "مرتجعات أجهزة الراوتر", href: "/sales/inventory/returns", icon: RotateCcw, indent: true },
       { name: "التقارير", href: "/sales/reports", icon: ClipboardList },
       { name: "المنتجات", href: "/sales/products", icon: Boxes },
       { name: "فريق المبيعات", href: "/sales/team", icon: Users },
@@ -182,6 +185,7 @@ export function SidebarContent() {
       ...(role === "Finance_Manager" ? [
         { name: "عمليات مخزون المنتجات", href: "/sales/inventory", icon: Package },
         { name: "تسليم وعهد الموظفين", href: "/sales/inventory/employee-custody", icon: PackageCheck, indent: true },
+        { name: "مرتجعات أجهزة الراوتر", href: "/sales/inventory/returns", icon: RotateCcw, indent: true },
         { name: "تسليم المندوبين القديم", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
         { name: "استلام بالصور", href: "/sales/inventory/receipts/photo", icon: Camera, indent: true },
         { name: "استيراد Excel / CSV", href: "/sales/inventory/receipts/import", icon: FileSpreadsheet, indent: true },
@@ -325,6 +329,7 @@ export function SidebarContent() {
             { name: "الرئيسية", href: "/supervisor", icon: LayoutDashboard },
             { name: "التقييمات", href: "/supervisor/evaluations", icon: ClipboardList },
             { name: "عهدة أجهزة الراوتر", href: "/sales/inventory/custody", icon: PackageCheck },
+            { name: "مرتجعات أجهزة الراوتر", href: "/sales/inventory/returns", icon: RotateCcw },
             { name: "الحضور", href: "/attendance", icon: Clock },
             { name: "المهام", href: "/tasks", icon: CheckSquare },
             { name: "الإجازات", href: "/leave", icon: CalendarDays },

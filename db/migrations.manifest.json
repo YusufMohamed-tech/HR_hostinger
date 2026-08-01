@@ -169,6 +169,7 @@
     { "id": "schema_v141_chat_realtime", "file": "db/schema_v141_chat_realtime.sql" },
     { "id": "schema_v142_finance_managed_product_inventory", "file": "db/schema_v142_finance_managed_product_inventory.sql" },
     { "id": "schema_v143_product_inventory_commercial_terms", "file": "db/schema_v143_product_inventory_commercial_terms.sql" },
-    { "id": "schema_v144_product_inventory_employee_custody", "file": "db/schema_v144_product_inventory_employee_custody.sql" }
+    { "id": "schema_v144_product_inventory_employee_custody", "file": "db/schema_v144_product_inventory_employee_custody.sql" },
+    { "id": "schema_v145_product_inventory_return_workflow", "file": "db/schema_v145_product_inventory_return_workflow.sql" }
   ]
 }

@@ -302,3 +302,36 @@ export async function executeProductInventoryLossCommand(
   }
   return data as Record<string, unknown>;
 }
+
+export async function executeProductReturnCommand(
+  admin: ReturnType<typeof createAdminClient>,
+  values: {
+    orgId: string;
+    actorUserId: string;
+    requestId: string;
+    commandId: string;
+    action:
+      | "return_request_submit"
+      | "return_request_review"
+      | "return_request_cancel"
+      | "return_physical_receive";
+    payload: Record<string, unknown>;
+  }
+) {
+  const { data, error } = await productInventoryDb(admin).rpc(
+    "execute_product_return_command",
+    {
+      p_org_id: values.orgId,
+      p_actor_user_id: values.actorUserId,
+      p_request_id: values.requestId,
+      p_command_id: values.commandId,
+      p_action: values.action,
+      p_payload: values.payload,
+    }
+  );
+  if (error) throw Object.assign(new Error(error.message), { code: error.code });
+  if (!data || typeof data !== "object") {
+    throw new Error("The product return command returned no result.");
+  }
+  return data as Record<string, unknown>;
+}

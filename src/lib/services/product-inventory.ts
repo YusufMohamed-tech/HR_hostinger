@@ -20,6 +20,7 @@ import type {
   ProductEmployeeCustodyDashboardData,
   ProductEmployeeCustodyManagerData,
   ProductInventoryOperationalAssignment,
+  ProductReturnWorkspaceData,
   ProductReceipt,
 } from "@/types/product-inventory";
 
@@ -291,6 +292,107 @@ export function acceptProductEmployeeHandover(
 ) {
   return apiFetch<Record<string, unknown>>(
     `/api/sales/inventory/custody/handovers/${handoverId}/accept`,
+    { method: "POST", body: JSON.stringify(values) }
+  );
+}
+
+export function getProductReturnWorkspace() {
+  return apiFetch<ProductReturnWorkspaceData>("/api/sales/inventory/return-requests");
+}
+
+export async function submitProductReturn(values: {
+  return_request_id: string;
+  command_id: string;
+  warehouse_id: string;
+  reason_summary: string;
+  lines: Array<{
+    line_id: string;
+    unit_id: string;
+    requester_note: string;
+    claimed_condition: "sealed" | "good" | "open_box" | "damaged" | "unknown";
+    photos: Array<{
+      file: File;
+      attachment_id: string;
+      managed_file_id: string;
+      captured_at?: string;
+    }>;
+  }>;
+}): Promise<ApiResult<Record<string, unknown>>> {
+  try {
+    const form = new FormData();
+    const manifest = {
+      ...values,
+      lines: values.lines.map((line, lineIndex) => ({
+        ...line,
+        photos: line.photos.map((photo, photoIndex) => {
+          const field = `photo_${lineIndex}_${photoIndex}`;
+          form.set(field, photo.file);
+          return {
+            field,
+            attachment_id: photo.attachment_id,
+            managed_file_id: photo.managed_file_id,
+            captured_at: photo.captured_at,
+          };
+        }),
+      })),
+    };
+    form.set("manifest", JSON.stringify(manifest));
+    const response = await fetch("/api/sales/inventory/return-requests", {
+      method: "POST",
+      body: form,
+    });
+    const payload = await response.json().catch(() => ({})) as {
+      data?: Record<string, unknown>;
+      message?: string;
+    };
+    if (!response.ok) return { data: null, error: payload.message || "تعذر إرسال طلب المرتجع." };
+    return { data: payload.data ?? null, error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error.message : "تعذر رفع صور المرتجع." };
+  }
+}
+
+export function reviewProductReturn(
+  requestId: string,
+  values: {
+    command_id: string;
+    expected_version: number;
+    decision: "approved" | "rejected";
+    decision_note?: string;
+  }
+) {
+  return apiFetch<Record<string, unknown>>(
+    `/api/sales/inventory/return-requests/${requestId}/review`,
+    { method: "POST", body: JSON.stringify(values) }
+  );
+}
+
+export function cancelProductReturn(requestId: string, expectedVersion: number, commandId: string) {
+  return apiFetch<Record<string, unknown>>(
+    `/api/sales/inventory/return-requests/${requestId}/cancel`,
+    { method: "POST", body: JSON.stringify({ expected_version: expectedVersion, command_id: commandId }) }
+  );
+}
+
+export function receiveProductReturn(
+  requestId: string,
+  values: {
+    command_id: string;
+    receipt_id: string;
+    expected_version: number;
+    warehouse_id: string;
+    notes?: string;
+    lines: Array<{
+      request_line_id: string;
+      scanned_serial: string;
+      disposition: "sellable" | "quarantine" | "damaged";
+      condition_received: "sealed" | "good" | "open_box" | "damaged" | "unknown";
+      inspection_note?: string;
+    }>;
+  }
+) {
+  return apiFetch<Record<string, unknown>>(
+    `/api/sales/inventory/return-requests/${requestId}/receive`,
     { method: "POST", body: JSON.stringify(values) }
   );
 }
