@@ -19,6 +19,10 @@ const sources = {
   workbookRoute: read("src/app/api/sales/inventory/receipts/[receiptId]/excel-preview/route.ts"),
   databaseTests: read("scripts/test-database-migrations.mjs"),
   runbook: read("docs/PRODUCT_INVENTORY_PHASE_6_UAT_RUNBOOK.md"),
+  returnHardening: read("db/schema_v147_product_inventory_return_hardening.sql"),
+  returnRoute: read("src/app/api/sales/inventory/return-requests/route.ts"),
+  returnAttachmentRoute: read("src/app/api/sales/inventory/return-requests/[requestId]/attachments/[attachmentId]/route.ts"),
+  returnRunbook: read("docs/5G_ROUTER_UAT_ROLLOUT.md"),
 };
 
 const agentDashboardSource = sources.commerce.split(
@@ -75,6 +79,32 @@ const checks = [
   ["concurrent receipt confirmation has one winner",
     sources.databaseTests.includes("testConcurrentProductReceiptConfirmation")
       && sources.databaseTests.includes("Concurrent receipt confirmation did not produce exactly one winner")],
+  ["return evidence upload is private, bounded, inspected, and cleaned up",
+    sources.returnRoute.includes("inspectUpload")
+      && sources.returnRoute.includes("maxTotalBytes")
+      && sources.returnRoute.includes("removeObjects")
+      && sources.returnAttachmentRoute.includes("downloadObject")
+      && sources.returnAttachmentRoute.includes('"cache-control": "private, no-store"')],
+  ["return reconciliation is service-only with tenant-key constraints",
+    sources.returnHardening.includes("get_product_inventory_return_reconciliation")
+      && sources.returnHardening.includes("'balanced'")
+      && sources.returnHardening.includes("REVOKE ALL ON FUNCTION")
+      && sources.returnHardening.includes("product_return_request_lines_request_org_fk")
+      && sources.returnHardening.includes("product_return_request_lines_unit_org_fk")],
+  ["return monitoring covers approval, delivery, custody, and damage accounting",
+    sources.healthRoute.includes("overdue_return_approvals")
+      && sources.healthRoute.includes("overdue_return_deliveries")
+      && sources.healthRoute.includes("failed_return_damage_accounting")
+      && sources.healthRoute.includes("staleCustodyCommands")],
+  ["concurrent return review has one winner",
+    sources.databaseTests.includes("testConcurrentProductReturnReview")
+      && sources.databaseTests.includes("Concurrent return approval did not produce exactly one winner")],
+  ["router-return UAT, reconciliation, rollout, rollback, and sign-off procedures exist",
+    sources.returnRunbook.includes("Required UAT matrix")
+      && sources.returnRunbook.includes("get_product_inventory_return_reconciliation")
+      && sources.returnRunbook.includes("Controlled rollout")
+      && sources.returnRunbook.includes("Rollback and forward-fix")
+      && sources.returnRunbook.includes("Sign-off")],
   ["support, rollback, monitoring, pilot, and sign-off procedures exist",
     sources.runbook.includes("Rollback and forward-fix")
       && sources.runbook.includes("Controlled pilot")

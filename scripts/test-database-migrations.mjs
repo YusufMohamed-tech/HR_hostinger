@@ -291,6 +291,100 @@ async function testConcurrentProductReceiptConfirmation(connectionString) {
   }
 }
 
+async function testConcurrentProductReturnReview(connectionString) {
+  const clients = [new Client({ connectionString }), new Client({ connectionString })];
+  try {
+    await Promise.all(clients.map(async (client) => {
+      await client.connect();
+      await client.query("SELECT set_config('request.jwt.claim.role', 'service_role', false)");
+    }));
+    await clients[0].query(`
+      INSERT INTO public.product_return_requests (
+        id, organization_id, return_no, requester_user_id, requester_employee_id,
+        custodian_assignment_id, custodian_employee_id, project_id, project_name_snapshot,
+        location_id, city_snapshot, position_code_snapshot, warehouse_id,
+        approval_mode_snapshot, status, reason_summary
+      ) SELECT
+        'aef00001-0000-4000-8000-000000000001', organization_id,
+        'PR-CONCURRENT-000001', requester_user_id, requester_employee_id,
+        custodian_assignment_id, custodian_employee_id, project_id, project_name_snapshot,
+        location_id, city_snapshot, position_code_snapshot, warehouse_id,
+        'both', 'pending_approval', 'Concurrent return approval serialization proof'
+      FROM public.product_return_requests
+      WHERE id = 'aed00003-0000-4000-8000-000000000003';
+      INSERT INTO public.product_return_approvals (
+        id, organization_id, return_request_id, approver_type,
+        assigned_approver_user_id, assigned_approver_assignment_id
+      ) SELECT
+        'aef00002-0000-4000-8000-000000000002', organization_id,
+        'aef00001-0000-4000-8000-000000000001', 'project_manager',
+        '22222222-2222-4222-8222-222222222222', id
+      FROM public.product_inventory_operational_assignments
+      WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+        AND position_code = 'OGPM' AND status = 'active' LIMIT 1;
+      INSERT INTO public.product_return_approvals (
+        id, organization_id, return_request_id, approver_type
+      ) VALUES (
+        'aef00003-0000-4000-8000-000000000003',
+        '11111111-1111-4111-8111-111111111111',
+        'aef00001-0000-4000-8000-000000000001', 'finance_manager'
+      );
+    `);
+    const reviewSql = `SELECT public.execute_product_return_command(
+      $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'return_request_review', $5::jsonb
+    ) AS value`;
+    const attempts = await Promise.allSettled([
+      clients[0].query(reviewSql, [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        "aef00004-0000-4000-8000-000000000004",
+        "aef00005-0000-4000-8000-000000000005",
+        JSON.stringify({
+          return_request_id: "aef00001-0000-4000-8000-000000000001",
+          expected_version: 1,
+          decision: "approved",
+          decision_note: "Concurrent OGPM approval",
+        }),
+      ]),
+      clients[1].query(reviewSql, [
+        "11111111-1111-4111-8111-111111111111",
+        "45454545-4545-4545-8545-454545454545",
+        "aef00006-0000-4000-8000-000000000006",
+        "aef00007-0000-4000-8000-000000000007",
+        JSON.stringify({
+          return_request_id: "aef00001-0000-4000-8000-000000000001",
+          expected_version: 1,
+          decision: "approved",
+          decision_note: "Concurrent Finance approval",
+        }),
+      ]),
+    ]);
+    if (attempts.filter((attempt) => attempt.status === "fulfilled").length !== 1) {
+      throw new Error(
+        `Concurrent return approval did not produce exactly one winner: ${
+          attempts.map((attempt) => attempt.status).join(", ")
+        }`
+      );
+    }
+    const check = await clients[0].query(`
+      SELECT
+        (SELECT version FROM public.product_return_requests
+          WHERE id = 'aef00001-0000-4000-8000-000000000001') AS version,
+        (SELECT count(*)::integer FROM public.product_return_approvals
+          WHERE return_request_id = 'aef00001-0000-4000-8000-000000000001'
+            AND decision = 'approved') AS approved,
+        (SELECT count(*)::integer FROM public.product_return_approvals
+          WHERE return_request_id = 'aef00001-0000-4000-8000-000000000001'
+            AND decision = 'pending') AS pending
+    `);
+    if (check.rows[0]?.version !== 2 || check.rows[0]?.approved !== 1 || check.rows[0]?.pending !== 1) {
+      throw new Error(`Concurrent return approval control failed: ${JSON.stringify(check.rows[0])}`);
+    }
+  } finally {
+    await Promise.all(clients.map((client) => client.end().catch(() => undefined)));
+  }
+}
+
 async function testConcurrentLmsQuizAttempt(connectionString) {
   const clients = [new Client({ connectionString }), new Client({ connectionString })];
   try {
@@ -5877,6 +5971,7 @@ const launchAssertions = `
     damage_finance_reviewed jsonb;
     damage_received jsonb;
     return_report_row record;
+    return_reconciliation jsonb;
   BEGIN
     SELECT * INTO supervisor_assignment
     FROM public.product_inventory_operational_assignments
@@ -6108,6 +6203,9 @@ const launchAssertions = `
     FROM public.get_product_inventory_return_report(
       '11111111-1111-4111-8111-111111111111', NULL, NULL
     ) WHERE project_id = supervisor_assignment.project_id AND city = supervisor_assignment.city;
+    return_reconciliation := public.get_product_inventory_return_reconciliation(
+      '11111111-1111-4111-8111-111111111111'
+    );
 
     IF submitted IS DISTINCT FROM submitted_replay
        OR received IS DISTINCT FROM received_replay
@@ -6158,8 +6256,68 @@ const launchAssertions = `
        OR return_report_row.total_requests <> 2
        OR return_report_row.received_requests <> 2
        OR return_report_row.received_sellable <> 1
-       OR return_report_row.received_damaged <> 1 THEN
+       OR return_report_row.received_damaged <> 1
+       OR (return_reconciliation->>'balanced')::boolean IS NOT TRUE
+       OR (return_reconciliation->>'damagedWithoutLoss')::integer <> 0
+       OR (return_reconciliation->>'custodyDifference')::integer <> 0 THEN
       RAISE EXCEPTION 'Evidence, approvals, custody retention, Finance scan, receipt, or replay proof failed.';
+    END IF;
+  END
+  $test$;
+
+  DO $test$
+  DECLARE
+    rollout_guarded boolean := false;
+    cross_tenant_guarded boolean := false;
+  BEGIN
+    UPDATE public.product_inventory_commerce_settings
+    SET employee_custody_returns_enabled = false
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111';
+    BEGIN
+      INSERT INTO public.product_return_requests (
+        id, organization_id, return_no, requester_user_id, requester_employee_id,
+        custodian_assignment_id, custodian_employee_id, project_id, project_name_snapshot,
+        location_id, city_snapshot, position_code_snapshot, warehouse_id,
+        approval_mode_snapshot, status, reason_summary
+      ) SELECT
+        'aef10001-0000-4000-8000-000000000001', organization_id,
+        'PR-DISABLED-000001', requester_user_id, requester_employee_id,
+        custodian_assignment_id, custodian_employee_id, project_id, project_name_snapshot,
+        location_id, city_snapshot, position_code_snapshot, warehouse_id,
+        approval_mode_snapshot, 'pending_approval', 'Rollout guard must reject this request'
+      FROM public.product_return_requests
+      WHERE id = 'aed00003-0000-4000-8000-000000000003';
+    EXCEPTION WHEN object_not_in_prerequisite_state THEN
+      rollout_guarded := true;
+    END;
+    UPDATE public.product_inventory_commerce_settings
+    SET employee_custody_returns_enabled = true
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111';
+    BEGIN
+      INSERT INTO public.product_return_request_lines (
+        id, organization_id, return_request_id, unit_id, handover_id,
+        serial_snapshot, product_name_snapshot, requester_note,
+        claimed_condition, status
+      ) SELECT
+        'aef10002-0000-4000-8000-000000000002',
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', return_request_id,
+        (SELECT id FROM public.product_inventory_units candidate
+          WHERE candidate.organization_id = '11111111-1111-4111-8111-111111111111'
+            AND candidate.id <> source_line.unit_id
+          ORDER BY candidate.created_at, candidate.id LIMIT 1),
+        handover_id, serial_snapshot, product_name_snapshot,
+        'Cross tenant line must be rejected', claimed_condition, 'cancelled'
+      FROM public.product_return_request_lines source_line
+      WHERE id = 'aed00004-0000-4000-8000-000000000004';
+    EXCEPTION WHEN foreign_key_violation THEN
+      cross_tenant_guarded := true;
+    END;
+    IF NOT rollout_guarded OR NOT cross_tenant_guarded
+       OR EXISTS (SELECT 1 FROM public.product_return_requests
+          WHERE id = 'aef10001-0000-4000-8000-000000000001')
+       OR EXISTS (SELECT 1 FROM public.product_return_request_lines
+          WHERE id = 'aef10002-0000-4000-8000-000000000002') THEN
+      RAISE EXCEPTION 'Return rollout or tenant-key guard failed.';
     END IF;
   END
   $test$;
@@ -6402,7 +6560,8 @@ const launchAssertions = `
     photo_rows_denied boolean:=false; photo_function_denied boolean:=false;
     commerce_rows_denied boolean:=false; commerce_function_denied boolean:=false;
     posting_rows_denied boolean:=false; accounting_function_denied boolean:=false;
-    summary_function_denied boolean:=false;
+    summary_function_denied boolean:=false; return_rows_denied boolean:=false;
+    return_function_denied boolean:=false;
     product_inventory_rows integer:=0; workbook_rows integer:=0; photo_rows integer:=0;
   BEGIN
     SET LOCAL ROLE authenticated;
@@ -6530,6 +6689,20 @@ const launchAssertions = `
       );
     EXCEPTION WHEN insufficient_privilege THEN summary_function_denied:=true;
     END;
+    BEGIN
+      UPDATE public.product_return_requests
+      SET reason_summary = 'Forbidden browser mutation'
+      WHERE id = 'aed00003-0000-4000-8000-000000000003';
+      GET DIAGNOSTICS product_inventory_rows = ROW_COUNT;
+      return_rows_denied := product_inventory_rows = 0;
+    EXCEPTION WHEN insufficient_privilege THEN return_rows_denied:=true;
+    END;
+    BEGIN
+      PERFORM public.get_product_inventory_return_reconciliation(
+        '11111111-1111-4111-8111-111111111111'
+      );
+    EXCEPTION WHEN insufficient_privilege THEN return_function_denied:=true;
+    END;
     RESET ROLE;
     IF NOT sim_denied OR NOT accounting_denied OR NOT promoter_denied OR NOT eosb_denied
        OR NOT function_denied OR NOT product_inventory_denied OR NOT product_function_denied
@@ -6537,7 +6710,8 @@ const launchAssertions = `
        OR NOT photo_rows_denied OR NOT photo_function_denied
        OR NOT commerce_rows_denied OR NOT commerce_function_denied
        OR NOT posting_rows_denied OR NOT accounting_function_denied
-       OR NOT summary_function_denied THEN
+       OR NOT summary_function_denied OR NOT return_rows_denied
+       OR NOT return_function_denied THEN
       RAISE EXCEPTION 'One or more atomic command boundaries allowed a direct browser write.';
     END IF;
   END
@@ -6600,6 +6774,7 @@ try {
   await testConcurrentLmsQuizAttempt(databaseUrl);
   await testConcurrentProductSale(databaseUrl);
   await testConcurrentProductReceiptConfirmation(databaseUrl);
+  await testConcurrentProductReturnReview(databaseUrl);
   console.log("Database migration/RLS smoke test passed on disposable PostgreSQL 16.");
 } finally {
   if (containerStarted) {

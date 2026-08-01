@@ -39,7 +39,7 @@ export async function loadProductReturnWorkspace(
 
   const [settingsResult, warehousesResult, requestsResult, linesResult, attachmentsResult, approvalsResult, receiptsResult, unitsResult, reportResult] = await Promise.all([
     db.from("product_inventory_commerce_settings")
-      .select("return_approval_mode, require_return_photo, minimum_return_photos, maximum_return_photos")
+      .select("employee_custody_returns_enabled, return_approval_mode, require_return_photo, minimum_return_photos, maximum_return_photos")
       .eq("organization_id", values.orgId).maybeSingle(),
     db.from("inventory_warehouses")
       .select("id, code, name_ar, name_en, is_default")
@@ -109,14 +109,16 @@ export async function loadProductReturnWorkspace(
     }));
   const setting = settingsResult.data as ProductReturnWorkspaceData["settings"] | null;
 
+  const returnsEnabled = setting?.employee_custody_returns_enabled ?? true;
   return {
     access: {
       role: values.role,
-      can_submit: Boolean(employeeId),
+      can_submit: Boolean(employeeId) && returnsEnabled,
       can_review_finance: values.role === "admin" || values.role === "finance_manager",
       can_receive: values.role === "admin" || values.role === "finance_manager",
     },
     settings: setting ?? {
+      employee_custody_returns_enabled: true,
       return_approval_mode: "both",
       require_return_photo: true,
       minimum_return_photos: 1,

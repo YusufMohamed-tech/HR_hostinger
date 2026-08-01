@@ -543,6 +543,7 @@ export type ProductReturnWorkspaceData = {
     can_receive: boolean;
   };
   settings: {
+    employee_custody_returns_enabled: boolean;
     return_approval_mode: "both" | "project_manager" | "finance_manager" | "either";
     require_return_photo: boolean;
     minimum_return_photos: number;

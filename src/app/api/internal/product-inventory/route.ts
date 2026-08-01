@@ -27,6 +27,8 @@ export async function GET(request: NextRequest) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = admin as any;
   const staleBefore = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const approvalOverdueBefore = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const deliveryOverdueBefore = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
 
   try {
     const [
@@ -41,7 +43,13 @@ export async function GET(request: NextRequest) {
       staleReceiptCommands,
       staleWorkbookCommands,
       stalePhotoCommands,
+      staleCustodyCommands,
+      overdueReturnApprovals,
+      overdueReturnDeliveries,
+      failedReturnDamageAccounting,
+      overdueReturnDamageAccounting,
       oldestException,
+      oldestReturnException,
     ] = await Promise.all([
       db.from("event_outbox").select("id", { head: true, count: "exact" })
         .like("topic", "product_inventory.%").eq("status", "pending"),
@@ -71,12 +79,29 @@ export async function GET(request: NextRequest) {
         .eq("status", "processing").lt("created_at", staleBefore),
       db.from("product_inventory_photo_commands").select("id", { head: true, count: "exact" })
         .eq("status", "processing").lt("created_at", staleBefore),
+      db.from("product_inventory_custody_commands").select("id", { head: true, count: "exact" })
+        .eq("status", "processing").lt("created_at", staleBefore),
+      db.from("product_return_requests").select("id", { head: true, count: "exact" })
+        .eq("status", "pending_approval").lt("submitted_at", approvalOverdueBefore),
+      db.from("product_return_requests").select("id", { head: true, count: "exact" })
+        .in("status", ["approved_awaiting_delivery", "partially_received"])
+        .lt("approved_at", deliveryOverdueBefore),
+      db.from("product_inventory_loss_records").select("id", { head: true, count: "exact" })
+        .not("return_request_id", "is", null).eq("accounting_status", "failed"),
+      db.from("product_inventory_loss_records").select("id", { head: true, count: "exact" })
+        .not("return_request_id", "is", null)
+        .in("accounting_status", ["pending", "pending_approval"])
+        .lt("created_at", staleBefore),
       db.from("product_inventory_accounting_postings")
         .select("organization_id, source_type, source_id, status, attempt_count, updated_at")
         .in("status", ["failed", "pending", "pending_approval"])
         .order("updated_at", { ascending: true })
         .limit(1)
         .maybeSingle(),
+      db.from("product_return_requests")
+        .select("organization_id, id, return_no, status, submitted_at, approved_at")
+        .in("status", ["pending_approval", "approved_awaiting_delivery", "partially_received"])
+        .order("submitted_at", { ascending: true }).limit(1).maybeSingle(),
     ]);
     const results = [
       outboxPending,
@@ -90,20 +115,31 @@ export async function GET(request: NextRequest) {
       staleReceiptCommands,
       staleWorkbookCommands,
       stalePhotoCommands,
+      staleCustodyCommands,
+      overdueReturnApprovals,
+      overdueReturnDeliveries,
+      failedReturnDamageAccounting,
+      overdueReturnDamageAccounting,
       oldestException,
+      oldestReturnException,
     ];
     const failedQuery = results.find((result) => result.error);
     if (failedQuery?.error) throw new Error(failedQuery.error.message);
 
     const staleCommands = (staleReceiptCommands.count ?? 0)
       + (staleWorkbookCommands.count ?? 0)
-      + (stalePhotoCommands.count ?? 0);
+      + (stalePhotoCommands.count ?? 0)
+      + (staleCustodyCommands.count ?? 0);
     const checks = {
       dead_letter_events: outboxDeadLetter.count ?? 0,
       overdue_events: overdueOutbox.count ?? 0,
       failed_accounting_postings: failedPostings.count ?? 0,
       overdue_accounting_postings: overduePostings.count ?? 0,
       stale_commands: staleCommands,
+      overdue_return_approvals: overdueReturnApprovals.count ?? 0,
+      overdue_return_deliveries: overdueReturnDeliveries.count ?? 0,
+      failed_return_damage_accounting: failedReturnDamageAccounting.count ?? 0,
+      overdue_return_damage_accounting: overdueReturnDamageAccounting.count ?? 0,
     };
     const healthy = Object.values(checks).every((count) => count === 0);
     return NextResponse.json(
@@ -114,6 +150,8 @@ export async function GET(request: NextRequest) {
           command_stale_after_minutes: 15,
           overdue_event_after_minutes: 15,
           overdue_accounting_after_minutes: 15,
+          return_approval_overdue_after_hours: 24,
+          return_delivery_overdue_after_hours: 48,
         },
         checks,
         queue: {
@@ -127,6 +165,13 @@ export async function GET(request: NextRequest) {
           overdue: overduePostings.count ?? 0,
           failed: failedPostings.count ?? 0,
           oldest_exception: oldestException.data ?? null,
+        },
+        returns: {
+          overdue_approvals: overdueReturnApprovals.count ?? 0,
+          overdue_deliveries: overdueReturnDeliveries.count ?? 0,
+          failed_damage_accounting: failedReturnDamageAccounting.count ?? 0,
+          overdue_damage_accounting: overdueReturnDamageAccounting.count ?? 0,
+          oldest_open_request: oldestReturnException.data ?? null,
         },
         requestId,
       },

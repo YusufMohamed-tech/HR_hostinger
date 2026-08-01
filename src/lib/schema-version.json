@@ -1,5 +1,5 @@
 {
-  "id": "schema_v146_product_inventory_return_events_reporting",
-  "file": "db/schema_v146_product_inventory_return_events_reporting.sql",
-  "checksumSha256": "8368a57458aefda47adfe739942aad4a65784d093a4cd90c43d0705629eff24d"
+  "id": "schema_v147_product_inventory_return_hardening",
+  "file": "db/schema_v147_product_inventory_return_hardening.sql",
+  "checksumSha256": "8ffe837f211309145eb03f2ed3b8b8bb45cdb00b4ed7934eac97c244b4d29dd6"
 }
