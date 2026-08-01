@@ -186,7 +186,7 @@ export function SidebarContent() {
         { name: "عمليات مخزون المنتجات", href: "/sales/inventory", icon: Package },
         { name: "تسليم وعهد الموظفين", href: "/sales/inventory/employee-custody", icon: PackageCheck, indent: true },
         { name: "مرتجعات أجهزة الراوتر", href: "/sales/inventory/returns", icon: RotateCcw, indent: true },
-        { name: "تسليم المندوبين القديم", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
+        { name: "تسليم المندوبين", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
         { name: "استلام بالصور", href: "/sales/inventory/receipts/photo", icon: Camera, indent: true },
         { name: "استيراد Excel / CSV", href: "/sales/inventory/receipts/import", icon: FileSpreadsheet, indent: true },
         { name: "إصدارات قالب الاستيراد", href: "/sales/inventory/import-profiles", icon: FileSpreadsheet, indent: true },
