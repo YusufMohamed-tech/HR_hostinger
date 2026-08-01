@@ -1,5 +1,5 @@
 {
-  "id": "schema_v155_product_catalog_operations",
-  "file": "db/schema_v155_product_catalog_operations.sql",
-  "checksumSha256": "4e2dcbca9ff05d16ff8036fb00e8d88cdfbb6477fdc33a67eecdf10162987429"
+  "id": "schema_v156_product_trader_custody",
+  "file": "db/schema_v156_product_trader_custody.sql",
+  "checksumSha256": "fc978322152704b1b4f94e3422d3c2c13984564959fa7f58aaa064b9bd37de85"
 }
