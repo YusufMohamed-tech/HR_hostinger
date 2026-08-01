@@ -1,5 +1,5 @@
 {
-  "id": "schema_v145_product_inventory_return_workflow",
-  "file": "db/schema_v145_product_inventory_return_workflow.sql",
-  "checksumSha256": "4b0e4476beccef9a481f2623715f3034e820912549d9dc89172353b8383d60b8"
+  "id": "schema_v146_product_inventory_return_events_reporting",
+  "file": "db/schema_v146_product_inventory_return_events_reporting.sql",
+  "checksumSha256": "8368a57458aefda47adfe739942aad4a65784d093a4cd90c43d0705629eff24d"
 }

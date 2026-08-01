@@ -431,6 +431,47 @@ const productInventoryLossEventPayload = z.object({
   version: z.coerce.number().int().positive(),
 });
 
+const productEmployeeHandoverWorkflowPayload = z.object({
+  handover_id: z.string().uuid(),
+  handover_no: z.string().min(1),
+  recipient_user_id: z.string().uuid(),
+  recipient_employee_id: z.string().uuid(),
+  recipient_name: z.string().min(1),
+  project_id: z.string().uuid(),
+  project_name: z.string().min(1),
+  city: z.string().min(1),
+  position_code: z.enum(["OGPM", "OGSV1"]),
+  unit_count: z.coerce.number().int().nonnegative(),
+  status: z.enum(["issued", "accepted", "completed", "cancelled"]),
+  version: z.coerce.number().int().positive(),
+});
+
+const productReturnWorkflowEventPayload = z.object({
+  return_request_id: z.string().uuid(),
+  return_no: z.string().min(1),
+  requester_user_id: z.string().uuid(),
+  custodian_employee_id: z.string().uuid(),
+  project_id: z.string().uuid(),
+  project_name: z.string().min(1),
+  city: z.string().min(1),
+  position_code: z.enum(["OGPM", "OGSV1"]),
+  warehouse_id: z.string().uuid(),
+  approval_mode: z.enum(["both", "project_manager", "finance_manager", "either"]),
+  status: z.enum([
+    "pending_approval", "approved_awaiting_delivery", "rejected",
+    "partially_received", "received", "cancelled",
+  ]),
+  reason: z.string().min(1),
+  unit_count: z.coerce.number().int().nonnegative(),
+  version: z.coerce.number().int().positive(),
+  approval_id: z.string().uuid().optional(),
+  approver_type: z.enum(["finance_manager", "project_manager"]).optional(),
+  assigned_approver_user_id: z.string().uuid().nullable().optional(),
+  decision: z.enum(["pending", "approved", "rejected"]).optional(),
+  decision_note: z.string().nullable().optional(),
+  decided_by: z.string().uuid().nullable().optional(),
+});
+
 const productInventoryAccountingFailedPayload = z.object({
   source_type: z.enum(["receipt", "sale", "collection", "loss"]),
   source_id: z.string().uuid(),
@@ -514,6 +555,14 @@ async function productAgentUserId(orgId: string, agentId: string) {
     .eq("organization_id", orgId).eq("id", agentId).maybeSingle();
   if (error) throw new Error(`Product field-agent recipient lookup failed: ${error.message}`);
   return typeof data?.user_id === "string" ? data.user_id : null;
+}
+
+async function productHandoverUnitCount(orgId: string, handoverId: string) {
+  const admin = createAdminClient();
+  const { count, error } = await admin.from("product_handover_lines").select("id", { count: "exact", head: true })
+    .eq("organization_id", orgId).eq("handover_id", handoverId);
+  if (error) throw new Error(`Product handover unit-count lookup failed: ${error.message}`);
+  return Number(count || 0);
 }
 
 async function employeeUserId(orgId: string, employeeId: string) {
@@ -1350,6 +1399,130 @@ const handlers: Record<string, OutboxHandler> = {
       body: `أكد المندوب استلام ${payload.unit_count} وحدة مسلسلة.`,
       type: "sales",
       link: "/sales/inventory/assignments",
+    });
+  },
+  "product_inventory.employee_handover_issued": async (event) => {
+    const payload = productEmployeeHandoverWorkflowPayload.parse(event.payload);
+    const unitCount = await productHandoverUnitCount(event.org_id, payload.handover_id);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [payload.recipient_user_id],
+      title: `عهدة راوتر جديدة ${payload.handover_no}`,
+      body: `${unitCount} جهاز · ${payload.position_code} · ${payload.project_name} · ${payload.city}. ${payload.status === "issued" ? "راجع السيريالات وأكد الاستلام." : "تم إسنادها مباشرة إلى عهدتك."}`,
+      type: "sales",
+      link: "/sales/inventory/custody",
+    });
+  },
+  "product_inventory.employee_handover_accepted": async (event) => {
+    const payload = productEmployeeHandoverWorkflowPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: await financeManagerUserIds(event.org_id),
+      title: `تأكيد استلام عهدة ${payload.handover_no}`,
+      body: `${payload.recipient_name} أكد استلام ${payload.unit_count} جهاز في ${payload.project_name} · ${payload.city}.`,
+      type: "sales",
+      link: "/sales/inventory/employee-custody",
+    });
+  },
+  "product_inventory.return_submitted": async (event) => {
+    const payload = productReturnWorkflowEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [payload.requester_user_id],
+      title: `تم تسجيل المرتجع ${payload.return_no}`,
+      body: `${payload.project_name} · ${payload.city}. الجهاز خارج الجاهز للبيع لحين اكتمال الموافقات والاستلام الفعلي.`,
+      type: "sales",
+      link: "/sales/inventory/returns",
+    });
+  },
+  "product_inventory.return_approval_requested": async (event) => {
+    const payload = productReturnWorkflowEventPayload.parse(event.payload);
+    const userIds = payload.approver_type === "project_manager"
+      ? (payload.assigned_approver_user_id ? [payload.assigned_approver_user_id] : [])
+      : await financeManagerUserIds(event.org_id);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds,
+      title: `مرتجع ينتظر اعتمادك ${payload.return_no}`,
+      body: `${payload.unit_count} جهاز · ${payload.position_code} · ${payload.project_name} · ${payload.city}.`,
+      type: "sales",
+      link: "/sales/inventory/returns",
+    });
+  },
+  "product_inventory.return_reviewed": async (event) => {
+    const payload = productReturnWorkflowEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [payload.requester_user_id],
+      title: `${payload.approver_type === "finance_manager" ? "Finance" : "OGPM"} راجع المرتجع ${payload.return_no}`,
+      body: payload.decision === "approved" ? "تمت الموافقة في هذه المرحلة." : "تم رفض طلب المرتجع.",
+      type: "sales",
+      link: "/sales/inventory/returns",
+    });
+  },
+  "product_inventory.return_approved": async (event) => {
+    const payload = productReturnWorkflowEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [...new Set([payload.requester_user_id, ...await financeManagerUserIds(event.org_id)])],
+      title: `المرتجع ${payload.return_no} جاهز للتسليم`,
+      body: `${payload.unit_count} جهاز بانتظار التسليم الفعلي ومسح السيريال لدى Finance. العهدة ما زالت على المستلم حتى ذلك الوقت.`,
+      type: "sales",
+      link: "/sales/inventory/returns",
+    });
+  },
+  "product_inventory.return_rejected": async (event) => {
+    const payload = productReturnWorkflowEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [payload.requester_user_id],
+      title: `تم رفض المرتجع ${payload.return_no}`,
+      body: "عاد الجهاز إلى حالة العهدة الجاهزة وفق ضوابط البيع.",
+      type: "sales",
+      link: "/sales/inventory/returns",
+    });
+  },
+  "product_inventory.return_partially_received": async (event) => {
+    const payload = productReturnWorkflowEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [...new Set([payload.requester_user_id, ...await financeManagerUserIds(event.org_id)])],
+      title: `استلام جزئي للمرتجع ${payload.return_no}`,
+      body: "أُسقطت فقط السيريالات التي استلمها Finance، والباقي ما زال في العهدة.",
+      type: "sales",
+      link: "/sales/inventory/returns",
+    });
+  },
+  "product_inventory.return_received": async (event) => {
+    const payload = productReturnWorkflowEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [...new Set([payload.requester_user_id, ...await financeManagerUserIds(event.org_id)])],
+      title: `اكتمل استلام المرتجع ${payload.return_no}`,
+      body: `${payload.unit_count} جهاز تم مسح سيريالاته واستلامه فعليًا وإسقاطه من العهدة.`,
+      type: "sales",
+      link: "/sales/inventory/returns",
+    });
+  },
+  "product_inventory.return_cancelled": async (event) => {
+    const payload = productReturnWorkflowEventPayload.parse(event.payload);
+    await deliverNotifications({
+      orgId: event.org_id,
+      sourceEventId: event.business_event_id,
+      userIds: [payload.requester_user_id],
+      title: `تم إلغاء المرتجع ${payload.return_no}`,
+      body: "عاد الجهاز إلى حالته السابقة في العهدة.",
+      type: "sales",
+      link: "/sales/inventory/returns",
     });
   },
   "product_inventory.agent_returned": async (event) => {

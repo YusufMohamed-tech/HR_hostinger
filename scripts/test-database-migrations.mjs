@@ -5871,6 +5871,12 @@ const launchAssertions = `
     finance_reviewed jsonb;
     received jsonb;
     received_replay jsonb;
+    damage_handover jsonb;
+    damage_submitted jsonb;
+    damage_pm_reviewed jsonb;
+    damage_finance_reviewed jsonb;
+    damage_received jsonb;
+    return_report_row record;
   BEGIN
     SELECT * INTO supervisor_assignment
     FROM public.product_inventory_operational_assignments
@@ -6017,13 +6023,104 @@ const launchAssertions = `
       )
     );
 
+    damage_handover := public.execute_product_employee_custody_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'aee00001-0000-4000-8000-000000000001',
+      'aee00002-0000-4000-8000-000000000002',
+      'employee_handover_issue',
+      jsonb_build_object(
+        'handover_id', 'aee00003-0000-4000-8000-000000000003',
+        'assignment_id', supervisor_assignment.id,
+        'warehouse_id', warehouse_id_value,
+        'require_acknowledgment', false,
+        'unit_ids', jsonb_build_array(unit_id_value),
+        'notes', 'Damaged return accounting linkage proof'
+      )
+    );
+    damage_submitted := public.execute_product_return_command(
+      '11111111-1111-4111-8111-111111111111',
+      '99999999-9999-4999-8999-999999999999',
+      'aee00004-0000-4000-8000-000000000004',
+      'aee00005-0000-4000-8000-000000000005',
+      'return_request_submit',
+      jsonb_build_object(
+        'return_request_id', 'aee00006-0000-4000-8000-000000000006',
+        'warehouse_id', warehouse_id_value,
+        'reason_summary', 'Router enclosure was damaged in the field',
+        'lines', jsonb_build_array(jsonb_build_object(
+          'line_id', 'aee00007-0000-4000-8000-000000000007',
+          'unit_id', unit_id_value,
+          'requester_note', 'Visible enclosure damage documented before delivery',
+          'claimed_condition', 'damaged',
+          'attachments', jsonb_build_array(jsonb_build_object(
+            'attachment_id', 'aee00008-0000-4000-8000-000000000008',
+            'managed_file_id', 'aee00009-0000-4000-8000-000000000009',
+            'file', jsonb_build_object(
+              'bucket', 'product-return-evidence',
+              'path', '11111111-1111-4111-8111-111111111111/aee00006-0000-4000-8000-000000000006/aee00007-0000-4000-8000-000000000007/damage.jpg',
+              'filename', 'damage.jpg', 'type', 'image/jpeg', 'size_bytes', 2048,
+              'sha256', repeat('b', 64), 'scan_status', 'clean',
+              'scan_engine', 'database-smoke-test', 'scanned_at', now(),
+              'provider', 'supabase_storage'
+            )
+          ))
+        ))
+      )
+    );
+    damage_pm_reviewed := public.execute_product_return_command(
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222',
+      'aee00010-0000-4000-8000-000000000010',
+      'aee00011-0000-4000-8000-000000000011',
+      'return_request_review',
+      '{"return_request_id":"aee00006-0000-4000-8000-000000000006","expected_version":1,"decision":"approved","decision_note":"OGPM confirmed the evidence"}'::jsonb
+    );
+    damage_finance_reviewed := public.execute_product_return_command(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'aee00012-0000-4000-8000-000000000012',
+      'aee00013-0000-4000-8000-000000000013',
+      'return_request_review',
+      '{"return_request_id":"aee00006-0000-4000-8000-000000000006","expected_version":2,"decision":"approved","decision_note":"Finance approved physical inspection"}'::jsonb
+    );
+    damage_received := public.execute_product_return_command(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'aee00014-0000-4000-8000-000000000014',
+      'aee00015-0000-4000-8000-000000000015',
+      'return_physical_receive',
+      jsonb_build_object(
+        'return_request_id', 'aee00006-0000-4000-8000-000000000006',
+        'expected_version', 3,
+        'receipt_id', 'aee00016-0000-4000-8000-000000000016',
+        'warehouse_id', warehouse_id_value,
+        'notes', 'Finance classified the scanned router as damaged',
+        'lines', jsonb_build_array(jsonb_build_object(
+          'request_line_id', 'aee00007-0000-4000-8000-000000000007',
+          'scanned_serial', serial_value, 'disposition', 'damaged',
+          'condition_received', 'damaged',
+          'inspection_note', 'Housing cracked and the device failed inspection'
+        ))
+      )
+    );
+    SELECT * INTO return_report_row
+    FROM public.get_product_inventory_return_report(
+      '11111111-1111-4111-8111-111111111111', NULL, NULL
+    ) WHERE project_id = supervisor_assignment.project_id AND city = supervisor_assignment.city;
+
     IF submitted IS DISTINCT FROM submitted_replay
        OR received IS DISTINCT FROM received_replay
        OR submitted->'return_request'->>'status' <> 'pending_approval'
        OR pm_reviewed->'return_request'->>'status' <> 'pending_approval'
        OR finance_reviewed->'return_request'->>'status' <> 'approved_awaiting_delivery'
        OR received->'return_request'->>'status' <> 'received'
-       OR (SELECT status FROM public.product_inventory_units WHERE id = unit_id_value) <> 'in_stock'
+       OR damage_handover->'handover'->>'status' <> 'accepted'
+       OR damage_submitted->'return_request'->>'status' <> 'pending_approval'
+       OR damage_pm_reviewed->'return_request'->>'status' <> 'pending_approval'
+       OR damage_finance_reviewed->'return_request'->>'status' <> 'approved_awaiting_delivery'
+       OR damage_received->'return_request'->>'status' <> 'received'
+       OR (SELECT status FROM public.product_inventory_units WHERE id = unit_id_value) <> 'damaged'
        OR (SELECT current_custodian_employee_id FROM public.product_inventory_units WHERE id = unit_id_value) IS NOT NULL
        OR (SELECT active_return_request_line_id FROM public.product_inventory_units WHERE id = unit_id_value) IS NOT NULL
        OR (SELECT count(*) FROM public.product_return_attachments
@@ -6037,6 +6134,31 @@ const launchAssertions = `
        OR (SELECT count(*) FROM public.product_inventory_movements
            WHERE return_request_id = 'aed00003-0000-4000-8000-000000000003'
              AND movement_type IN ('return_reserved', 'return_approved', 'return_received')) <> 3 THEN
+      RAISE EXCEPTION 'Evidence, approvals, custody retention, Finance scan, receipt, or replay proof failed.';
+    END IF;
+    IF (SELECT count(*) FROM public.product_inventory_loss_records
+        WHERE return_request_line_id = 'aee00007-0000-4000-8000-000000000007'
+          AND loss_type = 'damage' AND accounting_status = 'pending') <> 1
+       OR (SELECT loss_record_id FROM public.product_return_receipt_lines
+           WHERE request_line_id = 'aee00007-0000-4000-8000-000000000007') IS NULL
+       OR (SELECT count(*) FROM public.event_outbox
+           WHERE topic = 'product_inventory.damage_recorded'
+             AND payload->>'return_request_id' = 'aee00006-0000-4000-8000-000000000006') <> 1
+       OR (SELECT count(*) FROM public.event_outbox
+           WHERE topic IN (
+             'product_inventory.return_submitted',
+             'product_inventory.return_approval_requested',
+             'product_inventory.return_reviewed',
+             'product_inventory.return_approved',
+             'product_inventory.return_received'
+           ) AND payload->>'return_request_id' IN (
+             'aed00003-0000-4000-8000-000000000003',
+             'aee00006-0000-4000-8000-000000000006'
+           )) <> 14
+       OR return_report_row.total_requests <> 2
+       OR return_report_row.received_requests <> 2
+       OR return_report_row.received_sellable <> 1
+       OR return_report_row.received_damaged <> 1 THEN
       RAISE EXCEPTION 'Evidence, approvals, custody retention, Finance scan, receipt, or replay proof failed.';
     END IF;
   END

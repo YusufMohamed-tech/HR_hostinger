@@ -551,6 +551,25 @@ export type ProductReturnWorkspaceData = {
   warehouses: ProductInventoryWarehouse[];
   eligible_units: ProductInventoryStockRow[];
   requests: ProductReturnRequest[];
+  report: ProductReturnReportRow[];
+};
+
+export type ProductReturnReportRow = {
+  project_id: string;
+  project_name: string;
+  city: string;
+  total_requests: number;
+  pending_approval: number;
+  awaiting_delivery: number;
+  received_requests: number;
+  rejected_requests: number;
+  cancelled_requests: number;
+  total_units: number;
+  received_sellable: number;
+  received_quarantine: number;
+  received_damaged: number;
+  average_approval_hours: number | null;
+  average_delivery_hours: number | null;
 };
 
 export type ProductPriceOverrideRequest = {

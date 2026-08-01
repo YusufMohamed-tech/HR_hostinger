@@ -33,6 +33,19 @@ const dynamicTopicsByFile = new Map([
     "product_inventory.damage_recorded",
     "product_inventory.loss_recorded",
   ])],
+  ["db/schema_v146_product_inventory_return_events_reporting.sql", new Set([
+    "product_inventory.employee_handover_issued",
+    "product_inventory.employee_handover_accepted",
+    "product_inventory.return_submitted",
+    "product_inventory.return_approval_requested",
+    "product_inventory.return_reviewed",
+    "product_inventory.return_approved",
+    "product_inventory.return_rejected",
+    "product_inventory.return_partially_received",
+    "product_inventory.return_received",
+    "product_inventory.return_cancelled",
+    "product_inventory.damage_recorded",
+  ])],
 ]);
 
 function splitSqlList(value) {
@@ -98,6 +111,9 @@ for (const relativeFile of sqlFiles) {
     const variable = expression.trim().match(/^([a-z_][a-z0-9_]*)$/i)?.[1];
     if (variable) topics = assignedTopicLiterals(source, variable);
     if (expression.includes("||")) topics = [...(dynamicTopicsByFile.get(relativeFile) ?? [])];
+    if (topics.length === 0 && dynamicTopicsByFile.has(relativeFile)) {
+      topics = [...dynamicTopicsByFile.get(relativeFile)];
+    }
     if (topics.length === 0) {
       unresolved.push(`${relativeFile}: unable to resolve topic expression ${JSON.stringify(expression)}`);
       continue;

@@ -224,6 +224,11 @@ export function ProductReturnWorkflowScreen() {
         <Card><CardContent className="p-5"><p className="text-sm text-slate-500">مستلم فعليًا</p><p className="mt-2 text-3xl font-bold">{totals.completed}</p></CardContent></Card>
       </div>
 
+      {data?.access.can_receive && data.report.length > 0 && <Card>
+        <CardHeader><CardTitle>مؤشرات المرتجعات حسب المشروع والمدينة</CardTitle></CardHeader>
+        <CardContent className="overflow-auto p-0"><Table><TableHeader><TableRow><TableHead>المشروع</TableHead><TableHead>المدينة</TableHead><TableHead>الطلبات</TableHead><TableHead>قيد الاعتماد</TableHead><TableHead>بانتظار التسليم</TableHead><TableHead>مستلم</TableHead><TableHead>صالح للبيع</TableHead><TableHead>حجر</TableHead><TableHead>تالف</TableHead><TableHead>متوسط الاعتماد</TableHead><TableHead>متوسط التسليم</TableHead></TableRow></TableHeader><TableBody>{data.report.map((row) => <TableRow key={`${row.project_id}:${row.city}`}><TableCell>{row.project_name}</TableCell><TableCell>{row.city}</TableCell><TableCell>{row.total_requests}</TableCell><TableCell>{row.pending_approval}</TableCell><TableCell>{row.awaiting_delivery}</TableCell><TableCell>{row.received_requests}</TableCell><TableCell>{row.received_sellable}</TableCell><TableCell>{row.received_quarantine}</TableCell><TableCell>{row.received_damaged}</TableCell><TableCell>{row.average_approval_hours === null ? "—" : `${row.average_approval_hours} س`}</TableCell><TableCell>{row.average_delivery_hours === null ? "—" : `${row.average_delivery_hours} س`}</TableCell></TableRow>)}</TableBody></Table></CardContent>
+      </Card>}
+
       {data?.access.can_submit && (data.eligible_units.length > 0) && (
         <Card>
           <CardHeader><CardTitle className="flex items-center gap-2"><RotateCcw className="h-5 w-5" />طلب مرتجع جديد</CardTitle></CardHeader>

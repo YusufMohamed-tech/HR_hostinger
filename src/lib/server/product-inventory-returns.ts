@@ -6,6 +6,7 @@ import type {
   ProductReturnApproval,
   ProductReturnAttachment,
   ProductReturnReceipt,
+  ProductReturnReportRow,
   ProductReturnRequest,
   ProductReturnRequestLine,
   ProductReturnWorkspaceData,
@@ -36,7 +37,7 @@ export async function loadProductReturnWorkspace(
   fail(employeeResult.error);
   const employeeId = String(employeeResult.data?.id || "");
 
-  const [settingsResult, warehousesResult, requestsResult, linesResult, attachmentsResult, approvalsResult, receiptsResult, unitsResult] = await Promise.all([
+  const [settingsResult, warehousesResult, requestsResult, linesResult, attachmentsResult, approvalsResult, receiptsResult, unitsResult, reportResult] = await Promise.all([
     db.from("product_inventory_commerce_settings")
       .select("return_approval_mode, require_return_photo, minimum_return_photos, maximum_return_photos")
       .eq("organization_id", values.orgId).maybeSingle(),
@@ -63,8 +64,13 @@ export async function loadProductReturnWorkspace(
         .eq("status", "with_custodian").is("active_return_request_line_id", null)
         .is("current_sale_id", null).order("assigned_at", { ascending: false }).limit(1000)
       : Promise.resolve({ data: [], error: null }),
+    db.rpc("get_product_inventory_return_report", {
+      p_org_id: values.orgId,
+      p_date_from: null,
+      p_date_to: null,
+    }),
   ]);
-  [settingsResult, warehousesResult, requestsResult, linesResult, attachmentsResult, approvalsResult, receiptsResult, unitsResult]
+  [settingsResult, warehousesResult, requestsResult, linesResult, attachmentsResult, approvalsResult, receiptsResult, unitsResult, reportResult]
     .forEach((result) => fail(result.error));
 
   const approvals = rows<ProductReturnApproval>(approvalsResult.data);
@@ -119,6 +125,21 @@ export async function loadProductReturnWorkspace(
     warehouses: rows<ProductInventoryWarehouse>(warehousesResult.data),
     eligible_units: rows<ProductInventoryStockRow>(unitsResult.data),
     requests,
+    report: rows<Record<string, unknown>>(reportResult.data).map((row) => ({
+      ...row,
+      total_requests: Number(row.total_requests || 0),
+      pending_approval: Number(row.pending_approval || 0),
+      awaiting_delivery: Number(row.awaiting_delivery || 0),
+      received_requests: Number(row.received_requests || 0),
+      rejected_requests: Number(row.rejected_requests || 0),
+      cancelled_requests: Number(row.cancelled_requests || 0),
+      total_units: Number(row.total_units || 0),
+      received_sellable: Number(row.received_sellable || 0),
+      received_quarantine: Number(row.received_quarantine || 0),
+      received_damaged: Number(row.received_damaged || 0),
+      average_approval_hours: row.average_approval_hours === null ? null : Number(row.average_approval_hours),
+      average_delivery_hours: row.average_delivery_hours === null ? null : Number(row.average_delivery_hours),
+    })) as ProductReturnReportRow[],
   };
 }
 
