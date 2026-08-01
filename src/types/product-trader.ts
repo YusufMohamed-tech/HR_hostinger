@@ -76,4 +76,23 @@ export type ProductTraderWorkspace = {
   available_units: ProductTraderUnit[];
   held_units: ProductTraderUnit[];
   handovers: ProductTraderHandover[];
+  sales: ProductTraderSale[];
+  price_overrides: ProductTraderPriceOverride[];
+};
+
+export type ProductTraderSale = {
+  id: string; sale_no: string; merchant_id: string; source_agent_id: string; sale_date: string;
+  customer_name: string | null; payment_method: string; subtotal: number; vat_amount: number;
+  total_amount: number; merchant_commission_amount: number; agent_chain_commission_amount: number;
+  organization_receivable_amount: number; status: string; accounting_status: string; created_at: string;
+  merchant?: { business_name: string } | null;
+  lines?: Array<{ unit_id: string; serial_snapshot: string; product_name_snapshot: string; actual_sale_price: number }>;
+};
+
+export type ProductTraderPriceOverride = {
+  id: string; unit_id: string; merchant_id: string; source_agent_id: string; requested_price: number;
+  approved_price: number | null; currency: string; reason: string; status: string; requested_at: string;
+  review_note: string | null; version: number;
+  merchant?: { business_name: string } | null;
+  unit?: { raw_serial_number: string; product?: { name: string } | null } | null;
 };

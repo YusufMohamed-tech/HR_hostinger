@@ -181,6 +181,7 @@
     { "id": "schema_v153_product_catalog_workbook_analysis", "file": "db/schema_v153_product_catalog_workbook_analysis.sql" },
     { "id": "schema_v154_atomic_product_catalog_import", "file": "db/schema_v154_atomic_product_catalog_import.sql" },
     { "id": "schema_v155_product_catalog_operations", "file": "db/schema_v155_product_catalog_operations.sql" },
-    { "id": "schema_v156_product_trader_custody", "file": "db/schema_v156_product_trader_custody.sql" }
+    { "id": "schema_v156_product_trader_custody", "file": "db/schema_v156_product_trader_custody.sql" },
+    { "id": "schema_v157_product_trader_sales", "file": "db/schema_v157_product_trader_sales.sql" }
   ]
 }

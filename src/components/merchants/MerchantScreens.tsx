@@ -129,6 +129,7 @@ function MessageBanner({ message }: { message: Message }) {
 const navItems = [
   { name: "الرئيسية", href: "/merchant", icon: LayoutDashboard },
   { name: "منتجاتي", href: "/merchant/products", icon: Package },
+  { name: "بيع منتج", href: "/merchant/products/sell", icon: ShoppingCart },
   { name: "شرائحي", href: "/merchant/sims", icon: Smartphone },
   { name: "تسجيل بيع", href: "/merchant/sell", icon: ShoppingCart },
   { name: "طلب شرائح", href: "/merchant/requests", icon: Package },

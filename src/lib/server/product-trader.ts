@@ -4,6 +4,8 @@ import type {
   ProductTraderHandover,
   ProductTraderHandoverLine,
   ProductTraderMerchant,
+  ProductTraderPriceOverride,
+  ProductTraderSale,
   ProductTraderUnit,
   ProductTraderWorkspace,
 } from "@/types/product-trader";
@@ -61,6 +63,38 @@ export async function executeProductTraderCommand(admin: AdminClient, input: {
   return result.data;
 }
 
+export async function executeProductTraderSaleCommand(admin: AdminClient, input: {
+  orgId: string; actorUserId: string; requestId: string; commandId: string;
+  action: "sale_create" | "price_override_request" | "price_override_review";
+  payload: Record<string, unknown>;
+}) {
+  const result = await productInventoryDb(admin).rpc("execute_product_trader_sale_command", {
+    p_org_id: input.orgId, p_actor_user_id: input.actorUserId, p_request_id: input.requestId,
+    p_command_id: input.commandId, p_action: input.action, p_payload: input.payload,
+  });
+  fail(result.error);
+  return result.data;
+}
+
+async function loadCommerceRows(admin: AdminClient, orgId: string, filters: { merchantId?: string; agentId?: string } = {}) {
+  const db = productInventoryDb(admin);
+  let salesQuery = db.from("product_trader_sales").select("*, merchant:merchant_id(business_name), lines:product_trader_sale_lines(unit_id, serial_snapshot, product_name_snapshot, actual_sale_price)").eq("organization_id", orgId);
+  let overrideQuery = db.from("product_trader_price_overrides").select("*, merchant:merchant_id(business_name), unit:unit_id(raw_serial_number, product:product_id(name))").eq("organization_id", orgId);
+  if (filters.merchantId) { salesQuery = salesQuery.eq("merchant_id", filters.merchantId); overrideQuery = overrideQuery.eq("merchant_id", filters.merchantId); }
+  if (filters.agentId) { salesQuery = salesQuery.eq("source_agent_id", filters.agentId); overrideQuery = overrideQuery.eq("source_agent_id", filters.agentId); }
+  const [salesResult, overridesResult] = await Promise.all([
+    salesQuery.order("created_at", { ascending: false }).limit(1000),
+    overrideQuery.order("requested_at", { ascending: false }).limit(1000),
+  ]);
+  fail(salesResult.error); fail(overridesResult.error);
+  return { sales: rows<ProductTraderSale>(salesResult.data), price_overrides: rows<ProductTraderPriceOverride>(overridesResult.data) };
+}
+
+export async function loadProductTraderFinanceWorkspace(admin: AdminClient, orgId: string) {
+  const commerce = await loadCommerceRows(admin, orgId);
+  return commerce;
+}
+
 export async function loadAgentProductTraderWorkspace(admin: AdminClient, orgId: string, userId: string): Promise<ProductTraderWorkspace> {
   const db = productInventoryDb(admin);
   const agentResult = await db.from("field_agents").select("id, agent_code, employee:employee_id(full_name)")
@@ -83,6 +117,7 @@ export async function loadAgentProductTraderWorkspace(admin: AdminClient, orgId:
   ]);
   [merchantsResult, unitsResult, handoversResult, linesResult].forEach((result) => fail(result.error));
   const employee = agent.employee as { full_name?: string } | null;
+  const commerce = await loadCommerceRows(admin, orgId, { agentId });
   return {
     ...setting,
     identity: { id: agentId, name: employee?.full_name || String(agent.agent_code || "مندوب"), kind: "agent" },
@@ -90,6 +125,7 @@ export async function loadAgentProductTraderWorkspace(admin: AdminClient, orgId:
     available_units: rows<ProductTraderUnit>(unitsResult.data).filter((unit) => unit.status === "with_agent"),
     held_units: [],
     handovers: joinHandovers(rows<ProductTraderHandover>(handoversResult.data), rows<ProductTraderHandoverLine>(linesResult.data)),
+    ...commerce,
   };
 }
 
@@ -111,6 +147,7 @@ export async function loadMerchantProductTraderWorkspace(admin: AdminClient, org
       .order("created_at", { ascending: false }).limit(5000),
   ]);
   [unitsResult, handoversResult, linesResult].forEach((result) => fail(result.error));
+  const commerce = await loadCommerceRows(admin, orgId, { merchantId: merchant.id });
   return {
     ...setting,
     identity: { id: merchant.id, name: merchant.business_name, kind: "merchant" },
@@ -118,5 +155,6 @@ export async function loadMerchantProductTraderWorkspace(admin: AdminClient, org
     available_units: [],
     held_units: rows<ProductTraderUnit>(unitsResult.data),
     handovers: joinHandovers(rows<ProductTraderHandover>(handoversResult.data), rows<ProductTraderHandoverLine>(linesResult.data)),
+    ...commerce,
   };
 }

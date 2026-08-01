@@ -1,4 +1,4 @@
-import type { ProductTraderWorkspace } from "@/types/product-trader";
+import type { ProductTraderPriceOverride, ProductTraderSale, ProductTraderWorkspace } from "@/types/product-trader";
 
 type ApiResult<T> = { data: T | null; error: { message: string } | null };
 
@@ -56,5 +56,30 @@ export function rejectProductTraderHandover(handoverId: string, version: number,
   return request<Record<string, unknown>>(`/api/merchant/products/handovers/${handoverId}/reject`, {
     method: "POST",
     body: JSON.stringify({ command_id: productTraderCommandId(), expected_version: version, rejection_reason: rejectionReason }),
+  });
+}
+
+export function createProductTraderSale(values: {
+  sale_id: string; unit_id: string; sale_price: number; payment_method: string; sale_date?: string;
+  customer_name?: string; customer_phone?: string; customer_reference?: string; price_override_id?: string;
+}) {
+  return request<Record<string, unknown>>("/api/merchant/products/sales", {
+    method: "POST", body: JSON.stringify({ command_id: productTraderCommandId(), ...values }),
+  });
+}
+
+export function requestProductTraderPriceOverride(values: { unit_id: string; sale_price: number; reason: string }) {
+  return request<Record<string, unknown>>("/api/merchant/products/price-overrides", {
+    method: "POST", body: JSON.stringify({ override_id: crypto.randomUUID(), command_id: productTraderCommandId(), ...values }),
+  });
+}
+
+export function getProductTraderFinanceWorkspace() {
+  return request<{ sales: ProductTraderSale[]; price_overrides: ProductTraderPriceOverride[] }>("/api/sales/inventory/trader-prices");
+}
+
+export function reviewProductTraderPriceOverride(overrideId: string, values: { expected_version: number; decision: "approved" | "rejected"; review_note?: string }) {
+  return request<Record<string, unknown>>(`/api/sales/inventory/trader-prices/${overrideId}/review`, {
+    method: "POST", body: JSON.stringify({ command_id: productTraderCommandId(), ...values }),
   });
 }

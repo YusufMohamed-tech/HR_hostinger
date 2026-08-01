@@ -1,5 +1,5 @@
 {
-  "id": "schema_v156_product_trader_custody",
-  "file": "db/schema_v156_product_trader_custody.sql",
-  "checksumSha256": "fc978322152704b1b4f94e3422d3c2c13984564959fa7f58aaa064b9bd37de85"
+  "id": "schema_v157_product_trader_sales",
+  "file": "db/schema_v157_product_trader_sales.sql",
+  "checksumSha256": "38962fa99e106371ab09a014b0ac5a70ce9610048ddd0c210de8c58987928f45"
 }

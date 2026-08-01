@@ -182,6 +182,7 @@ export function SidebarContent() {
       ...(["Finance_Manager", "Admin"].includes(role) ? [
         { name: "عمليات مخزون المنتجات", href: "/sales/inventory", icon: Package },
         { name: "كتالوج المنتجات", href: "/sales/inventory/products", icon: Boxes, indent: true },
+        { name: "مبيعات وأسعار التجار", href: "/sales/inventory/trader-prices", icon: Receipt, indent: true },
       ] : []),
       ...(role === "Finance_Manager" ? [
         { name: "تسليم وعهد الموظفين", href: "/sales/inventory/employee-custody", icon: PackageCheck, match: "employee-custody-parent" },
