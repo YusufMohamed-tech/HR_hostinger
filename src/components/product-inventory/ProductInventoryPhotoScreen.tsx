@@ -83,6 +83,19 @@ function validateCandidates(
     if (!candidate.planned_sale_price || candidate.planned_sale_price <= 0) {
       errors.push("سعر البيع المخطط مطلوب.");
     }
+    const minimumSalePrice = candidate.minimum_sale_price ?? candidate.planned_sale_price;
+    const maximumSalePrice = candidate.maximum_sale_price ?? candidate.planned_sale_price;
+    if (!minimumSalePrice || !maximumSalePrice || !candidate.planned_sale_price
+        || minimumSalePrice > candidate.planned_sale_price
+        || candidate.planned_sale_price > maximumSalePrice) {
+      errors.push("سعر البيع يجب أن يقع بين الحد الأدنى والحد الأعلى.");
+    }
+    const commissionValue = candidate.commission_value ?? 0;
+    if (commissionValue < 0
+        || (candidate.commission_type === "none" && commissionValue !== 0)
+        || (candidate.commission_type === "percentage" && commissionValue > 100)) {
+      errors.push("قاعدة العمولة غير صالحة.");
+    }
     if (!/^[A-Z]{3}$/u.test(candidate.currency)) errors.push("رمز العملة غير صالح.");
     const warnings = candidate.validation_warnings.filter((warning) =>
       warning.includes("another draft") ? serialUnchanged : false
@@ -156,7 +169,7 @@ export function ProductInventoryPhotoScreen() {
     () => products.filter((product) => product.company_id === companyId),
     [companyId, products]
   );
-  const isAliasManager = ["Admin", "Sales_Manager", "Onground_Agent_Manager"].includes(
+  const isAliasManager = ["Admin", "Finance_Manager"].includes(
     currentUser?.role || ""
   );
   const counts = useMemo(() => candidates.reduce((value, candidate) => {
@@ -171,6 +184,7 @@ export function ProductInventoryPhotoScreen() {
       count: number;
       unitCost: number;
       salePrice: number;
+      commission: number;
       totalCost: number;
       totalSales: number;
     }>();
@@ -180,6 +194,11 @@ export function ProductInventoryPhotoScreen() {
         candidate.product_id,
         candidate.unit_cost,
         candidate.planned_sale_price,
+        candidate.minimum_sale_price,
+        candidate.maximum_sale_price,
+        candidate.commission_type,
+        candidate.commission_value,
+        candidate.commission_base,
         candidate.currency,
         candidate.condition,
       ].join(":");
@@ -188,6 +207,11 @@ export function ProductInventoryPhotoScreen() {
         count: 0,
         unitCost: candidate.unit_cost || 0,
         salePrice: candidate.planned_sale_price || 0,
+        commission: candidate.commission_type === "flat"
+          ? candidate.commission_value || 0
+          : candidate.commission_type === "percentage"
+            ? (candidate.planned_sale_price || 0) * (candidate.commission_value || 0) / 100
+            : 0,
         totalCost: 0,
         totalSales: 0,
       };
@@ -383,11 +407,16 @@ export function ProductInventoryPhotoScreen() {
                     )}
                     <div className="space-y-4">
                       <div className="flex flex-wrap items-center gap-2"><Badge variant="outline" className={statusClass(candidate.status)}>{statusLabel(candidate.status)}</Badge><Badge variant="outline">الثقة {Math.round(candidate.confidence * 100)}%</Badge><span className="text-xs text-gray-500">المطابقة: {candidate.match_method}</span></div>
-                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                        <div className="space-y-1 xl:col-span-2"><Label>المنتج *</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={candidate.product_id} onChange={(event) => { const selected = supplierProducts.find((product) => product.id === event.target.value); updateCandidate(candidate.source_id, candidate.candidate_index, { product_id: event.target.value, unit_cost: candidate.unit_cost || selected?.default_cost || null, planned_sale_price: candidate.planned_sale_price || selected?.price || null }); }}><option value="">اختر المنتج</option>{supplierProducts.map((product) => <option key={product.id} value={product.id}>{product.name}{product.sku ? ` — ${product.sku}` : ""}</option>)}</select><p className="text-xs text-gray-500">النص المستخرج: {candidate.raw_product_name || candidate.raw_sku || "-"}</p></div>
+                      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                        <div className="space-y-1 xl:col-span-2"><Label>المنتج *</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={candidate.product_id} onChange={(event) => { const selected = supplierProducts.find((product) => product.id === event.target.value); const salePrice = candidate.planned_sale_price || selected?.price || null; updateCandidate(candidate.source_id, candidate.candidate_index, { product_id: event.target.value, unit_cost: candidate.unit_cost || selected?.default_cost || null, planned_sale_price: salePrice, minimum_sale_price: candidate.minimum_sale_price || salePrice, maximum_sale_price: candidate.maximum_sale_price || salePrice, commission_type: candidate.commission_type === "none" ? selected?.agent_commission_type || "none" : candidate.commission_type, commission_value: candidate.commission_value || selected?.agent_commission_value || 0 }); }}><option value="">اختر المنتج</option>{supplierProducts.map((product) => <option key={product.id} value={product.id}>{product.name}{product.sku ? ` — ${product.sku}` : ""}</option>)}</select><p className="text-xs text-gray-500">النص المستخرج: {candidate.raw_product_name || candidate.raw_sku || "-"}</p></div>
                         <div className="space-y-1"><Label>الرقم التسلسلي *</Label><Input dir="ltr" className="font-mono" value={candidate.serial_number} onChange={(event) => updateCandidate(candidate.source_id, candidate.candidate_index, { serial_number: event.target.value })} /></div>
                         <div className="space-y-1"><Label>تكلفة الوحدة *</Label><Input type="number" min="0.01" step="0.01" value={candidate.unit_cost ?? ""} onChange={(event) => updateCandidate(candidate.source_id, candidate.candidate_index, { unit_cost: Number(event.target.value) || null })} /></div>
                         <div className="space-y-1"><Label>سعر البيع *</Label><Input type="number" min="0.01" step="0.01" value={candidate.planned_sale_price ?? ""} onChange={(event) => updateCandidate(candidate.source_id, candidate.candidate_index, { planned_sale_price: Number(event.target.value) || null })} /></div>
+                        <div className="space-y-1"><Label>أقل سعر *</Label><Input type="number" min="0.01" step="0.01" value={candidate.minimum_sale_price ?? ""} onChange={(event) => updateCandidate(candidate.source_id, candidate.candidate_index, { minimum_sale_price: Number(event.target.value) || null })} /></div>
+                        <div className="space-y-1"><Label>أعلى سعر *</Label><Input type="number" min="0.01" step="0.01" value={candidate.maximum_sale_price ?? ""} onChange={(event) => updateCandidate(candidate.source_id, candidate.candidate_index, { maximum_sale_price: Number(event.target.value) || null })} /></div>
+                        <div className="space-y-1"><Label>نوع العمولة</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={candidate.commission_type} onChange={(event) => updateCandidate(candidate.source_id, candidate.candidate_index, { commission_type: event.target.value as ProductInventoryPhotoCandidate["commission_type"], commission_value: event.target.value === "none" ? 0 : candidate.commission_value })}><option value="none">بدون</option><option value="flat">مبلغ ثابت</option><option value="percentage">نسبة</option></select></div>
+                        <div className="space-y-1"><Label>قيمة العمولة</Label><Input type="number" min="0" step="0.01" disabled={candidate.commission_type === "none"} value={candidate.commission_value ?? 0} onChange={(event) => updateCandidate(candidate.source_id, candidate.candidate_index, { commission_value: Number(event.target.value) || 0 })} /></div>
+                        <div className="space-y-1"><Label>أساس العمولة</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={candidate.commission_base} onChange={(event) => updateCandidate(candidate.source_id, candidate.candidate_index, { commission_base: event.target.value as ProductInventoryPhotoCandidate["commission_base"] })}><option value="net_amount">صافي البيع</option><option value="gross_amount">إجمالي البيع</option></select></div>
                         <div className="space-y-1"><Label>العملة</Label><Input maxLength={3} value={candidate.currency} onChange={(event) => updateCandidate(candidate.source_id, candidate.candidate_index, { currency: event.target.value.toUpperCase() })} /></div>
                         <div className="space-y-1"><Label>الحالة</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={candidate.condition} onChange={(event) => updateCandidate(candidate.source_id, candidate.candidate_index, { condition: event.target.value as ProductInventoryPhotoCandidate["condition"] })}><option value="new">جديد</option><option value="open_box">مفتوح</option><option value="refurbished">مجدد</option></select></div>
                       </div>
@@ -400,7 +429,7 @@ export function ProductInventoryPhotoScreen() {
             })}
           </div>
 
-          <Card className="border-none shadow-sm"><CardHeader><CardTitle>المجموعات التي ستنشأ</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{groups.map((group, index) => <div key={`${group.product}:${index}`} className="rounded-lg border p-4"><p className="font-semibold">{group.product}</p><p className="mt-2 text-sm text-gray-600">{group.count} وحدة · تكلفة {group.totalCost.toFixed(2)} · بيع متوقع {group.totalSales.toFixed(2)}</p><p className="mt-1 text-xs text-gray-500">للوحدة: {group.unitCost.toFixed(2)} / {group.salePrice.toFixed(2)}</p></div>)}</CardContent></Card>
+          <Card className="border-none shadow-sm"><CardHeader><CardTitle>المجموعات التي ستنشأ</CardTitle></CardHeader><CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{groups.map((group, index) => <div key={`${group.product}:${index}`} className="rounded-lg border p-4"><p className="font-semibold">{group.product}</p><p className="mt-2 text-sm text-gray-600">{group.count} وحدة · تكلفة {group.totalCost.toFixed(2)} · بيع متوقع {group.totalSales.toFixed(2)}</p><p className="mt-1 text-xs text-gray-500">للوحدة: {group.unitCost.toFixed(2)} / {group.salePrice.toFixed(2)} · عمولة {group.commission.toFixed(2)}</p></div>)}</CardContent></Card>
 
           {warningCount > 0 && <label className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4"><input className="mt-1" type="checkbox" checked={warningsAccepted} onChange={(event) => setWarningsAccepted(event.target.checked)} /><span><span className="font-semibold">راجعت وأوافق على {warningCount} تحذير</span><span className="mt-1 block text-sm text-gray-600">الثقة لا تتجاوز التحقق من المنتج أو الرقم التسلسلي؛ التصريح يُحفظ مع المراجعة.</span></span></label>}
 

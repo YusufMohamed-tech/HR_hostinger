@@ -163,6 +163,13 @@ export function parseProductPhotoExtraction(
         ? match.product.default_cost : null,
       planned_sale_price: match.product?.price && match.product.price > 0
         ? match.product.price : null,
+      minimum_sale_price: match.product?.price && match.product.price > 0
+        ? match.product.price : null,
+      maximum_sale_price: match.product?.price && match.product.price > 0
+        ? match.product.price : null,
+      commission_type: match.product?.agent_commission_type || "none",
+      commission_value: match.product?.agent_commission_value || 0,
+      commission_base: "net_amount" as const,
       currency: context.defaultCurrency || "SAR",
       condition: "new",
       status: statusForCandidate(

@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
         .eq("is_active", true)
         .order("is_default", { ascending: false }),
       db.from("sales_products")
-        .select("id, company_id, name, sku, barcode, model, price, default_cost")
+        .select("id, company_id, name, sku, barcode, model, price, default_cost, agent_commission_type, agent_commission_value")
         .eq("organization_id", auth.orgId)
         .eq("is_active", true)
         .eq("inventory_enabled", true)

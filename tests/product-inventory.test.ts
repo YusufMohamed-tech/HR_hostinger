@@ -99,6 +99,38 @@ test("manual receipt validation requires positive group prices and unique serial
   assert.equal(invalid.success, false);
 });
 
+test("Finance commercial terms enforce price ranges and commission caps", () => {
+  const base = {
+    receipt_id: "10000000-0000-4000-8000-000000000011",
+    expected_version: 0,
+    supplier_company_id: "10000000-0000-4000-8000-000000000012",
+    warehouse_id: "10000000-0000-4000-8000-000000000013",
+    ownership_type: "purchased",
+    receipt_date: "2026-08-01",
+    currency: "SAR",
+    command_id: "10000000-0000-4000-8000-000000000014",
+    groups: [{
+      product_id: "10000000-0000-4000-8000-000000000015",
+      unit_cost: 60,
+      planned_sale_price: 100,
+      minimum_sale_price: 90,
+      maximum_sale_price: 120,
+      commission_type: "percentage",
+      commission_value: 12.5,
+      commission_base: "net_amount",
+      currency: "SAR",
+      tax_included: true,
+      condition: "new",
+      serial_numbers: ["COMM-1"],
+    }],
+  };
+  assert.equal(manualReceiptSchema.safeParse(base).success, true);
+  assert.equal(manualReceiptSchema.safeParse({
+    ...base,
+    groups: [{ ...base.groups[0], minimum_sale_price: 110, commission_value: 101 }],
+  }).success, false);
+});
+
 const workbookProducts: ProductInventoryProduct[] = [{
   id: "10000000-0000-4000-8000-000000000101",
   company_id: "10000000-0000-4000-8000-000000000102",
@@ -109,6 +141,28 @@ const workbookProducts: ProductInventoryProduct[] = [{
   price: 100,
   default_cost: 60,
 }];
+
+test("versioned workbook mapping accepts client-specific headers and commission proposals", () => {
+  const parsed = parseProductInventoryWorkbookRows([
+    ["Router Code", "Client Serial", "Client Cost", "Client Sale", "Commission Kind", "Commission Value"],
+    ["VHR-5G", "00012345", 60, 100, "percentage", 10],
+  ], {
+    products: workbookProducts,
+    headerMapping: {
+      "Router Code": "product_sku",
+      "Client Serial": "serial_number",
+      "Client Cost": "unit_cost",
+      "Client Sale": "planned_sale_price",
+      "Commission Kind": "commission_type",
+      "Commission Value": "commission_value",
+    },
+  });
+  assert.equal(parsed.rows[0]?.serial_number, "00012345");
+  assert.equal(parsed.rows[0]?.commission_type, "percentage");
+  assert.equal(parsed.rows[0]?.commission_value, 10);
+  assert.equal(parsed.rows[0]?.minimum_sale_price, 100);
+  assert.equal(parsed.rows[0]?.status, "valid");
+});
 
 function photoExtraction(
   rawText: string,

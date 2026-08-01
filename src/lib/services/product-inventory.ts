@@ -15,6 +15,8 @@ import type {
   ProductAgentCommission,
   ProductInventoryWorkbookPreview,
   ProductInventoryWarehouse,
+  ProductInventoryImportProfile,
+  ProductInventoryCommercialTermInput,
   ProductReceipt,
 } from "@/types/product-inventory";
 
@@ -411,6 +413,11 @@ export function commitProductInventoryWorkbook(
     barcode: row.barcode,
     unit_cost: row.unit_cost,
     planned_sale_price: row.planned_sale_price,
+    minimum_sale_price: row.minimum_sale_price,
+    maximum_sale_price: row.maximum_sale_price,
+    commission_type: row.commission_type,
+    commission_value: row.commission_value,
+    commission_base: row.commission_base,
     currency: row.currency,
     condition: row.condition,
     status: row.status,
@@ -517,4 +524,59 @@ export function commitProductInventoryPhotos(
     method: "POST",
     body: JSON.stringify(values),
   });
+}
+
+export function getProductInventoryCommercialTerms(receiptId: string) {
+  return apiFetch<{
+    receipt: Pick<ProductReceipt, "id" | "receipt_no" | "status" | "version" | "currency">;
+    lines: NonNullable<ProductReceipt["lines"]>;
+    history: Array<Record<string, unknown>>;
+  }>(`/api/sales/inventory/receipts/${receiptId}/commercial-terms`);
+}
+
+export function updateProductInventoryCommercialTerms(
+  receiptId: string,
+  expectedVersion: number,
+  terms: ProductInventoryCommercialTermInput[]
+) {
+  return apiFetch<{ receipt: ProductReceipt; terms: Array<Record<string, unknown>> }>(
+    `/api/sales/inventory/receipts/${receiptId}/commercial-terms`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ command_id: newInventoryCommandId(), expected_version: expectedVersion, terms }),
+    }
+  );
+}
+
+export function getProductInventoryImportProfiles() {
+  return apiFetch<ProductInventoryImportProfile[]>("/api/sales/inventory/import-profiles");
+}
+
+export function createProductInventoryImportProfile(values: {
+  profile_id: string;
+  name: string;
+  supplier_company_id?: string;
+  sheet_name?: string;
+  use_first_sheet: boolean;
+  header_row: number;
+  header_mapping: Record<string, string>;
+  required_fields: string[];
+  default_currency: string;
+  default_condition: "new" | "open_box" | "refurbished";
+  default_ownership_type: "purchased" | "consignment";
+  is_active: boolean;
+  sample_file_sha256?: string;
+  approval_note?: string;
+}) {
+  return apiFetch<ProductInventoryImportProfile>("/api/sales/inventory/import-profiles", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function activateProductInventoryImportProfile(profileId: string) {
+  return apiFetch<ProductInventoryImportProfile>(
+    `/api/sales/inventory/import-profiles/${profileId}/activate`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
 }

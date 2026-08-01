@@ -81,6 +81,18 @@ function validateRows(rows: ProductInventoryImportRow[], products: ProductInvent
     if (serial && (counts.get(serial) ?? 0) > 1) errors.push("الرقم التسلسلي مكرر داخل الملف.");
     if (!row.unit_cost || row.unit_cost <= 0) errors.push("تكلفة الوحدة مطلوبة.");
     if (!row.planned_sale_price || row.planned_sale_price <= 0) errors.push("سعر البيع المخطط مطلوب.");
+    const minimumSalePrice = row.minimum_sale_price ?? row.planned_sale_price;
+    const maximumSalePrice = row.maximum_sale_price ?? row.planned_sale_price;
+    if (!minimumSalePrice || !maximumSalePrice || !row.planned_sale_price
+        || minimumSalePrice > row.planned_sale_price || row.planned_sale_price > maximumSalePrice) {
+      errors.push("سعر البيع يجب أن يقع بين الحد الأدنى والحد الأعلى.");
+    }
+    const commissionValue = row.commission_value ?? 0;
+    if (commissionValue < 0
+        || (row.commission_type === "none" && commissionValue !== 0)
+        || (row.commission_type === "percentage" && commissionValue > 100)) {
+      errors.push("قاعدة العمولة غير صالحة.");
+    }
     if (!/^[A-Z]{3}$/u.test(row.currency)) errors.push("رمز العملة غير صالح.");
     const warnings = row.validation_warnings.filter((warning) =>
       warning.includes("another draft") ? serialWasNotChanged : false
@@ -146,6 +158,19 @@ export function ProductInventoryImportScreen() {
   const blockingCount = counts.invalid + counts.duplicate + counts.unmatched;
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   const visibleRows = rows.slice((page - 1) * pageSize, page * pageSize);
+  const commercialTotals = useMemo(() => rows.reduce((totals, row) => {
+    if (!["valid", "warning"].includes(row.status)) return totals;
+    const salePrice = row.planned_sale_price ?? 0;
+    const commission = row.commission_type === "flat"
+      ? row.commission_value ?? 0
+      : row.commission_type === "percentage"
+        ? salePrice * (row.commission_value ?? 0) / 100
+        : 0;
+    totals.sales += salePrice;
+    totals.commission += commission;
+    totals.margin += salePrice - (row.unit_cost ?? 0) - commission;
+    return totals;
+  }, { sales: 0, commission: 0, margin: 0 }), [rows]);
 
   const updateRow = (rowNumber: number, changes: Partial<ProductInventoryImportRow>) => {
     setRows((current) => validateRows(
@@ -238,14 +263,16 @@ export function ProductInventoryImportScreen() {
             <Card className="border-red-100 bg-red-50/50"><CardContent className="p-4"><p className="text-sm text-red-700">غير مطابق</p><p className="mt-1 text-2xl font-bold">{counts.unmatched}</p></CardContent></Card>
           </div>
 
+          <Card className="border-blue-100 bg-blue-50/50"><CardContent className="grid gap-4 p-4 sm:grid-cols-3"><div><p className="text-sm text-gray-500">البيع المتوقع</p><p className="font-bold">{commercialTotals.sales.toFixed(2)} SAR</p></div><div><p className="text-sm text-gray-500">العمولة المتوقعة</p><p className="font-bold">{commercialTotals.commission.toFixed(2)} SAR</p></div><div><p className="text-sm text-gray-500">الهامش بعد العمولة</p><p className="font-bold">{commercialTotals.margin.toFixed(2)} SAR</p></div></CardContent></Card>
+
           <Card className="border-none shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between gap-3">
               <div><CardTitle>مراجعة صفوف الملف</CardTitle><p className="mt-1 text-sm text-gray-500">{preview.source.original_name} · {rows.length} صف · صفحة {page} من {totalPages}</p></div>
               <Button variant="outline" onClick={() => downloadText(buildInventoryImportCsv(rows, true), "product-inventory-import-errors.csv")} disabled={blockingCount === 0}><Download className="ml-2 h-4 w-4" />تصدير الأخطاء</Button>
             </CardHeader>
             <CardContent className="overflow-x-auto p-0">
-              <Table className="min-w-[1200px]">
-                <TableHeader><TableRow><TableHead>الصف</TableHead><TableHead>الحالة</TableHead><TableHead>المنتج</TableHead><TableHead>الرقم التسلسلي</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع</TableHead><TableHead>العملة</TableHead><TableHead>الحالة المادية</TableHead><TableHead>الملاحظات</TableHead></TableRow></TableHeader>
+              <Table className="min-w-[1800px]">
+                <TableHeader><TableRow><TableHead>الصف</TableHead><TableHead>الحالة</TableHead><TableHead>المنتج</TableHead><TableHead>الرقم التسلسلي</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع</TableHead><TableHead>أقل سعر</TableHead><TableHead>أعلى سعر</TableHead><TableHead>نوع العمولة</TableHead><TableHead>قيمة العمولة</TableHead><TableHead>أساس العمولة</TableHead><TableHead>العملة</TableHead><TableHead>الحالة المادية</TableHead><TableHead>الملاحظات</TableHead></TableRow></TableHeader>
                 <TableBody>
                   {visibleRows.map((row) => (
                     <TableRow key={row.row_number} className={["valid", "warning"].includes(row.status) ? "" : "bg-red-50/30"}>
@@ -255,6 +282,11 @@ export function ProductInventoryImportScreen() {
                       <TableCell><Input dir="ltr" className="min-w-44 font-mono" value={row.serial_number} onChange={(event) => updateRow(row.row_number, { serial_number: event.target.value })} /></TableCell>
                       <TableCell><Input className="min-w-28" type="number" min="0.01" step="0.01" value={row.unit_cost ?? ""} onChange={(event) => updateRow(row.row_number, { unit_cost: Number(event.target.value) || null })} /></TableCell>
                       <TableCell><Input className="min-w-28" type="number" min="0.01" step="0.01" value={row.planned_sale_price ?? ""} onChange={(event) => updateRow(row.row_number, { planned_sale_price: Number(event.target.value) || null })} /></TableCell>
+                      <TableCell><Input className="min-w-28" type="number" min="0.01" step="0.01" value={row.minimum_sale_price ?? ""} onChange={(event) => updateRow(row.row_number, { minimum_sale_price: Number(event.target.value) || null })} /></TableCell>
+                      <TableCell><Input className="min-w-28" type="number" min="0.01" step="0.01" value={row.maximum_sale_price ?? ""} onChange={(event) => updateRow(row.row_number, { maximum_sale_price: Number(event.target.value) || null })} /></TableCell>
+                      <TableCell><select className="h-9 min-w-28 rounded-md border bg-white px-2 text-sm" value={row.commission_type} onChange={(event) => updateRow(row.row_number, { commission_type: event.target.value as ProductInventoryImportRow["commission_type"], commission_value: event.target.value === "none" ? 0 : row.commission_value })}><option value="none">بدون</option><option value="flat">مبلغ ثابت</option><option value="percentage">نسبة</option></select></TableCell>
+                      <TableCell><Input className="min-w-24" type="number" min="0" step="0.01" disabled={row.commission_type === "none"} value={row.commission_value ?? 0} onChange={(event) => updateRow(row.row_number, { commission_value: Number(event.target.value) || 0 })} /></TableCell>
+                      <TableCell><select className="h-9 min-w-28 rounded-md border bg-white px-2 text-sm" value={row.commission_base} onChange={(event) => updateRow(row.row_number, { commission_base: event.target.value as ProductInventoryImportRow["commission_base"] })}><option value="net_amount">صافي البيع</option><option value="gross_amount">إجمالي البيع</option></select></TableCell>
                       <TableCell><Input className="w-20" maxLength={3} value={row.currency} onChange={(event) => updateRow(row.row_number, { currency: event.target.value.toUpperCase() })} /></TableCell>
                       <TableCell><select className="h-9 rounded-md border bg-white px-2 text-sm" value={row.condition} onChange={(event) => updateRow(row.row_number, { condition: event.target.value as ProductInventoryImportRow["condition"] })}><option value="new">جديد</option><option value="open_box">مفتوح</option><option value="refurbished">مجدد</option></select></TableCell>
                       <TableCell className="max-w-72"><div className="space-y-1 text-xs">{row.validation_errors.map((error) => <p key={error} className="flex items-start gap-1 text-red-700"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{error}</p>)}{row.validation_warnings.map((warning) => <p key={warning} className="text-amber-700">{warning}</p>)}</div></TableCell>

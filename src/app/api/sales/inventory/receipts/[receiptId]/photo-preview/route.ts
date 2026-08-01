@@ -122,7 +122,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     const db = productInventoryDb(auth.admin);
     const [productsResult, aliasesResult, inspectedFiles] = await Promise.all([
       db.from("sales_products")
-        .select("id, company_id, name, sku, barcode, model, price, default_cost")
+        .select("id, company_id, name, sku, barcode, model, price, default_cost, agent_commission_type, agent_commission_value")
         .eq("organization_id", auth.orgId)
         .eq("company_id", parsedHeader.data.supplier_company_id)
         .eq("is_active", true)
@@ -214,6 +214,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (result.error) throw Object.assign(new Error(result.error.message), { code: result.error.code });
     const commandResult = firstRecord(result.data);
     if (!commandResult) throw new Error("Photo preview command returned no result.");
+    for (const source of sources) {
+      const proposalResult = await db.rpc("store_product_inventory_import_commercial_proposals", {
+        p_org_id: auth.orgId,
+        p_receipt_id: receiptId,
+        p_source_id: source.source_id,
+        p_kind: "photo",
+        p_rows: candidates.filter((candidate) => candidate.source_id === source.source_id),
+      });
+      if (proposalResult.error) {
+        throw Object.assign(new Error(proposalResult.error.message), { code: proposalResult.error.code });
+      }
+    }
     const counts = candidates.reduce((value, candidate) => {
       value[candidate.status] += 1;
       return value;

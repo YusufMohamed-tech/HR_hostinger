@@ -3,6 +3,7 @@ import { manualReceiptSchema } from "@/lib/product-inventory/schemas";
 import { requireProductInventoryAccess } from "@/lib/server/product-inventory-auth";
 import {
   executeReceiptCommand,
+  executeProductCommercialTermsCommand,
   productInventoryDb,
   productInventoryError,
   productInventoryPage,
@@ -60,7 +61,42 @@ export async function POST(request: NextRequest) {
       action: "receipt_draft_save",
       payload,
     });
-    return NextResponse.json({ data: receipt });
+    const linesResult = await productInventoryDb(auth.admin)
+      .from("product_receipt_lines")
+      .select("id, line_no, currency")
+      .eq("organization_id", auth.orgId)
+      .eq("receipt_id", parsed.data.receipt_id)
+      .order("line_no");
+    if (linesResult.error) {
+      throw Object.assign(new Error(linesResult.error.message), { code: linesResult.error.code });
+    }
+    const lines = linesResult.data ?? [];
+    if (lines.length !== parsed.data.groups.length) {
+      throw Object.assign(new Error("تعذر مطابقة مجموعات الاستلام مع قواعد التسعير."), { code: "40001" });
+    }
+    const commercial = await executeProductCommercialTermsCommand(auth.admin, {
+      orgId: auth.orgId,
+      actorUserId: auth.user.id,
+      requestId: auth.requestId,
+      commandId,
+      receiptId: parsed.data.receipt_id,
+      expectedVersion: Number(receipt.version),
+      terms: lines.map((line: { id: string; line_no: number; currency: string }) => {
+        const group = parsed.data.groups[line.line_no - 1]!;
+        return {
+          receipt_line_id: line.id,
+          sale_price: group.planned_sale_price,
+          minimum_sale_price: group.minimum_sale_price ?? group.planned_sale_price,
+          maximum_sale_price: group.maximum_sale_price ?? group.planned_sale_price,
+          currency: group.currency || line.currency,
+          commission_type: group.commission_type,
+          commission_value: group.commission_value,
+          commission_base: group.commission_base,
+          source: "finance",
+        };
+      }),
+    });
+    return NextResponse.json({ data: commercial.receipt });
   } catch (error) {
     return productInventoryError(error);
   }

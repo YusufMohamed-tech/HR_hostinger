@@ -353,6 +353,7 @@ const supabaseStubs = `
     metadata jsonb DEFAULT '{}'::jsonb
   );
   ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+  CREATE PUBLICATION supabase_realtime;
   CREATE FUNCTION storage.foldername(path text) RETURNS text[] LANGUAGE sql IMMUTABLE AS
     'SELECT string_to_array(path, ''/'')';
 `;
@@ -4762,6 +4763,15 @@ const launchAssertions = `
   $test$;
   DROP TRIGGER reject_final_command_outbox ON public.event_outbox;
 
+  -- Product inventory operations moved from Sales Manager to Finance Manager.
+  -- Re-purpose the existing smoke-test operator only after all sales-manager
+  -- scenarios above have completed so the remaining inventory assertions use
+  -- the production authorization model.
+  UPDATE public.org_members
+  SET role = 'finance_manager'
+  WHERE org_id = '11111111-1111-4111-8111-111111111111'
+    AND user_id = '61616161-6161-4161-8161-616161616161';
+
   -- Phase 1 product inventory: receipt commands are replay-safe, confirmation
   -- creates one serialized stock unit and one movement per accepted serial,
   -- and confirmed serials cannot be received twice.
@@ -4774,10 +4784,13 @@ const launchAssertions = `
     warehouse_id_value uuid;
     draft_result jsonb;
     replayed_draft jsonb;
+    terms_result jsonb;
+    terms_replay jsonb;
     confirmed_result jsonb;
     duplicate_draft jsonb;
     duplicate_denied boolean := false;
     receipt_payload jsonb;
+    receipt_line_id_value uuid;
   BEGIN
     SELECT id INTO warehouse_id_value
     FROM public.inventory_warehouses
@@ -4816,13 +4829,55 @@ const launchAssertions = `
       'ae100003-0000-4000-8000-000000000003',
       'receipt_draft_save', receipt_payload
     );
+    SELECT id INTO receipt_line_id_value
+    FROM public.product_receipt_lines
+    WHERE receipt_id = 'ae100001-0000-4000-8000-000000000001'
+    LIMIT 1;
+    terms_result := public.execute_product_inventory_set_commercial_terms(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae100013-0000-4000-8000-000000000013',
+      'ae100014-0000-4000-8000-000000000014',
+      'ae100001-0000-4000-8000-000000000001',
+      1,
+      jsonb_build_array(jsonb_build_object(
+        'receipt_line_id', receipt_line_id_value,
+        'sale_price', 100,
+        'minimum_sale_price', 90,
+        'maximum_sale_price', 110,
+        'currency', 'SAR',
+        'commission_type', 'percentage',
+        'commission_value', 10,
+        'commission_base', 'net_amount',
+        'source', 'finance'
+      ))
+    );
+    terms_replay := public.execute_product_inventory_set_commercial_terms(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'ae100013-0000-4000-8000-000000000013',
+      'ae100014-0000-4000-8000-000000000014',
+      'ae100001-0000-4000-8000-000000000001',
+      1,
+      jsonb_build_array(jsonb_build_object(
+        'receipt_line_id', receipt_line_id_value,
+        'sale_price', 100,
+        'minimum_sale_price', 90,
+        'maximum_sale_price', 110,
+        'currency', 'SAR',
+        'commission_type', 'percentage',
+        'commission_value', 10,
+        'commission_base', 'net_amount',
+        'source', 'finance'
+      ))
+    );
     confirmed_result := public.execute_product_receipt_command(
       '11111111-1111-4111-8111-111111111111',
       '61616161-6161-4161-8161-616161616161',
       'ae100004-0000-4000-8000-000000000004',
       'ae100005-0000-4000-8000-000000000005',
       'receipt_confirm',
-      '{"receipt_id":"ae100001-0000-4000-8000-000000000001","expected_version":1}'::jsonb
+      '{"receipt_id":"ae100001-0000-4000-8000-000000000001","expected_version":2}'::jsonb
     );
 
     duplicate_draft := public.execute_product_receipt_command(
@@ -4847,6 +4902,7 @@ const launchAssertions = `
     END;
 
     IF draft_result IS DISTINCT FROM replayed_draft
+       OR terms_result IS DISTINCT FROM terms_replay
        OR confirmed_result->'receipt'->>'status' <> 'confirmed'
        OR confirmed_result->'receipt'->>'accounting_status' <> 'pending'
        OR (confirmed_result->'receipt'->>'total_units')::integer <> 2
@@ -4854,6 +4910,15 @@ const launchAssertions = `
        OR (confirmed_result->'receipt'->>'expected_sales_value')::numeric <> 200
        OR NOT duplicate_denied
        OR (SELECT count(*) FROM public.product_inventory_units
+           WHERE receipt_id = 'ae100001-0000-4000-8000-000000000001') <> 2
+       OR (SELECT count(*) FROM public.product_inventory_units
+           WHERE receipt_id = 'ae100001-0000-4000-8000-000000000001'
+             AND minimum_sale_price_snapshot = 90
+             AND maximum_sale_price_snapshot = 110
+             AND commission_type_snapshot = 'percentage'
+             AND commission_value_snapshot = 10
+             AND commercial_terms_revision_snapshot = 2) <> 2
+       OR (SELECT count(*) FROM public.product_inventory_commercial_terms
            WHERE receipt_id = 'ae100001-0000-4000-8000-000000000001') <> 2
        OR (SELECT count(*) FROM public.product_inventory_movements
            WHERE receipt_id = 'ae100001-0000-4000-8000-000000000001'

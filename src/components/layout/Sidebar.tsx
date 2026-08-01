@@ -183,6 +183,7 @@ export function SidebarContent() {
         { name: "تسليم وعهد المنتجات", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
         { name: "استلام بالصور", href: "/sales/inventory/receipts/photo", icon: Camera, indent: true },
         { name: "استيراد Excel / CSV", href: "/sales/inventory/receipts/import", icon: FileSpreadsheet, indent: true },
+        { name: "إصدارات قالب الاستيراد", href: "/sales/inventory/import-profiles", icon: FileSpreadsheet, indent: true },
         { name: "استلام يدوي جديد", href: "/sales/inventory/receipts/new", icon: PackagePlus, indent: true },
       ] : []),
       { name: "دليل الحسابات", href: "/accounting/chart-of-accounts", icon: BookOpen },

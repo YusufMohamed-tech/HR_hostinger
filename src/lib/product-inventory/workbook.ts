@@ -5,7 +5,7 @@ import type {
   ProductInventoryProduct,
 } from "@/types/product-inventory";
 
-export const PRODUCT_INVENTORY_WORKBOOK_VERSION = "product-inventory-workbook-v1";
+export const PRODUCT_INVENTORY_WORKBOOK_VERSION = "product-inventory-workbook-v2";
 export const PRODUCT_INVENTORY_WORKBOOK_HEADERS = [
   "supplier_code",
   "receipt_reference",
@@ -16,6 +16,11 @@ export const PRODUCT_INVENTORY_WORKBOOK_HEADERS = [
   "barcode",
   "unit_cost",
   "planned_sale_price",
+  "minimum_sale_price",
+  "maximum_sale_price",
+  "commission_type",
+  "commission_value",
+  "commission_base",
   "currency",
   "tax_code",
   "condition",
@@ -36,6 +41,11 @@ const HEADER_ALIASES: Record<WorkbookField, string[]> = {
   barcode: ["barcode", "bar code", "الباركود"],
   unit_cost: ["unit_cost", "cost", "acquisition cost", "تكلفة الوحدة", "التكلفة"],
   planned_sale_price: ["planned_sale_price", "sale_price", "selling price", "سعر البيع المخطط", "سعر البيع"],
+  minimum_sale_price: ["minimum_sale_price", "min_sale_price", "minimum price", "أقل سعر بيع", "الحد الأدنى للبيع"],
+  maximum_sale_price: ["maximum_sale_price", "max_sale_price", "maximum price", "أعلى سعر بيع", "الحد الأقصى للبيع"],
+  commission_type: ["commission_type", "commission type", "نوع العمولة"],
+  commission_value: ["commission_value", "commission", "commission amount", "قيمة العمولة", "العمولة"],
+  commission_base: ["commission_base", "commission base", "أساس العمولة"],
   currency: ["currency", "currency_code", "العملة"],
   tax_code: ["tax_code", "vat", "vat_code", "رمز الضريبة", "الضريبة"],
   condition: ["condition", "item_condition", "حالة المنتج", "الحالة"],
@@ -54,10 +64,21 @@ export function normalizeProductMatchValue(value: unknown) {
   return normalizeWorkbookHeader(value);
 }
 
-function headerMap(row: RawCell[]) {
+function headerMap(row: RawCell[], profileMapping: Record<string, string> = {}) {
   const normalized = row.map(normalizeWorkbookHeader);
   const mapping = new Map<WorkbookField, number>();
+  const canonicalFields = new Set<string>(PRODUCT_INVENTORY_WORKBOOK_HEADERS);
+  const normalizedProfileMapping = new Map(
+    Object.entries(profileMapping).map(([header, field]) => [normalizeWorkbookHeader(header), field])
+  );
+  normalized.forEach((header, index) => {
+    const configuredField = normalizedProfileMapping.get(header);
+    if (configuredField && canonicalFields.has(configuredField)) {
+      mapping.set(configuredField as WorkbookField, index);
+    }
+  });
   for (const field of PRODUCT_INVENTORY_WORKBOOK_HEADERS) {
+    if (mapping.has(field)) continue;
     const aliases = new Set(HEADER_ALIASES[field].map(normalizeWorkbookHeader));
     const index = normalized.findIndex((header) => aliases.has(header));
     if (index >= 0) mapping.set(field, index);
@@ -99,6 +120,20 @@ function conditionCell(value: RawCell): ProductInventoryImportRow["condition"] {
   if (["openbox", "opened", "مفتوح", "مفتوحالصندوق"].includes(normalized)) return "open_box";
   if (["refurbished", "renewed", "مجدد", "معادتجديده"].includes(normalized)) return "refurbished";
   return "new";
+}
+
+function commissionTypeCell(value: RawCell): ProductInventoryImportRow["commission_type"] {
+  const normalized = normalizeWorkbookHeader(value);
+  if (["flat", "fixed", "مبلغ", "ثابت", "مبلغثابت"].includes(normalized)) return "flat";
+  if (["percentage", "percent", "pct", "نسبة", "نسبةمئوية"].includes(normalized)) return "percentage";
+  return "none";
+}
+
+function commissionBaseCell(value: RawCell): ProductInventoryImportRow["commission_base"] {
+  const normalized = normalizeWorkbookHeader(value);
+  return ["gross", "grossamount", "الإجمالي", "المبلغالإجمالي"].includes(normalized)
+    ? "gross_amount"
+    : "net_amount";
 }
 
 function originalData(row: RawCell[], headers: RawCell[]) {
@@ -250,11 +285,12 @@ export function parseProductInventoryWorkbookRows(
     products: ProductInventoryProduct[];
     aliases?: CatalogAlias[];
     defaultCurrency?: string;
+    headerMapping?: Record<string, string>;
   }
 ) {
   if (rows.length < 2) throw new Error("Workbook is empty.");
   const headers = rows[0];
-  const mapping = headerMap(headers);
+  const mapping = headerMap(headers, context.headerMapping);
   const aliases = context.aliases ?? [];
   const parsed: ProductInventoryImportRow[] = [];
   const seen = new Set<string>();
@@ -271,6 +307,11 @@ export function parseProductInventoryWorkbookRows(
     const normalizedSerial = normalizeSerial(serial);
     const unitCost = moneyCell(rawCell(row, mapping, "unit_cost"));
     const plannedSalePrice = moneyCell(rawCell(row, mapping, "planned_sale_price"));
+    const minimumSalePrice = moneyCell(rawCell(row, mapping, "minimum_sale_price"));
+    const maximumSalePrice = moneyCell(rawCell(row, mapping, "maximum_sale_price"));
+    const commissionType = commissionTypeCell(rawCell(row, mapping, "commission_type"));
+    const commissionValue = moneyCell(rawCell(row, mapping, "commission_value"));
+    const commissionBase = commissionBaseCell(rawCell(row, mapping, "commission_base"));
     const currency = (textCell(rawCell(row, mapping, "currency")) || context.defaultCurrency || "SAR").toUpperCase();
     const errors: string[] = [];
     const warnings: string[] = [];
@@ -289,6 +330,19 @@ export function parseProductInventoryWorkbookRows(
     }
     if (plannedSalePrice === null || !Number.isFinite(plannedSalePrice) || plannedSalePrice <= 0) {
       errors.push("Planned sale price must be greater than zero.");
+    }
+    const effectiveMinimum = minimumSalePrice === null ? plannedSalePrice : minimumSalePrice;
+    const effectiveMaximum = maximumSalePrice === null ? plannedSalePrice : maximumSalePrice;
+    if (!Number.isFinite(effectiveMinimum) || !Number.isFinite(effectiveMaximum)
+        || (effectiveMinimum ?? 0) <= 0 || (effectiveMaximum ?? 0) <= 0
+        || (plannedSalePrice !== null && ((effectiveMinimum ?? 0) > plannedSalePrice || plannedSalePrice > (effectiveMaximum ?? 0)))) {
+      errors.push("Sale price must be inside the minimum and maximum range.");
+    }
+    const effectiveCommissionValue = commissionValue === null ? 0 : commissionValue;
+    if (!Number.isFinite(effectiveCommissionValue) || effectiveCommissionValue < 0
+        || (commissionType === "none" && effectiveCommissionValue !== 0)
+        || (commissionType === "percentage" && effectiveCommissionValue > 100)) {
+      errors.push("Commission rule is invalid.");
     }
     if (!/^[A-Z]{3}$/u.test(currency)) errors.push("Currency must be a three-letter code.");
 
@@ -314,6 +368,11 @@ export function parseProductInventoryWorkbookRows(
       barcode,
       unit_cost: Number.isFinite(unitCost) ? unitCost : null,
       planned_sale_price: Number.isFinite(plannedSalePrice) ? plannedSalePrice : null,
+      minimum_sale_price: Number.isFinite(effectiveMinimum) ? effectiveMinimum : null,
+      maximum_sale_price: Number.isFinite(effectiveMaximum) ? effectiveMaximum : null,
+      commission_type: commissionType,
+      commission_value: Number.isFinite(effectiveCommissionValue) ? effectiveCommissionValue : null,
+      commission_base: commissionBase,
       currency,
       tax_code: textCell(rawCell(row, mapping, "tax_code")),
       condition: conditionCell(rawCell(row, mapping, "condition")),
@@ -349,6 +408,11 @@ export function buildInventoryImportCsv(rows: ProductInventoryImportRow[], error
     row.barcode,
     row.unit_cost,
     row.planned_sale_price,
+    row.minimum_sale_price,
+    row.maximum_sale_price,
+    row.commission_type,
+    row.commission_value,
+    row.commission_base,
     row.currency,
     row.tax_code,
     row.condition,

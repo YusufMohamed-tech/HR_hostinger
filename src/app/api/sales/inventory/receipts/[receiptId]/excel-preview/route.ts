@@ -102,9 +102,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const db = productInventoryDb(auth.admin);
-    const [productsResult, aliasesResult] = await Promise.all([
+    const [productsResult, aliasesResult, profileResult] = await Promise.all([
       db.from("sales_products")
-        .select("id, company_id, name, sku, barcode, model, price, default_cost")
+        .select("id, company_id, name, sku, barcode, model, price, default_cost, agent_commission_type, agent_commission_value")
         .eq("organization_id", auth.orgId)
         .eq("company_id", parsedHeader.data.supplier_company_id)
         .eq("is_active", true)
@@ -114,16 +114,27 @@ export async function POST(request: NextRequest, context: RouteContext) {
         .select("product_id, normalized_value")
         .eq("organization_id", auth.orgId)
         .eq("is_approved", true),
+      db.from("product_inventory_import_profiles")
+        .select("id, header_row, header_mapping, default_currency")
+        .eq("organization_id", auth.orgId)
+        .eq("is_active", true)
+        .maybeSingle(),
     ]);
-    const catalogError = productsResult.error || aliasesResult.error;
+    const catalogError = productsResult.error || aliasesResult.error || profileResult.error;
     if (catalogError) throw Object.assign(new Error(catalogError.message), { code: catalogError.code });
+    if (!profileResult.data) {
+      return NextResponse.json({ message: "لا يوجد إصدار نشط لقالب الاستيراد. فعّل قالباً أولاً." }, { status: 422 });
+    }
+
+    const profileRows = rawRows.slice(Math.max(0, Number(profileResult.data.header_row || 1) - 1));
 
     const preview = parseProductInventoryWorkbookRows(
-      rawRows as Array<Array<string | number | boolean | Date | null | undefined>>,
+      profileRows as Array<Array<string | number | boolean | Date | null | undefined>>,
       {
       products: productsResult.data ?? [],
       aliases: aliasesResult.data ?? [],
-      defaultCurrency: parsedHeader.data.currency,
+      defaultCurrency: profileResult.data.default_currency || parsedHeader.data.currency,
+      headerMapping: profileResult.data.header_mapping as Record<string, string>,
       }
     );
     if (preview.rows.length > rowLimit) {
@@ -178,6 +189,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       scanned_at: inspected.scannedAt,
       source_type: sourceType,
       headers: preview.headers,
+      import_profile_id: profileResult.data.id,
     };
     const result = await (auth.admin as unknown as {
       rpc: (name: string, args: Record<string, unknown>) => Promise<RpcResult>;
@@ -196,6 +208,24 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (result.error) throw Object.assign(new Error(result.error.message), { code: result.error.code });
     const commandResult = firstRecord(result.data);
     if (!commandResult) throw new Error("Workbook preview command returned no result.");
+    const proposalResult = await db.rpc("store_product_inventory_import_commercial_proposals", {
+      p_org_id: auth.orgId,
+      p_receipt_id: receiptId,
+      p_source_id: parsedHeader.data.source_id,
+      p_kind: "workbook",
+      p_rows: preview.rows,
+    });
+    if (proposalResult.error) {
+      throw Object.assign(new Error(proposalResult.error.message), { code: proposalResult.error.code });
+    }
+    const sourceUpdate = await db.from("product_receipt_sources")
+      .update({ import_profile_id: profileResult.data.id })
+      .eq("organization_id", auth.orgId)
+      .eq("receipt_id", receiptId)
+      .eq("id", parsedHeader.data.source_id);
+    if (sourceUpdate.error) {
+      throw Object.assign(new Error(sourceUpdate.error.message), { code: sourceUpdate.error.code });
+    }
     return NextResponse.json({
       data: {
         ...commandResult,

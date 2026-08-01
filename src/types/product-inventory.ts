@@ -23,6 +23,8 @@ export type ProductInventoryProduct = {
   model: string | null;
   price: number;
   default_cost: number | null;
+  agent_commission_type?: "flat" | "percentage" | null;
+  agent_commission_value?: number;
 };
 
 export type ProductInventoryCompany = {
@@ -40,6 +42,39 @@ export type ProductInventoryWarehouse = {
   is_default: boolean;
 };
 
+export type ProductInventoryImportProfile = {
+  id: string;
+  name: string;
+  version: number;
+  supplier_company_id: string | null;
+  sheet_name: string | null;
+  use_first_sheet: boolean;
+  header_row: number;
+  header_mapping: Record<string, string>;
+  required_fields: string[];
+  default_currency: string;
+  default_condition: "new" | "open_box" | "refurbished";
+  default_ownership_type: "purchased" | "consignment";
+  is_active: boolean;
+  sample_file_sha256: string | null;
+  approval_note: string | null;
+  approved_at: string | null;
+  created_at: string;
+};
+
+export type ProductInventoryCommercialTermInput = {
+  receipt_line_id: string;
+  sale_price: number;
+  minimum_sale_price: number;
+  maximum_sale_price: number;
+  currency: string;
+  commission_type: "none" | "flat" | "percentage";
+  commission_value: number;
+  commission_base: "net_amount" | "gross_amount";
+  source?: "catalog_default" | "workbook_proposal" | "photo_proposal" | "finance";
+  reason?: string;
+};
+
 export type ProductReceiptLine = {
   id: string;
   line_no: number;
@@ -52,6 +87,13 @@ export type ProductReceiptLine = {
   quantity: number;
   unit_cost: number;
   planned_unit_sale_price: number;
+  minimum_sale_price: number;
+  maximum_sale_price: number;
+  commission_type: "none" | "flat" | "percentage";
+  commission_value: number;
+  commission_base: "net_amount" | "gross_amount";
+  commercial_terms_revision: number;
+  commercial_terms_approved_at: string | null;
   currency: string;
   total_cost: number;
   expected_sales_value: number;
@@ -110,6 +152,12 @@ export type ProductInventoryStockRow = {
   ownership_type: string;
   unit_cost_snapshot: number;
   planned_sale_price_snapshot: number;
+  minimum_sale_price_snapshot?: number;
+  maximum_sale_price_snapshot?: number;
+  commission_type_snapshot?: "none" | "flat" | "percentage";
+  commission_value_snapshot?: number;
+  commission_base_snapshot?: "net_amount" | "gross_amount";
+  commercial_terms_revision_snapshot?: number;
   currency: string;
   current_agent_id?: string | null;
   current_handover_id?: string | null;
@@ -127,6 +175,11 @@ export type ManualReceiptGroupInput = {
   product_name?: string;
   unit_cost: number;
   planned_sale_price: number;
+  minimum_sale_price: number;
+  maximum_sale_price: number;
+  commission_type: "none" | "flat" | "percentage";
+  commission_value: number;
+  commission_base: "net_amount" | "gross_amount";
   currency: string;
   tax_included: boolean;
   condition: "new" | "open_box" | "refurbished";
@@ -169,6 +222,11 @@ export type ProductInventoryImportRow = {
   barcode: string;
   unit_cost: number | null;
   planned_sale_price: number | null;
+  minimum_sale_price: number | null;
+  maximum_sale_price: number | null;
+  commission_type: "none" | "flat" | "percentage";
+  commission_value: number | null;
+  commission_base: "net_amount" | "gross_amount";
   currency: string;
   tax_code: string;
   condition: "new" | "open_box" | "refurbished";
@@ -210,6 +268,11 @@ export type ProductInventoryPhotoCandidate = {
   normalized_serial: string;
   unit_cost: number | null;
   planned_sale_price: number | null;
+  minimum_sale_price: number | null;
+  maximum_sale_price: number | null;
+  commission_type: "none" | "flat" | "percentage";
+  commission_value: number | null;
+  commission_base: "net_amount" | "gross_amount";
   currency: string;
   condition: "new" | "open_box" | "refurbished";
   status: ProductInventoryImportRowStatus;
@@ -250,6 +313,10 @@ export type ProductHandoverLine = {
   planned_sale_price_snapshot: number;
   minimum_sale_price: number;
   maximum_sale_price: number;
+  commission_type_snapshot: "none" | "flat" | "percentage";
+  commission_value_snapshot: number;
+  commission_base_snapshot: "net_amount" | "gross_amount";
+  commercial_terms_revision_snapshot: number;
   currency: string;
   tax_included: boolean;
   line_status: "pending" | "accepted" | "sold" | "returned" | "voided" | "cancelled";

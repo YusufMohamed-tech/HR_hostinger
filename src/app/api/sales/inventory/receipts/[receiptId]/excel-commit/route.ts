@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { workbookCommitSchema } from "@/lib/product-inventory/schemas";
 import { normalizeSerial } from "@/lib/product-inventory/normalization";
 import { requireProductInventoryAccess } from "@/lib/server/product-inventory-auth";
-import { productInventoryDb, productInventoryError } from "@/lib/server/product-inventory-api";
+import {
+  applyCommercialTermsFromImportedRows,
+  productInventoryDb,
+  productInventoryError,
+} from "@/lib/server/product-inventory-api";
 
 type RouteContext = { params: Promise<{ receiptId: string }> };
 type RpcResult = { data: unknown; error: { message: string; code?: string } | null };
@@ -110,7 +114,17 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (result.error) throw Object.assign(new Error(result.error.message), { code: result.error.code });
     const commandResult = result.data as { receipt?: Record<string, unknown> } | null;
     if (!commandResult?.receipt) throw new Error("Workbook commit returned no receipt.");
-    return NextResponse.json({ data: commandResult.receipt });
+    const commercial = await applyCommercialTermsFromImportedRows(auth.admin, {
+      orgId: auth.orgId,
+      actorUserId: auth.user.id,
+      requestId: auth.requestId,
+      commandId: parsed.data.command_id,
+      receiptId,
+      expectedVersion: Number(commandResult.receipt.version),
+      source: "workbook_proposal",
+      rows: normalizedRows,
+    });
+    return NextResponse.json({ data: commercial.receipt });
   } catch (error) {
     return productInventoryError(error, "تعذر اعتماد ملف مخزون المنتجات.");
   }

@@ -266,12 +266,17 @@ type GroupForm = {
   product_name: string;
   unit_cost: string;
   planned_sale_price: string;
+  minimum_sale_price: string;
+  maximum_sale_price: string;
+  commission_type: "none" | "flat" | "percentage";
+  commission_value: string;
+  commission_base: "net_amount" | "gross_amount";
   condition: "new" | "open_box" | "refurbished";
   serials: string;
 };
 
 function emptyGroup(): GroupForm {
-  return { key: crypto.randomUUID(), product_id: "", product_name: "", unit_cost: "", planned_sale_price: "", condition: "new", serials: "" };
+  return { key: crypto.randomUUID(), product_id: "", product_name: "", unit_cost: "", planned_sale_price: "", minimum_sale_price: "", maximum_sale_price: "", commission_type: "none", commission_value: "0", commission_base: "net_amount", condition: "new", serials: "" };
 }
 
 export function ManualProductReceiptScreen() {
@@ -324,6 +329,11 @@ export function ManualProductReceiptScreen() {
           product_name: line.product_name_snapshot || "",
           unit_cost: String(line.unit_cost),
           planned_sale_price: String(line.planned_unit_sale_price),
+          minimum_sale_price: String(line.minimum_sale_price ?? line.planned_unit_sale_price),
+          maximum_sale_price: String(line.maximum_sale_price ?? line.planned_unit_sale_price),
+          commission_type: line.commission_type ?? "none",
+          commission_value: String(line.commission_value ?? 0),
+          commission_base: line.commission_base ?? "net_amount",
           condition: line.condition,
           serials: (line.serial_numbers || []).join("\n"),
         })));
@@ -340,12 +350,25 @@ export function ManualProductReceiptScreen() {
     product_name: group.product_name,
     unit_cost: Number(group.unit_cost || 0),
     planned_sale_price: Number(group.planned_sale_price || 0),
+    minimum_sale_price: Number(group.minimum_sale_price || group.planned_sale_price || 0),
+    maximum_sale_price: Number(group.maximum_sale_price || group.planned_sale_price || 0),
+    commission_type: group.commission_type,
+    commission_value: Number(group.commission_value || 0),
+    commission_base: group.commission_base,
     currency: "SAR",
     tax_included: true,
     condition: group.condition,
     serial_numbers: parseSerialNumbers(group.serials),
   })), [groups]);
   const totals = useMemo(() => calculateReceiptTotals(normalizedGroups), [normalizedGroups]);
+  const expectedCommission = useMemo(() => normalizedGroups.reduce((total, group) => {
+    const perUnit = group.commission_type === "flat"
+      ? group.commission_value
+      : group.commission_type === "percentage"
+        ? group.planned_sale_price * group.commission_value / 100
+        : 0;
+    return total + perUnit * group.serial_numbers.length;
+  }, 0), [normalizedGroups]);
 
   const updateGroup = (key: string, values: Partial<GroupForm>) => {
     setGroups((current) => current.map((group) => group.key === key ? { ...group, ...values } : group));
@@ -353,8 +376,15 @@ export function ManualProductReceiptScreen() {
 
   const submit = async (confirm: boolean) => {
     if (!companyId || !warehouseId) return setMessage("اختر المورد والمستودع.");
-    if (normalizedGroups.some((group) => (!group.product_id && !group.product_name) || group.unit_cost <= 0 || group.planned_sale_price <= 0 || group.serial_numbers.length === 0)) {
-      return setMessage("كل مجموعة تحتاج منتجاً وتكلفة وسعر بيع ورقماً تسلسلياً واحداً على الأقل.");
+    if (normalizedGroups.some((group) => (!group.product_id && !group.product_name)
+      || group.unit_cost <= 0 || group.planned_sale_price <= 0
+      || group.minimum_sale_price > group.planned_sale_price
+      || group.planned_sale_price > group.maximum_sale_price
+      || group.commission_value < 0
+      || (group.commission_type === "none" && group.commission_value !== 0)
+      || (group.commission_type === "percentage" && group.commission_value > 100)
+      || group.serial_numbers.length === 0)) {
+      return setMessage("راجع المنتج والتكلفة ونطاق سعر البيع وقاعدة العمولة والأرقام التسلسلية لكل مجموعة.");
     }
     setSaving(true);
     const saved = await saveManualReceipt({
@@ -413,12 +443,17 @@ export function ManualProductReceiptScreen() {
           return (
             <Card key={group.key} className="border-none shadow-sm">
               <CardHeader className="flex flex-row items-center justify-between"><CardTitle className="text-base">مجموعة المنتج {index + 1}</CardTitle>{groups.length > 1 && <Button variant="ghost" size="sm" className="text-red-600" onClick={() => setGroups((current) => current.filter((item) => item.key !== group.key))}><Trash2 className="h-4 w-4" /></Button>}</CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                <div className="space-y-2 xl:col-span-2"><Label>المنتج *</Label><ProductCombobox products={availableProducts} value={group.product_id} displayValue={group.product_name} onChange={(productId, productName, defaults) => updateGroup(group.key, { product_id: productId, product_name: productName, unit_cost: defaults?.cost ? String(defaults.cost) : group.unit_cost, planned_sale_price: defaults?.price ? String(defaults.price) : group.planned_sale_price })} /></div>
+              <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+                <div className="space-y-2 xl:col-span-2"><Label>المنتج *</Label><ProductCombobox products={availableProducts} value={group.product_id} displayValue={group.product_name} onChange={(productId, productName, defaults) => { const selected = products.find((item) => item.id === productId); const salePrice = defaults?.price ? String(defaults.price) : group.planned_sale_price; updateGroup(group.key, { product_id: productId, product_name: productName, unit_cost: defaults?.cost ? String(defaults.cost) : group.unit_cost, planned_sale_price: salePrice, minimum_sale_price: group.minimum_sale_price || salePrice, maximum_sale_price: group.maximum_sale_price || salePrice, commission_type: selected?.agent_commission_type || group.commission_type, commission_value: selected?.agent_commission_value ? String(selected.agent_commission_value) : group.commission_value }); }} /></div>
                 <div className="space-y-2"><Label>تكلفة الوحدة *</Label><Input type="number" min="0.01" step="0.01" value={group.unit_cost} onChange={(event) => updateGroup(group.key, { unit_cost: event.target.value })} /></div>
                 <div className="space-y-2"><Label>سعر البيع المخطط *</Label><Input type="number" min="0.01" step="0.01" value={group.planned_sale_price} onChange={(event) => updateGroup(group.key, { planned_sale_price: event.target.value })} /></div>
+                <div className="space-y-2"><Label>أقل سعر *</Label><Input type="number" min="0.01" step="0.01" value={group.minimum_sale_price} onChange={(event) => updateGroup(group.key, { minimum_sale_price: event.target.value })} /></div>
+                <div className="space-y-2"><Label>أعلى سعر *</Label><Input type="number" min="0.01" step="0.01" value={group.maximum_sale_price} onChange={(event) => updateGroup(group.key, { maximum_sale_price: event.target.value })} /></div>
+                <div className="space-y-2"><Label>نوع العمولة</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={group.commission_type} onChange={(event) => updateGroup(group.key, { commission_type: event.target.value as GroupForm["commission_type"], commission_value: event.target.value === "none" ? "0" : group.commission_value })}><option value="none">بدون عمولة</option><option value="flat">مبلغ ثابت</option><option value="percentage">نسبة مئوية</option></select></div>
+                <div className="space-y-2"><Label>قيمة العمولة</Label><Input type="number" min="0" step="0.01" disabled={group.commission_type === "none"} value={group.commission_value} onChange={(event) => updateGroup(group.key, { commission_value: event.target.value })} /></div>
+                <div className="space-y-2"><Label>أساس العمولة</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={group.commission_base} onChange={(event) => updateGroup(group.key, { commission_base: event.target.value as GroupForm["commission_base"] })}><option value="net_amount">صافي البيع</option><option value="gross_amount">إجمالي البيع</option></select></div>
                 <div className="space-y-2"><Label>الحالة</Label><select className="h-10 w-full rounded-lg border bg-white px-3 text-sm" value={group.condition} onChange={(event) => updateGroup(group.key, { condition: event.target.value as GroupForm["condition"] })}><option value="new">جديد</option><option value="open_box">مفتوح</option><option value="refurbished">مجدد</option></select></div>
-                <div className="space-y-2 md:col-span-2 xl:col-span-5"><div className="flex items-center justify-between"><Label>الأرقام التسلسلية *</Label><Badge variant="outline">{count} وحدة</Badge></div><textarea dir="ltr" className="min-h-32 w-full rounded-lg border bg-white px-3 py-2 font-mono text-sm" placeholder={"SN-0001\nSN-0002\nSN-0003"} value={group.serials} onChange={(event) => updateGroup(group.key, { serials: event.target.value })} /><p className="text-xs text-gray-500">{(product || group.product_name) ? `${product?.name || group.product_name}: ${count} × ${money(Number(group.unit_cost || 0))}` : "سطر واحد لكل رقم، أو افصل بفاصلة."}</p></div>
+                <div className="space-y-2 md:col-span-2 xl:col-span-6"><div className="flex items-center justify-between"><Label>الأرقام التسلسلية *</Label><Badge variant="outline">{count} وحدة</Badge></div><textarea dir="ltr" className="min-h-32 w-full rounded-lg border bg-white px-3 py-2 font-mono text-sm" placeholder={"SN-0001\nSN-0002\nSN-0003"} value={group.serials} onChange={(event) => updateGroup(group.key, { serials: event.target.value })} /><p className="text-xs text-gray-500">{(product || group.product_name) ? `${product?.name || group.product_name}: ${count} × ${money(Number(group.unit_cost || 0))}` : "سطر واحد لكل رقم، أو افصل بفاصلة."}</p></div>
               </CardContent>
             </Card>
           );
@@ -426,7 +461,7 @@ export function ManualProductReceiptScreen() {
         <Button variant="outline" onClick={() => setGroups((current) => [...current, emptyGroup()])}><Plus className="ml-2 h-4 w-4" />إضافة مجموعة منتج</Button>
       </div>
 
-      <Card className="border-blue-100 bg-blue-50/40"><CardContent className="grid gap-4 p-5 sm:grid-cols-4"><div><p className="text-xs text-gray-500">الوحدات</p><p className="font-bold">{totals.units}</p></div><div><p className="text-xs text-gray-500">التكلفة</p><p className="font-bold">{money(totals.cost)}</p></div><div><p className="text-xs text-gray-500">قيمة البيع</p><p className="font-bold">{money(totals.expectedSales)}</p></div><div><p className="text-xs text-gray-500">الهامش المتوقع</p><p className="font-bold">{money(totals.margin)}</p></div></CardContent></Card>
+      <Card className="border-blue-100 bg-blue-50/40"><CardContent className="grid gap-4 p-5 sm:grid-cols-5"><div><p className="text-xs text-gray-500">الوحدات</p><p className="font-bold">{totals.units}</p></div><div><p className="text-xs text-gray-500">التكلفة</p><p className="font-bold">{money(totals.cost)}</p></div><div><p className="text-xs text-gray-500">قيمة البيع</p><p className="font-bold">{money(totals.expectedSales)}</p></div><div><p className="text-xs text-gray-500">العمولة المتوقعة</p><p className="font-bold">{money(expectedCommission)}</p></div><div><p className="text-xs text-gray-500">الهامش بعد العمولة</p><p className="font-bold">{money(totals.margin - expectedCommission)}</p></div></CardContent></Card>
       <div className="flex flex-wrap justify-end gap-3"><Button variant="outline" asChild><Link href="/sales/inventory">إلغاء</Link></Button><Button variant="outline" disabled={saving} onClick={() => void submit(false)}>{saving ? "جاري الحفظ..." : "حفظ بدون تأكيد"}</Button><Button className="bg-brand text-white hover:bg-brand-dark" disabled={saving} onClick={() => void submit(true)}>{saving ? "جاري التأكيد..." : "حفظ وتأكيد وإدخال المخزون"}</Button></div>
     </div>
   );
@@ -452,7 +487,7 @@ export function ProductReceiptDetailScreen({ receiptId }: { receiptId: string })
   return (
     <div className="space-y-6" dir="rtl">
       <MessageDialog open={Boolean(message)} onOpenChange={(open) => !open && setMessage("")} description={message} />
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-3"><h1 className="text-3xl font-bold text-gray-950">{receipt.receipt_no}</h1><StatusBadge value={receipt.status} /></div><p className="mt-2 text-gray-500">{receipt.company?.name} · {receipt.receipt_date} · {receipt.warehouse?.name_ar}</p></div>{editable && <div className="flex gap-2"><Button asChild variant="outline"><Link href={`/sales/inventory/receipts/new?receipt=${receipt.id}`}>تعديل</Link></Button><Button disabled={working} className="bg-brand text-white hover:bg-brand-dark" onClick={async () => { setWorking(true); const result = await confirmProductReceipt(receipt.id, receipt.version, newInventoryCommandId()); setWorking(false); if (result.error) setMessage(result.error); else void load(); }}>تأكيد وإدخال المخزون</Button></div>}</div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-3"><h1 className="text-3xl font-bold text-gray-950">{receipt.receipt_no}</h1><StatusBadge value={receipt.status} /></div><p className="mt-2 text-gray-500">{receipt.company?.name} · {receipt.receipt_date} · {receipt.warehouse?.name_ar}</p></div><div className="flex gap-2"><Button asChild variant="outline"><Link href={`/sales/inventory/receipts/${receipt.id}/pricing`}>التسعير والعمولة</Link></Button>{editable && <><Button asChild variant="outline"><Link href={`/sales/inventory/receipts/new?receipt=${receipt.id}`}>تعديل</Link></Button><Button disabled={working} className="bg-brand text-white hover:bg-brand-dark" onClick={async () => { setWorking(true); const result = await confirmProductReceipt(receipt.id, receipt.version, newInventoryCommandId()); setWorking(false); if (result.error) setMessage(result.error); else void load(); }}>تأكيد وإدخال المخزون</Button></>}</div></div>
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard title="الوحدات" value={String(receipt.total_units)} icon={Boxes} /><MetricCard title="التكلفة" value={money(receipt.physical_total_cost, receipt.currency)} icon={WalletCards} /><MetricCard title="قيمة البيع المتوقعة" value={money(receipt.expected_sales_value, receipt.currency)} icon={ClipboardList} /><MetricCard title="الهامش المتوقع" value={money(receipt.expected_margin, receipt.currency)} icon={CheckCircle2} /></div>
       <Card className="border-none shadow-sm"><CardHeader><CardTitle>مجموعات المنتجات</CardTitle></CardHeader><CardContent className="p-0"><Table><TableHeader><TableRow><TableHead>المنتج</TableHead><TableHead>SKU / الموديل</TableHead><TableHead>العدد</TableHead><TableHead>التكلفة</TableHead><TableHead>سعر البيع</TableHead><TableHead>الأرقام التسلسلية</TableHead></TableRow></TableHeader><TableBody>{receipt.lines?.map((line) => <TableRow key={line.id}><TableCell>{line.product_name_snapshot}</TableCell><TableCell>{line.sku_snapshot || line.model_snapshot || "-"}</TableCell><TableCell>{line.expected_quantity}</TableCell><TableCell>{money(line.unit_cost, line.currency)}</TableCell><TableCell>{money(line.planned_unit_sale_price, line.currency)}</TableCell><TableCell><details><summary className="cursor-pointer text-brand">عرض {line.serial_numbers?.length || 0}</summary><div className="mt-2 max-h-36 overflow-auto font-mono text-xs" dir="ltr">{line.serial_numbers?.map((serial) => <p key={serial}>{serial}</p>)}</div></details></TableCell></TableRow>)}</TableBody></Table></CardContent></Card>
       {Boolean(receipt.sources?.length) && <Card className="border-none shadow-sm"><CardHeader><CardTitle>ملفات مصدر الاستلام</CardTitle></CardHeader><CardContent className="space-y-3">{receipt.sources?.map((source) => <div key={source.id} className="flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{source.original_name || (source.source_type === "photo" ? "صورة المنتج" : "ملف الاستيراد")}</p><p className="mt-1 text-sm text-gray-500">{source.source_type.toUpperCase()} · {source.total_rows} {source.source_type === "photo" ? "مرشح" : "صف"} · {source.valid_rows + source.warning_rows} معتمد</p></div><Button variant="outline" onClick={async () => { const result = await openProductInventorySource(receipt.id, source.id); if (result.error) setMessage(result.error); }}>{source.source_type === "photo" ? <FileImage className="ml-2 h-4 w-4" /> : <FileSpreadsheet className="ml-2 h-4 w-4" />}فتح المصدر الأصلي</Button></div>)}</CardContent></Card>}

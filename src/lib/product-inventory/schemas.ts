@@ -3,20 +3,53 @@ import { normalizeSerial } from "@/lib/product-inventory/normalization";
 
 const uuid = z.string().uuid();
 const money = z.coerce.number().positive().max(999_999_999_999);
+const nonNegativeMoney = z.coerce.number().min(0).max(999_999_999_999);
 const currency = z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/);
+const commissionType = z.enum(["none", "flat", "percentage"]);
+const commissionBase = z.enum(["net_amount", "gross_amount"]);
+
+function validateCommercialRule(
+  value: {
+    planned_sale_price: number;
+    minimum_sale_price?: number;
+    maximum_sale_price?: number;
+    commission_type: "none" | "flat" | "percentage";
+    commission_value: number;
+  },
+  context: z.RefinementCtx
+) {
+  const minimum = value.minimum_sale_price ?? value.planned_sale_price;
+  const maximum = value.maximum_sale_price ?? value.planned_sale_price;
+  if (minimum > value.planned_sale_price || value.planned_sale_price > maximum) {
+    context.addIssue({ code: "custom", message: "سعر البيع يجب أن يقع بين الحد الأدنى والحد الأعلى." });
+  }
+  if (value.commission_type === "none" && value.commission_value !== 0) {
+    context.addIssue({ code: "custom", message: "اختر نوع عمولة عند إدخال قيمة عمولة." });
+  }
+  if (value.commission_type === "percentage" && value.commission_value > 100) {
+    context.addIssue({ code: "custom", message: "نسبة العمولة لا يمكن أن تتجاوز 100%." });
+  }
+}
 
 export const receiptGroupSchema = z.object({
   product_id: z.string().optional().default("").transform((v) => (v && z.string().uuid().safeParse(v).success ? v : null)),
   product_name: z.string().trim().max(200).optional(),
   unit_cost: money,
   planned_sale_price: money,
+  minimum_sale_price: money.optional(),
+  maximum_sale_price: money.optional(),
+  commission_type: commissionType.default("none"),
+  commission_value: nonNegativeMoney.default(0),
+  commission_base: commissionBase.default("net_amount"),
   currency,
   tax_included: z.boolean().default(true),
   condition: z.enum(["new", "open_box", "refurbished"]).default("new"),
   serial_numbers: z.array(z.string().trim().min(1).max(160)).min(1).max(1000),
-}).refine((data) => data.product_id || data.product_name, {
-  message: "يجب اختيار منتج أو كتابة اسم المنتج.",
-  path: ["product_id"],
+}).superRefine((data, context) => {
+  if (!data.product_id && !data.product_name) {
+    context.addIssue({ code: "custom", message: "يجب اختيار منتج أو كتابة اسم المنتج.", path: ["product_id"] });
+  }
+  validateCommercialRule(data, context);
 });
 
 export const manualReceiptSchema = z
@@ -70,6 +103,11 @@ export const workbookImportRowSchema = z.object({
   barcode: z.string().max(160).default(""),
   unit_cost: money,
   planned_sale_price: money,
+  minimum_sale_price: money.optional(),
+  maximum_sale_price: money.optional(),
+  commission_type: commissionType.default("none"),
+  commission_value: nonNegativeMoney.default(0),
+  commission_base: commissionBase.default("net_amount"),
   currency,
   tax_code: z.string().max(80).default(""),
   condition: z.enum(["new", "open_box", "refurbished"]).default("new"),
@@ -78,7 +116,7 @@ export const workbookImportRowSchema = z.object({
   confidence: z.coerce.number().min(0).max(1).default(1),
   validation_errors: z.array(z.string()).max(20).default([]),
   validation_warnings: z.array(z.string()).max(20).default([]),
-});
+}).superRefine(validateCommercialRule);
 
 export const workbookCommitSchema = z.object({
   source_id: z.string().uuid(),
@@ -100,6 +138,11 @@ export const photoCandidateCommitSchema = z.object({
   normalized_serial: z.string().max(160).default(""),
   unit_cost: money,
   planned_sale_price: money,
+  minimum_sale_price: money.optional(),
+  maximum_sale_price: money.optional(),
+  commission_type: commissionType.default("none"),
+  commission_value: nonNegativeMoney.default(0),
+  commission_base: commissionBase.default("net_amount"),
   currency,
   condition: z.enum(["new", "open_box", "refurbished"]).default("new"),
   status: z.enum(["valid", "warning"]),
@@ -108,13 +151,38 @@ export const photoCandidateCommitSchema = z.object({
   validation_errors: z.array(z.string().max(500)).max(20).default([]),
   validation_warnings: z.array(z.string().max(500)).max(20).default([]),
   save_as_alias: z.boolean().default(false),
-});
+}).superRefine(validateCommercialRule);
 
 export const photoCommitSchema = z.object({
   expected_version: z.coerce.number().int().positive(),
   command_id: z.string().uuid(),
   warnings_accepted: z.boolean().default(false),
   candidates: z.array(photoCandidateCommitSchema).min(1).max(200),
+});
+
+export const productCommercialTermSchema = z.object({
+  receipt_line_id: uuid,
+  sale_price: money,
+  minimum_sale_price: money,
+  maximum_sale_price: money,
+  currency,
+  commission_type: commissionType,
+  commission_value: nonNegativeMoney,
+  commission_base: commissionBase,
+  source: z.enum(["catalog_default", "workbook_proposal", "photo_proposal", "finance"]).default("finance"),
+  reason: z.string().trim().max(1000).optional(),
+}).superRefine((value, context) => validateCommercialRule({
+  planned_sale_price: value.sale_price,
+  minimum_sale_price: value.minimum_sale_price,
+  maximum_sale_price: value.maximum_sale_price,
+  commission_type: value.commission_type,
+  commission_value: value.commission_value,
+}, context));
+
+export const productCommercialTermsCommandSchema = z.object({
+  command_id: uuid,
+  expected_version: z.coerce.number().int().positive(),
+  terms: z.array(productCommercialTermSchema).min(1).max(100),
 });
 
 export const productHandoverSchema = z.object({

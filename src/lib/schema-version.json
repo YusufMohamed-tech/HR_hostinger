@@ -1,5 +1,5 @@
 {
-  "id": "schema_v142_finance_managed_product_inventory",
-  "file": "db/schema_v142_finance_managed_product_inventory.sql",
-  "checksumSha256": "3c6fdd42f574dcbe21f94821d2a6bf45ee337b53242b26e0d57f697789f453ae"
+  "id": "schema_v143_product_inventory_commercial_terms",
+  "file": "db/schema_v143_product_inventory_commercial_terms.sql",
+  "checksumSha256": "059adaa6edbb08ae1fe6c8049e6f2586d63bb39643828dce605fa1669c73a681"
 }
