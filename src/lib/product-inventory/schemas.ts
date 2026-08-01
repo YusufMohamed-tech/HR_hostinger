@@ -216,6 +216,55 @@ export const productHandoverSchema = z.object({
   });
 });
 
+export const productInventoryOperationalAssignmentSchema = z.object({
+  assignment_id: uuid.optional(),
+  expected_version: z.coerce.number().int().positive().optional(),
+  employee_id: uuid,
+  project_id: uuid,
+  location_id: z.union([uuid, z.literal("")]).optional().transform((value) => value || undefined),
+  city: z.string().trim().min(1).max(160),
+  position_code: z.enum(["OGPM", "OGSV1"]),
+  responsibility: z.enum(["project_manager", "supervisor"]),
+  can_receive_custody: z.boolean().default(true),
+  can_sell: z.boolean().default(false),
+  can_request_return: z.boolean().default(true),
+  can_approve_return: z.boolean().default(false),
+  status: z.enum(["active", "inactive"]).default("active"),
+  effective_from: z.iso.date(),
+  effective_to: z.union([z.iso.date(), z.literal("")]).optional().transform((value) => value || undefined),
+}).superRefine((value, context) => {
+  if ((value.position_code === "OGPM") !== (value.responsibility === "project_manager")) {
+    context.addIssue({ code: "custom", path: ["responsibility"], message: "OGPM لمدير المشروع وOGSV1 للمشرف." });
+  }
+  if (value.assignment_id && !value.expected_version) {
+    context.addIssue({ code: "custom", path: ["expected_version"], message: "إصدار التكليف مطلوب عند التعديل." });
+  }
+  if (value.effective_to && value.effective_to < value.effective_from) {
+    context.addIssue({ code: "custom", path: ["effective_to"], message: "تاريخ النهاية يسبق تاريخ البداية." });
+  }
+});
+
+export const productEmployeeHandoverSchema = z.object({
+  handover_id: uuid,
+  command_id: uuid,
+  warehouse_id: uuid,
+  assignment_id: uuid,
+  require_acknowledgment: z.boolean().default(true),
+  notes: z.string().trim().max(2000).default(""),
+  unit_ids: z.array(uuid).min(1).max(200),
+}).superRefine((value, context) => {
+  if (new Set(value.unit_ids).size !== value.unit_ids.length) {
+    context.addIssue({ code: "custom", path: ["unit_ids"], message: "لا يمكن تكرار نفس السيريال في التسليم." });
+  }
+});
+
+export const productEmployeeHandoverAcceptSchema = z.object({
+  command_id: uuid,
+  expected_version: z.coerce.number().int().positive(),
+  signature_data: z.string().startsWith("data:image/").max(1_500_000),
+  acceptance_note: z.string().trim().max(1000).default(""),
+});
+
 export const productHandoverAcceptSchema = z.object({
   command_id: uuid,
   expected_version: z.coerce.number().int().positive(),

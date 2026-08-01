@@ -17,6 +17,9 @@ import type {
   ProductInventoryWarehouse,
   ProductInventoryImportProfile,
   ProductInventoryCommercialTermInput,
+  ProductEmployeeCustodyDashboardData,
+  ProductEmployeeCustodyManagerData,
+  ProductInventoryOperationalAssignment,
   ProductReceipt,
 } from "@/types/product-inventory";
 
@@ -234,6 +237,62 @@ export function createProductHandover(values: {
     method: "POST",
     body: JSON.stringify(values),
   });
+}
+
+export function getProductEmployeeCustodyManager() {
+  return apiFetch<ProductEmployeeCustodyManagerData>("/api/sales/inventory/employee-handovers");
+}
+
+export function saveProductInventoryOperationalAssignment(values: {
+  assignment_id?: string;
+  expected_version?: number;
+  employee_id: string;
+  project_id: string;
+  location_id?: string;
+  city: string;
+  position_code: "OGPM" | "OGSV1";
+  responsibility: "project_manager" | "supervisor";
+  can_receive_custody: boolean;
+  can_sell: boolean;
+  can_request_return: boolean;
+  can_approve_return: boolean;
+  status: "active" | "inactive";
+  effective_from: string;
+  effective_to?: string;
+}) {
+  return apiFetch<ProductInventoryOperationalAssignment>(
+    "/api/sales/inventory/operational-assignments",
+    { method: "POST", body: JSON.stringify(values) }
+  );
+}
+
+export function createProductEmployeeHandover(values: {
+  handover_id: string;
+  command_id: string;
+  warehouse_id: string;
+  assignment_id: string;
+  require_acknowledgment: boolean;
+  notes?: string;
+  unit_ids: string[];
+}) {
+  return apiFetch<Record<string, unknown>>("/api/sales/inventory/employee-handovers", {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function getMyProductEmployeeCustody() {
+  return apiFetch<ProductEmployeeCustodyDashboardData>("/api/sales/inventory/custody");
+}
+
+export function acceptProductEmployeeHandover(
+  handoverId: string,
+  values: { command_id: string; expected_version: number; signature_data: string; acceptance_note?: string }
+) {
+  return apiFetch<Record<string, unknown>>(
+    `/api/sales/inventory/custody/handovers/${handoverId}/accept`,
+    { method: "POST", body: JSON.stringify(values) }
+  );
 }
 
 export function acceptProductHandover(handoverId: string, expectedVersion: number, commandId: string, signatureData: string) {

@@ -5733,6 +5733,127 @@ const launchAssertions = `
   END
   $test$;
 
+  -- Finance-to-employee custody: explicit OG assignment, exact serial issue,
+  -- recipient-only acknowledgment/signature, stable replay, and scoped report.
+  UPDATE public.locations
+  SET city = 'Cairo', project_id = 'e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1'
+  WHERE id = '55555555-5555-4555-8555-555555555555';
+  DO $test$
+  DECLARE
+    assignment_row public.product_inventory_operational_assignments;
+    warehouse_id_value uuid;
+    unit_id_value uuid;
+    issued jsonb;
+    issued_replay jsonb;
+    accepted jsonb;
+    accepted_replay jsonb;
+    report_row record;
+  BEGIN
+    SELECT * INTO assignment_row
+    FROM public.save_product_inventory_operational_assignment(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      NULL, NULL,
+      jsonb_build_object(
+        'employee_id', '12121212-1212-4212-8212-121212121212',
+        'project_id', 'e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1',
+        'location_id', '55555555-5555-4555-8555-555555555555',
+        'city', 'Cairo', 'position_code', 'OGSV1',
+        'responsibility', 'supervisor', 'can_receive_custody', true,
+        'can_sell', false, 'can_request_return', true,
+        'can_approve_return', false, 'effective_from', '2020-01-01'
+      )
+    );
+    SELECT id INTO warehouse_id_value FROM public.inventory_warehouses
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111' AND is_default LIMIT 1;
+    SELECT id INTO unit_id_value FROM public.product_inventory_units
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+      AND warehouse_id = warehouse_id_value AND status = 'in_stock'
+      AND current_handover_id IS NULL AND current_agent_id IS NULL
+    ORDER BY normalized_serial_number
+    LIMIT 1;
+    IF unit_id_value IS NULL THEN
+      RAISE EXCEPTION 'Employee custody fixture serial is unavailable.';
+    END IF;
+
+    issued := public.execute_product_employee_custody_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'aec00001-0000-4000-8000-000000000001',
+      'aec00002-0000-4000-8000-000000000002',
+      'employee_handover_issue',
+      jsonb_build_object(
+        'handover_id', 'aec00003-0000-4000-8000-000000000003',
+        'assignment_id', assignment_row.id,
+        'warehouse_id', warehouse_id_value,
+        'require_acknowledgment', true,
+        'unit_ids', jsonb_build_array(unit_id_value),
+        'notes', 'OGSV1 Cairo custody smoke test'
+      )
+    );
+    issued_replay := public.execute_product_employee_custody_command(
+      '11111111-1111-4111-8111-111111111111',
+      '61616161-6161-4161-8161-616161616161',
+      'aec00001-0000-4000-8000-000000000001',
+      'aec00002-0000-4000-8000-000000000002',
+      'employee_handover_issue',
+      jsonb_build_object(
+        'handover_id', 'aec00003-0000-4000-8000-000000000003',
+        'assignment_id', assignment_row.id,
+        'warehouse_id', warehouse_id_value,
+        'require_acknowledgment', true,
+        'unit_ids', jsonb_build_array(unit_id_value),
+        'notes', 'OGSV1 Cairo custody smoke test'
+      )
+    );
+    accepted := public.execute_product_employee_custody_command(
+      '11111111-1111-4111-8111-111111111111',
+      '99999999-9999-4999-8999-999999999999',
+      'aec00004-0000-4000-8000-000000000004',
+      'aec00005-0000-4000-8000-000000000005',
+      'employee_handover_accept',
+      jsonb_build_object(
+        'handover_id', 'aec00003-0000-4000-8000-000000000003',
+        'expected_version', 1,
+        'signature_data', 'data:image/png;base64,Y3VzdG9keS1zaWduYXR1cmU='
+      )
+    );
+    accepted_replay := public.execute_product_employee_custody_command(
+      '11111111-1111-4111-8111-111111111111',
+      '99999999-9999-4999-8999-999999999999',
+      'aec00004-0000-4000-8000-000000000004',
+      'aec00005-0000-4000-8000-000000000005',
+      'employee_handover_accept',
+      jsonb_build_object(
+        'handover_id', 'aec00003-0000-4000-8000-000000000003',
+        'expected_version', 1,
+        'signature_data', 'data:image/png;base64,Y3VzdG9keS1zaWduYXR1cmU='
+      )
+    );
+    SELECT * INTO report_row
+    FROM public.get_product_inventory_employee_custody_report(
+      '11111111-1111-4111-8111-111111111111'
+    ) WHERE assignment_id = assignment_row.id;
+
+    IF issued IS DISTINCT FROM issued_replay
+       OR accepted IS DISTINCT FROM accepted_replay
+       OR issued->'handover'->>'status' <> 'issued'
+       OR accepted->'handover'->>'status' <> 'accepted'
+       OR (SELECT status FROM public.product_inventory_units WHERE id = unit_id_value) <> 'with_custodian'
+       OR (SELECT current_custodian_employee_id FROM public.product_inventory_units WHERE id = unit_id_value)
+          <> '12121212-1212-4212-8212-121212121212'
+       OR (SELECT count(*) FROM public.product_handover_signatures
+           WHERE handover_id = 'aec00003-0000-4000-8000-000000000003'
+             AND recipient_user_id = '99999999-9999-4999-8999-999999999999') <> 1
+       OR report_row.position_code <> 'OGSV1'
+       OR report_row.city <> 'Cairo'
+       OR report_row.ready_to_sell_units <> 1
+       OR report_row.physically_held_units <> 1 THEN
+      RAISE EXCEPTION 'Employee custody assignment, issue, acceptance, replay, signature, or report proof failed.';
+    END IF;
+  END
+  $test$;
+
   -- Phase 6 product inventory: tenant/suspension guards, transaction rollback
   -- under injected outbox failures, accounting failure atomicity, and exact
   -- uncapped summary functions remain independently verifiable.

@@ -247,6 +247,35 @@ export async function executeProductCommerceCommand(
   return data as Record<string, unknown>;
 }
 
+export async function executeProductEmployeeCustodyCommand(
+  admin: ReturnType<typeof createAdminClient>,
+  values: {
+    orgId: string;
+    actorUserId: string;
+    requestId: string;
+    commandId: string;
+    action: "employee_handover_issue" | "employee_handover_accept";
+    payload: Record<string, unknown>;
+  }
+) {
+  const { data, error } = await productInventoryDb(admin).rpc(
+    "execute_product_employee_custody_command",
+    {
+      p_org_id: values.orgId,
+      p_actor_user_id: values.actorUserId,
+      p_request_id: values.requestId,
+      p_command_id: values.commandId,
+      p_action: values.action,
+      p_payload: values.payload,
+    }
+  );
+  if (error) throw Object.assign(new Error(error.message), { code: error.code });
+  if (!data || typeof data !== "object") {
+    throw new Error("The employee custody command returned no result.");
+  }
+  return data as Record<string, unknown>;
+}
+
 export async function executeProductInventoryLossCommand(
   admin: ReturnType<typeof createAdminClient>,
   values: {

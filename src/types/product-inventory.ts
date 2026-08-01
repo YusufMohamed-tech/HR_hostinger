@@ -160,6 +160,11 @@ export type ProductInventoryStockRow = {
   commercial_terms_revision_snapshot?: number;
   currency: string;
   current_agent_id?: string | null;
+  current_custodian_assignment_id?: string | null;
+  current_custodian_employee_id?: string | null;
+  current_project_id?: string | null;
+  current_location_id?: string | null;
+  current_city_snapshot?: string | null;
   current_handover_id?: string | null;
   current_sale_id?: string | null;
   assigned_at?: string | null;
@@ -168,6 +173,52 @@ export type ProductInventoryStockRow = {
   product?: { name: string; sku: string | null; model: string | null } | null;
   warehouse?: { name_ar: string; name_en: string | null } | null;
   agent?: { full_name: string } | null;
+};
+
+export type ProductInventoryOperationalAssignment = {
+  id: string;
+  organization_id: string;
+  employee_id: string;
+  project_id: string;
+  location_id: string | null;
+  city: string;
+  position_code: "OGPM" | "OGSV1";
+  responsibility: "project_manager" | "supervisor";
+  can_receive_custody: boolean;
+  can_sell: boolean;
+  can_request_return: boolean;
+  can_approve_return: boolean;
+  status: "active" | "inactive";
+  effective_from: string;
+  effective_to: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  employee?: ProductInventoryCustodianEmployee | null;
+  project?: ProductInventoryProject | null;
+  location?: ProductInventoryLocation | null;
+};
+
+export type ProductInventoryCustodianEmployee = {
+  id: string;
+  user_id: string;
+  employee_code: string | null;
+  full_name: string;
+  job_title: string | null;
+  work_city: string | null;
+};
+
+export type ProductInventoryProject = {
+  id: string;
+  name: string;
+  code: string | null;
+};
+
+export type ProductInventoryLocation = {
+  id: string;
+  name: string;
+  city: string | null;
+  project_id: string | null;
 };
 
 export type ManualReceiptGroupInput = {
@@ -327,7 +378,18 @@ export type ProductHandover = {
   id: string;
   handover_no: string;
   warehouse_id: string;
-  agent_id: string;
+  agent_id: string | null;
+  handover_type?: "legacy_agent" | "employee_custody";
+  recipient_assignment_id?: string | null;
+  recipient_employee_id?: string | null;
+  recipient_user_id_snapshot?: string | null;
+  recipient_name_snapshot?: string | null;
+  recipient_responsibility_snapshot?: "project_manager" | "supervisor" | null;
+  position_code_snapshot?: "OGPM" | "OGSV1" | null;
+  project_id?: string | null;
+  project_name_snapshot?: string | null;
+  location_id?: string | null;
+  city_snapshot?: string | null;
   status: "issued" | "accepted" | "completed" | "cancelled";
   require_acknowledgment: boolean;
   notes: string | null;
@@ -337,6 +399,43 @@ export type ProductHandover = {
   agent?: ProductInventoryFieldAgent | null;
   warehouse?: ProductInventoryWarehouse | null;
   lines?: ProductHandoverLine[];
+};
+
+export type ProductEmployeeCustodyReportRow = {
+  assignment_id: string;
+  project_id: string;
+  project_name: string;
+  city: string;
+  employee_id: string;
+  recipient_name: string;
+  responsibility: "project_manager" | "supervisor";
+  position_code: "OGPM" | "OGSV1";
+  received_units: number;
+  ready_to_sell_units: number;
+  return_pending_units: number;
+  awaiting_delivery_units: number;
+  physically_held_units: number;
+  sold_units: number;
+  returned_units: number;
+};
+
+export type ProductEmployeeCustodyManagerData = {
+  assignments: ProductInventoryOperationalAssignment[];
+  employees: ProductInventoryCustodianEmployee[];
+  projects: ProductInventoryProject[];
+  locations: ProductInventoryLocation[];
+  warehouses: ProductInventoryWarehouse[];
+  available_units: ProductInventoryStockRow[];
+  handovers: ProductHandover[];
+  report: ProductEmployeeCustodyReportRow[];
+};
+
+export type ProductEmployeeCustodyDashboardData = {
+  employee: ProductInventoryCustodianEmployee;
+  assignments: ProductInventoryOperationalAssignment[];
+  pending_handovers: ProductHandover[];
+  handovers: ProductHandover[];
+  units: ProductInventoryStockRow[];
 };
 
 export type ProductPriceOverrideRequest = {

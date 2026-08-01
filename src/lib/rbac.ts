@@ -110,8 +110,15 @@ export function isCandidatePath(pathname: string): boolean {
 
 export function canAccessPath(role: Role, pathname: string): boolean {
   const normalizedPath = normalizePath(pathname);
+  const employeeCustodySelfService =
+    normalizedPath === "/sales/inventory/custody"
+    || normalizedPath.startsWith("/api/sales/inventory/custody");
 
   if (role === "Superadmin") {
+    return true;
+  }
+
+  if (employeeCustodySelfService && ["Employee", "Supervisor"].includes(role)) {
     return true;
   }
 

@@ -188,7 +188,7 @@ export function ProductInventoryDashboard() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <Link href="/sales/inventory/assignments"><Send className="ml-2 h-4 w-4" />تسليم للمندوبين</Link>
+            <Link href="/sales/inventory/employee-custody"><Send className="ml-2 h-4 w-4" />تسليم OGPM / OGSV1</Link>
           </Button>
           <Button asChild variant="outline">
             <Link href="/sales/inventory/receipts/photo"><Camera className="ml-2 h-4 w-4" />استلام بالصور</Link>

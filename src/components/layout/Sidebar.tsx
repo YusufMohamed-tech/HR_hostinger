@@ -141,6 +141,7 @@ export function SidebarContent() {
       { name: "استكمال ملفي", href: "/onboarding", icon: ClipboardList },
       { name: "الأرصدة والسلف", href: "/balances", icon: WalletCards },
       { name: "العهد المستلمة", href: "/assets", icon: Package },
+      { name: "عهدة أجهزة الراوتر", href: "/sales/inventory/custody", icon: PackageCheck },
     ];
 
     const recruitmentOps: NavLink[] = [
@@ -180,7 +181,8 @@ export function SidebarContent() {
       { name: "لوحة المحاسبة", href: "/accounting", icon: BarChart3 },
       ...(role === "Finance_Manager" ? [
         { name: "عمليات مخزون المنتجات", href: "/sales/inventory", icon: Package },
-        { name: "تسليم وعهد المنتجات", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
+        { name: "تسليم وعهد الموظفين", href: "/sales/inventory/employee-custody", icon: PackageCheck, indent: true },
+        { name: "تسليم المندوبين القديم", href: "/sales/inventory/assignments", icon: PackageCheck, indent: true },
         { name: "استلام بالصور", href: "/sales/inventory/receipts/photo", icon: Camera, indent: true },
         { name: "استيراد Excel / CSV", href: "/sales/inventory/receipts/import", icon: FileSpreadsheet, indent: true },
         { name: "إصدارات قالب الاستيراد", href: "/sales/inventory/import-profiles", icon: FileSpreadsheet, indent: true },
@@ -322,6 +324,7 @@ export function SidebarContent() {
           links: [
             { name: "الرئيسية", href: "/supervisor", icon: LayoutDashboard },
             { name: "التقييمات", href: "/supervisor/evaluations", icon: ClipboardList },
+            { name: "عهدة أجهزة الراوتر", href: "/sales/inventory/custody", icon: PackageCheck },
             { name: "الحضور", href: "/attendance", icon: Clock },
             { name: "المهام", href: "/tasks", icon: CheckSquare },
             { name: "الإجازات", href: "/leave", icon: CalendarDays },

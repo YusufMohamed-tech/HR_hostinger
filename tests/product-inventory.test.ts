@@ -12,6 +12,9 @@ import {
   productPriceOverrideRequestSchema,
   productPriceOverrideReviewSchema,
   productInventoryLossSchema,
+  productInventoryOperationalAssignmentSchema,
+  productEmployeeHandoverSchema,
+  productEmployeeHandoverAcceptSchema,
   manualReceiptSchema,
   workbookCommitSchema,
 } from "../src/lib/product-inventory/schemas";
@@ -335,6 +338,55 @@ test("finance manager owns receiving and legacy inventory receiver is retired", 
   assert.equal(canAccessPath("Finance_Manager", "/api/sales/inventory/price-overrides"), true);
   assert.equal(canAccessPath("Accountant", "/accounting/inventory"), true);
   assert.equal(canAccessPath("Accountant", "/sales/inventory"), false);
+});
+
+test("employee custody schemas enforce OG scope, unique serials, and image signatures", () => {
+  const assignment = {
+    employee_id: "10000000-0000-4000-8000-000000000021",
+    project_id: "10000000-0000-4000-8000-000000000022",
+    city: "القاهرة",
+    position_code: "OGPM",
+    responsibility: "project_manager",
+    effective_from: "2026-08-01",
+  };
+  assert.equal(productInventoryOperationalAssignmentSchema.safeParse(assignment).success, true);
+  assert.equal(productInventoryOperationalAssignmentSchema.safeParse({
+    ...assignment,
+    responsibility: "supervisor",
+  }).success, false);
+
+  const handover = {
+    handover_id: "10000000-0000-4000-8000-000000000023",
+    command_id: "10000000-0000-4000-8000-000000000024",
+    warehouse_id: "10000000-0000-4000-8000-000000000025",
+    assignment_id: "10000000-0000-4000-8000-000000000026",
+    unit_ids: ["10000000-0000-4000-8000-000000000027"],
+  };
+  assert.equal(productEmployeeHandoverSchema.safeParse(handover).success, true);
+  assert.equal(productEmployeeHandoverSchema.safeParse({
+    ...handover,
+    unit_ids: [handover.unit_ids[0], handover.unit_ids[0]],
+  }).success, false);
+  assert.equal(productEmployeeHandoverAcceptSchema.safeParse({
+    command_id: handover.command_id,
+    expected_version: 1,
+    signature_data: "data:image/png;base64,abc",
+  }).success, true);
+  assert.equal(productEmployeeHandoverAcceptSchema.safeParse({
+    command_id: handover.command_id,
+    expected_version: 1,
+    signature_data: "signed by name",
+  }).success, false);
+});
+
+test("employee and supervisor can access only their own router custody surface", () => {
+  assert.equal(canAccessPath("Employee", "/sales/inventory/custody"), true);
+  assert.equal(canAccessPath("Employee", "/api/sales/inventory/custody"), true);
+  assert.equal(canAccessPath("Employee", "/sales/inventory/employee-custody"), false);
+  assert.equal(canAccessPath("Supervisor", "/sales/inventory/custody"), true);
+  assert.equal(canAccessPath("Supervisor", "/api/sales/inventory/custody/handovers/abc/accept"), true);
+  assert.equal(canAccessPath("Supervisor", "/api/sales/inventory/employee-handovers"), false);
+  assert.equal(canAccessPath("Finance_Manager", "/sales/inventory/employee-custody"), true);
 });
 
 test("browser OCR assets stay on the application origin", () => {

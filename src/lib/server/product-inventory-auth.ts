@@ -26,6 +26,13 @@ export const productInventoryCommerceRoles = [
   "field_agent",
 ] as const;
 
+export const productInventoryCustodianRoles = [
+  "admin",
+  "finance_manager",
+  "employee",
+  "supervisor",
+] as const;
+
 export function requireProductInventoryAccess(request?: NextRequest) {
   return requireTenantContext(
     { anyFeatures: ["sales", "accounting"], roles: productInventoryReceivingRoles },
@@ -64,6 +71,17 @@ export function requireProductInventoryCommerceAccess(request?: NextRequest) {
 export function requireProductInventoryAgentAccess(request?: NextRequest) {
   return requireTenantContext(
     { feature: "sales", roles: ["field_agent"], requireEmployee: true },
+    request
+  );
+}
+
+export function requireProductInventoryCustodianAccess(request?: NextRequest) {
+  return requireTenantContext(
+    {
+      anyFeatures: ["sales", "accounting"],
+      roles: productInventoryCustodianRoles,
+      requireEmployee: true,
+    },
     request
   );
 }
