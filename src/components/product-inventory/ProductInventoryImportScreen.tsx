@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Sparkles, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +29,18 @@ import type {
 } from "@/types/product-inventory";
 
 const pageSize = 50;
+
+const workbookShapeLabels = {
+  row_per_device: "جهاز واحد في كل صف",
+  continuation_rows: "صفوف سيريالات متتابعة",
+  serial_columns: "عدة أعمدة سيريال",
+};
+
+const profileMatchLabels = {
+  automatic: "تعرّف تلقائي جديد",
+  exact_profile: "تطابق كامل مع قالب معتمد",
+  mixed: "تعرّف تلقائي مع قالب جزئي",
+};
 
 function downloadText(content: string, filename: string) {
   const blob = new Blob([content], { type: "text/csv;charset=utf-8" });
@@ -229,7 +241,7 @@ export function ProductInventoryImportScreen() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-950">استلام المنتجات من Excel / CSV</h1>
-          <p className="mt-2 text-gray-500">صف واحد لكل وحدة مسلسلة. راجع المطابقة والأسعار والأخطاء قبل تجهيز السند.</p>
+          <p className="mt-2 text-gray-500">ارفع ملف المورد كما هو؛ النظام يكتشف الشيت والعناوين وشكل السيريالات تلقائيًا ثم يعرض الأجهزة للمراجعة.</p>
         </div>
         <Button asChild variant="outline">
           <a href="/api/sales/inventory/template"><Download className="ml-2 h-4 w-4" />تحميل القالب</a>
@@ -255,6 +267,30 @@ export function ProductInventoryImportScreen() {
 
       {preview && (
         <>
+          <Card className="border-violet-200 bg-violet-50/60">
+            <CardContent className="flex flex-col gap-4 p-5 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <Sparkles className="mt-0.5 h-6 w-6 shrink-0 text-violet-700" />
+                <div>
+                  <p className="font-semibold text-violet-950">تم التعرف على الملف تلقائيًا</p>
+                  <p className="mt-1 text-sm text-violet-800">
+                    الشيت: {preview.recognition.sheet_name} · صف العناوين: {preview.recognition.header_row}
+                    {preview.recognition.compatible_sheets.length > 1
+                      ? ` · ${preview.recognition.compatible_sheets.length} شيتات أجهزة متوافقة`
+                      : ""}
+                  </p>
+                  <p className="mt-1 text-xs text-violet-700">
+                    {workbookShapeLabels[preview.recognition.shape]} · {profileMatchLabels[preview.recognition.profile_match_mode]}
+                    {preview.recognition.warnings.length > 0 ? " · راجع الصفوف المقترحة بعناية" : ""}
+                  </p>
+                </div>
+              </div>
+              <Badge variant="outline" className="w-fit border-violet-300 bg-white text-violet-800">
+                ثقة {(preview.recognition.confidence * 100).toFixed(0)}%
+              </Badge>
+            </CardContent>
+          </Card>
+
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <Card className="border-green-100 bg-green-50/50"><CardContent className="p-4"><p className="text-sm text-green-700">صالح</p><p className="mt-1 text-2xl font-bold">{counts.valid}</p></CardContent></Card>
             <Card className="border-amber-100 bg-amber-50/50"><CardContent className="p-4"><p className="text-sm text-amber-700">تحذير</p><p className="mt-1 text-2xl font-bold">{counts.warning}</p></CardContent></Card>

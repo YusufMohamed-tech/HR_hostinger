@@ -363,6 +363,19 @@ export type ProductInventoryWorkbookPreview = {
   };
   rows: ProductInventoryImportRow[];
   headers: string[];
+  recognition: {
+    algorithm_version: string;
+    status: "ready" | "needs_review";
+    sheet_name: string;
+    header_row: number;
+    shape: "row_per_device" | "continuation_rows" | "serial_columns";
+    layout_fingerprint: string;
+    confidence: number;
+    compatible_sheets: string[];
+    warnings: string[];
+    profile_match_mode: "automatic" | "exact_profile" | "mixed";
+    import_profile_id: string | null;
+  };
 };
 
 export type ProductInventoryPhotoCandidate = {

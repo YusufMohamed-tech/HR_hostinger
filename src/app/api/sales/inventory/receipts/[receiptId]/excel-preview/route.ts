@@ -3,8 +3,13 @@ import { z } from "zod";
 import { inspectUpload, removeUploadedPaths, UploadSecurityError } from "@/lib/server/upload-security";
 import { requireProductInventoryAccess } from "@/lib/server/product-inventory-auth";
 import { productInventoryDb, productInventoryError } from "@/lib/server/product-inventory-api";
-import { readProductInventoryWorkbook } from "@/lib/product-inventory/workbook-server";
+import { readProductInventoryWorkbookSheets } from "@/lib/product-inventory/workbook-server";
 import { parseProductInventoryWorkbookRows } from "@/lib/product-inventory/workbook";
+import { normalizeRecognizedProductInventorySheets } from "@/lib/product-inventory/workbook-normalization";
+import {
+  recognizeProductInventoryWorkbook,
+  type ProductInventoryWorkbookRecognition,
+} from "@/lib/product-inventory/workbook-recognition";
 import { storeObject } from "@/lib/server/file-storage";
 
 type RouteContext = { params: Promise<{ receiptId: string }> };
@@ -31,6 +36,18 @@ const allowedMimeTypes = new Set([
   "application/csv",
 ]);
 const maxBytes = 10 * 1024 * 1024;
+const maxSheets = 50;
+const maxColumns = 200;
+
+type ImportProfileRow = {
+  id: string;
+  supplier_company_id: string | null;
+  header_mapping: Record<string, string>;
+  default_currency: string;
+  layout_fingerprint: string | null;
+  is_active: boolean;
+  approved_at: string | null;
+};
 
 function safeFilename(value: string) {
   return value.replace(/[^\w.\-()[\]\u0600-\u06FF ]+/g, "_").slice(0, 160) || "inventory-import";
@@ -39,6 +56,23 @@ function safeFilename(value: string) {
 function firstRecord(value: unknown) {
   const row = Array.isArray(value) ? value[0] : value;
   return row && typeof row === "object" ? row as Record<string, unknown> : null;
+}
+
+function matchingProfile(
+  profiles: ImportProfileRow[],
+  recognition: ProductInventoryWorkbookRecognition,
+  supplierCompanyId: string
+) {
+  return profiles
+    .filter((profile) => profile.layout_fingerprint === recognition.layout_fingerprint)
+    .filter((profile) => !profile.supplier_company_id || profile.supplier_company_id === supplierCompanyId)
+    .sort((left, right) => {
+      const supplierSpecific = Number(Boolean(right.supplier_company_id)) - Number(Boolean(left.supplier_company_id));
+      if (supplierSpecific !== 0) return supplierSpecific;
+      const active = Number(right.is_active) - Number(left.is_active);
+      if (active !== 0) return active;
+      return String(right.approved_at ?? "").localeCompare(String(left.approved_at ?? ""));
+    })[0] ?? null;
 }
 
 async function existingSerials(
@@ -94,15 +128,29 @@ export async function POST(request: NextRequest, context: RouteContext) {
   let storagePath = "";
   try {
     const inspected = await inspectUpload(file, { allowedMimeTypes, maxBytes });
-    const rawRows = await readProductInventoryWorkbook(inspected.bytes, sourceType);
+    const sheets = await readProductInventoryWorkbookSheets(inspected.bytes, sourceType);
     const configuredLimit = Number(process.env.PRODUCT_INVENTORY_IMPORT_MAX_ROWS || 10000);
     const rowLimit = Math.min(Math.max(Number.isFinite(configuredLimit) ? configuredLimit : 10000, 1), 10000);
-    if (rawRows.length - 1 > rowLimit) {
-      return NextResponse.json({ message: `الحد الأقصى هو ${rowLimit.toLocaleString("en-US")} صف بيانات.` }, { status: 400 });
+    if (sheets.length === 0 || sheets.length > maxSheets) {
+      return NextResponse.json({ message: `يجب أن يحتوي الملف على 1–${maxSheets} ورقة عمل.` }, { status: 400 });
+    }
+    let rawRowCount = 0;
+    for (const sheet of sheets) {
+      rawRowCount += sheet.rows.length;
+      if (sheet.rows.length > rowLimit + 101) {
+        return NextResponse.json({ message: `ورقة ${sheet.name} تتجاوز الحد الآمن للصفوف.` }, { status: 400 });
+      }
+      const columns = sheet.rows.reduce((maximum, row) => Math.max(maximum, row.length), 0);
+      if (columns > maxColumns) {
+        return NextResponse.json({ message: `ورقة ${sheet.name} تتجاوز حد ${maxColumns} عمودًا.` }, { status: 400 });
+      }
+    }
+    if (rawRowCount > (rowLimit + 101) * Math.min(sheets.length, 10)) {
+      return NextResponse.json({ message: "إجمالي صفوف الملف أكبر من الحد الآمن للاستيراد." }, { status: 400 });
     }
 
     const db = productInventoryDb(auth.admin);
-    const [productsResult, aliasesResult, profileResult] = await Promise.all([
+    const [productsResult, aliasesResult, profilesResult] = await Promise.all([
       db.from("sales_products")
         .select("id, company_id, name, sku, barcode, model, price, default_cost, agent_commission_type, agent_commission_value")
         .eq("organization_id", auth.orgId)
@@ -115,26 +163,56 @@ export async function POST(request: NextRequest, context: RouteContext) {
         .eq("organization_id", auth.orgId)
         .eq("is_approved", true),
       db.from("product_inventory_import_profiles")
-        .select("id, header_row, header_mapping, default_currency")
+        .select("id, supplier_company_id, header_mapping, default_currency, layout_fingerprint, is_active, approved_at")
         .eq("organization_id", auth.orgId)
-        .eq("is_active", true)
-        .maybeSingle(),
+        .order("created_at", { ascending: false })
+        .limit(100),
     ]);
-    const catalogError = productsResult.error || aliasesResult.error || profileResult.error;
+    const catalogError = productsResult.error || aliasesResult.error || profilesResult.error;
     if (catalogError) throw Object.assign(new Error(catalogError.message), { code: catalogError.code });
-    if (!profileResult.data) {
-      return NextResponse.json({ message: "لا يوجد إصدار نشط لقالب الاستيراد. فعّل قالباً أولاً." }, { status: 422 });
+    const profiles = (profilesResult.data ?? []) as ImportProfileRow[];
+    const recognitionContext = {
+      products: productsResult.data ?? [],
+      aliases: aliasesResult.data ?? [],
+      approvedMappings: profiles.map((profile) => profile.header_mapping),
+    };
+    const recognition = recognizeProductInventoryWorkbook(sheets, recognitionContext);
+    if (recognition.blocking_errors.length > 0) {
+      return NextResponse.json({
+        message: "لم يتمكن النظام من تحديد أعمدة السيريال والمنتج والتكلفة وسعر البيع بأمان. ارفع الملف من شاشة قوالب الاستيراد لمراجعة الأعمدة مرة واحدة.",
+        recognition,
+      }, { status: 422 });
     }
 
-    const profileRows = rawRows.slice(Math.max(0, Number(profileResult.data.header_row || 1) - 1));
+    const compatibleNames = new Set(recognition.compatible_sheets);
+    compatibleNames.add(recognition.sheet_name);
+    const recognizedSheets = sheets
+      .filter((sheet) => compatibleNames.has(sheet.name))
+      .map((sheet) => ({
+        sheet,
+        recognition: recognizeProductInventoryWorkbook([sheet], recognitionContext),
+      }))
+      .filter((item) => item.recognition.blocking_errors.length === 0);
+    const selectedInputs = recognizedSheets.length > 0
+      ? recognizedSheets
+      : [{ sheet: sheets[recognition.sheet_index]!, recognition }];
+    const sheetProfiles = selectedInputs.map((item) =>
+      matchingProfile(profiles, item.recognition, parsedHeader.data.supplier_company_id)
+    );
+    const normalized = normalizeRecognizedProductInventorySheets(
+      selectedInputs.map((item, index) => ({
+        ...item,
+        approvedHeaderMapping: sheetProfiles[index]?.header_mapping,
+      }))
+    );
 
     const preview = parseProductInventoryWorkbookRows(
-      profileRows as Array<Array<string | number | boolean | Date | null | undefined>>,
+      normalized.rows,
       {
       products: productsResult.data ?? [],
       aliases: aliasesResult.data ?? [],
-      defaultCurrency: profileResult.data.default_currency || parsedHeader.data.currency,
-      headerMapping: profileResult.data.header_mapping as Record<string, string>,
+      defaultCurrency: sheetProfiles[0]?.default_currency || parsedHeader.data.currency,
+      headerMapping: normalized.headerMapping,
       }
     );
     if (preview.rows.length > rowLimit) {
@@ -159,6 +237,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }
     }
 
+    const matchedProfileIds = new Set(sheetProfiles.map((profile) => profile?.id).filter(Boolean));
+    const importProfileId = matchedProfileIds.size === 1 && sheetProfiles.every(Boolean)
+      ? [...matchedProfileIds][0] as string
+      : null;
+    const profileMatchMode = importProfileId
+      ? "exact_profile"
+      : sheetProfiles.some(Boolean) ? "mixed" : "automatic";
     const safeName = safeFilename(file.name);
     storagePath = `${auth.orgId}/${receiptId}/${parsedHeader.data.command_id}/${inspected.sha256}-${safeName}`;
     await storeObject(auth.admin, {
@@ -189,7 +274,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
       scanned_at: inspected.scannedAt,
       source_type: sourceType,
       headers: preview.headers,
-      import_profile_id: profileResult.data.id,
+      import_profile_id: importProfileId,
+      recognition_version: recognition.algorithm_version,
+      layout_fingerprint: recognition.layout_fingerprint,
+      detected_sheet_name: recognition.sheet_name,
+      detected_header_row: recognition.header_row,
+      workbook_shape: recognition.shape,
+      recognition_confidence: recognition.confidence,
+      profile_match_mode: profileMatchMode,
+      compatible_sheets: selectedInputs.map((item) => item.sheet.name),
+      mapping_snapshot: Object.fromEntries(selectedInputs.map((item) => [
+        item.sheet.name,
+        item.recognition.header_mapping,
+      ])),
     };
     const result = await (auth.admin as unknown as {
       rpc: (name: string, args: Record<string, unknown>) => Promise<RpcResult>;
@@ -219,7 +316,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
       throw Object.assign(new Error(proposalResult.error.message), { code: proposalResult.error.code });
     }
     const sourceUpdate = await db.from("product_receipt_sources")
-      .update({ import_profile_id: profileResult.data.id })
+      .update({
+        import_profile_id: importProfileId,
+        recognition_version: recognition.algorithm_version,
+        layout_fingerprint: recognition.layout_fingerprint,
+        detected_sheet_name: recognition.sheet_name,
+        detected_header_row: recognition.header_row,
+        workbook_shape: recognition.shape,
+        recognition_confidence: recognition.confidence,
+        profile_match_mode: profileMatchMode,
+        compatible_sheet_names: selectedInputs.map((item) => item.sheet.name),
+        mapping_snapshot: fileMetadata.mapping_snapshot,
+      })
       .eq("organization_id", auth.orgId)
       .eq("receipt_id", receiptId)
       .eq("id", parsedHeader.data.source_id);
@@ -232,6 +340,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
         rows: preview.rows,
         headers: preview.headers,
         counts,
+        recognition: {
+          algorithm_version: recognition.algorithm_version,
+          status: recognition.status,
+          sheet_name: recognition.sheet_name,
+          header_row: recognition.header_row,
+          shape: recognition.shape,
+          layout_fingerprint: recognition.layout_fingerprint,
+          confidence: recognition.confidence,
+          compatible_sheets: selectedInputs.map((item) => item.sheet.name),
+          warnings: recognition.warnings,
+          profile_match_mode: profileMatchMode,
+          import_profile_id: importProfileId,
+        },
       },
     });
   } catch (error) {

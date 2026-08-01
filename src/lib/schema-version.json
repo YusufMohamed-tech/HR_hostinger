@@ -1,5 +1,5 @@
 {
-  "id": "schema_v149_product_inventory_excel_profile_confirmation",
-  "file": "db/schema_v149_product_inventory_excel_profile_confirmation.sql",
-  "checksumSha256": "17e1802281b10e90a66ab36b8e81d221689e31a740932e8f1f7f1912b4dfbd0c"
+  "id": "schema_v150_product_inventory_receipt_recognition_audit",
+  "file": "db/schema_v150_product_inventory_receipt_recognition_audit.sql",
+  "checksumSha256": "7eacca8b82170c9ad8ef314c446931597c5a55bfa4f28a78aef3a83ad29fd49c"
 }

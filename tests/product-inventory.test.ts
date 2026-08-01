@@ -37,6 +37,7 @@ import {
   PRODUCT_INVENTORY_RECOGNITION_VERSION,
   recognizeProductInventoryWorkbook,
 } from "../src/lib/product-inventory/workbook-recognition";
+import { normalizeRecognizedProductInventorySheets } from "../src/lib/product-inventory/workbook-normalization";
 import {
   parseProductPhotoExtraction,
   PRODUCT_PHOTO_EXTRACTION_VERSION,
@@ -300,6 +301,48 @@ test("automatic workbook recognition detects continuation rows and serial column
   }], { products: workbookProducts });
   assert.equal(serialColumns.shape, "serial_columns");
   assert.deepEqual(serialColumns.serial_column_indexes, [1, 2]);
+});
+
+test("recognized continuation rows are expanded with inherited product and commercial values", () => {
+  const sheet = {
+    name: "Continuation",
+    rows: [
+      ["SKU", "Serial", "Cost", "Sale Price"],
+      ["VHR-5G", "VG-CONT-NORM-1", 60, 100],
+      [null, "VG-CONT-NORM-2", null, null],
+    ],
+  };
+  const recognition = recognizeProductInventoryWorkbook([sheet], { products: workbookProducts });
+  const normalized = normalizeRecognizedProductInventorySheets([{ sheet, recognition }]);
+  const parsed = parseProductInventoryWorkbookRows(normalized.rows, {
+    products: workbookProducts,
+    headerMapping: normalized.headerMapping,
+  });
+
+  assert.deepEqual(parsed.rows.map((row) => row.serial_number), ["VG-CONT-NORM-1", "VG-CONT-NORM-2"]);
+  assert.ok(parsed.rows.every((row) => row.product_sku === "VHR-5G"));
+  assert.ok(parsed.rows.every((row) => row.unit_cost === 60 && row.planned_sale_price === 100));
+  assert.equal(parsed.rows[1]?.raw_data.__source_sheet, "Continuation");
+  assert.equal(parsed.rows[1]?.raw_data.__source_row, 3);
+});
+
+test("recognized serial columns expand into one validated device row per serial", () => {
+  const sheet = {
+    name: "Wide",
+    rows: [
+      ["SKU", "Serial 1", "Serial 2", "Cost", "Sale Price"],
+      ["VHR-5G", "VG-WIDE-NORM-1", "VG-WIDE-NORM-2", 60, 100],
+    ],
+  };
+  const recognition = recognizeProductInventoryWorkbook([sheet], { products: workbookProducts });
+  const normalized = normalizeRecognizedProductInventorySheets([{ sheet, recognition }]);
+  const parsed = parseProductInventoryWorkbookRows(normalized.rows, {
+    products: workbookProducts,
+    headerMapping: normalized.headerMapping,
+  });
+
+  assert.deepEqual(parsed.rows.map((row) => row.serial_number), ["VG-WIDE-NORM-1", "VG-WIDE-NORM-2"]);
+  assert.ok(parsed.rows.every((row) => row.status === "valid"));
 });
 
 test("automatic workbook recognition blocks unclear required financial columns", () => {

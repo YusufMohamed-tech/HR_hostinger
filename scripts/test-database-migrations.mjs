@@ -5130,6 +5130,19 @@ const launchAssertions = `
       preview_rows
     );
 
+    UPDATE public.product_receipt_sources
+    SET recognition_version = 'product-inventory-recognition-v1',
+        layout_fingerprint = repeat('e', 64),
+        detected_sheet_name = 'Devices',
+        detected_header_row = 3,
+        workbook_shape = 'continuation_rows',
+        recognition_confidence = 0.97,
+        profile_match_mode = 'automatic',
+        compatible_sheet_names = '["Devices"]'::jsonb,
+        mapping_snapshot = '{"Devices":{"SKU":"product_sku","Serial":"serial_number"}}'::jsonb
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+      AND id = 'ae200004-0000-4000-8000-000000000004';
+
     BEGIN
       PERFORM public.execute_product_workbook_commit(
         '11111111-1111-4111-8111-111111111111',
@@ -5198,6 +5211,15 @@ const launchAssertions = `
            AND source.file_sha256 = repeat('a', 64)
            AND source.valid_rows = 2
            AND source.warning_rows = 1
+           AND source.recognition_version = 'product-inventory-recognition-v1'
+           AND source.layout_fingerprint = repeat('e', 64)
+           AND source.detected_sheet_name = 'Devices'
+           AND source.detected_header_row = 3
+           AND source.workbook_shape = 'continuation_rows'
+           AND source.recognition_confidence = 0.97
+           AND source.profile_match_mode = 'automatic'
+           AND source.compatible_sheet_names = '["Devices"]'::jsonb
+           AND source.mapping_snapshot->'Devices'->>'SKU' = 'product_sku'
            AND file.bucket_id = 'product-inventory-imports'
            AND file.scan_status = 'clean'
        )
