@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { canAccessPath } from "../src/lib/rbac";
 import {
   createProductTraderSaleSchema,
@@ -31,4 +32,11 @@ test("role routing exposes only the intended trader product surfaces",()=>{
   assert.equal(canAccessPath("Merchant","/api/merchant/products/dashboard"),true);
   assert.equal(canAccessPath("Onground_Agent_Manager","/sales/trader-products"),true);
   assert.equal(canAccessPath("Onground_Agent_Manager","/sales/inventory/products"),false);
+});
+
+test("field-agent queries use the native sales identity without a phantom employee relation",()=>{
+  const source=readFileSync(new URL("../src/lib/server/product-trader.ts",import.meta.url),"utf8");
+  assert.equal(source.includes('employee:employee_id(full_name)'),false);
+  assert.equal(source.includes('select("id, agent_code'),false);
+  assert.match(source,/source_agent:source_agent_id\(id, full_name\)/);
 });

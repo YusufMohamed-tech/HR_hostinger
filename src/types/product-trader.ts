@@ -38,7 +38,7 @@ export type ProductTraderHandover = {
   notes: string | null;
   version: number;
   merchant?: { id: string; business_name: string; owner_name: string | null } | null;
-  source_agent?: { id: string; agent_code: string; employee?: { full_name: string } | null } | null;
+  source_agent?: { id: string; full_name: string } | null;
   lines: ProductTraderHandoverLine[];
 };
 

@@ -27,7 +27,10 @@ function rows<T>(value: unknown) {
 }
 
 const unitSelect = "id, product_id, raw_serial_number, status, condition, planned_sale_price_snapshot, minimum_sale_price_snapshot, maximum_sale_price_snapshot, currency, current_agent_id, current_merchant_id, product:product_id(id, name, sku, model)";
-const handoverSelect = "id, handover_no, source_agent_id, merchant_id, status, require_acknowledgment, expires_at, issued_at, accepted_at, rejected_at, rejection_reason, notes, version, merchant:merchant_id(id, business_name, owner_name), source_agent:source_agent_id(id, agent_code, employee:employee_id(full_name))";
+// field_agents is its own sales identity and stores full_name directly. It has
+// no employee_id relation, so nesting employee:employee_id here makes PostgREST
+// fail the entire request while resolving its schema cache.
+const handoverSelect = "id, handover_no, source_agent_id, merchant_id, status, require_acknowledgment, expires_at, issued_at, accepted_at, rejected_at, rejection_reason, notes, version, merchant:merchant_id(id, business_name, owner_name), source_agent:source_agent_id(id, full_name)";
 const lineSelect = "id, handover_id, unit_id, product_id, serial_snapshot, product_name_snapshot, planned_sale_price_snapshot, minimum_sale_price_snapshot, maximum_sale_price_snapshot, currency, line_status, accepted_condition, accepted_at, closed_at";
 
 async function settings(admin: AdminClient, orgId: string) {
@@ -139,7 +142,7 @@ export async function loadProductTraderOversightWorkspace(admin:AdminClient,orgI
 
 export async function loadAgentProductTraderWorkspace(admin: AdminClient, orgId: string, userId: string): Promise<ProductTraderWorkspace> {
   const db = productInventoryDb(admin);
-  const agentResult = await db.from("field_agents").select("id, agent_code, employee:employee_id(full_name)")
+  const agentResult = await db.from("field_agents").select("id, full_name")
     .eq("organization_id", orgId).eq("user_id", userId).eq("status", "active").maybeSingle();
   fail(agentResult.error);
   if (!agentResult.data) throw Object.assign(new Error("لا يوجد ملف مندوب ميداني نشط مرتبط بالحساب."), { code: "P0002" });
@@ -158,11 +161,10 @@ export async function loadAgentProductTraderWorkspace(admin: AdminClient, orgId:
       .order("created_at", { ascending: false }).limit(5000),
   ]);
   [merchantsResult, unitsResult, handoversResult, linesResult].forEach((result) => fail(result.error));
-  const employee = agent.employee as { full_name?: string } | null;
   const commerce = await loadCommerceRows(admin, orgId, { agentId });
   return {
     ...setting,
-    identity: { id: agentId, name: employee?.full_name || String(agent.agent_code || "مندوب"), kind: "agent" },
+    identity: { id: agentId, name: String(agent.full_name || "مندوب"), kind: "agent" },
     merchants: rows<ProductTraderMerchant>(merchantsResult.data),
     available_units: rows<ProductTraderUnit>(unitsResult.data).filter((unit) => unit.status === "with_agent"),
     held_units: [],
