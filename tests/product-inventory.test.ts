@@ -691,7 +691,8 @@ test("field agents receive only the Phase 4 self-service inventory routes", () =
   assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/price-overrides"), true);
   assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/stock"), false);
   assert.equal(canAccessPath("Field_Agent", "/api/sales/inventory/agent-collections"), false);
-  assert.equal(canAccessPath("Onground_Agent_Manager", "/sales/inventory/assignments"), true);
+  assert.equal(canAccessPath("Onground_Agent_Manager", "/sales/inventory/assignments"), false);
+  assert.equal(canAccessPath("Onground_Agent_Manager", "/api/sales/inventory/handovers"), false);
 });
 
 test("Phase 5 receipt posting balances inventory against AP or GRNI by group", () => {

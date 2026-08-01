@@ -41,6 +41,22 @@ export const productInventoryReturnRoles = [
   "supervisor",
 ] as const;
 
+// Product distribution to traders is operationally visible to the on-ground
+// manager, but warehouse receiving, cost, pricing, and Finance-to-agent
+// custody remain Finance-owned. New trader-product endpoints must use these
+// capabilities instead of reusing the Finance inventory helpers.
+export const productTraderOperationalManagerRoles = [
+  "admin",
+  "finance_manager",
+  "onground_agent_manager",
+] as const;
+
+export const productTraderParticipantRoles = [
+  ...productTraderOperationalManagerRoles,
+  "field_agent",
+  "merchant",
+] as const;
+
 export function requireProductInventoryAccess(request?: NextRequest) {
   return requireTenantContext(
     { anyFeatures: ["sales", "accounting"], roles: productInventoryReceivingRoles },
@@ -100,6 +116,20 @@ export function requireProductInventoryReturnAccess(request?: NextRequest) {
       anyFeatures: ["sales", "accounting"],
       roles: productInventoryReturnRoles,
     },
+    request
+  );
+}
+
+export function requireProductTraderOperationalManagerAccess(request?: NextRequest) {
+  return requireTenantContext(
+    { feature: "sales", roles: productTraderOperationalManagerRoles },
+    request
+  );
+}
+
+export function requireProductTraderParticipantAccess(request?: NextRequest) {
+  return requireTenantContext(
+    { feature: "sales", roles: productTraderParticipantRoles },
     request
   );
 }
