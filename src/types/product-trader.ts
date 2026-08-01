@@ -78,7 +78,14 @@ export type ProductTraderWorkspace = {
   handovers: ProductTraderHandover[];
   sales: ProductTraderSale[];
   price_overrides: ProductTraderPriceOverride[];
+  collections: ProductTraderCollection[];
+  commissions: ProductTraderCommission[];
+  balances: ProductTraderBalance[];
 };
+
+export type ProductTraderCollection = { id:string; collection_no:string; merchant_id:string; source_agent_id:string; amount:number; payment_method:string; collection_date:string; status:string; accounting_status:string; version:number; submitted_at:string; merchant?:{business_name:string}|null };
+export type ProductTraderCommission = { id:string; sale_id:string; beneficiary_type:"merchant"|"field_agent"; merchant_id:string|null; agent_id:string|null; amount:number; currency:string; status:string; accrued_at:string };
+export type ProductTraderBalance = { organization_id:string; merchant_id:string; source_agent_id:string; business_name:string; sales_total:number; organization_receivable:number; confirmed_collections:number; outstanding:number; merchant_commission:number; agent_commission:number };
 
 export type ProductTraderSale = {
   id: string; sale_no: string; merchant_id: string; source_agent_id: string; sale_date: string;

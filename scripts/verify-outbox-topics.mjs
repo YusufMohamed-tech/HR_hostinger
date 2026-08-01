@@ -51,6 +51,11 @@ const dynamicTopicsByFile = new Map([
     "product_inventory.trader_price_override_requested",
     "product_inventory.trader_price_override_reviewed",
   ])],
+  ["db/schema_v158_product_trader_settlement.sql", new Set([
+    "product_inventory.trader_collection_submitted",
+    "product_inventory.trader_collection_confirmed",
+    "product_inventory.trader_collection_rejected",
+  ])],
 ]);
 
 function splitSqlList(value) {

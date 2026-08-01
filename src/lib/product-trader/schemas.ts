@@ -66,3 +66,18 @@ export const reviewProductTraderPriceOverrideSchema = z.object({
   decision: z.enum(["approved", "rejected"]),
   review_note: z.string().trim().max(1000).optional(),
 });
+
+export const submitProductTraderCollectionSchema = z.object({
+  collection_id: uuid, command_id: uuid, merchant_id: uuid.optional(),
+  amount: z.coerce.number().positive().max(100_000_000),
+  payment_method: z.enum(["cash", "bank_transfer", "card", "electronic"]),
+  collection_date: z.string().date().optional(), payment_reference: z.string().trim().max(200).optional(),
+  proof_path: z.string().trim().max(1000).optional(),
+});
+
+export const reviewProductTraderCollectionSchema = z.object({
+  command_id: uuid, expected_version: z.number().int().positive(),
+  decision: z.enum(["confirmed", "rejected"]), reason: z.string().trim().max(1000).optional(),
+}).superRefine((value, context) => {
+  if (value.decision === "rejected" && (value.reason?.length || 0) < 3) context.addIssue({ code: "custom", path: ["reason"], message: "سبب الرفض مطلوب." });
+});

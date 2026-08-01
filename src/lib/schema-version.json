@@ -1,5 +1,5 @@
 {
-  "id": "schema_v157_product_trader_sales",
-  "file": "db/schema_v157_product_trader_sales.sql",
-  "checksumSha256": "38962fa99e106371ab09a014b0ac5a70ce9610048ddd0c210de8c58987928f45"
+  "id": "schema_v158_product_trader_settlement",
+  "file": "db/schema_v158_product_trader_settlement.sql",
+  "checksumSha256": "89ac9fb7f6bad93bbc1cc8d5e380ccf28426016986bfee913919698530ba364c"
 }

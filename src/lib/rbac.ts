@@ -171,7 +171,8 @@ export function canAccessPath(role: Role, pathname: string): boolean {
       normalizedPath.startsWith("/api/sales/inventory/returns") ||
       normalizedPath.startsWith("/api/sales/inventory/agent-sales") ||
       normalizedPath.startsWith("/api/sales/inventory/price-overrides");
-    const productTraderApi = normalizedPath.startsWith("/api/sales/inventory/trader-handovers");
+    const productTraderApi = normalizedPath.startsWith("/api/sales/inventory/trader-handovers") ||
+      normalizedPath.startsWith("/api/sales/inventory/trader-collections");
     return (
       normalizedPath.startsWith("/agent") ||
       normalizedPath.startsWith("/api/sales/agents") ||

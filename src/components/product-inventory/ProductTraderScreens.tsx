@@ -21,6 +21,8 @@ import {
   requestProductTraderPriceOverride,
   rejectProductTraderHandover,
   reviewProductTraderPriceOverride,
+  reviewProductTraderCollection,
+  submitProductTraderCollection,
 } from "@/lib/services/product-trader";
 import type { ProductTraderHandover, ProductTraderPriceOverride, ProductTraderSale, ProductTraderWorkspace } from "@/types/product-trader";
 
@@ -110,6 +112,7 @@ export function AgentProductTraderScreen() {
         </CardContent>
       </Card>
       <Card><CardHeader><CardTitle>سجل التسليمات</CardTitle></CardHeader><CardContent className="space-y-2">{data?.handovers.map((handover) => <div key={handover.id} className="space-y-2"><HandoverSummary handover={handover} />{handover.status === "issued" ? <Button size="sm" variant="outline" onClick={() => cancel(handover)}><XCircle className="ml-2 h-4 w-4" />إلغاء</Button> : null}</div>)}</CardContent></Card>
+      <Card><CardHeader><CardTitle>دفعات التجار بانتظار التأكيد</CardTitle></CardHeader><CardContent className="space-y-2">{data?.collections.filter((item)=>item.status==="submitted").map((item)=><div key={item.id} className="flex items-center justify-between rounded-lg border p-3"><span>{item.merchant?.business_name} · {item.amount} ر.س</span><div className="flex gap-2"><Button size="sm" onClick={async()=>{const result=await reviewProductTraderCollection(item.id,item.version,"confirmed");setNotice(result.error?{tone:"error",text:result.error.message}:{tone:"success",text:"تم تأكيد الدفعة."});await load();}}>تأكيد</Button><Button size="sm" variant="destructive" onClick={async()=>{const reason=window.prompt("سبب الرفض:")||"";if(!reason)return;const result=await reviewProductTraderCollection(item.id,item.version,"rejected",reason);setNotice(result.error?{tone:"error",text:result.error.message}:{tone:"success",text:"تم رفض الدفعة."});await load();}}>رفض</Button></div></div>)}</CardContent></Card>
     </AgentShell>
   );
 }
@@ -154,9 +157,10 @@ export function MerchantProductsScreen() {
   useEffect(() => { void load(); }, [load]);
   const pending = useMemo(() => data?.handovers.filter((handover) => handover.status === "issued") || [], [data]);
   const complete = (value: Notice) => { setNotice(value); void load(); };
+  const pay=async()=>{const amount=window.prompt("قيمة الدفعة:");if(!amount)return;const method=(window.prompt("طريقة الدفع: cash أو bank_transfer","cash")||"cash");const result=await submitProductTraderCollection({amount:Number(amount),payment_method:method});setNotice(result.error?{tone:"error",text:result.error.message}:{tone:"success",text:"تم إرسال الدفعة للمندوب للتأكيد."});await load();};
   return <MerchantShell title="منتجاتي" subtitle="استلم الأجهزة بالسيريال وتابع العهدة.">
     <NoticeBanner notice={notice} />{data && !data.enabled ? <DisabledBanner /> : null}
-    <div className="grid gap-4 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-sm text-slate-500">في عهدتي</p><p className="text-3xl font-bold">{data?.held_units.filter((unit) => unit.status === "with_merchant").length || 0}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-sm text-slate-500">بانتظار الاستلام</p><p className="text-3xl font-bold text-amber-600">{pending.length}</p></CardContent></Card><Card><CardContent className="p-4"><Button variant="outline" onClick={load}><RefreshCcw className="ml-2 h-4 w-4" />تحديث</Button></CardContent></Card></div>
+    <div className="grid gap-4 sm:grid-cols-4"><Card><CardContent className="p-4"><p className="text-sm text-slate-500">في عهدتي</p><p className="text-3xl font-bold">{data?.held_units.filter((unit) => unit.status === "with_merchant").length || 0}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-sm text-slate-500">بانتظار الاستلام</p><p className="text-3xl font-bold text-amber-600">{pending.length}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-sm text-slate-500">المستحق للشركة</p><p className="text-2xl font-bold text-red-600">{Number(data?.balances[0]?.outstanding||0).toLocaleString("ar-EG")}</p><Button size="sm" className="mt-2" onClick={pay}>إرسال دفعة</Button></CardContent></Card><Card><CardContent className="p-4"><p className="text-sm text-slate-500">عمولاتي</p><p className="text-2xl font-bold text-emerald-600">{Number(data?.balances[0]?.merchant_commission||0).toLocaleString("ar-EG")}</p><Button className="mt-2" variant="outline" onClick={load}><RefreshCcw className="ml-2 h-4 w-4" />تحديث</Button></CardContent></Card></div>
     {pending.map((handover) => <MerchantHandoverCard key={handover.id} handover={handover} requireSignature={Boolean(data?.require_signature)} onDone={complete} />)}
     <Card><CardHeader><CardTitle className="flex items-center gap-2"><Store className="h-5 w-5" />الأجهزة المستلمة</CardTitle></CardHeader><CardContent className="space-y-2">{data?.held_units.filter((unit) => unit.status === "with_merchant").map((unit) => <div key={unit.id} className="flex items-center justify-between rounded-lg border p-3"><span>{unit.product?.name || "منتج"}</span><span className="font-mono text-xs">{unit.raw_serial_number}</span></div>)}</CardContent></Card>
     <Card><CardHeader><CardTitle>سجل التسليم</CardTitle></CardHeader><CardContent className="space-y-2">{data?.handovers.map((handover) => <HandoverSummary key={handover.id} handover={handover} />)}</CardContent></Card>

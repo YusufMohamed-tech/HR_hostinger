@@ -8,6 +8,9 @@ import type {
   ProductTraderSale,
   ProductTraderUnit,
   ProductTraderWorkspace,
+  ProductTraderBalance,
+  ProductTraderCollection,
+  ProductTraderCommission,
 } from "@/types/product-trader";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -76,18 +79,37 @@ export async function executeProductTraderSaleCommand(admin: AdminClient, input:
   return result.data;
 }
 
+export async function executeProductTraderSettlementCommand(admin: AdminClient, input: {
+  orgId: string; actorUserId: string; requestId: string; commandId: string;
+  action: "collection_submit" | "collection_review"; payload: Record<string, unknown>;
+}) {
+  const result = await productInventoryDb(admin).rpc("execute_product_trader_settlement_command", {
+    p_org_id: input.orgId, p_actor_user_id: input.actorUserId, p_request_id: input.requestId,
+    p_command_id: input.commandId, p_action: input.action, p_payload: input.payload,
+  });
+  fail(result.error); return result.data;
+}
+
 async function loadCommerceRows(admin: AdminClient, orgId: string, filters: { merchantId?: string; agentId?: string } = {}) {
   const db = productInventoryDb(admin);
   let salesQuery = db.from("product_trader_sales").select("*, merchant:merchant_id(business_name), lines:product_trader_sale_lines(unit_id, serial_snapshot, product_name_snapshot, actual_sale_price)").eq("organization_id", orgId);
   let overrideQuery = db.from("product_trader_price_overrides").select("*, merchant:merchant_id(business_name), unit:unit_id(raw_serial_number, product:product_id(name))").eq("organization_id", orgId);
   if (filters.merchantId) { salesQuery = salesQuery.eq("merchant_id", filters.merchantId); overrideQuery = overrideQuery.eq("merchant_id", filters.merchantId); }
   if (filters.agentId) { salesQuery = salesQuery.eq("source_agent_id", filters.agentId); overrideQuery = overrideQuery.eq("source_agent_id", filters.agentId); }
-  const [salesResult, overridesResult] = await Promise.all([
+  let collectionQuery = db.from("product_trader_collections").select("*, merchant:merchant_id(business_name)").eq("organization_id", orgId);
+  let commissionQuery = db.from("product_trader_commissions").select("*").eq("organization_id", orgId);
+  let balanceQuery = db.from("product_trader_balances").select("*").eq("organization_id", orgId);
+  if (filters.merchantId) { collectionQuery=collectionQuery.eq("merchant_id",filters.merchantId); commissionQuery=commissionQuery.eq("merchant_id",filters.merchantId); balanceQuery=balanceQuery.eq("merchant_id",filters.merchantId); }
+  if (filters.agentId) { collectionQuery=collectionQuery.eq("source_agent_id",filters.agentId); commissionQuery=commissionQuery.eq("agent_id",filters.agentId); balanceQuery=balanceQuery.eq("source_agent_id",filters.agentId); }
+  const [salesResult, overridesResult, collectionsResult, commissionsResult, balancesResult] = await Promise.all([
     salesQuery.order("created_at", { ascending: false }).limit(1000),
     overrideQuery.order("requested_at", { ascending: false }).limit(1000),
+    collectionQuery.order("submitted_at", { ascending: false }).limit(1000),
+    commissionQuery.order("accrued_at", { ascending: false }).limit(2000),
+    balanceQuery.limit(1000),
   ]);
-  fail(salesResult.error); fail(overridesResult.error);
-  return { sales: rows<ProductTraderSale>(salesResult.data), price_overrides: rows<ProductTraderPriceOverride>(overridesResult.data) };
+  [salesResult,overridesResult,collectionsResult,commissionsResult,balancesResult].forEach((result)=>fail(result.error));
+  return { sales: rows<ProductTraderSale>(salesResult.data), price_overrides: rows<ProductTraderPriceOverride>(overridesResult.data), collections: rows<ProductTraderCollection>(collectionsResult.data), commissions: rows<ProductTraderCommission>(commissionsResult.data), balances: rows<ProductTraderBalance>(balancesResult.data) };
 }
 
 export async function loadProductTraderFinanceWorkspace(admin: AdminClient, orgId: string) {

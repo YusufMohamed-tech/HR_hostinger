@@ -83,3 +83,10 @@ export function reviewProductTraderPriceOverride(overrideId: string, values: { e
     method: "POST", body: JSON.stringify({ command_id: productTraderCommandId(), ...values }),
   });
 }
+
+export function submitProductTraderCollection(values:{merchant_id?:string;amount:number;payment_method:string;collection_date?:string;payment_reference?:string}){
+  return request<Record<string,unknown>>(values.merchant_id?"/api/sales/inventory/trader-collections":"/api/merchant/products/collections",{method:"POST",body:JSON.stringify({collection_id:crypto.randomUUID(),command_id:productTraderCommandId(),...values})});
+}
+export function reviewProductTraderCollection(collectionId:string,version:number,decision:"confirmed"|"rejected",reason?:string){
+  return request<Record<string,unknown>>(`/api/sales/inventory/trader-collections/${collectionId}/review`,{method:"POST",body:JSON.stringify({command_id:productTraderCommandId(),expected_version:version,decision,reason})});
+}

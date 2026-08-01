@@ -22,6 +22,7 @@ import {
   autoPostProductSale,
   autoReverseProductSale,
 } from "@/lib/accounting/product-inventory-posting";
+import { autoPostProductTraderCollection, autoPostProductTraderSale } from "@/lib/accounting/product-trader-posting";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { Database, Json } from "@/types/database";
 
@@ -417,6 +418,15 @@ const productCollectionEventPayload = z.object({
   collection_date: z.string().min(1),
   outstanding_after: z.coerce.number(),
   version: z.coerce.number().int().positive(),
+});
+
+const productTraderSaleEventPayload = z.object({
+  sale_id: z.string().uuid(), sale_no: z.string().min(1), merchant_id: z.string().uuid(),
+  agent_id: z.string().uuid(), total_amount: z.coerce.number().positive(),
+});
+const productTraderCollectionEventPayload = z.object({
+  collection_id: z.string().uuid(), collection_no: z.string().min(1), merchant_id: z.string().uuid(),
+  agent_id: z.string().uuid(), amount: z.coerce.number().positive(),
 });
 
 const productInventoryLossEventPayload = z.object({
@@ -1362,9 +1372,21 @@ const handlers: Record<string, OutboxHandler> = {
   "product_inventory.trader_handover_accepted": async () => {},
   "product_inventory.trader_handover_rejected": async () => {},
   "product_inventory.trader_handover_cancelled": async () => {},
-  "product_inventory.trader_sale_created": async () => {},
+  "product_inventory.trader_sale_created": async (event) => {
+    const payload = productTraderSaleEventPayload.parse(event.payload);
+    const posting = await autoPostProductTraderSale(createAdminClient(), event.org_id, await financeManagerUserId(event.org_id), payload.sale_id);
+    if (!posting.success) throw new Error(posting.error || "Trader sale accounting failed.");
+    await deliverNotifications({ orgId: event.org_id, sourceEventId: event.business_event_id, userIds: await financeUserIds(event.org_id), title: `مبيعة تاجر ${payload.sale_no}`, body: `قيمة البيع ${payload.total_amount.toFixed(2)} ر.س.`, type: "accounting", link: "/sales/inventory/trader-prices" });
+  },
   "product_inventory.trader_price_override_requested": async () => {},
   "product_inventory.trader_price_override_reviewed": async () => {},
+  "product_inventory.trader_collection_submitted": async () => {},
+  "product_inventory.trader_collection_confirmed": async (event) => {
+    const payload = productTraderCollectionEventPayload.parse(event.payload);
+    const posting = await autoPostProductTraderCollection(createAdminClient(), event.org_id, await financeManagerUserId(event.org_id), payload.collection_id);
+    if (!posting.success) throw new Error(posting.error || "Trader collection accounting failed.");
+  },
+  "product_inventory.trader_collection_rejected": async () => {},
   "product_inventory.receipt_draft_saved": async () => {},
   "product_inventory.receipt_cancelled": async () => {},
   "product_inventory.receipt_confirmed": async (event) => {
