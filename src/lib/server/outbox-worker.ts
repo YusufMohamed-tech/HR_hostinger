@@ -1387,6 +1387,11 @@ const handlers: Record<string, OutboxHandler> = {
     if (!posting.success) throw new Error(posting.error || "Trader collection accounting failed.");
   },
   "product_inventory.trader_collection_rejected": async () => {},
+  "product_inventory.trader_return_requested": async () => {},
+  "product_inventory.trader_return_received": async () => {},
+  "product_inventory.trader_return_rejected": async () => {},
+  "product_inventory.trader_loss_reported": async () => {},
+  "product_inventory.trader_loss_recovered": async () => {},
   "product_inventory.receipt_draft_saved": async () => {},
   "product_inventory.receipt_cancelled": async () => {},
   "product_inventory.receipt_confirmed": async (event) => {

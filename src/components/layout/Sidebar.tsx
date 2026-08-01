@@ -175,6 +175,7 @@ export function SidebarContent() {
       { name: "مخزون الشرائح", href: "/sales/stock", icon: Boxes },
       { name: "التجار", href: "/sales/traders", icon: Store },
       { name: "مبيعات التجار", href: "/sales/trader-sales", icon: Receipt },
+      { name: "منتجات التجار", href: "/sales/trader-products", icon: PackageCheck },
       { name: "الإشعارات", href: "/notifications", icon: Bell },
     ];
 
@@ -183,6 +184,7 @@ export function SidebarContent() {
         { name: "عمليات مخزون المنتجات", href: "/sales/inventory", icon: Package },
         { name: "كتالوج المنتجات", href: "/sales/inventory/products", icon: Boxes, indent: true },
         { name: "مبيعات وأسعار التجار", href: "/sales/inventory/trader-prices", icon: Receipt, indent: true },
+        { name: "متابعة منتجات التجار", href: "/sales/trader-products", icon: PackageCheck, indent: true },
       ] : []),
       ...(role === "Finance_Manager" ? [
         { name: "تسليم وعهد الموظفين", href: "/sales/inventory/employee-custody", icon: PackageCheck, match: "employee-custody-parent" },

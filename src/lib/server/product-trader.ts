@@ -11,6 +11,8 @@ import type {
   ProductTraderBalance,
   ProductTraderCollection,
   ProductTraderCommission,
+  ProductTraderReturn,
+  ProductTraderLoss,
 } from "@/types/product-trader";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -89,6 +91,7 @@ export async function executeProductTraderSettlementCommand(admin: AdminClient, 
   });
   fail(result.error); return result.data;
 }
+export async function executeProductTraderExceptionCommand(admin:AdminClient,input:{orgId:string;actorUserId:string;requestId:string;commandId:string;action:"return_request"|"return_review"|"loss_report"|"loss_recover";payload:Record<string,unknown>}){const result=await productInventoryDb(admin).rpc("execute_product_trader_exception_command",{p_org_id:input.orgId,p_actor_user_id:input.actorUserId,p_request_id:input.requestId,p_command_id:input.commandId,p_action:input.action,p_payload:input.payload});fail(result.error);return result.data;}
 
 async function loadCommerceRows(admin: AdminClient, orgId: string, filters: { merchantId?: string; agentId?: string } = {}) {
   const db = productInventoryDb(admin);
@@ -101,20 +104,37 @@ async function loadCommerceRows(admin: AdminClient, orgId: string, filters: { me
   let balanceQuery = db.from("product_trader_balances").select("*").eq("organization_id", orgId);
   if (filters.merchantId) { collectionQuery=collectionQuery.eq("merchant_id",filters.merchantId); commissionQuery=commissionQuery.eq("merchant_id",filters.merchantId); balanceQuery=balanceQuery.eq("merchant_id",filters.merchantId); }
   if (filters.agentId) { collectionQuery=collectionQuery.eq("source_agent_id",filters.agentId); commissionQuery=commissionQuery.eq("agent_id",filters.agentId); balanceQuery=balanceQuery.eq("source_agent_id",filters.agentId); }
-  const [salesResult, overridesResult, collectionsResult, commissionsResult, balancesResult] = await Promise.all([
+  let returnQuery=db.from("product_trader_returns").select("*, merchant:merchant_id(business_name), unit:unit_id(raw_serial_number, product:product_id(name))").eq("organization_id",orgId);
+  let lossQuery=db.from("product_trader_losses").select("*, merchant:merchant_id(business_name), unit:unit_id(raw_serial_number, product:product_id(name))").eq("organization_id",orgId);
+  if(filters.merchantId){returnQuery=returnQuery.eq("merchant_id",filters.merchantId);lossQuery=lossQuery.eq("merchant_id",filters.merchantId);}
+  if(filters.agentId){returnQuery=returnQuery.eq("source_agent_id",filters.agentId);lossQuery=lossQuery.eq("source_agent_id",filters.agentId);}
+  const [salesResult, overridesResult, collectionsResult, commissionsResult, balancesResult,returnsResult,lossesResult] = await Promise.all([
     salesQuery.order("created_at", { ascending: false }).limit(1000),
     overrideQuery.order("requested_at", { ascending: false }).limit(1000),
     collectionQuery.order("submitted_at", { ascending: false }).limit(1000),
     commissionQuery.order("accrued_at", { ascending: false }).limit(2000),
     balanceQuery.limit(1000),
+    returnQuery.order("requested_at",{ascending:false}).limit(1000),
+    lossQuery.order("reported_at",{ascending:false}).limit(1000),
   ]);
-  [salesResult,overridesResult,collectionsResult,commissionsResult,balancesResult].forEach((result)=>fail(result.error));
-  return { sales: rows<ProductTraderSale>(salesResult.data), price_overrides: rows<ProductTraderPriceOverride>(overridesResult.data), collections: rows<ProductTraderCollection>(collectionsResult.data), commissions: rows<ProductTraderCommission>(commissionsResult.data), balances: rows<ProductTraderBalance>(balancesResult.data) };
+  [salesResult,overridesResult,collectionsResult,commissionsResult,balancesResult,returnsResult,lossesResult].forEach((result)=>fail(result.error));
+  return { sales: rows<ProductTraderSale>(salesResult.data), price_overrides: rows<ProductTraderPriceOverride>(overridesResult.data), collections: rows<ProductTraderCollection>(collectionsResult.data), commissions: rows<ProductTraderCommission>(commissionsResult.data), balances: rows<ProductTraderBalance>(balancesResult.data),returns:rows<ProductTraderReturn>(returnsResult.data),losses:rows<ProductTraderLoss>(lossesResult.data) };
 }
 
 export async function loadProductTraderFinanceWorkspace(admin: AdminClient, orgId: string) {
   const commerce = await loadCommerceRows(admin, orgId);
   return commerce;
+}
+
+export async function loadProductTraderOversightWorkspace(admin:AdminClient,orgId:string){
+  const db=productInventoryDb(admin);const [commerce,handoversResult,linesResult,unitsResult,merchantsResult]=await Promise.all([
+    loadCommerceRows(admin,orgId),
+    db.from("product_trader_handovers").select(handoverSelect).eq("organization_id",orgId).order("issued_at",{ascending:false}).limit(1000),
+    db.from("product_trader_handover_lines").select(lineSelect).eq("organization_id",orgId).order("created_at",{ascending:false}).limit(10000),
+    db.from("product_inventory_units").select(unitSelect).eq("organization_id",orgId).in("status",["merchant_in_transit","with_merchant","return_pending","lost","damaged","quarantine"]).limit(5000),
+    db.from("merchants").select("id,business_name,owner_name,phone,city,agent_id").eq("organization_id",orgId).eq("status","active").order("business_name"),
+  ]);[handoversResult,linesResult,unitsResult,merchantsResult].forEach((result)=>fail(result.error));
+  return {...commerce,handovers:joinHandovers(rows<ProductTraderHandover>(handoversResult.data),rows<ProductTraderHandoverLine>(linesResult.data)),units:rows<ProductTraderUnit>(unitsResult.data),merchants:rows<ProductTraderMerchant>(merchantsResult.data)};
 }
 
 export async function loadAgentProductTraderWorkspace(admin: AdminClient, orgId: string, userId: string): Promise<ProductTraderWorkspace> {

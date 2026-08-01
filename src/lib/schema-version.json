@@ -1,5 +1,5 @@
 {
-  "id": "schema_v158_product_trader_settlement",
-  "file": "db/schema_v158_product_trader_settlement.sql",
-  "checksumSha256": "89ac9fb7f6bad93bbc1cc8d5e380ccf28426016986bfee913919698530ba364c"
+  "id": "schema_v159_product_trader_returns_oversight",
+  "file": "db/schema_v159_product_trader_returns_oversight.sql",
+  "checksumSha256": "6e27a0a38f46d2dd48d605a588133661eecabff508f1479ab757526aafbaa287"
 }

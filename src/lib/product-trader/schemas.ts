@@ -81,3 +81,7 @@ export const reviewProductTraderCollectionSchema = z.object({
 }).superRefine((value, context) => {
   if (value.decision === "rejected" && (value.reason?.length || 0) < 3) context.addIssue({ code: "custom", path: ["reason"], message: "سبب الرفض مطلوب." });
 });
+export const requestProductTraderReturnSchema=z.object({return_id:uuid,command_id:uuid,unit_id:uuid,reason:z.string().trim().min(3).max(1000),condition:z.enum(["sealed","open_box","damaged"]),evidence_path:z.string().trim().min(1).max(1000)});
+export const reviewProductTraderReturnSchema=z.object({command_id:uuid,expected_version:z.number().int().positive(),decision:z.enum(["received","rejected"]),review_note:z.string().trim().max(1000).optional()});
+export const reportProductTraderLossSchema=z.object({loss_id:uuid,command_id:uuid,unit_id:uuid,loss_type:z.enum(["missing","stolen","damaged"]),reason:z.string().trim().min(5).max(1000),evidence_path:z.string().trim().min(1).max(1000)});
+export const recoverProductTraderLossSchema=z.object({command_id:uuid,condition:z.enum(["sellable","damaged"]),note:z.string().trim().max(1000).optional()});

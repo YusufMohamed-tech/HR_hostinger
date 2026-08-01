@@ -145,8 +145,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
       normalizedPath.startsWith("/sales/stock") ||
       normalizedPath.startsWith("/sales/traders") ||
       normalizedPath.startsWith("/sales/trader-sales") ||
+      normalizedPath.startsWith("/sales/trader-products") ||
       normalizedPath.startsWith("/api/sales/agents") ||
       normalizedPath.startsWith("/api/sales/merchants") ||
+      normalizedPath.startsWith("/api/sales/inventory/trader-") ||
       normalizedPath.startsWith("/notifications") ||
       normalizedPath.startsWith("/settings")
     );
@@ -172,7 +174,9 @@ export function canAccessPath(role: Role, pathname: string): boolean {
       normalizedPath.startsWith("/api/sales/inventory/agent-sales") ||
       normalizedPath.startsWith("/api/sales/inventory/price-overrides");
     const productTraderApi = normalizedPath.startsWith("/api/sales/inventory/trader-handovers") ||
-      normalizedPath.startsWith("/api/sales/inventory/trader-collections");
+      normalizedPath.startsWith("/api/sales/inventory/trader-collections") ||
+      normalizedPath.startsWith("/api/sales/inventory/trader-returns") ||
+      normalizedPath.startsWith("/api/sales/inventory/trader-losses");
     return (
       normalizedPath.startsWith("/agent") ||
       normalizedPath.startsWith("/api/sales/agents") ||

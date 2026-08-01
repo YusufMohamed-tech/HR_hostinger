@@ -81,11 +81,15 @@ export type ProductTraderWorkspace = {
   collections: ProductTraderCollection[];
   commissions: ProductTraderCommission[];
   balances: ProductTraderBalance[];
+  returns: ProductTraderReturn[];
+  losses: ProductTraderLoss[];
 };
 
 export type ProductTraderCollection = { id:string; collection_no:string; merchant_id:string; source_agent_id:string; amount:number; payment_method:string; collection_date:string; status:string; accounting_status:string; version:number; submitted_at:string; merchant?:{business_name:string}|null };
 export type ProductTraderCommission = { id:string; sale_id:string; beneficiary_type:"merchant"|"field_agent"; merchant_id:string|null; agent_id:string|null; amount:number; currency:string; status:string; accrued_at:string };
 export type ProductTraderBalance = { organization_id:string; merchant_id:string; source_agent_id:string; business_name:string; sales_total:number; organization_receivable:number; confirmed_collections:number; outstanding:number; merchant_commission:number; agent_commission:number };
+export type ProductTraderReturn = { id:string;unit_id:string;merchant_id:string;source_agent_id:string;reason:string;condition:string;evidence_path:string;status:string;requested_at:string;version:number;merchant?:{business_name:string}|null;unit?:{raw_serial_number:string;product?:{name:string}|null}|null };
+export type ProductTraderLoss = { id:string;unit_id:string;merchant_id:string|null;source_agent_id:string;loss_type:string;reason:string;evidence_path:string;status:string;unit_cost_snapshot:number;reported_at:string;version:number;merchant?:{business_name:string}|null;unit?:{raw_serial_number:string;product?:{name:string}|null}|null };
 
 export type ProductTraderSale = {
   id: string; sale_no: string; merchant_id: string; source_agent_id: string; sale_date: string;
