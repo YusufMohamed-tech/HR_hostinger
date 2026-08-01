@@ -181,8 +181,11 @@ export function SidebarContent() {
     ];
 
     const inventoryOps: NavLink[] = [
-      ...(role === "Finance_Manager" ? [
+      ...(["Finance_Manager", "Admin"].includes(role) ? [
         { name: "عمليات مخزون المنتجات", href: "/sales/inventory", icon: Package },
+        { name: "كتالوج المنتجات", href: "/sales/inventory/products", icon: Boxes, indent: true },
+      ] : []),
+      ...(role === "Finance_Manager" ? [
         { name: "تسليم وعهد الموظفين", href: "/sales/inventory/employee-custody", icon: PackageCheck, match: "employee-custody-parent" },
         { name: "التكليفات التشغيلية", href: "/sales/inventory/employee-custody?tab=assignments", icon: ClipboardList, indent: true, match: "employee-custody-assignments" },
         { name: "تقرير العهد", href: "/sales/inventory/employee-custody?tab=report", icon: FileText, indent: true, match: "employee-custody-report" },
