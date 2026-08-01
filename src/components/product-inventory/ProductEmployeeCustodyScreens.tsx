@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import SignatureCanvas from "react-signature-canvas";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -63,7 +64,12 @@ const emptyAssignment = {
   effective_to: "",
 };
 
+const employeeCustodyTabs = ["handover", "assignments", "report", "history"] as const;
+type EmployeeCustodyTab = (typeof employeeCustodyTabs)[number];
+
 export function ProductEmployeeCustodyManagerScreen() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [data, setData] = useState<ProductEmployeeCustodyManagerData | null>(null);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -164,6 +170,16 @@ export function ProductEmployeeCustodyManagerScreen() {
   if (loading && !data) return <div className="p-8 text-center text-slate-500">جاري تحميل إدارة العهد...</div>;
 
   const activeAssignments = (data?.assignments ?? []).filter((row) => row.status === "active" && row.can_receive_custody);
+  const requestedTab = searchParams.get("tab");
+  const activeTab: EmployeeCustodyTab = employeeCustodyTabs.includes(requestedTab as EmployeeCustodyTab)
+    ? requestedTab as EmployeeCustodyTab
+    : "handover";
+
+  function selectTab(value: string | null) {
+    if (!value || !employeeCustodyTabs.includes(value as EmployeeCustodyTab)) return;
+    router.replace(`/sales/inventory/employee-custody?tab=${value}`, { scroll: false });
+  }
+
   return (
     <div dir="rtl" className="space-y-6 p-4 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -178,7 +194,7 @@ export function ProductEmployeeCustodyManagerScreen() {
       </div>
       {message && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">{message}</div>}
 
-      <Tabs defaultValue="handover" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={selectTab} className="space-y-4">
         <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="handover">إصدار تسليم</TabsTrigger>
           <TabsTrigger value="assignments">التكليفات التشغيلية</TabsTrigger>
