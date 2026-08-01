@@ -128,13 +128,14 @@ function MessageBanner({ message }: { message: Message }) {
 
 const navItems = [
   { name: "الرئيسية", href: "/merchant", icon: LayoutDashboard },
+  { name: "منتجاتي", href: "/merchant/products", icon: Package },
   { name: "شرائحي", href: "/merchant/sims", icon: Smartphone },
   { name: "تسجيل بيع", href: "/merchant/sell", icon: ShoppingCart },
   { name: "طلب شرائح", href: "/merchant/requests", icon: Package },
   { name: "حسابي", href: "/merchant/balance", icon: Wallet },
 ];
 
-function MerchantShell({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+export function MerchantShell({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { logout } = useRoleContext();

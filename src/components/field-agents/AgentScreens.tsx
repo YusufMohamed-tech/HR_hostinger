@@ -138,6 +138,7 @@ const navItems = [
   { name: "الرئيسية", href: "/agent", icon: LayoutDashboard },
   { name: "شرائحي", href: "/agent/sims", icon: Smartphone },
   { name: "المنتجات", href: "/agent/products", icon: Package },
+  { name: "منتجات التجار", href: "/agent/products/traders", icon: Store },
   { name: "تسجيل مبيعة", href: "/agent/sell", icon: ShoppingCart },
   { name: "التجار", href: "/agent/merchants", icon: Store },
   { name: "طلب شرائح", href: "/agent/requests", icon: Package },

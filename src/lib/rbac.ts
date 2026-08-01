@@ -171,11 +171,13 @@ export function canAccessPath(role: Role, pathname: string): boolean {
       normalizedPath.startsWith("/api/sales/inventory/returns") ||
       normalizedPath.startsWith("/api/sales/inventory/agent-sales") ||
       normalizedPath.startsWith("/api/sales/inventory/price-overrides");
+    const productTraderApi = normalizedPath.startsWith("/api/sales/inventory/trader-handovers");
     return (
       normalizedPath.startsWith("/agent") ||
       normalizedPath.startsWith("/api/sales/agents") ||
       normalizedPath.startsWith("/api/sales/merchants") ||
       productInventoryAgentApi ||
+      productTraderApi ||
       normalizedPath.startsWith("/attendance") ||
       normalizedPath.startsWith("/api/attendance") ||
       normalizedPath.startsWith("/notifications") ||
@@ -212,6 +214,7 @@ export function canAccessPath(role: Role, pathname: string): boolean {
   if (role === "Merchant") {
     return (
       normalizedPath.startsWith("/merchant") ||
+      normalizedPath.startsWith("/api/merchant/products") ||
       normalizedPath.startsWith("/api/sales/merchants") ||
       normalizedPath.startsWith("/notifications") ||
       normalizedPath.startsWith("/settings")
