@@ -385,6 +385,108 @@ async function testConcurrentProductReturnReview(connectionString) {
   }
 }
 
+async function testConcurrentWorkbookProfileConfirmation(connectionString) {
+  const clients = [new Client({ connectionString }), new Client({ connectionString })];
+  try {
+    await Promise.all(clients.map(async (client) => {
+      await client.connect();
+      await client.query("SELECT set_config('request.jwt.claim.role', 'service_role', false)");
+    }));
+    await clients[0].query(`SELECT public.save_product_inventory_import_analysis(
+      $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::uuid, NULL,
+      'Concurrent workbook confirmation', $7::jsonb, $8::jsonb
+    )`, [
+      "11111111-1111-4111-8111-111111111111",
+      "45454545-4545-4545-8545-454545454545",
+      "af720001-0000-4000-8000-000000000001",
+      "af720002-0000-4000-8000-000000000002",
+      "af720003-0000-4000-8000-000000000003",
+      "af720004-0000-4000-8000-000000000004",
+      JSON.stringify({
+        bucket: "product-inventory-imports",
+        path: "11111111-1111-4111-8111-111111111111/profile-analysis/af720003-0000-4000-8000-000000000003/af720002-0000-4000-8000-000000000002/sample.xlsx",
+        filename: "concurrent.xlsx",
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        size_bytes: 1024,
+        sha256: "b".repeat(64),
+        scan_status: "clean",
+        scan_engine: "database-smoke-test",
+        scanned_at: new Date().toISOString(),
+        source_type: "excel",
+      }),
+      JSON.stringify({
+        algorithm_version: "product-inventory-recognition-v1",
+        status: "ready",
+        sheet_name: "Devices",
+        header_row: 1,
+        shape: "row_per_device",
+        layout_fingerprint: "c".repeat(64),
+        confidence: 0.98,
+        header_mapping: {
+          SKU: "product_sku",
+          Serial: "serial_number",
+          Cost: "unit_cost",
+          "Sale Price": "planned_sale_price",
+        },
+        field_proposals: [], metadata: {}, sheet_scores: [], sample_rows: [],
+        blocking_errors: [], warnings: [],
+      }),
+    ]);
+    const confirmationSql = `SELECT * FROM public.confirm_product_inventory_import_analysis(
+      $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::jsonb
+    )`;
+    const common = [
+      "11111111-1111-4111-8111-111111111111",
+      "45454545-4545-4545-8545-454545454545",
+    ];
+    const payload = JSON.stringify({
+      name: "Concurrent workbook confirmation",
+      header_mapping: {
+        SKU: "product_sku",
+        Serial: "serial_number",
+        Cost: "unit_cost",
+        "Sale Price": "planned_sale_price",
+      },
+      mapping_confidence: {
+        product_sku: 0.98, serial_number: 0.98,
+        unit_cost: 0.98, planned_sale_price: 0.98,
+      },
+      has_corrections: false,
+      default_currency: "SAR",
+      default_condition: "new",
+      default_ownership_type: "purchased",
+      approval_note: "Concurrent confirmation test",
+    });
+    const attempts = await Promise.allSettled([
+      clients[0].query(confirmationSql, [...common,
+        "af720005-0000-4000-8000-000000000005",
+        "af720003-0000-4000-8000-000000000003",
+        "af720006-0000-4000-8000-000000000006", payload]),
+      clients[1].query(confirmationSql, [...common,
+        "af720007-0000-4000-8000-000000000007",
+        "af720003-0000-4000-8000-000000000003",
+        "af720008-0000-4000-8000-000000000008", payload]),
+    ]);
+    if (attempts.filter((attempt) => attempt.status === "fulfilled").length !== 1) {
+      throw new Error(
+        `Concurrent workbook confirmation did not produce exactly one winner: ${
+          attempts.map((attempt) => attempt.status).join(", ")
+        }`
+      );
+    }
+    const check = await clients[0].query(`SELECT
+      (SELECT status FROM public.product_inventory_import_analyses
+        WHERE id = 'af720003-0000-4000-8000-000000000003') AS status,
+      (SELECT count(*)::integer FROM public.product_inventory_import_profiles
+        WHERE source_analysis_id = 'af720003-0000-4000-8000-000000000003') AS profiles`);
+    if (check.rows[0]?.status !== "confirmed" || check.rows[0]?.profiles !== 1) {
+      throw new Error(`Concurrent workbook confirmation control failed: ${JSON.stringify(check.rows[0])}`);
+    }
+  } finally {
+    await Promise.all(clients.map((client) => client.end().catch(() => undefined)));
+  }
+}
+
 async function testConcurrentLmsQuizAttempt(connectionString) {
   const clients = [new Client({ connectionString }), new Client({ connectionString })];
   try {
@@ -6509,6 +6611,58 @@ const launchAssertions = `
   END
   $test$;
 
+  -- Unconfirmed workbook analyses expire in bounded batches and release their
+  -- private sample files to the existing managed-file retention queue.
+  DO $test$
+  DECLARE
+    expired_count integer;
+  BEGIN
+    PERFORM public.save_product_inventory_import_analysis(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'af710001-0000-4000-8000-000000000001',
+      'af710002-0000-4000-8000-000000000002',
+      'af710003-0000-4000-8000-000000000003',
+      'af710004-0000-4000-8000-000000000004',
+      NULL,
+      'Expiring workbook analysis',
+      jsonb_build_object(
+        'bucket', 'product-inventory-imports',
+        'path', '11111111-1111-4111-8111-111111111111/profile-analysis/af710003-0000-4000-8000-000000000003/af710002-0000-4000-8000-000000000002/sample.xlsx',
+        'filename', 'expiring-sample.xlsx',
+        'type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'size_bytes', 1024, 'sha256', repeat('f', 64),
+        'scan_status', 'clean', 'scan_engine', 'database-smoke-test',
+        'scanned_at', now(), 'source_type', 'excel'
+      ),
+      jsonb_build_object(
+        'algorithm_version', 'product-inventory-recognition-v1',
+        'status', 'needs_review', 'sheet_name', 'Devices', 'header_row', 1,
+        'shape', 'row_per_device', 'layout_fingerprint', repeat('a', 64),
+        'confidence', 0.8,
+        'header_mapping', jsonb_build_object(
+          'SKU', 'product_sku', 'Serial', 'serial_number',
+          'Cost', 'unit_cost', 'Sale Price', 'planned_sale_price'
+        ),
+        'field_proposals', '[]'::jsonb, 'metadata', '{}'::jsonb,
+        'sheet_scores', '[]'::jsonb, 'sample_rows', '[]'::jsonb,
+        'blocking_errors', '[]'::jsonb, 'warnings', '["review"]'::jsonb
+      )
+    );
+    UPDATE public.product_inventory_import_analyses
+    SET expires_at = now() - interval '1 minute'
+    WHERE id = 'af710003-0000-4000-8000-000000000003';
+    expired_count := public.expire_product_inventory_import_analyses(100);
+    IF expired_count <> 1
+       OR (SELECT status FROM public.product_inventory_import_analyses
+           WHERE id = 'af710003-0000-4000-8000-000000000003') <> 'expired'
+       OR (SELECT retention_until FROM public.managed_files
+           WHERE id = 'af710004-0000-4000-8000-000000000004') > CURRENT_DATE THEN
+      RAISE EXCEPTION 'Workbook-analysis expiry or retention release failed.';
+    END IF;
+  END
+  $test$;
+
   -- Phase 6 product inventory: tenant/suspension guards, transaction rollback
   -- under injected outbox failures, accounting failure atomicity, and exact
   -- uncapped summary functions remain independently verifiable.
@@ -6748,8 +6902,10 @@ const launchAssertions = `
     commerce_rows_denied boolean:=false; commerce_function_denied boolean:=false;
     posting_rows_denied boolean:=false; accounting_function_denied boolean:=false;
     summary_function_denied boolean:=false; return_rows_denied boolean:=false;
-    return_function_denied boolean:=false;
+    return_function_denied boolean:=false; recognition_function_denied boolean:=false;
+    recognition_rows_denied boolean:=false;
     product_inventory_rows integer:=0; workbook_rows integer:=0; photo_rows integer:=0;
+    recognition_rows integer:=0;
   BEGIN
     SET LOCAL ROLE authenticated;
     PERFORM set_config('request.jwt.claim.role','authenticated',true);
@@ -6818,6 +6974,16 @@ const launchAssertions = `
         'ae200001-0000-4000-8000-000000000001','ae200004-0000-4000-8000-000000000004',
         3,'[]'::jsonb);
     EXCEPTION WHEN insufficient_privilege THEN workbook_function_denied:=true;
+    END;
+    BEGIN
+      SELECT count(*) INTO recognition_rows
+      FROM public.product_inventory_import_analyses;
+      recognition_rows_denied := recognition_rows = 0;
+    EXCEPTION WHEN insufficient_privilege THEN recognition_rows_denied:=true;
+    END;
+    BEGIN
+      PERFORM public.expire_product_inventory_import_analyses(10);
+    EXCEPTION WHEN insufficient_privilege THEN recognition_function_denied:=true;
     END;
     BEGIN
       UPDATE public.product_inventory_photo_candidates
@@ -6898,7 +7064,8 @@ const launchAssertions = `
        OR NOT commerce_rows_denied OR NOT commerce_function_denied
        OR NOT posting_rows_denied OR NOT accounting_function_denied
        OR NOT summary_function_denied OR NOT return_rows_denied
-       OR NOT return_function_denied THEN
+       OR NOT return_function_denied OR NOT recognition_rows_denied
+       OR NOT recognition_function_denied THEN
       RAISE EXCEPTION 'One or more atomic command boundaries allowed a direct browser write.';
     END IF;
   END
@@ -6962,6 +7129,7 @@ try {
   await testConcurrentProductSale(databaseUrl);
   await testConcurrentProductReceiptConfirmation(databaseUrl);
   await testConcurrentProductReturnReview(databaseUrl);
+  await testConcurrentWorkbookProfileConfirmation(databaseUrl);
   console.log("Database migration/RLS smoke test passed on disposable PostgreSQL 16.");
 } finally {
   if (containerStarted) {

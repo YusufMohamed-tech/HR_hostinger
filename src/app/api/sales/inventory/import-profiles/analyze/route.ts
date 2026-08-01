@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
     if (parsed.data.supplier_company_id) {
       productsQuery = productsQuery.eq("company_id", parsed.data.supplier_company_id);
     }
-    const [productsResult, aliasesResult, profilesResult] = await Promise.all([
+    const [productsResult, aliasesResult, profilesResult, settingsResult] = await Promise.all([
       productsQuery,
       db.from("product_inventory_aliases")
         .select("product_id, normalized_value")
@@ -106,9 +106,19 @@ export async function POST(request: NextRequest) {
         .eq("organization_id", auth.orgId)
         .order("created_at", { ascending: false })
         .limit(100),
+      db.from("product_inventory_commerce_settings")
+        .select("automatic_workbook_recognition_enabled")
+        .eq("organization_id", auth.orgId)
+        .maybeSingle(),
     ]);
-    const lookupError = productsResult.error || aliasesResult.error || profilesResult.error;
+    const lookupError = productsResult.error || aliasesResult.error || profilesResult.error || settingsResult.error;
     if (lookupError) throw Object.assign(new Error(lookupError.message), { code: lookupError.code });
+    if (settingsResult.data?.automatic_workbook_recognition_enabled === false) {
+      return NextResponse.json(
+        { message: "التعرّف التلقائي على ملفات Excel متوقف مؤقتًا لهذه المنشأة." },
+        { status: 503 }
+      );
+    }
     const recognition = recognizeProductInventoryWorkbook(sheets, {
       products: productsResult.data ?? [],
       aliases: aliasesResult.data ?? [],

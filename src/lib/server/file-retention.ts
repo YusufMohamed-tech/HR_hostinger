@@ -26,6 +26,12 @@ function rpc(admin: ReturnType<typeof createAdminClient>, name: string, args: Re
 
 export async function processFileRetentionBatch(workerId: string, batchSize = 25) {
   const admin = createAdminClient();
+  const expiredAnalyses = await rpc(admin, "expire_product_inventory_import_analyses", {
+    p_batch_size: Math.min(Math.max(Math.trunc(batchSize * 4), 1), 400),
+  });
+  if (expiredAnalyses.error) {
+    throw new Error(`Unable to expire workbook analyses: ${expiredAnalyses.error.message}`);
+  }
   const claimed = await rpc(admin, "claim_managed_file_retention", {
     p_worker_id: workerId,
     p_batch_size: Math.min(Math.max(Math.trunc(batchSize), 1), 100),
@@ -55,6 +61,7 @@ export async function processFileRetentionBatch(workerId: string, batchSize = 25
     }
   }
   return {
+    expiredWorkbookAnalyses: Number(expiredAnalyses.data ?? 0),
     claimed: files.length,
     deleted: results.filter((item) => item.outcome === "deleted").length,
     failed: results.filter((item) => item.outcome === "failed").length,

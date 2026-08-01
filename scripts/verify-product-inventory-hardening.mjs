@@ -17,12 +17,22 @@ const sources = {
   prepareOcrAssets: read("scripts/prepare-ocr-assets.mjs"),
   packageJson: read("package.json"),
   workbookRoute: read("src/app/api/sales/inventory/receipts/[receiptId]/excel-preview/route.ts"),
+  workbookAnalyzeRoute: read("src/app/api/sales/inventory/import-profiles/analyze/route.ts"),
+  workbookProfilesScreen: read("src/components/product-inventory/ProductInventoryImportProfilesScreen.tsx"),
+  workbookRecognition: read("src/lib/product-inventory/workbook-recognition.ts"),
+  workbookNormalization: read("src/lib/product-inventory/workbook-normalization.ts"),
+  recognitionFoundation: read("db/schema_v148_product_inventory_excel_recognition.sql"),
+  recognitionConfirmation: read("db/schema_v149_product_inventory_excel_profile_confirmation.sql"),
+  recognitionAudit: read("db/schema_v150_product_inventory_receipt_recognition_audit.sql"),
+  recognitionOperations: read("db/schema_v151_product_inventory_excel_recognition_operations.sql"),
+  fileRetention: read("src/lib/server/file-retention.ts"),
   databaseTests: read("scripts/test-database-migrations.mjs"),
   runbook: read("docs/PRODUCT_INVENTORY_PHASE_6_UAT_RUNBOOK.md"),
   returnHardening: read("db/schema_v147_product_inventory_return_hardening.sql"),
   returnRoute: read("src/app/api/sales/inventory/return-requests/route.ts"),
   returnAttachmentRoute: read("src/app/api/sales/inventory/return-requests/[requestId]/attachments/[attachmentId]/route.ts"),
   returnRunbook: read("docs/5G_ROUTER_UAT_ROLLOUT.md"),
+  recognitionRunbook: read("docs/PRODUCT_INVENTORY_EXCEL_RECOGNITION_ROLLOUT.md"),
 };
 
 const agentDashboardSource = sources.commerce.split(
@@ -62,6 +72,43 @@ const checks = [
     sources.workbookRoute.includes("inspectUpload")
       && sources.workbookRoute.includes("PRODUCT_INVENTORY_IMPORT_MAX_ROWS")
       && sources.workbookRoute.includes("10000")],
+  ["workbook profile setup uses upload and review instead of user-entered JSON",
+    sources.workbookProfilesScreen.includes("analyzeProductInventoryImportProfile")
+      && sources.workbookProfilesScreen.includes("confirmProductInventoryImportProfile")
+      && !sources.workbookProfilesScreen.includes("JSON.parse")
+      && !sources.workbookProfilesScreen.includes("خريطة الأعمدة JSON")
+      && sources.workbookAnalyzeRoute.includes("inspectUpload")
+      && sources.workbookAnalyzeRoute.includes("readProductInventoryWorkbookSheets")],
+  ["automatic recognition is deterministic, multi-sheet, and shape aware",
+    sources.workbookRecognition.includes("PRODUCT_INVENTORY_RECOGNITION_VERSION")
+      && sources.workbookRecognition.includes("bestHeaderForSheet")
+      && sources.workbookRecognition.includes("layoutFingerprint")
+      && sources.workbookRecognition.includes("continuation_rows")
+      && sources.workbookRecognition.includes("serial_columns")
+      && sources.workbookNormalization.includes("normalizeRecognizedProductInventorySheets")
+      && sources.workbookNormalization.includes("__source_sheet")
+      && sources.workbookNormalization.includes("__source_row")],
+  ["receipt imports do not require an active profile and cannot silently reuse changed layouts",
+    sources.workbookRoute.includes("recognizeProductInventoryWorkbook")
+      && sources.workbookRoute.includes("profile.layout_fingerprint === recognition.layout_fingerprint")
+      && sources.workbookRoute.includes("profile_match_mode")
+      && !sources.workbookRoute.includes("لا يوجد إصدار نشط لقالب الاستيراد")],
+  ["recognition evidence is private, service-only, and auditable",
+    sources.recognitionFoundation.includes("product_inventory_import_analyses_service_only")
+      && sources.recognitionFoundation.includes("product_inventory_import_profile_sample")
+      && sources.recognitionConfirmation.includes("confirm_product_inventory_import_analysis")
+      && sources.recognitionAudit.includes("mapping_snapshot")
+      && sources.recognitionAudit.includes("layout_fingerprint")],
+  ["recognition expiry is bounded, service-only, and connected to retention",
+    sources.recognitionOperations.includes("expire_product_inventory_import_analyses")
+      && sources.recognitionOperations.includes("FOR UPDATE SKIP LOCKED")
+      && sources.recognitionOperations.includes("REVOKE ALL ON FUNCTION")
+      && sources.fileRetention.includes("expire_product_inventory_import_analyses")],
+  ["recognition monitoring covers stale, failed, low-confidence, and cleanup states",
+    sources.healthRoute.includes("stale_recognition_analyses")
+      && sources.healthRoute.includes("failed_recognition_analyses")
+      && sources.healthRoute.includes("low_confidence_last_24_hours")
+      && sources.healthRoute.includes("overdue_recognition_sample_cleanup")],
   ["photo upload remains bounded and inspected",
     sources.photoRoute.includes("inspectUpload")
       && sources.photoRoute.includes("maxTotalBytes")
@@ -99,6 +146,15 @@ const checks = [
   ["concurrent return review has one winner",
     sources.databaseTests.includes("testConcurrentProductReturnReview")
       && sources.databaseTests.includes("Concurrent return approval did not produce exactly one winner")],
+  ["concurrent workbook profile confirmation has one winner",
+    sources.databaseTests.includes("testConcurrentWorkbookProfileConfirmation")
+      && sources.databaseTests.includes("Concurrent workbook confirmation did not produce exactly one winner")],
+  ["workbook recognition rollout, monitoring, UAT, and tenant rollback procedures exist",
+    sources.recognitionRunbook.includes("UAT المطلوب")
+      && sources.recognitionRunbook.includes("/api/internal/product-inventory")
+      && sources.recognitionRunbook.includes("automatic_workbook_recognition_enabled")
+      && sources.recognitionRunbook.includes("GO")
+      && sources.recognitionRunbook.includes("NO-GO")],
   ["router-return UAT, reconciliation, rollout, rollback, and sign-off procedures exist",
     sources.returnRunbook.includes("Required UAT matrix")
       && sources.returnRunbook.includes("get_product_inventory_return_reconciliation")

@@ -150,7 +150,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const db = productInventoryDb(auth.admin);
-    const [productsResult, aliasesResult, profilesResult] = await Promise.all([
+    const [productsResult, aliasesResult, profilesResult, settingsResult] = await Promise.all([
       db.from("sales_products")
         .select("id, company_id, name, sku, barcode, model, price, default_cost, agent_commission_type, agent_commission_value")
         .eq("organization_id", auth.orgId)
@@ -167,9 +167,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
         .eq("organization_id", auth.orgId)
         .order("created_at", { ascending: false })
         .limit(100),
+      db.from("product_inventory_commerce_settings")
+        .select("automatic_workbook_recognition_enabled")
+        .eq("organization_id", auth.orgId)
+        .maybeSingle(),
     ]);
-    const catalogError = productsResult.error || aliasesResult.error || profilesResult.error;
+    const catalogError = productsResult.error || aliasesResult.error || profilesResult.error || settingsResult.error;
     if (catalogError) throw Object.assign(new Error(catalogError.message), { code: catalogError.code });
+    if (settingsResult.data?.automatic_workbook_recognition_enabled === false) {
+      return NextResponse.json(
+        { message: "التعرّف التلقائي على ملفات Excel متوقف مؤقتًا لهذه المنشأة. استخدم الاستلام اليدوي أو الصور." },
+        { status: 503 }
+      );
+    }
     const profiles = (profilesResult.data ?? []) as ImportProfileRow[];
     const recognitionContext = {
       products: productsResult.data ?? [],

@@ -1,5 +1,5 @@
 {
-  "id": "schema_v150_product_inventory_receipt_recognition_audit",
-  "file": "db/schema_v150_product_inventory_receipt_recognition_audit.sql",
-  "checksumSha256": "7eacca8b82170c9ad8ef314c446931597c5a55bfa4f28a78aef3a83ad29fd49c"
+  "id": "schema_v151_product_inventory_excel_recognition_operations",
+  "file": "db/schema_v151_product_inventory_excel_recognition_operations.sql",
+  "checksumSha256": "4f570c6363f3aa5e0d53740ffebabe948dbd4bc02292d83b69d71d9b9f4c1d27"
 }
