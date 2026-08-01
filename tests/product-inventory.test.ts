@@ -51,6 +51,15 @@ import {
   roleFromOrgRole,
 } from "../src/lib/rbac";
 import type { ProductInventoryProduct } from "../src/types/product-inventory";
+import {
+  productCatalogCreateSchema,
+  productCatalogStatusSchema,
+  productCatalogUpdateSchema,
+} from "../src/lib/product-catalog/schemas";
+import {
+  catalogProductMatchKey,
+  normalizeCatalogIdentifier,
+} from "../src/lib/product-catalog/normalization";
 
 test("serial normalization groups formatting variants and removes duplicates", () => {
   assert.equal(normalizeSerial(" vg-123 45 "), "VG12345");
@@ -804,4 +813,54 @@ test("Phase 6 keeps handovers bounded to the documented 200-unit chunk", () => {
     ...input,
     units: units.slice(0, 200),
   }).success, true);
+});
+
+test("Finance product catalog validates identifiers, prices, and commissions", () => {
+  const base = {
+    command_id: "10000000-0000-4000-8000-000000000701",
+    company_id: "10000000-0000-4000-8000-000000000702",
+    name: "راوتر 5G برو",
+    unit: "جهاز",
+    category: "5G Router",
+    sku: "RTR-5G-PRO",
+    barcode: "06221234567890",
+    model: "H155",
+    price: 5_500,
+    default_cost: 4_200,
+    commission_type: "percentage" as const,
+    commission_value: 5,
+    is_active: true,
+  };
+  assert.equal(productCatalogCreateSchema.safeParse(base).success, true);
+  assert.equal(productCatalogCreateSchema.safeParse({
+    ...base,
+    sku: "",
+    barcode: "",
+  }).success, false);
+  assert.equal(productCatalogCreateSchema.safeParse({
+    ...base,
+    price: 0,
+  }).success, false);
+  assert.equal(productCatalogCreateSchema.safeParse({
+    ...base,
+    commission_value: 101,
+  }).success, false);
+  assert.equal(productCatalogUpdateSchema.safeParse({
+    ...base,
+    expected_version: 3,
+  }).success, true);
+  assert.equal(productCatalogStatusSchema.safeParse({
+    command_id: base.command_id,
+    expected_version: 3,
+    is_active: false,
+  }).success, true);
+});
+
+test("Finance product catalog normalizes localized identifiers deterministically", () => {
+  assert.equal(normalizeCatalogIdentifier("  rtr ٠٠١ "), "RTR001");
+  assert.equal(normalizeCatalogIdentifier("۶۲۲-abc"), "622-ABC");
+  assert.equal(
+    catalogProductMatchKey({ name: "راوتر  5G", model: " H-155 " }),
+    catalogProductMatchKey({ name: "راوتر 5g", model: "h 155" })
+  );
 });
