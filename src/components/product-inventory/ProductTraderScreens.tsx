@@ -23,11 +23,13 @@ import {
   reportProductTraderLoss,
   recoverProductTraderLoss,
   getProductTraderOversight,
+  getProductTraderSettings,
   rejectProductTraderHandover,
   reviewProductTraderPriceOverride,
   reviewProductTraderCollection,
   reviewProductTraderReturn,
   submitProductTraderCollection,
+  saveProductTraderSettings,
 } from "@/lib/services/product-trader";
 import type { ProductTraderHandover, ProductTraderPriceOverride, ProductTraderSale, ProductTraderWorkspace } from "@/types/product-trader";
 
@@ -222,10 +224,13 @@ export function FinanceProductTraderPricingScreen() {
   const [sales, setSales] = useState<ProductTraderSale[]>([]);
   const [overrides, setOverrides] = useState<ProductTraderPriceOverride[]>([]);
   const [notice, setNotice] = useState<Notice>(null);
-  const load = useCallback(async()=>{ const result=await getProductTraderFinanceWorkspace(); if(result.error)setNotice({tone:"error",text:result.error.message}); else {setSales(result.data?.sales||[]);setOverrides(result.data?.price_overrides||[]);} },[]);
+  const[settings,setSettings]=useState({product_trader_distribution_enabled:false,require_trader_handover_acknowledgment:true,require_trader_signature:false,max_trader_handover_units:100,trader_handover_expiry_hours:48});
+  const load = useCallback(async()=>{ const [result,settingsResult]=await Promise.all([getProductTraderFinanceWorkspace(),getProductTraderSettings()]); if(result.error)setNotice({tone:"error",text:result.error.message}); else {setSales(result.data?.sales||[]);setOverrides(result.data?.price_overrides||[]);}if(settingsResult.data)setSettings(settingsResult.data); },[]);
   useEffect(()=>{void load();},[load]);
   const review=async(item:ProductTraderPriceOverride,decision:"approved"|"rejected")=>{const note=window.prompt("ملاحظة القرار (اختياري):")||undefined;const result=await reviewProductTraderPriceOverride(item.id,{expected_version:item.version,decision,review_note:note});setNotice(result.error?{tone:"error",text:result.error.message}:{tone:"success",text:"تم حفظ قرار المالية."});await load();};
+  const saveSettings=async()=>{const result=await saveProductTraderSettings(settings);setNotice(result.error?{tone:"error",text:result.error.message}:{tone:"success",text:"تم حفظ إعدادات توزيع منتجات التجار."});};
   return <div className="space-y-6" dir="rtl"><div><h1 className="text-3xl font-bold">مبيعات وأسعار التجار</h1><p className="text-slate-500">مراجعة استثناءات السعر ومراقبة المبيعات بالسيريال.</p></div><NoticeBanner notice={notice}/>
+    <Card><CardHeader><CardTitle>تفعيل وضوابط التوزيع</CardTitle></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap gap-5"><label className="flex items-center gap-2"><input type="checkbox" checked={settings.product_trader_distribution_enabled} onChange={(event)=>setSettings((value)=>({...value,product_trader_distribution_enabled:event.target.checked}))}/>تفعيل توزيع المنتجات للتجار</label><label className="flex items-center gap-2"><input type="checkbox" checked={settings.require_trader_handover_acknowledgment} onChange={(event)=>setSettings((value)=>({...value,require_trader_handover_acknowledgment:event.target.checked}))}/>إلزام تأكيد الاستلام</label><label className="flex items-center gap-2"><input type="checkbox" checked={settings.require_trader_signature} onChange={(event)=>setSettings((value)=>({...value,require_trader_signature:event.target.checked}))}/>إلزام توقيع التاجر</label></div><div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label>أقصى أجهزة في التسليم</Label><Input type="number" value={settings.max_trader_handover_units} onChange={(event)=>setSettings((value)=>({...value,max_trader_handover_units:Number(event.target.value)}))}/></div><div className="space-y-2"><Label>انتهاء التسليم بعد (ساعة)</Label><Input type="number" value={settings.trader_handover_expiry_hours} onChange={(event)=>setSettings((value)=>({...value,trader_handover_expiry_hours:Number(event.target.value)}))}/></div></div><Button onClick={saveSettings}>حفظ الإعدادات</Button></CardContent></Card>
     <Card><CardHeader><CardTitle>طلبات الأسعار المعلقة</CardTitle></CardHeader><CardContent className="space-y-2">{overrides.filter((item)=>item.status==="pending").map((item)=><div key={item.id} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{item.merchant?.business_name} · {item.unit?.product?.name}</p><p className="text-xs text-slate-500">{item.unit?.raw_serial_number} · السعر المطلوب {item.requested_price} {item.currency} · {item.reason}</p></div><div className="flex gap-2"><Button size="sm" onClick={()=>review(item,"approved")}>اعتماد</Button><Button size="sm" variant="destructive" onClick={()=>review(item,"rejected")}>رفض</Button></div></div>)}{!overrides.some((item)=>item.status==="pending")?<p className="text-sm text-slate-500">لا توجد طلبات معلقة.</p>:null}</CardContent></Card>
     <Card><CardHeader><CardTitle>المبيعات</CardTitle></CardHeader><CardContent className="space-y-2">{sales.map((sale)=><div key={sale.id} className="grid gap-2 rounded-lg border p-3 text-sm sm:grid-cols-4"><span>{sale.sale_no}</span><span>{sale.merchant?.business_name}</span><span>{sale.total_amount}</span><Badge variant="outline">{sale.accounting_status}</Badge></div>)}</CardContent></Card>
   </div>;

@@ -290,3 +290,29 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export async function POST(request: NextRequest) {
+  if (!authorized(request)) return unauthorized();
+  const requestId = requestIdFromHeaders(request.headers);
+  const admin = createAdminClient();
+  // Generated types intentionally lag forward-only inventory migrations.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const db = admin as any;
+  try {
+    const expired = await db.rpc("expire_product_trader_handovers", { p_limit: 500 });
+    if (expired.error) throw new Error(expired.error.message);
+    const [staleHandovers, failedSales, failedCollections, openReturns, openLosses] = await Promise.all([
+      db.from("product_trader_handovers").select("id", { head: true, count: "exact" }).eq("status", "issued").lt("expires_at", new Date().toISOString()),
+      db.from("product_trader_sales").select("id", { head: true, count: "exact" }).eq("accounting_status", "failed"),
+      db.from("product_trader_collections").select("id", { head: true, count: "exact" }).eq("accounting_status", "failed"),
+      db.from("product_trader_returns").select("id", { head: true, count: "exact" }).eq("status", "requested"),
+      db.from("product_trader_losses").select("id", { head: true, count: "exact" }).in("status", ["reported", "under_review", "recognized"]),
+    ]);
+    const failed = [staleHandovers, failedSales, failedCollections, openReturns, openLosses].find((result) => result.error);
+    if (failed?.error) throw new Error(failed.error.message);
+    return NextResponse.json({ status: "ok", requestId, expired_handovers: expired.data ?? 0, trader_health: { stale_handovers: staleHandovers.count ?? 0, failed_sale_postings: failedSales.count ?? 0, failed_collection_postings: failedCollections.count ?? 0, open_returns: openReturns.count ?? 0, open_losses: openLosses.count ?? 0 } }, { headers: { "cache-control": "no-store", "x-request-id": requestId } });
+  } catch (error) {
+    console.error("Product trader maintenance failed", { requestId, error });
+    return NextResponse.json({ status: "failed", message: "Unable to maintain trader product workflows.", requestId }, { status: 500, headers: { "cache-control": "no-store", "x-request-id": requestId } });
+  }
+}

@@ -95,3 +95,6 @@ export function reportProductTraderLoss(values:{unit_id:string;loss_type:"missin
 export function reviewProductTraderReturn(id:string,version:number,decision:"received"|"rejected",review_note?:string){return request<Record<string,unknown>>(`/api/sales/inventory/trader-returns/${id}/review`,{method:"POST",body:JSON.stringify({command_id:productTraderCommandId(),expected_version:version,decision,review_note})});}
 export function recoverProductTraderLoss(id:string,condition:"sellable"|"damaged",note?:string){return request<Record<string,unknown>>(`/api/sales/inventory/trader-losses/${id}/recover`,{method:"POST",body:JSON.stringify({command_id:productTraderCommandId(),condition,note})});}
 export function getProductTraderOversight(){return request<Record<string,unknown>>("/api/sales/inventory/trader-oversight");}
+export type ProductTraderSettings={product_trader_distribution_enabled:boolean;require_trader_handover_acknowledgment:boolean;require_trader_signature:boolean;max_trader_handover_units:number;trader_handover_expiry_hours:number};
+export function getProductTraderSettings(){return request<ProductTraderSettings>("/api/sales/inventory/trader-settings");}
+export function saveProductTraderSettings(values:ProductTraderSettings){return request<ProductTraderSettings>("/api/sales/inventory/trader-settings",{method:"PATCH",body:JSON.stringify(values)});}
