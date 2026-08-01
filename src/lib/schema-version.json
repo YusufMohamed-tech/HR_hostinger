@@ -1,5 +1,5 @@
 {
-  "id": "schema_v153_product_catalog_workbook_analysis",
-  "file": "db/schema_v153_product_catalog_workbook_analysis.sql",
-  "checksumSha256": "b48623c834a2d8bb200bf5b76813daa4300d4a0f9942f585e305f7938bde3d37"
+  "id": "schema_v154_atomic_product_catalog_import",
+  "file": "db/schema_v154_atomic_product_catalog_import.sql",
+  "checksumSha256": "a529ce2d3526aca662d9799770f171f609f8b5acfad020e91c558a7bfada87b8"
 }

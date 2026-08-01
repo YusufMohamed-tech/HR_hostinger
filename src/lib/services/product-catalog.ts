@@ -1,6 +1,8 @@
 import type {
   ProductCatalogOptions,
   ProductCatalogProduct,
+  ProductCatalogImportAnalysis,
+  ProductCatalogImportRow,
 } from "@/types/product-catalog";
 import type { ProductInventoryPagination } from "@/lib/services/product-inventory";
 import type { ProductCatalogWorkbookRecognition } from "@/lib/product-catalog/workbook-recognition";
@@ -136,4 +138,43 @@ export async function analyzeProductCatalogWorkbook(values: {
   } catch (error) {
     return { data: null, error: error instanceof Error ? error.message : "تعذر رفع ملف المنتجات." };
   }
+}
+
+export function getProductCatalogImport(analysisId: string, page = 1, classification = "") {
+  const params = new URLSearchParams({ page: String(page), page_size: "200" });
+  if (classification) params.set("classification", classification);
+  return catalogFetch<{
+    analysis: ProductCatalogImportAnalysis;
+    rows: ProductCatalogImportRow[];
+    pagination: ProductInventoryPagination;
+  }>(`/api/sales/inventory/products/imports/${analysisId}?${params.toString()}`);
+}
+
+export function getProductCatalogImports(page = 1) {
+  return catalogFetch<{
+    rows: ProductCatalogImportAnalysis[];
+    pagination: ProductInventoryPagination;
+  }>(`/api/sales/inventory/products/imports?page=${page}&page_size=10`);
+}
+
+export function commitProductCatalogImport(
+  analysisId: string,
+  analysisVersion: number,
+  applyUpdates: boolean,
+  commandId: string
+) {
+  return catalogFetch<{
+    analysis_id: string;
+    created: number;
+    updated: number;
+    skipped: number;
+    committed_at: string;
+  }>(`/api/sales/inventory/products/imports/${analysisId}/commit`, {
+    method: "POST",
+    body: JSON.stringify({
+      command_id: commandId,
+      analysis_version: analysisVersion,
+      apply_updates: applyUpdates,
+    }),
+  });
 }

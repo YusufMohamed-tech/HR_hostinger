@@ -39,8 +39,10 @@ import { newInventoryCommandId } from "@/lib/services/product-inventory";
 import {
   createProductCatalogProduct,
   analyzeProductCatalogWorkbook,
+  commitProductCatalogImport,
   getProductCatalog,
   getProductCatalogOptions,
+  getProductCatalogImports,
   setProductCatalogStatus,
   updateProductCatalogProduct,
   type ProductCatalogFormValues,
@@ -151,7 +153,7 @@ export function ProductCatalogWorkspace() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <ProductCatalogImportDialog options={options} onMessage={setMessage} />
+          <ProductCatalogImportDialog options={options} onMessage={setMessage} onDone={load} />
           <ProductEditor
             options={options}
             onDone={load}
@@ -313,6 +315,7 @@ export function ProductCatalogWorkspace() {
           </div>
         </CardContent>
       </Card>
+      <ProductCatalogImportHistory />
     </div>
   );
 }
@@ -478,15 +481,20 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function ProductCatalogImportDialog({
   options,
   onMessage,
+  onDone,
 }: {
   options: ProductCatalogOptions;
   onMessage: (message: string) => void;
+  onDone: () => void | Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [companyId, setCompanyId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<Awaited<ReturnType<typeof analyzeProductCatalogWorkbook>>["data"]>(null);
+  const [applyUpdates, setApplyUpdates] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [commitResult, setCommitResult] = useState<Awaited<ReturnType<typeof commitProductCatalogImport>>["data"]>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -509,6 +517,21 @@ function ProductCatalogImportDialog({
     setResult(response.data);
   };
 
+  const commit = async () => {
+    if (!result) return;
+    setCommitting(true);
+    const response = await commitProductCatalogImport(
+      result.analysis_id,
+      1,
+      applyUpdates,
+      newInventoryCommandId()
+    );
+    setCommitting(false);
+    if (response.error || !response.data) return onMessage(response.error || "تعذر اعتماد الكتالوج.");
+    setCommitResult(response.data);
+    await onDone();
+  };
+
   const summaryItems = result ? [
     ["جديد", result.recognition.summary.new, "text-green-700"],
     ["تحديث", result.recognition.summary.existing_update, "text-blue-700"],
@@ -518,7 +541,14 @@ function ProductCatalogImportDialog({
   ] as const : [];
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) setResult(null); }}>
+    <Dialog open={open} onOpenChange={(next) => {
+      setOpen(next);
+      if (!next) {
+        setResult(null);
+        setCommitResult(null);
+        setApplyUpdates(false);
+      }
+    }}>
       <DialogTrigger render={<Button variant="outline" />}>
         <FileSpreadsheet className="ml-2 h-4 w-4" /> رفع ملف Excel
       </DialogTrigger>
@@ -543,6 +573,16 @@ function ProductCatalogImportDialog({
             <Link href="/api/sales/inventory/products/template" className="inline-flex items-center gap-2 text-sm font-medium text-brand hover:underline">
               <FileSpreadsheet className="h-4 w-4" /> تحميل قالب Excel الجاهز
             </Link>
+          </div>
+        ) : commitResult ? (
+          <div className="space-y-5 py-6 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-green-100 text-green-700"><PackageCheck className="h-7 w-7" /></div>
+            <div><h3 className="text-xl font-bold text-gray-950">تم اعتماد الكتالوج بنجاح</h3><p className="mt-1 text-sm text-gray-500">العملية ذرّية وتم تسجيلها في سجل التدقيق.</p></div>
+            <div className="mx-auto grid max-w-lg grid-cols-3 gap-3">
+              <div className="rounded-lg bg-green-50 p-3"><p className="text-2xl font-bold text-green-700">{commitResult.created}</p><p className="text-xs text-green-800">تم إنشاؤه</p></div>
+              <div className="rounded-lg bg-blue-50 p-3"><p className="text-2xl font-bold text-blue-700">{commitResult.updated}</p><p className="text-xs text-blue-800">تم تحديثه</p></div>
+              <div className="rounded-lg bg-gray-100 p-3"><p className="text-2xl font-bold text-gray-700">{commitResult.skipped}</p><p className="text-xs text-gray-600">تم تخطيه</p></div>
+            </div>
           </div>
         ) : (
           <div className="space-y-5 py-2">
@@ -573,12 +613,32 @@ function ProductCatalogImportDialog({
               </Table>
             </div>
             {result.recognition.rows.length > 100 && <p className="text-xs text-gray-500">يتم عرض أول 100 صف فقط هنا. جميع الصفوف محفوظة للمراجعة.</p>}
-            <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">تم حفظ التحليل رقم {result.analysis_id}. اعتماد الإنشاء والتحديث سيكون في خطوة المراجعة التالية.</div>
+            {result.recognition.summary.existing_update > 0 && (
+              <label className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                <input type="checkbox" checked={applyUpdates} onChange={(event) => setApplyUpdates(event.target.checked)} className="mt-0.5 h-4 w-4 accent-blue-600" />
+                <span><strong>تحديث المنتجات الموجودة ({result.recognition.summary.existing_update})</strong><br />سيتم تطبيق القيم المعروضة فقط إذا لم يتغير إصدار المنتج منذ التحليل.</span>
+              </label>
+            )}
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">
+              <span>تم حفظ التحليل رقم {result.analysis_id}. الصفوف المتعارضة وغير الصالحة سيتم تخطيها.</span>
+              {(result.recognition.summary.invalid + result.recognition.summary.duplicate_in_file + result.recognition.summary.identifier_conflict + result.recognition.summary.ambiguous) > 0 && (
+                <Link href={`/api/sales/inventory/products/imports/${result.analysis_id}/rejections`} className="font-medium text-red-700 hover:underline">تحميل تقرير المرفوضات CSV</Link>
+              )}
+            </div>
           </div>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>إغلاق</Button>
           {!result && <Button onClick={analyze} disabled={analyzing || !options.enabled} className="bg-brand text-white hover:bg-brand-dark">{analyzing ? "جاري التحليل..." : "تحليل الملف"}</Button>}
+          {result && !commitResult && (
+            <Button
+              onClick={commit}
+              disabled={committing || result.recognition.blocking_errors.length > 0 || (result.recognition.summary.new === 0 && (!applyUpdates || result.recognition.summary.existing_update === 0))}
+              className="bg-brand text-white hover:bg-brand-dark"
+            >
+              {committing ? "جاري الاعتماد..." : `اعتماد ${result.recognition.summary.new} منتج جديد${applyUpdates ? ` و${result.recognition.summary.existing_update} تحديث` : ""}`}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -595,4 +655,40 @@ function classificationLabel(value: string) {
     duplicate_in_file: "مكرر بالملف",
     invalid: "غير صالح",
   } as Record<string, string>)[value] || value;
+}
+
+function ProductCatalogImportHistory() {
+  const [rows, setRows] = useState<NonNullable<Awaited<ReturnType<typeof getProductCatalogImports>>["data"]>["rows"]>([]);
+
+  useEffect(() => {
+    void getProductCatalogImports().then((result) => {
+      if (result.data) setRows(result.data.rows);
+    });
+  }, []);
+
+  if (rows.length === 0) return null;
+  return (
+    <Card className="border-none shadow-sm">
+      <CardContent className="space-y-3">
+        <div><h2 className="text-lg font-bold text-gray-950">سجل رفع كتالوج المنتجات</h2><p className="text-sm text-gray-500">آخر التحليلات والعمليات المعتمدة.</p></div>
+        <div className="overflow-x-auto rounded-lg border border-gray-100">
+          <Table>
+            <TableHeader><TableRow><TableHead>الملف</TableHead><TableHead>المورد</TableHead><TableHead>الصفوف</TableHead><TableHead>الثقة</TableHead><TableHead>الحالة</TableHead><TableHead>التاريخ</TableHead></TableRow></TableHeader>
+            <TableBody>{rows.map((analysis) => <TableRow key={analysis.id}>
+              <TableCell><p className="font-medium">{analysis.original_filename}</p><p className="text-xs text-gray-500">{analysis.selected_sheet} — صف {analysis.header_row}</p></TableCell>
+              <TableCell>{analysis.company?.name || "-"}</TableCell>
+              <TableCell>{analysis.summary.total}</TableCell>
+              <TableCell>{Math.round(Number(analysis.confidence) * 100)}%</TableCell>
+              <TableCell><Badge variant="outline">{importStatusLabel(analysis.status)}</Badge></TableCell>
+              <TableCell>{new Date(analysis.created_at).toLocaleString("ar-EG")}</TableCell>
+            </TableRow>)}</TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function importStatusLabel(value: string) {
+  return ({ ready: "جاهز", needs_review: "يحتاج مراجعة", committing: "جاري الاعتماد", committed: "تم الاعتماد", failed: "فشل", expired: "منتهي" } as Record<string, string>)[value] || value;
 }

@@ -178,6 +178,7 @@
     { "id": "schema_v150_product_inventory_receipt_recognition_audit", "file": "db/schema_v150_product_inventory_receipt_recognition_audit.sql" },
     { "id": "schema_v151_product_inventory_excel_recognition_operations", "file": "db/schema_v151_product_inventory_excel_recognition_operations.sql" },
     { "id": "schema_v152_finance_product_catalog_foundation", "file": "db/schema_v152_finance_product_catalog_foundation.sql" },
-    { "id": "schema_v153_product_catalog_workbook_analysis", "file": "db/schema_v153_product_catalog_workbook_analysis.sql" }
+    { "id": "schema_v153_product_catalog_workbook_analysis", "file": "db/schema_v153_product_catalog_workbook_analysis.sql" },
+    { "id": "schema_v154_atomic_product_catalog_import", "file": "db/schema_v154_atomic_product_catalog_import.sql" }
   ]
 }

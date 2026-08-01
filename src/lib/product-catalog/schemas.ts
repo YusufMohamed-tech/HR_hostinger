@@ -68,4 +68,10 @@ export const productCatalogStatusSchema = z.object({
   is_active: z.boolean(),
 });
 
+export const productCatalogImportCommitSchema = z.object({
+  command_id: z.string().uuid(),
+  analysis_version: z.coerce.number().int().min(1),
+  apply_updates: z.boolean().default(false),
+});
+
 export type ProductCatalogProductInput = z.infer<typeof productCatalogProductSchema>;

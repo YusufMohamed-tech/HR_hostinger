@@ -53,6 +53,7 @@ import {
 import type { ProductInventoryProduct } from "../src/types/product-inventory";
 import {
   productCatalogCreateSchema,
+  productCatalogImportCommitSchema,
   productCatalogStatusSchema,
   productCatalogUpdateSchema,
 } from "../src/lib/product-catalog/schemas";
@@ -930,4 +931,17 @@ test("Finance product catalog blocks duplicate identifiers and cross-supplier ba
   assert.equal(recognition.rows[2]?.classification, "identifier_conflict");
   assert.equal(recognition.summary.duplicate_in_file, 2);
   assert.equal(recognition.summary.identifier_conflict, 1);
+});
+
+test("Finance product catalog commit requires idempotency and analysis versions", () => {
+  assert.equal(productCatalogImportCommitSchema.safeParse({
+    command_id: "10000000-0000-4000-8000-000000000705",
+    analysis_version: 1,
+    apply_updates: true,
+  }).success, true);
+  assert.equal(productCatalogImportCommitSchema.safeParse({
+    command_id: "not-a-uuid",
+    analysis_version: 0,
+    apply_updates: true,
+  }).success, false);
 });
