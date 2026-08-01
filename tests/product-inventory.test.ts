@@ -216,6 +216,17 @@ test("workbook parser accepts Arabic headers and preserves text serial leading z
   assert.equal(parsed.rows[0]?.row_number, 2);
 });
 
+test("receipt workbook keeps transaction prices and warns when catalog defaults differ", () => {
+  const parsed = parseProductInventoryWorkbookRows([
+    ["product_sku", "serial_number", "unit_cost", "planned_sale_price"],
+    ["VHR-5G", "PRICE-DIFF-1", 65, 110],
+  ], { products: workbookProducts });
+  assert.equal(parsed.rows[0]?.status, "warning");
+  assert.equal(parsed.rows[0]?.unit_cost, 65);
+  assert.equal(parsed.rows[0]?.planned_sale_price, 110);
+  assert.match(parsed.rows[0]?.validation_warnings.join(" ") || "", /catalog default/u);
+});
+
 test("workbook parser flags duplicate, numeric, unmatched, and formula-like rows", () => {
   const parsed = parseProductInventoryWorkbookRows([
     ["product_sku", "serial_number", "unit_cost", "planned_sale_price", "currency"],

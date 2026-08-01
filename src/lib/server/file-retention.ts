@@ -26,11 +26,19 @@ function rpc(admin: ReturnType<typeof createAdminClient>, name: string, args: Re
 
 export async function processFileRetentionBatch(workerId: string, batchSize = 25) {
   const admin = createAdminClient();
-  const expiredAnalyses = await rpc(admin, "expire_product_inventory_import_analyses", {
-    p_batch_size: Math.min(Math.max(Math.trunc(batchSize * 4), 1), 400),
-  });
-  if (expiredAnalyses.error) {
-    throw new Error(`Unable to expire workbook analyses: ${expiredAnalyses.error.message}`);
+  const boundedAnalysisBatch = Math.min(Math.max(Math.trunc(batchSize * 4), 1), 400);
+  const [expiredAnalyses, expiredCatalogAnalyses, recoveredCatalogCommands] = await Promise.all([
+    rpc(admin, "expire_product_inventory_import_analyses", { p_batch_size: boundedAnalysisBatch }),
+    rpc(admin, "expire_product_catalog_import_analyses", { p_batch_size: boundedAnalysisBatch }),
+    rpc(admin, "recover_stale_product_catalog_commands", {
+      p_stale_before: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+      p_batch_size: boundedAnalysisBatch,
+    }),
+  ]);
+  if (expiredAnalyses.error || expiredCatalogAnalyses.error || recoveredCatalogCommands.error) {
+    throw new Error(
+      `Unable to maintain workbook analyses: ${expiredAnalyses.error?.message || expiredCatalogAnalyses.error?.message || recoveredCatalogCommands.error?.message}`
+    );
   }
   const claimed = await rpc(admin, "claim_managed_file_retention", {
     p_worker_id: workerId,
@@ -62,6 +70,8 @@ export async function processFileRetentionBatch(workerId: string, batchSize = 25
   }
   return {
     expiredWorkbookAnalyses: Number(expiredAnalyses.data ?? 0),
+    expiredProductCatalogAnalyses: Number(expiredCatalogAnalyses.data ?? 0),
+    recoveredProductCatalogCommands: Number(recoveredCatalogCommands.data ?? 0),
     claimed: files.length,
     deleted: results.filter((item) => item.outcome === "deleted").length,
     failed: results.filter((item) => item.outcome === "failed").length,

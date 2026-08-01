@@ -25,6 +25,10 @@ const sources = {
   recognitionConfirmation: read("db/schema_v149_product_inventory_excel_profile_confirmation.sql"),
   recognitionAudit: read("db/schema_v150_product_inventory_receipt_recognition_audit.sql"),
   recognitionOperations: read("db/schema_v151_product_inventory_excel_recognition_operations.sql"),
+  catalogOperations: read("db/schema_v155_product_catalog_operations.sql"),
+  catalogAtomicImport: read("db/schema_v154_atomic_product_catalog_import.sql"),
+  catalogAnalyzeRoute: read("src/app/api/sales/inventory/products/import/analyze/route.ts"),
+  catalogScreen: read("src/components/product-inventory/ProductCatalogWorkspace.tsx"),
   fileRetention: read("src/lib/server/file-retention.ts"),
   databaseTests: read("scripts/test-database-migrations.mjs"),
   runbook: read("docs/PRODUCT_INVENTORY_PHASE_6_UAT_RUNBOOK.md"),
@@ -33,6 +37,7 @@ const sources = {
   returnAttachmentRoute: read("src/app/api/sales/inventory/return-requests/[requestId]/attachments/[attachmentId]/route.ts"),
   returnRunbook: read("docs/5G_ROUTER_UAT_ROLLOUT.md"),
   recognitionRunbook: read("docs/PRODUCT_INVENTORY_EXCEL_RECOGNITION_ROLLOUT.md"),
+  catalogRunbook: read("docs/FINANCE_PRODUCT_CATALOG_UAT_ROLLOUT.md"),
 };
 
 const agentDashboardSource = sources.commerce.split(
@@ -161,6 +166,25 @@ const checks = [
       && sources.returnRunbook.includes("Controlled rollout")
       && sources.returnRunbook.includes("Rollback and forward-fix")
       && sources.returnRunbook.includes("Sign-off")],
+  ["Finance product catalog upload is automatic, reviewed, and atomic",
+    sources.catalogAnalyzeRoute.includes("recognizeProductCatalogWorkbook")
+      && sources.catalogAnalyzeRoute.includes("inspectUpload")
+      && sources.catalogScreen.includes("تحليل الملف")
+      && sources.catalogScreen.includes("applyUpdates")
+      && sources.catalogAtomicImport.includes("commit_product_catalog_import_v1")
+      && sources.catalogAtomicImport.includes("Product version or supplier changed after analysis")],
+  ["Finance product catalog operations are durable, recoverable, and retained",
+    sources.catalogOperations.includes("emit_product_catalog_audit_event")
+      && sources.catalogOperations.includes("recover_stale_product_catalog_commands")
+      && sources.catalogOperations.includes("expire_product_catalog_import_analyses")
+      && sources.fileRetention.includes("recover_stale_product_catalog_commands")
+      && sources.healthRoute.includes("stale_product_catalog_commands")],
+  ["Finance product catalog UAT, monitoring, rollback, and sign-off procedures exist",
+    sources.catalogRunbook.includes("Required UAT matrix")
+      && sources.catalogRunbook.includes("Catalog-to-receipt integration")
+      && sources.catalogRunbook.includes("GO / NO-GO")
+      && sources.catalogRunbook.includes("Rollback and forward-fix")
+      && sources.catalogRunbook.includes("Sign-off record")],
   ["support, rollback, monitoring, pilot, and sign-off procedures exist",
     sources.runbook.includes("Rollback and forward-fix")
       && sources.runbook.includes("Controlled pilot")

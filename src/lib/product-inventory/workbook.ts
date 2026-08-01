@@ -350,6 +350,14 @@ export function parseProductInventoryWorkbookRows(
 
     const match = matchProductCatalog({ sku, name: productName, barcode, model }, context.products, aliases);
     if (match.ambiguous) warnings.push("Product match is ambiguous; select the correct catalog product.");
+    if (match.product && unitCost !== null && Number(match.product.default_cost || 0) > 0
+        && Math.abs(unitCost - Number(match.product.default_cost)) >= 0.01) {
+      warnings.push("Workbook unit cost differs from the product catalog default; the workbook value will remain the receipt evidence.");
+    }
+    if (match.product && plannedSalePrice !== null && Number(match.product.price || 0) > 0
+        && Math.abs(plannedSalePrice - Number(match.product.price)) >= 0.01) {
+      warnings.push("Workbook planned sale price differs from the product catalog default; review it before commit.");
+    }
     const duplicate = Boolean(normalizedSerial && seen.has(normalizedSerial));
     if (duplicate) errors.push("Serial number is duplicated inside this workbook.");
     if (normalizedSerial) seen.add(normalizedSerial);

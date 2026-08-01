@@ -1,5 +1,5 @@
 {
-  "id": "schema_v154_atomic_product_catalog_import",
-  "file": "db/schema_v154_atomic_product_catalog_import.sql",
-  "checksumSha256": "a529ce2d3526aca662d9799770f171f609f8b5acfad020e91c558a7bfada87b8"
+  "id": "schema_v155_product_catalog_operations",
+  "file": "db/schema_v155_product_catalog_operations.sql",
+  "checksumSha256": "4e2dcbca9ff05d16ff8036fb00e8d88cdfbb6477fdc33a67eecdf10162987429"
 }

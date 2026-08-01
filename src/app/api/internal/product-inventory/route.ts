@@ -54,9 +54,15 @@ export async function GET(request: NextRequest) {
       failedRecognitionAnalyses,
       lowConfidenceRecognitionAnalyses,
       overdueRecognitionSampleCleanup,
+      staleCatalogCommands,
+      staleCatalogAnalyses,
+      failedCatalogAnalyses,
+      lowConfidenceCatalogAnalyses,
+      overdueCatalogCleanup,
       oldestException,
       oldestReturnException,
       oldestRecognitionException,
+      oldestCatalogException,
     ] = await Promise.all([
       db.from("event_outbox").select("id", { head: true, count: "exact" })
         .like("topic", "product_inventory.%").eq("status", "pending"),
@@ -110,6 +116,19 @@ export async function GET(request: NextRequest) {
         .eq("owner_type", "product_inventory_import_profile_sample")
         .in("deletion_status", ["active", "processing", "failed", "dead_letter"])
         .lt("retention_until", new Date().toISOString().slice(0, 10)),
+      db.from("product_catalog_commands").select("id", { head: true, count: "exact" })
+        .eq("status", "processing").lt("created_at", staleBefore),
+      db.from("product_catalog_import_analyses").select("id", { head: true, count: "exact" })
+        .eq("status", "committing").lt("updated_at", staleBefore),
+      db.from("product_catalog_import_analyses").select("id", { head: true, count: "exact" })
+        .eq("status", "failed").gte("updated_at", recognitionWindowStart),
+      db.from("product_catalog_import_analyses").select("id", { head: true, count: "exact" })
+        .in("status", ["needs_review", "ready"])
+        .lt("confidence", 0.72).gte("created_at", recognitionWindowStart),
+      db.from("managed_files").select("id", { head: true, count: "exact" })
+        .eq("owner_type", "product_catalog_import_workbook")
+        .in("deletion_status", ["active", "processing", "failed", "dead_letter"])
+        .lt("retention_until", new Date().toISOString().slice(0, 10)),
       db.from("product_inventory_accounting_postings")
         .select("organization_id, source_type, source_id, status, attempt_count, updated_at")
         .in("status", ["failed", "pending", "pending_approval"])
@@ -123,6 +142,10 @@ export async function GET(request: NextRequest) {
       db.from("product_inventory_import_analyses")
         .select("organization_id, id, template_name, status, confidence, error_message, updated_at")
         .in("status", ["analyzing", "failed"])
+        .order("updated_at", { ascending: true }).limit(1).maybeSingle(),
+      db.from("product_catalog_import_analyses")
+        .select("organization_id, id, original_filename, status, confidence, updated_at")
+        .in("status", ["committing", "failed"])
         .order("updated_at", { ascending: true }).limit(1).maybeSingle(),
     ]);
     const results = [
@@ -146,9 +169,15 @@ export async function GET(request: NextRequest) {
       failedRecognitionAnalyses,
       lowConfidenceRecognitionAnalyses,
       overdueRecognitionSampleCleanup,
+      staleCatalogCommands,
+      staleCatalogAnalyses,
+      failedCatalogAnalyses,
+      lowConfidenceCatalogAnalyses,
+      overdueCatalogCleanup,
       oldestException,
       oldestReturnException,
       oldestRecognitionException,
+      oldestCatalogException,
     ];
     const failedQuery = results.find((result) => result.error);
     if (failedQuery?.error) throw new Error(failedQuery.error.message);
@@ -170,9 +199,17 @@ export async function GET(request: NextRequest) {
       stale_recognition_analyses: staleRecognitionAnalyses.count ?? 0,
       failed_recognition_analyses: failedRecognitionAnalyses.count ?? 0,
       overdue_recognition_sample_cleanup: overdueRecognitionSampleCleanup.count ?? 0,
+      stale_product_catalog_commands: staleCatalogCommands.count ?? 0,
+      stale_product_catalog_analyses: staleCatalogAnalyses.count ?? 0,
+      failed_product_catalog_analyses: failedCatalogAnalyses.count ?? 0,
+      overdue_product_catalog_cleanup: overdueCatalogCleanup.count ?? 0,
       excess_low_confidence_analyses: Math.max(
         0,
         (lowConfidenceRecognitionAnalyses.count ?? 0) - lowConfidenceAlertThreshold
+      ),
+      excess_low_confidence_product_catalog_analyses: Math.max(
+        0,
+        (lowConfidenceCatalogAnalyses.count ?? 0) - lowConfidenceAlertThreshold
       ),
     };
     const healthy = Object.values(checks).every((count) => count === 0);
@@ -216,6 +253,14 @@ export async function GET(request: NextRequest) {
           low_confidence_last_24_hours: lowConfidenceRecognitionAnalyses.count ?? 0,
           overdue_sample_cleanup: overdueRecognitionSampleCleanup.count ?? 0,
           oldest_exception: oldestRecognitionException.data ?? null,
+        },
+        product_catalog: {
+          stale_commands: staleCatalogCommands.count ?? 0,
+          stale_analyses: staleCatalogAnalyses.count ?? 0,
+          failed_last_24_hours: failedCatalogAnalyses.count ?? 0,
+          low_confidence_last_24_hours: lowConfidenceCatalogAnalyses.count ?? 0,
+          overdue_source_cleanup: overdueCatalogCleanup.count ?? 0,
+          oldest_exception: oldestCatalogException.data ?? null,
         },
         requestId,
       },
