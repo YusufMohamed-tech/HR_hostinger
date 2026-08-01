@@ -3,6 +3,7 @@ import type {
   ProductCatalogProduct,
 } from "@/types/product-catalog";
 import type { ProductInventoryPagination } from "@/lib/services/product-inventory";
+import type { ProductCatalogWorkbookRecognition } from "@/lib/product-catalog/workbook-recognition";
 
 type ApiResult<T> = { data: T | null; error: string | null };
 
@@ -96,4 +97,43 @@ export function setProductCatalogStatus(
     method: "POST",
     body: JSON.stringify({ is_active: isActive, expected_version: expectedVersion, command_id: commandId }),
   });
+}
+
+export async function analyzeProductCatalogWorkbook(values: {
+  file: File;
+  companyId: string;
+  analysisId: string;
+  managedFileId: string;
+  commandId: string;
+}): Promise<ApiResult<{
+  analysis_id: string;
+  status: string;
+  summary: Record<string, number>;
+  recognition: ProductCatalogWorkbookRecognition;
+}>> {
+  try {
+    const formData = new FormData();
+    formData.set("file", values.file);
+    formData.set("company_id", values.companyId);
+    formData.set("analysis_id", values.analysisId);
+    formData.set("managed_file_id", values.managedFileId);
+    formData.set("command_id", values.commandId);
+    const response = await fetch("/api/sales/inventory/products/import/analyze", {
+      method: "POST",
+      body: formData,
+    });
+    const payload = await response.json().catch(() => ({})) as {
+      data?: {
+        analysis_id: string;
+        status: string;
+        summary: Record<string, number>;
+        recognition: ProductCatalogWorkbookRecognition;
+      };
+      message?: string;
+    };
+    if (!response.ok) return { data: null, error: payload.message || "تعذر تحليل ملف المنتجات." };
+    return { data: payload.data ?? null, error: null };
+  } catch (error) {
+    return { data: null, error: error instanceof Error ? error.message : "تعذر رفع ملف المنتجات." };
+  }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Boxes,
   CircleDollarSign,
@@ -37,6 +38,7 @@ import { formatCurrency } from "@/lib/utils/currency";
 import { newInventoryCommandId } from "@/lib/services/product-inventory";
 import {
   createProductCatalogProduct,
+  analyzeProductCatalogWorkbook,
   getProductCatalog,
   getProductCatalogOptions,
   setProductCatalogStatus,
@@ -149,9 +151,7 @@ export function ProductCatalogWorkspace() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" disabled title="سيتم تفعيله في مرحلة استيراد الكتالوج">
-            <FileSpreadsheet className="ml-2 h-4 w-4" /> رفع ملف Excel
-          </Button>
+          <ProductCatalogImportDialog options={options} onMessage={setMessage} />
           <ProductEditor
             options={options}
             onDone={load}
@@ -473,4 +473,126 @@ function ProductEditor({
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className="space-y-2"><Label>{label}</Label>{children}</div>;
+}
+
+function ProductCatalogImportDialog({
+  options,
+  onMessage,
+}: {
+  options: ProductCatalogOptions;
+  onMessage: (message: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [companyId, setCompanyId] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [result, setResult] = useState<Awaited<ReturnType<typeof analyzeProductCatalogWorkbook>>["data"]>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setCompanyId((current) => current || options.companies[0]?.id || "");
+  }, [open, options.companies]);
+
+  const analyze = async () => {
+    if (!companyId) return onMessage("اختر المورد قبل رفع الملف.");
+    if (!file) return onMessage("اختر ملف XLSX أو CSV.");
+    setAnalyzing(true);
+    const response = await analyzeProductCatalogWorkbook({
+      file,
+      companyId,
+      analysisId: newInventoryCommandId(),
+      managedFileId: newInventoryCommandId(),
+      commandId: newInventoryCommandId(),
+    });
+    setAnalyzing(false);
+    if (response.error || !response.data) return onMessage(response.error || "تعذر تحليل الملف.");
+    setResult(response.data);
+  };
+
+  const summaryItems = result ? [
+    ["جديد", result.recognition.summary.new, "text-green-700"],
+    ["تحديث", result.recognition.summary.existing_update, "text-blue-700"],
+    ["بدون تغيير", result.recognition.summary.existing_unchanged, "text-gray-700"],
+    ["متعارض", result.recognition.summary.identifier_conflict + result.recognition.summary.ambiguous, "text-amber-700"],
+    ["غير صالح", result.recognition.summary.invalid + result.recognition.summary.duplicate_in_file, "text-red-700"],
+  ] as const : [];
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) setResult(null); }}>
+      <DialogTrigger render={<Button variant="outline" />}>
+        <FileSpreadsheet className="ml-2 h-4 w-4" /> رفع ملف Excel
+      </DialogTrigger>
+      <DialogContent dir="rtl" className="max-h-[92vh] overflow-y-auto sm:max-w-[920px]">
+        <DialogHeader><DialogTitle>رفع كتالوج منتجات من Excel</DialogTitle></DialogHeader>
+        {!result ? (
+          <div className="space-y-5 py-2">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="المورد *">
+                <select value={companyId} onChange={(event) => setCompanyId(event.target.value)} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
+                  <option value="">اختر المورد</option>
+                  {options.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+                </select>
+              </Field>
+              <Field label="ملف المنتجات *">
+                <Input type="file" accept=".xlsx,.csv" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+              </Field>
+            </div>
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm leading-6 text-blue-900">
+              يتعرف النظام تلقائيًا على ورقة البيانات وصف العناوين والأعمدة العربية أو الإنجليزية. لن يتم حفظ أي منتج في هذه الخطوة.
+            </div>
+            <Link href="/api/sales/inventory/products/template" className="inline-flex items-center gap-2 text-sm font-medium text-brand hover:underline">
+              <FileSpreadsheet className="h-4 w-4" /> تحميل قالب Excel الجاهز
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-5 py-2">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">الورقة المكتشفة</p><p className="mt-1 font-semibold">{result.recognition.sheet_name}</p></div>
+              <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">صف العناوين</p><p className="mt-1 font-semibold">{result.recognition.header_row}</p></div>
+              <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-500">ثقة التعرف</p><p className="mt-1 font-semibold">{Math.round(result.recognition.confidence * 100)}%</p></div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-5">
+              {summaryItems.map(([label, value, color]) => <div key={label} className="rounded-lg border border-gray-100 p-3 text-center"><p className={`text-2xl font-bold ${color}`}>{value}</p><p className="text-xs text-gray-500">{label}</p></div>)}
+            </div>
+            {result.recognition.blocking_errors.length > 0 && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{result.recognition.blocking_errors.join(" • ")}</div>}
+            {result.recognition.warnings.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{result.recognition.warnings.join(" • ")}</div>}
+            <div className="overflow-x-auto rounded-lg border border-gray-100">
+              <Table>
+                <TableHeader><TableRow><TableHead>الصف</TableHead><TableHead>المنتج</TableHead><TableHead>SKU</TableHead><TableHead>الباركود</TableHead><TableHead>سعر البيع</TableHead><TableHead>النتيجة</TableHead><TableHead>الملاحظات</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {result.recognition.rows.slice(0, 100).map((row) => <TableRow key={row.row_id}>
+                    <TableCell>{row.source_row}</TableCell>
+                    <TableCell>{row.normalized_values.product_name}</TableCell>
+                    <TableCell className="font-mono text-xs">{row.normalized_values.sku || "-"}</TableCell>
+                    <TableCell className="font-mono text-xs">{row.normalized_values.barcode || "-"}</TableCell>
+                    <TableCell>{row.normalized_values.planned_sale_price ?? "-"}</TableCell>
+                    <TableCell><Badge variant="outline">{classificationLabel(row.classification)}</Badge></TableCell>
+                    <TableCell className="max-w-60 text-xs text-red-700">{[...row.errors, ...row.warnings].join(" • ") || "-"}</TableCell>
+                  </TableRow>)}
+                </TableBody>
+              </Table>
+            </div>
+            {result.recognition.rows.length > 100 && <p className="text-xs text-gray-500">يتم عرض أول 100 صف فقط هنا. جميع الصفوف محفوظة للمراجعة.</p>}
+            <div className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600">تم حفظ التحليل رقم {result.analysis_id}. اعتماد الإنشاء والتحديث سيكون في خطوة المراجعة التالية.</div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>إغلاق</Button>
+          {!result && <Button onClick={analyze} disabled={analyzing || !options.enabled} className="bg-brand text-white hover:bg-brand-dark">{analyzing ? "جاري التحليل..." : "تحليل الملف"}</Button>}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function classificationLabel(value: string) {
+  return ({
+    new: "جديد",
+    existing_unchanged: "بدون تغيير",
+    existing_update: "تحديث",
+    ambiguous: "يحتاج مراجعة",
+    identifier_conflict: "تعارض معرفات",
+    duplicate_in_file: "مكرر بالملف",
+    invalid: "غير صالح",
+  } as Record<string, string>)[value] || value;
 }

@@ -60,6 +60,7 @@ import {
   catalogProductMatchKey,
   normalizeCatalogIdentifier,
 } from "../src/lib/product-catalog/normalization";
+import { recognizeProductCatalogWorkbook } from "../src/lib/product-catalog/workbook-recognition";
 
 test("serial normalization groups formatting variants and removes duplicates", () => {
   assert.equal(normalizeSerial(" vg-123 45 "), "VG12345");
@@ -863,4 +864,70 @@ test("Finance product catalog normalizes localized identifiers deterministically
     catalogProductMatchKey({ name: "راوتر  5G", model: " H-155 " }),
     catalogProductMatchKey({ name: "راوتر 5g", model: "h 155" })
   );
+});
+
+test("Finance product catalog recognizes Arabic workbook headers and classifies rows", () => {
+  const recognition = recognizeProductCatalogWorkbook([{
+    name: "المنتجات",
+    rows: [
+      ["قائمة أجهزة الراوتر"],
+      ["اسم المنتج", "كود المنتج", "الباركود", "الموديل", "سعر البيع", "التكلفة", "نوع العمولة", "قيمة العمولة", "نشط"],
+      ["راوتر جديد", "RTR-NEW", "006220001", "H200", 5000, 4000, "نسبة مئوية", 5, "نعم"],
+      ["راوتر موجود", "RTR-OLD", "006220002", "H155", 5600, 4200, "قيمة ثابتة", 100, "نعم"],
+    ],
+  }], {
+    companyId: "10000000-0000-4000-8000-000000000702",
+    products: [{
+      id: "10000000-0000-4000-8000-000000000703",
+      company_id: "10000000-0000-4000-8000-000000000702",
+      name: "راوتر موجود",
+      sku: "RTR-OLD",
+      barcode: "006220002",
+      model: "H155",
+      price: 5500,
+      default_cost: 4200,
+      agent_commission_type: "flat",
+      agent_commission_value: 100,
+      inventory_version: 4,
+      is_active: true,
+    }],
+  });
+  assert.equal(recognition.sheet_name, "المنتجات");
+  assert.equal(recognition.header_row, 2);
+  assert.equal(recognition.status, "ready");
+  assert.equal(recognition.rows[0]?.classification, "new");
+  assert.equal(recognition.rows[0]?.normalized_values.barcode, "006220001");
+  assert.equal(recognition.rows[1]?.classification, "existing_update");
+  assert.equal(recognition.rows[1]?.matched_inventory_version, 4);
+  assert.equal(recognition.summary.total, 2);
+});
+
+test("Finance product catalog blocks duplicate identifiers and cross-supplier barcodes", () => {
+  const recognition = recognizeProductCatalogWorkbook([{
+    name: "Products",
+    rows: [
+      ["Product Name", "SKU", "Barcode", "Sale Price"],
+      ["First", "DUP-1", "90001", 100],
+      ["Second", "DUP-1", "90002", 100],
+      ["Third", "NEW-3", "EXTERNAL", 100],
+    ],
+  }], {
+    companyId: "10000000-0000-4000-8000-000000000702",
+    products: [{
+      id: "10000000-0000-4000-8000-000000000704",
+      company_id: "10000000-0000-4000-8000-000000000799",
+      name: "Other supplier product",
+      sku: "OTHER",
+      barcode: "EXTERNAL",
+      model: null,
+      price: 100,
+      inventory_version: 1,
+      is_active: true,
+    }],
+  });
+  assert.equal(recognition.rows[0]?.classification, "duplicate_in_file");
+  assert.equal(recognition.rows[1]?.classification, "duplicate_in_file");
+  assert.equal(recognition.rows[2]?.classification, "identifier_conflict");
+  assert.equal(recognition.summary.duplicate_in_file, 2);
+  assert.equal(recognition.summary.identifier_conflict, 1);
 });

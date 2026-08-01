@@ -1,5 +1,5 @@
 {
-  "id": "schema_v152_finance_product_catalog_foundation",
-  "file": "db/schema_v152_finance_product_catalog_foundation.sql",
-  "checksumSha256": "56583185059d294e17295da423fd3f1ab672aa511d14e2f628abcc69a8e2a5c3"
+  "id": "schema_v153_product_catalog_workbook_analysis",
+  "file": "db/schema_v153_product_catalog_workbook_analysis.sql",
+  "checksumSha256": "b48623c834a2d8bb200bf5b76813daa4300d4a0f9942f585e305f7938bde3d37"
 }
