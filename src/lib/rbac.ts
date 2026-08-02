@@ -128,6 +128,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return false;
   }
 
+  if (normalizedPath.startsWith("/api/chatbot")) {
+    return true;
+  }
+
   if (normalizedPath === "/") {
     return !["HR_Recruitment", "Sales", "Sales_Manager", "Onground_Agent_Manager", "Inventory_Receiver", "Promoter", "Field_Agent", "Merchant", "Supervisor", "Finance_Manager", "Accountant", "Finance_Viewer", "Account_Manager"].includes(role);
   }

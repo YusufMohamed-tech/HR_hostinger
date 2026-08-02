@@ -44,6 +44,7 @@ function requiredFeaturesForPath(pathname: string) {
   if (normalized.startsWith("/sales") || normalized.startsWith("/api/sales")) return ["sales"];
   if (normalized.startsWith("/recruitment") || normalized.startsWith("/api/recruitment")) return ["recruitment"];
   if (normalized.startsWith("/accounting") || normalized.startsWith("/api/accounting")) return ["accounting"];
+  if (normalized.startsWith("/api/chatbot")) return [];
   if (normalized.startsWith("/chat") || normalized.startsWith("/api/chat")) return ["chat"];
   if (normalized.startsWith("/assets") || normalized.startsWith("/api/assets")) return ["assets"];
   if (normalized.startsWith("/payroll")) return ["payroll"];
