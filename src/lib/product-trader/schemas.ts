@@ -7,7 +7,7 @@ export const issueProductTraderHandoverSchema = z.object({
   command_id: uuid,
   source_agent_id: uuid.optional(),
   merchant_id: uuid,
-  unit_ids: z.array(uuid).min(1, "اختر منتجاً واحداً على الأقل.").max(100),
+  unit_ids: z.array(uuid).min(1, "اختر منتجاً واحداً على الأقل.").max(500),
   notes: z.string().trim().max(1000).optional(),
 }).superRefine((value, context) => {
   if (new Set(value.unit_ids).size !== value.unit_ids.length) {
@@ -18,11 +18,11 @@ export const issueProductTraderHandoverSchema = z.object({
 export const respondProductTraderHandoverSchema = z.object({
   command_id: uuid,
   expected_version: z.number().int().positive(),
-  accepted_unit_ids: z.array(uuid).max(100),
+  accepted_unit_ids: z.array(uuid).max(500),
   rejected_units: z.array(z.object({
     unit_id: uuid,
     reason: z.enum(["missing", "damaged"]),
-  })).max(100),
+  })).max(500),
   rejection_reason: z.string().trim().max(1000).optional(),
   signature_data: z.string().max(1_000_000).optional(),
 });
@@ -70,6 +70,7 @@ export const reviewProductTraderPriceOverrideSchema = z.object({
 export const submitProductTraderCollectionSchema = z.object({
   collection_id: uuid, command_id: uuid, merchant_id: uuid.optional(),
   amount: z.coerce.number().positive().max(100_000_000),
+  currency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).default("SAR"),
   payment_method: z.enum(["cash", "bank_transfer", "card", "electronic"]),
   collection_date: z.string().date().optional(), payment_reference: z.string().trim().max(200).optional(),
   proof_path: z.string().trim().max(1000).optional(),
@@ -84,4 +85,4 @@ export const reviewProductTraderCollectionSchema = z.object({
 export const requestProductTraderReturnSchema=z.object({return_id:uuid,command_id:uuid,unit_id:uuid,reason:z.string().trim().min(3).max(1000),condition:z.enum(["sealed","open_box","damaged"]),evidence_path:z.string().trim().min(1).max(1000)});
 export const reviewProductTraderReturnSchema=z.object({command_id:uuid,expected_version:z.number().int().positive(),decision:z.enum(["received","rejected"]),review_note:z.string().trim().max(1000).optional()});
 export const reportProductTraderLossSchema=z.object({loss_id:uuid,command_id:uuid,unit_id:uuid,loss_type:z.enum(["missing","stolen","damaged"]),reason:z.string().trim().min(5).max(1000),evidence_path:z.string().trim().min(1).max(1000)});
-export const recoverProductTraderLossSchema=z.object({command_id:uuid,condition:z.enum(["sellable","damaged"]),note:z.string().trim().max(1000).optional()});
+export const recoverProductTraderLossSchema=z.object({command_id:uuid,expected_version:z.number().int().positive(),condition:z.enum(["sellable","damaged"]),note:z.string().trim().max(1000).optional()});

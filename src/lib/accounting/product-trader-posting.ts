@@ -5,6 +5,42 @@ import { roundMoney } from "@/lib/accounting/validation";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 function db(admin: AdminClient) { return admin as any; }
+type JournalAccountMap = {
+  receivable: string; revenue: string; vatPayable: string;
+  inventory: string; cogs: string; commissionExpense: string;
+  commissionPayable: string;
+};
+
+export function buildProductTraderSaleJournalLines(input: {
+  saleNo: string; total: number; net: number; vat: number; cost: number;
+  organizationReceivable: number; merchantCommission: number;
+  agentCommission: number; netMerchantCommission: boolean;
+  accounts: JournalAccountMap;
+}) {
+  const commissionExpenseAmount = roundMoney(input.merchantCommission + input.agentCommission);
+  const commissionPayableAmount = roundMoney(
+    input.agentCommission + (input.netMerchantCommission ? 0 : input.merchantCommission),
+  );
+  const lines = [
+    { account_id: input.accounts.receivable, debit: input.organizationReceivable, description: `Trader receivable ${input.saleNo}` },
+    { account_id: input.accounts.revenue, credit: input.net, description: `Trader product revenue ${input.saleNo}` },
+    ...(input.vat > 0 ? [{ account_id: input.accounts.vatPayable, credit: input.vat, description: `Output VAT ${input.saleNo}` }] : []),
+    { account_id: input.accounts.cogs, debit: input.cost, description: `Product cost ${input.saleNo}` },
+    { account_id: input.accounts.inventory, credit: input.cost, description: `Inventory release ${input.saleNo}` },
+    ...(commissionExpenseAmount > 0 ? [{
+      account_id: input.accounts.commissionExpense,
+      debit: commissionExpenseAmount,
+      description: `Trader-chain commissions ${input.saleNo}`,
+    }] : []),
+    ...(commissionPayableAmount > 0 ? [{
+      account_id: input.accounts.commissionPayable,
+      credit: commissionPayableAmount,
+      description: `Commission payable ${input.saleNo}`,
+    }] : []),
+  ];
+  return { lines, commissionExpenseAmount, commissionPayableAmount };
+}
+
 function commandId(scope: string) {
   const hash = createHash("sha256").update(scope).digest("hex").slice(0, 32);
   return `${hash.slice(0,8)}-${hash.slice(8,12)}-5${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20)}`;
@@ -31,24 +67,28 @@ export async function autoPostProductTraderSale(admin: AdminClient, orgId: strin
     const total = roundMoney(sale.total_amount), net = roundMoney(sale.subtotal), vat = roundMoney(sale.vat_amount);
     const lines = (sale.lines || []) as Array<Record<string, unknown>>;
     const cost = roundMoney(lines.reduce((sum, line) => sum + Number(line.unit_cost_snapshot || 0), 0));
-    const commission = roundMoney(Number(sale.merchant_commission_amount || 0) + Number(sale.agent_chain_commission_amount || 0));
-    const journalLines = [
-      { account_id: receivable, debit: total, description: `Trader receivable ${sale.sale_no}` },
-      { account_id: revenue, credit: net, description: `Trader product revenue ${sale.sale_no}` },
-      ...(vat > 0 ? [{ account_id: vatPayable, credit: vat, description: `Output VAT ${sale.sale_no}` }] : []),
-      { account_id: cogs, debit: cost, description: `Product cost ${sale.sale_no}` },
-      { account_id: inventory, credit: cost, description: `Inventory release ${sale.sale_no}` },
-      ...(commission > 0 ? [
-        { account_id: commissionExpense, debit: commission, description: `Trader-chain commissions ${sale.sale_no}` },
-        { account_id: commissionPayable, credit: commission, description: `Commission payable ${sale.sale_no}` },
-      ] : []),
-    ];
+    const merchantCommission = roundMoney(sale.merchant_commission_amount);
+    const agentCommission = roundMoney(sale.agent_chain_commission_amount);
+    const organizationReceivable = roundMoney(sale.organization_receivable_amount);
+    const journal = buildProductTraderSaleJournalLines({
+      saleNo: String(sale.sale_no), total, net, vat, cost,
+      organizationReceivable, merchantCommission, agentCommission,
+      netMerchantCommission: sale.net_commission_at_settlement === true,
+      accounts: { receivable, revenue, vatPayable, inventory, cogs, commissionExpense, commissionPayable },
+    });
     if (vat > 0 && !vatPayable) throw new Error("VAT payable account is required.");
-    if (commission > 0 && (!commissionExpense || !commissionPayable)) throw new Error("Commission accounts are required.");
+    if (journal.commissionExpenseAmount > 0 && !commissionExpense) throw new Error("Commission expense account is required.");
+    if (journal.commissionPayableAmount > 0 && !commissionPayable) throw new Error("Commission payable account is required.");
+    const journalStatus = settings?.auto_post_product_sales === false ? "pending_approval" as const : "posted" as const;
     const id = commandId(`product-trader-sale:${orgId}:${saleId}`);
-    const entry = await createJournalEntry(admin, { orgId, userId, entryDate: String(sale.sale_date), description: `Trader product sale ${sale.sale_no}`, sourceModule: "product_trader_sale", sourceId: saleId, status: settings?.auto_post_product_sales === false ? "pending_approval" : "posted", lines: journalLines, commandId: id, requestId: id });
-    await db(admin).from("product_trader_sales").update({ accounting_status: "posted", accounting_journal_entry_id: entry.id, accounting_posted_at: new Date().toISOString(), accounting_error: null }).eq("organization_id", orgId).eq("id", saleId);
-    await db(admin).from("product_trader_commissions").update({ status: "payable" }).eq("organization_id", orgId).eq("sale_id", saleId).eq("status", "accrued");
+    const entry = await createJournalEntry(admin, { orgId, userId, entryDate: String(sale.sale_date), description: `Trader product sale ${sale.sale_no}`, sourceModule: "product_trader_sale", sourceId: saleId, status: journalStatus, lines: journal.lines, commandId: id, requestId: id });
+    const accountingStatus = journalStatus === "posted" ? "posted" : "pending_approval";
+    const update = await db(admin).from("product_trader_sales").update({ accounting_status: accountingStatus, accounting_journal_entry_id: entry.id, accounting_posted_at: journalStatus === "posted" ? new Date().toISOString() : null, accounting_error: null }).eq("organization_id", orgId).eq("id", saleId);
+    if (update.error) throw new Error(update.error.message);
+    if (journalStatus === "posted") {
+      const commissionUpdate = await db(admin).from("product_trader_commissions").update({ status: "payable" }).eq("organization_id", orgId).eq("sale_id", saleId).eq("status", "accrued").eq("settlement_method", "payable");
+      if (commissionUpdate.error) throw new Error(commissionUpdate.error.message);
+    }
     return { success: true, journalEntryId: String(entry.id) };
   } catch (error) {
     await db(admin).from("product_trader_sales").update({ accounting_status: "failed", accounting_error: error instanceof Error ? error.message : String(error) }).eq("organization_id", orgId).eq("id", saleId);
@@ -69,11 +109,13 @@ export async function autoPostProductTraderCollection(admin: AdminClient, orgId:
     if (!receipt || !receivable) throw new Error("Cash/bank and trader receivable accounts are required.");
     const amount = roundMoney(collection.amount);
     const id = commandId(`product-trader-collection:${orgId}:${collectionId}`);
-    const entry = await createJournalEntry(admin, { orgId, userId, entryDate: String(collection.collection_date), description: `Trader collection ${collection.collection_no}`, sourceModule: "product_trader_collection", sourceId: collectionId, status: settings?.auto_post_product_collections === false ? "pending_approval" : "posted", lines: [
+    const journalStatus = settings?.auto_post_product_collections === false ? "pending_approval" as const : "posted" as const;
+    const entry = await createJournalEntry(admin, { orgId, userId, entryDate: String(collection.collection_date), description: `Trader collection ${collection.collection_no}`, sourceModule: "product_trader_collection", sourceId: collectionId, status: journalStatus, lines: [
       { account_id: receipt, debit: amount, description: `Receipt ${collection.collection_no}` },
       { account_id: receivable, credit: amount, description: `Trader receivable settlement ${collection.collection_no}` },
     ], commandId: id, requestId: id });
-    await db(admin).from("product_trader_collections").update({ accounting_status: "posted", accounting_journal_entry_id: entry.id, accounting_posted_at: new Date().toISOString(), accounting_error: null }).eq("organization_id", orgId).eq("id", collectionId);
+    const update = await db(admin).from("product_trader_collections").update({ accounting_status: journalStatus === "posted" ? "posted" : "pending_approval", accounting_journal_entry_id: entry.id, accounting_posted_at: journalStatus === "posted" ? new Date().toISOString() : null, accounting_error: null }).eq("organization_id", orgId).eq("id", collectionId);
+    if (update.error) throw new Error(update.error.message);
     return { success: true, journalEntryId: String(entry.id) };
   } catch (error) {
     await db(admin).from("product_trader_collections").update({ accounting_status: "failed", accounting_error: error instanceof Error ? error.message : String(error) }).eq("organization_id", orgId).eq("id", collectionId);
