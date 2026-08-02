@@ -62,6 +62,367 @@ async function waitForHostPostgres(connectionString) {
   throw new Error("Disposable PostgreSQL host port did not become ready within 10 seconds.");
 }
 
+async function testProductTraderWorkflow(connectionString) {
+  const client = new Client({ connectionString });
+  try {
+    await client.connect();
+    await client.query("SELECT set_config('request.jwt.claim.role', 'service_role', false)");
+    await client.query(`
+      DO $test$
+      DECLARE
+        org_id_value uuid := '11111111-1111-4111-8111-111111111111';
+        finance_user_id uuid := '45454545-4545-4545-8545-454545454545';
+        agent_user_id uuid := 'e1e1e1e1-e1e1-41e1-81e1-e1e1e1e1e1e1';
+        merchant_user_id uuid := 'e2e2e2e2-e2e2-42e2-82e2-e2e2e2e2e2e2';
+        agent_id_value uuid;
+        merchant_id_value uuid;
+        product_id_value uuid;
+        sale_unit_id uuid := 'f1600101-0000-4000-8000-000000000101';
+        return_unit_id uuid := 'f1600102-0000-4000-8000-000000000102';
+        loss_unit_id uuid := 'f1600103-0000-4000-8000-000000000103';
+        first_handover_id uuid := 'f1600201-0000-4000-8000-000000000201';
+        second_handover_id uuid := 'f1600202-0000-4000-8000-000000000202';
+        sale_id_value uuid := 'f1600301-0000-4000-8000-000000000301';
+        return_id_value uuid := 'f1600401-0000-4000-8000-000000000401';
+        loss_id_value uuid := 'f1600501-0000-4000-8000-000000000501';
+        collection_id_value uuid := 'f1600601-0000-4000-8000-000000000601';
+        price_value numeric(14,2);
+        outstanding_value numeric(14,2);
+        first_result jsonb;
+        replay_result jsonb;
+      BEGIN
+        SELECT id INTO agent_id_value FROM public.field_agents
+        WHERE organization_id = org_id_value AND user_id = agent_user_id
+          AND status = 'active';
+        SELECT id INTO merchant_id_value FROM public.merchants
+        WHERE organization_id = org_id_value AND user_id = merchant_user_id
+          AND agent_id = agent_id_value AND status = 'active';
+        IF agent_id_value IS NULL OR merchant_id_value IS NULL THEN
+          RAISE EXCEPTION 'Product-trader E2E identities were not prepared.';
+        END IF;
+
+        UPDATE public.product_inventory_commerce_settings
+        SET product_trader_distribution_enabled = true,
+            require_trader_handover_acknowledgment = true,
+            require_trader_signature = false,
+            net_product_commission_at_settlement = true,
+            max_trader_handover_units = 100,
+            updated_at = now()
+        WHERE organization_id = org_id_value;
+
+        SELECT unit.product_id INTO product_id_value
+        FROM public.product_inventory_units unit
+        WHERE unit.organization_id = org_id_value
+        ORDER BY unit.created_at
+        LIMIT 1;
+        UPDATE public.sales_products
+        SET merchant_sales_enabled = true,
+            trader_commission_type = 'percentage',
+            trader_commission_value = 10,
+            trader_commission_base = 'gross_amount',
+            agent_chain_commission_type = 'percentage',
+            agent_chain_commission_value = 5,
+            agent_chain_commission_base = 'net_amount',
+            updated_at = now()
+        WHERE organization_id = org_id_value AND id = product_id_value;
+
+        WITH source_unit AS (
+          SELECT * FROM public.product_inventory_units
+          WHERE organization_id = org_id_value AND product_id = product_id_value
+          ORDER BY created_at LIMIT 1
+        ), requested_unit(id, raw_serial, normalized_serial) AS (VALUES
+          (sale_unit_id, 'V160-TRADER-SALE', 'V160TRADERSALE'),
+          (return_unit_id, 'V160-TRADER-RETURN', 'V160TRADERRETURN'),
+          (loss_unit_id, 'V160-TRADER-LOSS', 'V160TRADERLOSS')
+        )
+        INSERT INTO public.product_inventory_units (
+          id, organization_id, product_id, receipt_id, receipt_line_id,
+          warehouse_id, raw_serial_number, normalized_serial_number,
+          condition, ownership_type, status, unit_cost_snapshot,
+          planned_sale_price_snapshot, currency, current_agent_id, assigned_at,
+          minimum_sale_price_snapshot, maximum_sale_price_snapshot,
+          commission_type_snapshot, commission_value_snapshot,
+          commission_base_snapshot, commercial_terms_revision_snapshot
+        )
+        SELECT requested_unit.id, source_unit.organization_id,
+          source_unit.product_id, source_unit.receipt_id, source_unit.receipt_line_id,
+          source_unit.warehouse_id, requested_unit.raw_serial,
+          requested_unit.normalized_serial, 'new', source_unit.ownership_type,
+          'with_agent', source_unit.unit_cost_snapshot,
+          source_unit.planned_sale_price_snapshot, source_unit.currency,
+          agent_id_value, now(), source_unit.minimum_sale_price_snapshot,
+          source_unit.maximum_sale_price_snapshot,
+          source_unit.commission_type_snapshot,
+          source_unit.commission_value_snapshot,
+          source_unit.commission_base_snapshot,
+          source_unit.commercial_terms_revision_snapshot
+        FROM source_unit CROSS JOIN requested_unit;
+
+        first_result := public.execute_product_trader_custody_command(
+          org_id_value, agent_user_id,
+          'f1601001-0000-4000-8000-000000001001',
+          'f1602001-0000-4000-8000-000000002001',
+          'trader_handover_issue', jsonb_build_object(
+            'handover_id', first_handover_id,
+            'merchant_id', merchant_id_value,
+            'unit_ids', jsonb_build_array(sale_unit_id, return_unit_id, loss_unit_id),
+            'notes', 'v160 full workflow test'
+          )
+        );
+        replay_result := public.execute_product_trader_custody_command(
+          org_id_value, agent_user_id,
+          'f1601001-0000-4000-8000-000000001001',
+          'f1602001-0000-4000-8000-000000002001',
+          'trader_handover_issue', jsonb_build_object(
+            'handover_id', first_handover_id,
+            'merchant_id', merchant_id_value,
+            'unit_ids', jsonb_build_array(sale_unit_id, return_unit_id, loss_unit_id),
+            'notes', 'v160 full workflow test'
+          )
+        );
+        IF first_result IS DISTINCT FROM replay_result THEN
+          RAISE EXCEPTION 'Trader handover issue was not replay-safe.';
+        END IF;
+
+        first_result := public.execute_product_trader_custody_command(
+          org_id_value, merchant_user_id,
+          'f1601002-0000-4000-8000-000000001002',
+          'f1602002-0000-4000-8000-000000002002',
+          'trader_handover_accept', jsonb_build_object(
+            'handover_id', first_handover_id, 'expected_version', 1,
+            'accepted_unit_ids', jsonb_build_array(
+              sale_unit_id, return_unit_id, loss_unit_id
+            ), 'rejected_units', '[]'::jsonb
+          )
+        );
+        replay_result := public.execute_product_trader_custody_command(
+          org_id_value, merchant_user_id,
+          'f1601002-0000-4000-8000-000000001002',
+          'f1602002-0000-4000-8000-000000002002',
+          'trader_handover_accept', jsonb_build_object(
+            'handover_id', first_handover_id, 'expected_version', 1,
+            'accepted_unit_ids', jsonb_build_array(
+              sale_unit_id, return_unit_id, loss_unit_id
+            ), 'rejected_units', '[]'::jsonb
+          )
+        );
+        IF first_result IS DISTINCT FROM replay_result THEN
+          RAISE EXCEPTION 'Trader handover acceptance was not replay-safe.';
+        END IF;
+
+        SELECT planned_sale_price_snapshot INTO price_value
+        FROM public.product_inventory_units WHERE id = sale_unit_id;
+        first_result := public.execute_product_trader_sale_command(
+          org_id_value, merchant_user_id,
+          'f1601003-0000-4000-8000-000000001003',
+          'f1602003-0000-4000-8000-000000002003', 'sale_create',
+          jsonb_build_object('sale_id', sale_id_value, 'unit_id', sale_unit_id,
+            'sale_price', price_value, 'payment_method', 'cash',
+            'customer_name', 'v160 buyer')
+        );
+        replay_result := public.execute_product_trader_sale_command(
+          org_id_value, merchant_user_id,
+          'f1601003-0000-4000-8000-000000001003',
+          'f1602003-0000-4000-8000-000000002003', 'sale_create',
+          jsonb_build_object('sale_id', sale_id_value, 'unit_id', sale_unit_id,
+            'sale_price', price_value, 'payment_method', 'cash',
+            'customer_name', 'v160 buyer')
+        );
+        IF first_result IS DISTINCT FROM replay_result THEN
+          RAISE EXCEPTION 'Trader sale was not replay-safe.';
+        END IF;
+
+        first_result := public.execute_product_trader_exception_command(
+          org_id_value, merchant_user_id,
+          'f1601004-0000-4000-8000-000000001004',
+          'f1602004-0000-4000-8000-000000002004', 'return_request',
+          jsonb_build_object('return_id', return_id_value,
+            'unit_id', return_unit_id, 'reason', 'sealed unsold return',
+            'condition', 'sealed', 'evidence_path', 'tests/return.jpg')
+        );
+        replay_result := public.execute_product_trader_exception_command(
+          org_id_value, merchant_user_id,
+          'f1601004-0000-4000-8000-000000001004',
+          'f1602004-0000-4000-8000-000000002004', 'return_request',
+          jsonb_build_object('return_id', return_id_value,
+            'unit_id', return_unit_id, 'reason', 'sealed unsold return',
+            'condition', 'sealed', 'evidence_path', 'tests/return.jpg')
+        );
+        IF first_result IS DISTINCT FROM replay_result THEN
+          RAISE EXCEPTION 'Trader return request was not replay-safe.';
+        END IF;
+
+        first_result := public.execute_product_trader_exception_command(
+          org_id_value, finance_user_id,
+          'f1601005-0000-4000-8000-000000001005',
+          'f1602005-0000-4000-8000-000000002005', 'return_review',
+          jsonb_build_object('return_id', return_id_value,
+            'expected_version', 1, 'decision', 'received',
+            'review_note', 'Finance received and inspected')
+        );
+        replay_result := public.execute_product_trader_exception_command(
+          org_id_value, finance_user_id,
+          'f1601005-0000-4000-8000-000000001005',
+          'f1602005-0000-4000-8000-000000002005', 'return_review',
+          jsonb_build_object('return_id', return_id_value,
+            'expected_version', 1, 'decision', 'received',
+            'review_note', 'Finance received and inspected')
+        );
+        IF first_result IS DISTINCT FROM replay_result THEN
+          RAISE EXCEPTION 'Trader return review was not replay-safe.';
+        END IF;
+
+        first_result := public.execute_product_trader_exception_command(
+          org_id_value, merchant_user_id,
+          'f1601006-0000-4000-8000-000000001006',
+          'f1602006-0000-4000-8000-000000002006', 'loss_report',
+          jsonb_build_object('loss_id', loss_id_value, 'unit_id', loss_unit_id,
+            'loss_type', 'missing', 'reason', 'missing during stock count',
+            'evidence_path', 'tests/loss.jpg')
+        );
+        replay_result := public.execute_product_trader_exception_command(
+          org_id_value, merchant_user_id,
+          'f1601006-0000-4000-8000-000000001006',
+          'f1602006-0000-4000-8000-000000002006', 'loss_report',
+          jsonb_build_object('loss_id', loss_id_value, 'unit_id', loss_unit_id,
+            'loss_type', 'missing', 'reason', 'missing during stock count',
+            'evidence_path', 'tests/loss.jpg')
+        );
+        IF first_result IS DISTINCT FROM replay_result THEN
+          RAISE EXCEPTION 'Trader loss report was not replay-safe.';
+        END IF;
+
+        first_result := public.execute_product_trader_exception_command(
+          org_id_value, finance_user_id,
+          'f1601007-0000-4000-8000-000000001007',
+          'f1602007-0000-4000-8000-000000002007', 'loss_recover',
+          jsonb_build_object('loss_id', loss_id_value, 'expected_version', 1,
+            'condition', 'sellable', 'note', 'Recovered by Finance')
+        );
+        replay_result := public.execute_product_trader_exception_command(
+          org_id_value, finance_user_id,
+          'f1601007-0000-4000-8000-000000001007',
+          'f1602007-0000-4000-8000-000000002007', 'loss_recover',
+          jsonb_build_object('loss_id', loss_id_value, 'expected_version', 1,
+            'condition', 'sellable', 'note', 'Recovered by Finance')
+        );
+        IF first_result IS DISTINCT FROM replay_result THEN
+          RAISE EXCEPTION 'Trader loss recovery was not replay-safe.';
+        END IF;
+
+        SELECT outstanding INTO outstanding_value
+        FROM public.product_trader_balances
+        WHERE organization_id = org_id_value AND merchant_id = merchant_id_value
+          AND currency = 'SAR';
+        first_result := public.execute_product_trader_settlement_command(
+          org_id_value, merchant_user_id,
+          'f1601008-0000-4000-8000-000000001008',
+          'f1602008-0000-4000-8000-000000002008', 'collection_submit',
+          jsonb_build_object('collection_id', collection_id_value,
+            'amount', outstanding_value, 'currency', 'SAR',
+            'payment_method', 'cash')
+        );
+        replay_result := public.execute_product_trader_settlement_command(
+          org_id_value, merchant_user_id,
+          'f1601008-0000-4000-8000-000000001008',
+          'f1602008-0000-4000-8000-000000002008', 'collection_submit',
+          jsonb_build_object('collection_id', collection_id_value,
+            'amount', outstanding_value, 'currency', 'SAR',
+            'payment_method', 'cash')
+        );
+        IF first_result IS DISTINCT FROM replay_result THEN
+          RAISE EXCEPTION 'Trader collection submission was not replay-safe.';
+        END IF;
+
+        first_result := public.execute_product_trader_settlement_command(
+          org_id_value, finance_user_id,
+          'f1601009-0000-4000-8000-000000001009',
+          'f1602009-0000-4000-8000-000000002009', 'collection_review',
+          jsonb_build_object('collection_id', collection_id_value,
+            'expected_version', 1, 'decision', 'confirmed')
+        );
+        replay_result := public.execute_product_trader_settlement_command(
+          org_id_value, finance_user_id,
+          'f1601009-0000-4000-8000-000000001009',
+          'f1602009-0000-4000-8000-000000002009', 'collection_review',
+          jsonb_build_object('collection_id', collection_id_value,
+            'expected_version', 1, 'decision', 'confirmed')
+        );
+        IF first_result IS DISTINCT FROM replay_result THEN
+          RAISE EXCEPTION 'Trader collection review was not replay-safe.';
+        END IF;
+
+        PERFORM public.execute_product_trader_custody_command(
+          org_id_value, agent_user_id,
+          'f1601010-0000-4000-8000-000000001010',
+          'f1602010-0000-4000-8000-000000002010',
+          'trader_handover_issue', jsonb_build_object(
+            'handover_id', second_handover_id,
+            'merchant_id', merchant_id_value,
+            'unit_ids', jsonb_build_array(return_unit_id, loss_unit_id),
+            'notes', 'Reassignment after return and recovery'
+          )
+        );
+
+        IF (SELECT status FROM public.product_trader_handovers
+              WHERE id = first_handover_id) <> 'completed'
+           OR (SELECT count(*) FROM public.product_trader_handover_lines
+              WHERE handover_id = first_handover_id
+                AND line_status IN ('sold', 'returned', 'lost')) <> 3
+           OR (SELECT count(*) FROM public.product_inventory_units
+              WHERE id IN (return_unit_id, loss_unit_id)
+                AND status = 'merchant_in_transit'
+                AND current_trader_handover_id = second_handover_id) <> 2
+           OR (SELECT accounting_status FROM public.product_trader_sales
+              WHERE id = sale_id_value) <> 'pending'
+           OR (SELECT net_commission_at_settlement FROM public.product_trader_sales
+              WHERE id = sale_id_value) IS NOT TRUE
+           OR (SELECT organization_receivable_amount FROM public.product_trader_sales
+              WHERE id = sale_id_value) >= (SELECT total_amount
+                FROM public.product_trader_sales WHERE id = sale_id_value)
+           OR (SELECT status FROM public.product_trader_commissions
+              WHERE sale_id = sale_id_value AND beneficiary_type = 'merchant') <> 'settled'
+           OR (SELECT settlement_method FROM public.product_trader_commissions
+              WHERE sale_id = sale_id_value AND beneficiary_type = 'merchant') <> 'netted'
+           OR (SELECT outstanding FROM public.product_trader_balances
+              WHERE organization_id = org_id_value AND merchant_id = merchant_id_value
+                AND currency = 'SAR') <> 0
+           OR (SELECT count(*) FROM public.product_trader_commands
+              WHERE idempotency_key IN (
+                'f1602001-0000-4000-8000-000000002001',
+                'f1602002-0000-4000-8000-000000002002',
+                'f1602003-0000-4000-8000-000000002003',
+                'f1602004-0000-4000-8000-000000002004',
+                'f1602005-0000-4000-8000-000000002005',
+                'f1602006-0000-4000-8000-000000002006',
+                'f1602007-0000-4000-8000-000000002007',
+                'f1602008-0000-4000-8000-000000002008',
+                'f1602009-0000-4000-8000-000000002009',
+                'f1602010-0000-4000-8000-000000002010'
+              )) <> 10
+           OR (SELECT count(*) FROM public.business_events
+              WHERE business_key IN (
+                'f1602001-0000-4000-8000-000000002001',
+                'f1602002-0000-4000-8000-000000002002',
+                'f1602003-0000-4000-8000-000000002003',
+                'f1602004-0000-4000-8000-000000002004',
+                'f1602005-0000-4000-8000-000000002005',
+                'f1602006-0000-4000-8000-000000002006',
+                'f1602007-0000-4000-8000-000000002007',
+                'f1602008-0000-4000-8000-000000002008',
+                'f1602009-0000-4000-8000-000000002009',
+                'f1602010-0000-4000-8000-000000002010'
+              )) <> 10 THEN
+          RAISE EXCEPTION 'Corrected product-trader end-to-end workflow did not reconcile.';
+        END IF;
+      END
+      $test$;
+    `);
+  } finally {
+    await client.end().catch(() => undefined);
+  }
+}
+
 async function testConcurrentAccountingNumbers(connectionString) {
   const clients = Array.from({ length: 12 }, () => new Client({ connectionString }));
   try {
@@ -7130,6 +7491,7 @@ try {
   await testConcurrentProductReceiptConfirmation(databaseUrl);
   await testConcurrentProductReturnReview(databaseUrl);
   await testConcurrentWorkbookProfileConfirmation(databaseUrl);
+  await testProductTraderWorkflow(databaseUrl);
   console.log("Database migration/RLS smoke test passed on disposable PostgreSQL 16.");
 } finally {
   if (containerStarted) {

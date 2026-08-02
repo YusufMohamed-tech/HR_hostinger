@@ -63,6 +63,24 @@ const dynamicTopicsByFile = new Map([
     "product_inventory.trader_loss_reported",
     "product_inventory.trader_loss_recovered",
   ])],
+  ["db/schema_v160_product_trader_workflow_corrections.sql", new Set([
+    "product_inventory.trader_handover_issued",
+    "product_inventory.trader_handover_partially_accepted",
+    "product_inventory.trader_handover_accepted",
+    "product_inventory.trader_handover_rejected",
+    "product_inventory.trader_handover_cancelled",
+    "product_inventory.trader_sale_created",
+    "product_inventory.trader_price_override_requested",
+    "product_inventory.trader_price_override_reviewed",
+    "product_inventory.trader_collection_submitted",
+    "product_inventory.trader_collection_confirmed",
+    "product_inventory.trader_collection_rejected",
+    "product_inventory.trader_return_requested",
+    "product_inventory.trader_return_received",
+    "product_inventory.trader_return_rejected",
+    "product_inventory.trader_loss_reported",
+    "product_inventory.trader_loss_recovered",
+  ])],
 ]);
 
 function splitSqlList(value) {
