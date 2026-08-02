@@ -1,4 +1,9 @@
 import type { OrgRole } from "@/types/database";
+import {
+  ROLE_GUIDANCE,
+  getFilteredModuleDescriptions,
+  getFilteredNav,
+} from "./role-modules";
 
 export interface ChatContext {
   userName: string;
@@ -8,28 +13,18 @@ export interface ChatContext {
   language: "ar" | "en";
 }
 
-const MODULE_DESCRIPTIONS: Record<string, string> = {
-  employees: "Manage employee records, onboarding, profiles, and lifecycle",
-  departments: "Create and manage organizational departments",
-  locations: "Manage work locations with GPS geofencing",
-  attendance: "GPS check-in/out with selfie and geofence validation",
-  leaves: "Submit, review, and approve leave requests",
-  tasks: "Create, assign, and track tasks with attachments",
-  payroll: "Run monthly payroll, adjustments, and approval workflow",
-  schedule: "Manage shifts and employee shift assignments",
-  recruitment: "Job postings, application pipeline, interviews, hiring",
-  sales: "Daily sales logging, edit requests, and reporting",
-  assets: "Company asset registration, custody, and tracking",
-  accounting: "Full accounting suite: journals, invoices, payments, reports",
-  chat: "Internal messaging between employees",
-  notifications: "System notifications and alerts",
-  settings: "Organization settings and configuration",
-};
-
 export function buildSystemPrompt(context: ChatContext): string {
-  const moduleList = Object.entries(MODULE_DESCRIPTIONS)
+  const modules = getFilteredModuleDescriptions(context.userRole);
+  const moduleList = Object.entries(modules)
     .map(([key, desc]) => `- **${key}**: ${desc}`)
     .join("\n");
+
+  const navItems = getFilteredNav(context.userRole);
+  const navList = navItems
+    .map((n) => `- ${n.path} (${n.en} / ${n.ar})`)
+    .join("\n");
+
+  const roleGuidance = ROLE_GUIDANCE[context.userRole] ?? "";
 
   return `You are the Tatwir Talent HR Assistant, an AI embedded in the Tatwir Talent HRMS platform.
 
@@ -47,19 +42,23 @@ You help users navigate and use the HR system effectively. You can:
 - Current Page: ${context.currentPage}
 - Language: ${context.language === "ar" ? "Arabic" : "English"}
 
-## Available System Modules
+## What You Can Help With (${context.userRole})
+${roleGuidance}
+
+## Your Available Modules
 ${moduleList}
 
 ## Behavioral Rules
 1. ALWAYS respond in the same language the user writes in. If they write Arabic, respond in Arabic. If English, respond in English.
 2. When explaining steps, number them clearly and include the exact UI element names and their locations.
 3. If the user asks to do something step-by-step, show ONE step at a time and wait for them to confirm before showing the next.
-4. If the user doesn't have permission for something, explain which role is needed.
+4. If the user asks about a module they don't have access to, explain which role is needed and suggest they contact their admin.
 5. Be concise but helpful. Use formatting (bold, numbered lists) for clarity.
 6. When providing navigation, use the format: Sidebar > Module Name > Action
 7. If you're unsure about something, say so rather than guessing.
 8. Include helpful tips marked with "💡" when relevant.
 9. Always be encouraging and supportive.
+10. ONLY provide guidance for modules listed above. Do NOT reference modules the user cannot access.
 
 ## Response Format
 - For "how to" questions: Provide numbered steps with UI element names
@@ -68,20 +67,6 @@ ${moduleList}
 - For troubleshooting: Ask clarifying questions first, then provide solutions
 
 ## System Navigation Map
-- Employees: /employees (Sidebar > الموظفين / Employees)
-- Departments: /departments (Sidebar > الأقسام / Departments)
-- Locations: /locations (Sidebar > المواقع / Locations)
-- Attendance: /attendance (Sidebar > الحضور / Attendance)
-- Leaves: /leaves (Sidebar > الإجازات / Leaves)
-- Tasks: /tasks (Sidebar > المهام / Tasks)
-- Payroll: /payroll (Sidebar > الرواتب / Payroll)
-- Schedule: /schedule (Sidebar > الجدول / Schedule)
-- Recruitment: /recruitment (Sidebar > التوظيف / Recruitment)
-- Sales: /sales (Sidebar > المبيعات / Sales)
-- Assets: /assets (Sidebar > الأصول / Assets)
-- Accounting: /accounting (Sidebar > المحاسبة / Accounting)
-- Chat: /chat (Sidebar > المحادثات / Chat)
-- Notifications: Bell icon in top header
-- Settings: /settings (Sidebar > الإعدادات / Settings)
+${navList}
 `;
 }
