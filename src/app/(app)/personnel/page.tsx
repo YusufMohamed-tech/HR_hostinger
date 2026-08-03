@@ -44,6 +44,27 @@ function escapeHtml(value: unknown) {
     .replace(/'/g, "&#039;");
 }
 
+function exportTableAsExcel(title: string, headers: string[], rows: unknown[][]) {
+  const escapeCell = (val: unknown) => {
+    const s = String(val ?? "");
+    return s.includes(",") || s.includes('"') || s.includes("\n")
+      ? `"${s.replace(/"/g, '""')}"`
+      : s;
+  };
+  const bom = "﻿";
+  const csv = [
+    headers.map(escapeCell).join(","),
+    ...rows.map((row) => row.map(escapeCell).join(",")),
+  ].join("\r\n");
+  const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${title}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function exportTableAsPdf(title: string, headers: string[], rows: unknown[][]) {
   const headerHtml = headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("");
   const rowsHtml = rows.length
@@ -125,6 +146,56 @@ export default function PersonnelPage() {
       return;
     }
     window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleExportExcel = () => {
+    if (activeTab === "files") {
+      exportTableAsExcel(
+        "ملفات الموظفين الرسمية",
+        ["الموظف", "التصنيف", "اسم الملف", "تاريخ الانتهاء", "موثق"],
+        files.map((file) => {
+          const employee = (file.employee ?? null) as Record<string, unknown> | null;
+          return [
+            employee?.full_name || "الموظف",
+            file.category || "-",
+            file.file_name || "-",
+            file.expiry_date || "-",
+            file.is_verified ? "نعم" : "لا",
+          ];
+        }),
+      );
+      return;
+    }
+    if (activeTab === "insurance") {
+      exportTableAsExcel(
+        "التأمينات الاجتماعية",
+        ["الموظف", "رقم التأمينات", "النسبة", "الحالة"],
+        insurance.map((item) => {
+          const employee = (item.employee ?? null) as Record<string, unknown> | null;
+          return [
+            employee?.full_name || "الموظف",
+            item.gosi_number || "-",
+            `${Number(item.contribution_rate || 0)}%`,
+            item.status || "active",
+          ];
+        }),
+      );
+      return;
+    }
+    exportTableAsExcel(
+      "عقود الموظفين",
+      ["الموظف", "نوع العقد", "البداية", "النهاية", "الحالة"],
+      contracts.map((contract) => {
+        const employee = (contract.employee ?? null) as Record<string, unknown> | null;
+        return [
+          employee?.full_name || "الموظف",
+          contract.contract_type || "permanent",
+          contract.start_date || "-",
+          contract.end_date || "-",
+          contract.status || "active",
+        ];
+      }),
+    );
   };
 
   const handleExport = () => {
@@ -253,6 +324,10 @@ export default function PersonnelPage() {
             </Button>
           ))}
         </div>
+        <Button variant="outline" onClick={handleExportExcel}>
+          <Download className="h-4 w-4 ml-2" />
+          تصدير Excel
+        </Button>
         <Button variant="outline" onClick={handleExport}>
           <Download className="h-4 w-4 ml-2" />
           تصدير PDF
