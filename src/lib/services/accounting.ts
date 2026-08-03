@@ -222,6 +222,18 @@ export function reverseJournalEntry(id: string, reason?: string) {
   return apiFetch<AccountingJournalEntry>(`/api/accounting/journal-entries/${id}/reverse`, { method: "POST", body: JSON.stringify({ reason }) });
 }
 
+export function deleteJournalEntry(id: string) {
+  return apiFetch(`/api/accounting/journal-entries/${id}`, { method: "DELETE", body: "{}" });
+}
+
+export function deleteExpense(id: string) {
+  return apiFetch(`/api/accounting/expenses/${id}`, { method: "DELETE", body: "{}" });
+}
+
+export function deleteInvoice(id: string) {
+  return apiFetch(`/api/accounting/invoices/${id}`, { method: "DELETE", body: "{}" });
+}
+
 export function getExpenses(params?: Record<string, string | undefined>) {
   return apiFetch<AccountingExpense[]>(`/api/accounting/expenses${qs(params)}`);
 }

@@ -2732,6 +2732,34 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
         p_operation: "cancel", p_payload: {},
       }));
     }
+    if (parts[0] === "expenses" && parts[1]) {
+      const current = await getRecord(admin, "accounting_expenses", auth.orgId, parts[1]);
+      if (!["draft", "rejected"].includes(String(current.status))) return message("يمكن حذف المصروفات في حالة المسودة أو المرفوضة فقط.", 400);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "accounting_save_expense", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_expense_id: parts[1],
+        p_expected_version: Number(body.expected_version ?? current.version ?? 0),
+        p_payload: expenseCommandPayload({ status: "cancelled" }, current),
+      }));
+    }
+    if (parts[0] === "invoices" && parts[1]) {
+      const current = await getRecord(admin, "accounting_invoices", auth.orgId, parts[1]);
+      if (current.status !== "draft") return message("يمكن حذف الفواتير في حالة المسودة فقط.", 400);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "accounting_save_invoice", {
+        p_org_id: auth.orgId,
+        p_actor_user_id: auth.user.id,
+        p_command_id: command.commandId,
+        p_request_id: command.requestId,
+        p_invoice_id: parts[1],
+        p_expected_version: Number(body.expected_version ?? current.version ?? 0),
+        p_payload: invoiceCommandPayload({ status: "cancelled" }, current),
+      }));
+    }
     if (parts[0] === "customers") {
       const current = await getRecord(admin, "accounting_customers", auth.orgId, id);
       const command = accountingCommandContext(request, body);
