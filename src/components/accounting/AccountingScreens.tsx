@@ -64,6 +64,8 @@ import {
   getAccountingSettings,
   getCostCenters,
   getJournalAttachments,
+  getJournalTypes,
+  type JournalType,
   getCustomers,
   getExpense,
   getExpenses,
@@ -494,11 +496,21 @@ function JournalEntryFormPage() {
   const [message, setMessage] = useState("");
   const [accounts, setAccounts] = useState<AccountingAccount[]>([]);
   const [costCenters, setCostCenters] = useState<AccountingCostCenter[]>([]);
-  const [form, setForm] = useState({ entry_date: today(), description: "", notes: "" });
+  const [journalTypes, setJournalTypes] = useState<JournalType[]>([]);
+  const [form, setForm] = useState({ entry_date: today(), description: "", notes: "", journal_type_id: "" });
   const [lines, setLines] = useState<JournalLineDraft[]>([{ account_id: "", debit: "", credit: "", description: "", cost_center_id: "" }, { account_id: "", debit: "", credit: "", description: "", cost_center_id: "" }]);
   const [submittingStatus, setSubmittingStatus] = useState<"draft" | "pending_approval" | null>(null);
   const submitLockRef = useRef(false);
-  useEffect(() => { getAccountingAccounts().then((r) => setAccounts(r.data || [])); getCostCenters().then((r) => setCostCenters(r.data || [])); }, []);
+  useEffect(() => {
+    getAccountingAccounts().then((r) => setAccounts(r.data || []));
+    getCostCenters().then((r) => setCostCenters(r.data || []));
+    getJournalTypes().then((r) => {
+      const types = (r.data || []).filter((t) => t.is_active);
+      setJournalTypes(types);
+      const defaultType = types.find((t) => t.is_default);
+      if (defaultType) setForm((p) => ({ ...p, journal_type_id: defaultType.id }));
+    });
+  }, []);
   const totals = useMemo(() => ({ debit: lines.reduce((s, l) => s + Number(l.debit || 0), 0), credit: lines.reduce((s, l) => s + Number(l.credit || 0), 0) }), [lines]);
   const submit = async (status: "draft" | "pending_approval") => {
     if (submitLockRef.current) return;
@@ -518,7 +530,7 @@ function JournalEntryFormPage() {
     <div className="space-y-6">
       <MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} />
       <AccountingPageHeader title="قيد يومية جديد" description="أضف سطور المدين والدائن ثم احفظ القيد كمسودة أو أرسله للاعتماد." />
-      <Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5"><div className="grid gap-4 md:grid-cols-3"><div className="space-y-2"><Label>تاريخ القيد</Label><Input type="date" value={form.entry_date} onChange={(e) => setForm((p) => ({ ...p, entry_date: e.target.value }))} /></div><div className="space-y-2 md:col-span-2"><Label>الوصف</Label><Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div></div><JournalLinesEditor accounts={accounts} costCenters={costCenters} lines={lines} setLines={setLines} /><div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 p-3 text-sm"><div>إجمالي المدين: <MoneyAmount value={totals.debit} /> · إجمالي الدائن: <MoneyAmount value={totals.credit} /></div><div className={totals.debit === totals.credit ? "text-green-700" : "text-red-700"}>{totals.debit === totals.credit ? "القيد متوازن" : "القيد غير متوازن"}</div></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => submit("draft")} disabled={Boolean(submittingStatus)}><Save className="ml-2 h-4 w-4" />{submittingStatus === "draft" ? "جاري الحفظ..." : "حفظ مسودة"}</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={() => submit("pending_approval")} disabled={Boolean(submittingStatus)}>{submittingStatus === "pending_approval" ? "جاري الإرسال..." : "إرسال للاعتماد"}</Button></div></CardContent></Card>
+      <Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5"><div className="grid gap-4 md:grid-cols-4"><div className="space-y-2"><Label>تاريخ القيد</Label><Input type="date" value={form.entry_date} onChange={(e) => setForm((p) => ({ ...p, entry_date: e.target.value }))} /></div>{journalTypes.length > 0 && <div className="space-y-2"><Label>نوع القيد</Label><SelectField value={form.journal_type_id} onChange={(value) => setForm((p) => ({ ...p, journal_type_id: value }))}><option value="">— اختياري —</option>{journalTypes.map((jt) => <option key={jt.id} value={jt.id}>{jt.code} - {jt.name_ar}</option>)}</SelectField></div>}<div className="space-y-2 md:col-span-2"><Label>الوصف</Label><Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div></div><JournalLinesEditor accounts={accounts} costCenters={costCenters} lines={lines} setLines={setLines} /><div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 p-3 text-sm"><div>إجمالي المدين: <MoneyAmount value={totals.debit} /> · إجمالي الدائن: <MoneyAmount value={totals.credit} /></div><div className={totals.debit === totals.credit ? "text-green-700" : "text-red-700"}>{totals.debit === totals.credit ? "القيد متوازن" : "القيد غير متوازن"}</div></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => submit("draft")} disabled={Boolean(submittingStatus)}><Save className="ml-2 h-4 w-4" />{submittingStatus === "draft" ? "جاري الحفظ..." : "حفظ مسودة"}</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={() => submit("pending_approval")} disabled={Boolean(submittingStatus)}>{submittingStatus === "pending_approval" ? "جاري الإرسال..." : "إرسال للاعتماد"}</Button></div></CardContent></Card>
     </div>
   );
 }

@@ -511,6 +511,33 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (parts[0] === "commissions") return json(await getSalesCommissionsFinance(admin, auth.orgId, request));
     if (parts[0] === "accounts") return json(await listTable(admin, "accounting_accounts", auth.orgId, request, "code"));
     if (parts[0] === "cost-centers") return json(await listTable(admin, "accounting_cost_centers", auth.orgId, request, "code"));
+    if (parts[0] === "journal-types") {
+      const { data, error } = await db(admin)
+        .from("accounting_journal_types")
+        .select("*")
+        .eq("organization_id", auth.orgId)
+        .order("code", { ascending: true });
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    if (parts[0] === "permissions" && parts[1] === "me") {
+      const { data, error } = await db(admin)
+        .from("accounting_role_permissions")
+        .select("permission")
+        .eq("organization_id", auth.orgId)
+        .eq("role", auth.role);
+      if (error) throw new Error(error.message);
+      return json((data || []).map((r: { permission: string }) => r.permission));
+    }
+    if (parts[0] === "permissions") {
+      const { data, error } = await db(admin)
+        .from("accounting_role_permissions")
+        .select("*")
+        .eq("organization_id", auth.orgId)
+        .order("role", { ascending: true });
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
     if (parts[0] === "vendors") {
       if (parts[1]) return json(await getRecord(admin, "accounting_vendors", auth.orgId, parts[1]));
       return json(await listTable(admin, "accounting_vendors", auth.orgId, request));
@@ -1065,6 +1092,78 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (parts[0] === "init-defaults") {
       await initializeAccountingDefaults(admin, auth.orgId, auth.user.id);
       await ensureDefaultEntity(auth.orgId);
+      return json({ ok: true });
+    }
+
+    if (parts[0] === "journal-types") {
+      if (parts[1] && parts[2] === "deactivate") {
+        const { error } = await db(admin)
+          .from("accounting_journal_types")
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq("id", parts[1])
+          .eq("organization_id", auth.orgId);
+        if (error) throw new Error(error.message);
+        return json({ ok: true });
+      }
+      const payload = {
+        organization_id: auth.orgId,
+        code: requireText(body.code),
+        name_ar: requireText(body.name_ar),
+        name_en: requireText(body.name_en) || null,
+        description: requireText(body.description) || null,
+        prefix: requireText(body.prefix),
+        number_format: requireText(body.number_format) || "{PREFIX}-{YYYY}{MM}-{SEQ}",
+        sequence_reset: (["never", "yearly", "monthly"].includes(body.sequence_reset) ? body.sequence_reset : "monthly") as string,
+        is_default: Boolean(body.is_default),
+        is_active: body.is_active !== false,
+        allowed_roles: Array.isArray(body.allowed_roles) ? body.allowed_roles : [],
+        requires_approval: Boolean(body.requires_approval),
+        auto_post: Boolean(body.auto_post),
+      };
+      if (parts[1]) {
+        const { data, error } = await db(admin)
+          .from("accounting_journal_types")
+          .update({ ...payload, updated_at: new Date().toISOString() })
+          .eq("id", parts[1])
+          .eq("organization_id", auth.orgId)
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin)
+        .from("accounting_journal_types")
+        .insert(payload)
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+
+    if (parts[0] === "permissions" && parts[1] === "grant") {
+      const role = requireText(body.role);
+      const permission = requireText(body.permission);
+      if (!role || !permission) return message("role and permission are required.", 400);
+      const { data, error } = await db(admin)
+        .from("accounting_role_permissions")
+        .upsert({ organization_id: auth.orgId, role, permission, granted_by: auth.user.id }, { onConflict: "organization_id,role,permission" })
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
+
+    if (parts[0] === "permissions" && parts[1] === "revoke") {
+      const role = requireText(body.role);
+      const permission = requireText(body.permission);
+      if (!role || !permission) return message("role and permission are required.", 400);
+      const { error } = await db(admin)
+        .from("accounting_role_permissions")
+        .delete()
+        .eq("organization_id", auth.orgId)
+        .eq("role", role)
+        .eq("permission", permission);
+      if (error) throw new Error(error.message);
       return json({ ok: true });
     }
 

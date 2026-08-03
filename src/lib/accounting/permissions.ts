@@ -3,6 +3,10 @@ import { requireTenantContext } from "@/lib/server/tenant-context";
 
 export type AccountingAction = "view" | "manage" | "post" | "settings" | "payroll" | "sales" | "reports";
 
+export type PartyPermission =
+  | "customers:view" | "customers:create" | "customers:edit" | "customers:delete"
+  | "vendors:view" | "vendors:create" | "vendors:edit" | "vendors:delete";
+
 export type AccountingAuthContext = {
   user: { id: string; email?: string | null };
   orgId: string;
@@ -71,4 +75,17 @@ export async function requireAccountingAccess(action: AccountingAction = "view",
     ...capabilities,
     requestId: tenant.requestId,
   } satisfies AccountingAuthContext;
+}
+
+const defaultPartyPermissions: Record<string, PartyPermission[]> = {
+  finance_manager: ["customers:view", "customers:create", "customers:edit", "customers:delete", "vendors:view", "vendors:create", "vendors:edit", "vendors:delete"],
+  accountant: ["customers:view", "customers:create", "customers:edit", "customers:delete", "vendors:view", "vendors:create", "vendors:edit", "vendors:delete"],
+  finance_viewer: ["customers:view", "vendors:view"],
+  sales: ["customers:view", "vendors:view"],
+  sales_manager: ["customers:view", "customers:create", "customers:edit", "vendors:view"],
+};
+
+export function hasPartyPermission(role: string, permission: PartyPermission): boolean {
+  const perms = defaultPartyPermissions[role];
+  return perms ? perms.includes(permission) : false;
 }

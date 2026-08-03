@@ -1305,3 +1305,59 @@ export function deleteJournalAttachment(journalEntryId: string, attachmentId: st
 export function searchAccounts(query: string, limit = 30) {
   return apiFetch<Array<{ id: string; code: string; name_ar: string; name_en: string | null; type: string; normal_balance: string; parent_id: string | null; is_active: boolean }>>(`/api/accounting/accounts/search${qs({ q: query, limit: String(limit) })}`);
 }
+
+// Journal Types
+export interface JournalType {
+  id: string;
+  code: string;
+  name_ar: string;
+  name_en: string | null;
+  description: string | null;
+  prefix: string;
+  number_format: string;
+  sequence_reset: "never" | "yearly" | "monthly";
+  current_sequence: number;
+  is_default: boolean;
+  is_active: boolean;
+  allowed_roles: string[];
+  requires_approval: boolean;
+  auto_post: boolean;
+}
+
+export function getJournalTypes() {
+  return apiFetch<JournalType[]>("/api/accounting/journal-types");
+}
+
+export function saveJournalType(values: Record<string, unknown>, id?: string) {
+  return apiFetch<JournalType>(`/api/accounting/journal-types${id ? `/${id}` : ""}`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function deactivateJournalType(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/accounting/journal-types/${id}/deactivate`, { method: "POST", body: "{}" });
+}
+
+// Permissions
+export function getMyPermissions() {
+  return apiFetch<string[]>("/api/accounting/permissions/me");
+}
+
+export function getAllPermissions() {
+  return apiFetch<Array<{ id: string; role: string; permission: string }>>("/api/accounting/permissions");
+}
+
+export function grantPermission(role: string, permission: string) {
+  return apiFetch<Record<string, unknown>>("/api/accounting/permissions/grant", {
+    method: "POST",
+    body: JSON.stringify({ role, permission }),
+  });
+}
+
+export function revokePermission(role: string, permission: string) {
+  return apiFetch<{ ok: boolean }>("/api/accounting/permissions/revoke", {
+    method: "POST",
+    body: JSON.stringify({ role, permission }),
+  });
+}
