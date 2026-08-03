@@ -259,6 +259,8 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return (
       normalizedPath.startsWith("/accounting") ||
       normalizedPath.startsWith("/api/accounting") ||
+      normalizedPath.startsWith("/banking") ||
+      normalizedPath.startsWith("/api/banking") ||
       normalizedPath.startsWith("/lms") ||
       normalizedPath.startsWith("/api/lms") ||
       normalizedPath.startsWith("/learn") ||
