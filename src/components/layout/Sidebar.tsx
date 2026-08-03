@@ -214,12 +214,17 @@ export function SidebarContent() {
       { name: "المدفوعات", href: "/accounting/payments", icon: WalletCards },
       { name: "عمولات المبيعات", href: "/accounting/commissions", icon: Receipt },
       { name: "مراكز التكلفة", href: "/accounting/cost-centers", icon: Layers },
+      { name: "الخدمات البنكية", href: "/banking", icon: Building2 },
       { name: "التقارير", href: "/accounting/reports", icon: ClipboardList },
       { name: "فريق المالية", href: "/accounting/team", icon: Users },
       { name: "الكيانات والفروع", href: "/accounting/entity-setup", icon: Building2 },
+      { name: "الصلاحيات", href: "/accounting/settings/permissions", icon: ShieldAlert },
+      { name: "أنواع القيود", href: "/accounting/settings/journal-types", icon: Layers },
       { name: "الإعدادات", href: "/accounting/settings", icon: Settings },
     ].filter((link) => {
       if (link.href === "/accounting/settings") return isSuperAdmin || role === "Finance_Manager";
+      if (link.href === "/accounting/settings/permissions") return isSuperAdmin || role === "Finance_Manager";
+      if (link.href === "/accounting/settings/journal-types") return isSuperAdmin || role === "Finance_Manager";
       if (link.href === "/accounting/entity-setup") return isSuperAdmin || role === "Finance_Manager";
       if (link.href === "/accounting/team") return canSeeFinanceTeam;
       return true;

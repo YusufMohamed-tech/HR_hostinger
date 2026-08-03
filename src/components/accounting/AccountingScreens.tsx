@@ -1340,7 +1340,11 @@ function AccountingSettingsPage() {
   const [form, setForm] = useState<Record<string, string>>({});
   useEffect(() => { getAccountingAccounts().then((r) => setAccounts(r.data || [])); }, []);
   useEffect(() => { if (settings) setForm(Object.fromEntries(Object.entries(settings).map(([k, v]) => [k, String(v || "")]))); }, [settings]);
-  const save = async () => { const r = await updateAccountingSettings(form as Partial<import("@/types/accounting").AccountingSettings>); if (r.error) setMessage(r.error); else { setMessage("تم حفظ الإعدادات."); load(); } };
+  const save = async () => {
+    const cleaned = Object.fromEntries(Object.entries(form).map(([k, v]) => [k, v === "" ? null : v]));
+    const r = await updateAccountingSettings(cleaned as Partial<import("@/types/accounting").AccountingSettings>);
+    if (r.error) setMessage(r.error); else { setMessage("تم حفظ الإعدادات."); load(); }
+  };
   const init = async () => { const r = await initializeAccountingDefaults(); if (r.error) setMessage(r.error); else { setMessage("تمت التهيئة."); getAccountingAccounts().then((a) => setAccounts(a.data || [])); load(); } };
   const accountFields = [["default_cash_account_id", "حساب النقدية"], ["default_bank_account_id", "حساب البنك"], ["default_accounts_receivable_id", "الذمم المدينة"], ["default_accounts_payable_id", "الذمم الدائنة"], ["default_sales_revenue_id", "إيرادات المبيعات"], ["default_vat_payable_id", "ضريبة مستحقة"], ["default_vat_receivable_id", "ضريبة قابلة للاسترداد"], ["default_salary_expense_id", "مصروف الرواتب"], ["default_salary_payable_id", "رواتب مستحقة"], ["default_employee_advances_id", "سلف الموظفين"], ["default_asset_account_id", "الأصول الثابتة"], ["default_depreciation_expense_id", "مصروف الإهلاك"], ["default_accumulated_depreciation_id", "مجمع الإهلاك"]];
   if (loading) return <AccountingLoading />;
