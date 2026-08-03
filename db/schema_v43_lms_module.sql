@@ -17,6 +17,10 @@ SET enabled_modules = CASE
   lms_enabled = COALESCE(lms_enabled, true),
   updated_at = now();
 
+UPDATE public.plans
+SET features = features || '{"lms": true}'::jsonb
+WHERE NOT (features ? 'lms');
+
 CREATE TABLE IF NOT EXISTS public.lms_categories (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,

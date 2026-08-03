@@ -185,6 +185,7 @@
     { "id": "schema_v157_product_trader_sales", "file": "db/schema_v157_product_trader_sales.sql" },
     { "id": "schema_v158_product_trader_settlement", "file": "db/schema_v158_product_trader_settlement.sql" },
     { "id": "schema_v159_product_trader_returns_oversight", "file": "db/schema_v159_product_trader_returns_oversight.sql" },
-    { "id": "schema_v160_product_trader_workflow_corrections", "file": "db/schema_v160_product_trader_workflow_corrections.sql" }
+    { "id": "schema_v160_product_trader_workflow_corrections", "file": "db/schema_v160_product_trader_workflow_corrections.sql" },
+    { "id": "schema_v161_plans_lms_feature", "file": "db/schema_v161_plans_lms_feature.sql" }
   ]
 }
