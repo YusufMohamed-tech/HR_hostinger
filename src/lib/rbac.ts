@@ -360,6 +360,10 @@ export function canAccessPath(role: Role, pathname: string): boolean {
     return ["Sales_Manager", "Admin", "HR_Admin"].includes(role);
   }
 
+  if (normalizedPath.startsWith("/banking") || normalizedPath.startsWith("/api/banking")) {
+    return ["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
+  }
+
   if (normalizedPath.startsWith("/accounting/reports")) {
     return ["Finance_Manager", "Accountant", "Finance_Viewer"].includes(role);
   }
