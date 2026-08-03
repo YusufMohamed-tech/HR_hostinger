@@ -1281,3 +1281,27 @@ export function saveDashboardWidget(values: Record<string, unknown>, id?: string
     body: JSON.stringify(values),
   });
 }
+
+// Journal Attachments
+export function getJournalAttachments(journalEntryId: string) {
+  return apiFetch<Array<{ id: string; file_name: string; file_path: string; file_size: number; mime_type: string; description: string | null; uploaded_by: string; uploaded_at: string }>>(`/api/accounting/journal-entries/${journalEntryId}/attachments`);
+}
+
+export function addJournalAttachment(journalEntryId: string, values: { file_name: string; file_path: string; file_size: number; mime_type: string; description?: string; checksum_sha256?: string }) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/journal-entries/${journalEntryId}/attachments`, {
+    method: "POST",
+    body: JSON.stringify(values),
+  });
+}
+
+export function deleteJournalAttachment(journalEntryId: string, attachmentId: string) {
+  return apiFetch<{ deleted: boolean }>(`/api/accounting/journal-entries/${journalEntryId}/attachments/${attachmentId}/delete`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+// Account Search
+export function searchAccounts(query: string, limit = 30) {
+  return apiFetch<Array<{ id: string; code: string; name_ar: string; name_en: string | null; type: string; normal_balance: string; parent_id: string | null; is_active: boolean }>>(`/api/accounting/accounts/search${qs({ q: query, limit: String(limit) })}`);
+}

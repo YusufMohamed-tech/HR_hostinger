@@ -520,8 +520,33 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return json(await listTable(admin, "accounting_customers", auth.orgId, request));
     }
     if (parts[0] === "journal-entries") {
+      if (parts[1] && parts[2] === "attachments") {
+        const { data, error } = await db(admin)
+          .from("accounting_journal_attachments")
+          .select("id, file_name, file_path, file_size, mime_type, description, uploaded_by, uploaded_at")
+          .eq("organization_id", auth.orgId)
+          .eq("journal_entry_id", parts[1])
+          .order("uploaded_at", { ascending: false });
+        if (error) throw new Error(error.message);
+        return json(data || []);
+      }
       if (parts[1]) return json(await getRecord(admin, "accounting_journal_entries", auth.orgId, parts[1], "*, lines:accounting_journal_lines(*, account:account_id(*), cost_center:cost_center_id(*))"));
       return json(await listTable(admin, "accounting_journal_entries", auth.orgId, request, "entry_date"));
+    }
+    if (parts[0] === "accounts" && parts[1] === "search") {
+      const q = request.nextUrl.searchParams.get("q") || "";
+      const limit = Math.min(parseInt(request.nextUrl.searchParams.get("limit") || "30"), 50);
+      let query = db(admin)
+        .from("accounting_accounts")
+        .select("id, code, name_ar, name_en, type, normal_balance, parent_id, is_active")
+        .eq("organization_id", auth.orgId)
+        .eq("is_active", true)
+        .order("code", { ascending: true })
+        .limit(limit);
+      if (q) query = query.or(`code.ilike.${q}%,name_ar.ilike.%${q}%,name_en.ilike.%${q}%`);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return json(data || []);
     }
     if (parts[0] === "expenses") {
       if (parts[1]) return json(await getRecord(admin, "accounting_expenses", auth.orgId, parts[1], "*, vendor:vendor_id(*), employee:employee_id(full_name, employee_code), cost_center:cost_center_id(*)"));
@@ -913,7 +938,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     if (parts[0] === "reports") {
       // Official financial reports are generated from posted/reversed ledger entries only.
       if (parts[1] === "trial-balance") return json(await getTrialBalance(admin, auth.orgId, dateFrom, dateTo));
-      if (parts[1] === "general-ledger") return json(await getGeneralLedger(admin, auth.orgId, request.nextUrl.searchParams.get("account_id") || undefined, dateFrom, dateTo));
+      if (parts[1] === "general-ledger") return json(await getGeneralLedger(admin, auth.orgId, request.nextUrl.searchParams.get("account_id") || undefined, dateFrom, dateTo, request.nextUrl.searchParams.get("cost_center_id") || undefined));
       if (parts[1] === "profit-loss") return json(await getProfitLoss(admin, auth.orgId, dateFrom, dateTo));
       if (parts[1] === "balance-sheet") return json(await getBalanceSheet(admin, auth.orgId, asOf || dateTo));
       if (parts[1] === "vat") return json(await getVatReport(admin, auth.orgId, dateFrom, dateTo));
@@ -1892,6 +1917,43 @@ export async function POST(request: NextRequest, context: RouteContext) {
       }), 201);
     }
 
+    if (parts[0] === "journal-entries" && parts[1] && parts[2] === "attachments") {
+      if (parts[3]) {
+        // DELETE attachment: POST /journal-entries/:id/attachments/:attachmentId/delete
+        if (parts[4] === "delete") {
+          const { error } = await db(admin)
+            .from("accounting_journal_attachments")
+            .delete()
+            .eq("id", parts[3])
+            .eq("organization_id", auth.orgId)
+            .eq("journal_entry_id", parts[1]);
+          if (error) throw new Error(error.message);
+          return json({ deleted: true });
+        }
+        return message("Unknown attachment action.", 400);
+      }
+      // Upload attachment metadata (file stored via file-storage-core separately)
+      const fileName = requireText(body.file_name);
+      const filePath = requireText(body.file_path);
+      if (!fileName || !filePath) return message("file_name and file_path are required.", 400);
+      const { data, error } = await db(admin)
+        .from("accounting_journal_attachments")
+        .insert({
+          organization_id: auth.orgId,
+          journal_entry_id: parts[1],
+          file_name: fileName,
+          file_path: filePath,
+          file_size: Number(body.file_size || 0),
+          mime_type: requireText(body.mime_type) || "application/octet-stream",
+          description: requireText(body.description) || null,
+          uploaded_by: auth.user.id,
+          checksum_sha256: requireText(body.checksum_sha256) || null,
+        })
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
+    }
     if (parts[0] === "journal-entries" && parts[1] && parts[2] === "post") {
       return json(await postJournalEntry(admin, auth.orgId, parts[1], auth.user.id, accountingCommandContext(request, body)));
     }

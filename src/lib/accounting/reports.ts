@@ -55,12 +55,16 @@ export async function getTrialBalance(admin: AdminClient, orgId: string, dateFro
   return Array.from(rows.values()).sort((a, b) => String(a.account_code).localeCompare(String(b.account_code)));
 }
 
-export async function getGeneralLedger(admin: AdminClient, orgId: string, accountId?: string, dateFrom?: string, dateTo?: string) {
+export async function getGeneralLedger(admin: AdminClient, orgId: string, accountId?: string, dateFrom?: string, dateTo?: string, costCenterId?: string) {
   const allLines = await getPostedLines(admin, orgId, undefined, dateTo);
+
+  const matchesCostCenter = (line: Record<string, unknown>) =>
+    !costCenterId || String(line.cost_center_id || "") === costCenterId;
+
   const openingLines = dateFrom
     ? allLines.filter((line) => {
         const entry = line.entry as Record<string, unknown>;
-        return String(entry.entry_date) < dateFrom && (!accountId || String(line.account_id) === accountId);
+        return String(entry.entry_date) < dateFrom && (!accountId || String(line.account_id) === accountId) && matchesCostCenter(line);
       })
     : [];
   const lines = allLines
@@ -69,11 +73,26 @@ export async function getGeneralLedger(admin: AdminClient, orgId: string, accoun
       return inDateRange(String(entry.entry_date), dateFrom, dateTo);
     })
     .filter((line) => !accountId || String(line.account_id) === accountId)
+    .filter(matchesCostCenter)
     .sort((a, b) => {
       const ea = a.entry as Record<string, unknown>;
       const eb = b.entry as Record<string, unknown>;
       return String(ea.entry_date).localeCompare(String(eb.entry_date)) || String(ea.entry_no).localeCompare(String(eb.entry_no));
     });
+
+  // Fetch cost center names for display
+  let costCenterMap: Map<string, { code: string; name: string }> = new Map();
+  const ccIds = [...new Set(lines.map((l) => String(l.cost_center_id || "")).filter(Boolean))];
+  if (ccIds.length > 0) {
+    const { data: ccData } = await db(admin)
+      .from("accounting_cost_centers")
+      .select("id, code, name_ar, name_en")
+      .eq("organization_id", orgId)
+      .in("id", ccIds);
+    if (ccData) {
+      costCenterMap = new Map((ccData as Array<{ id: string; code: string; name_ar: string; name_en?: string }>).map((cc) => [cc.id, { code: cc.code, name: cc.name_ar || cc.name_en || "" }]));
+    }
+  }
 
   const movementFor = (line: Record<string, unknown>) => {
     const account = (line.account || {}) as Record<string, unknown>;
@@ -87,6 +106,7 @@ export async function getGeneralLedger(admin: AdminClient, orgId: string, accoun
   const rows = lines.map((line) => {
     const entry = (line.entry || {}) as Record<string, unknown>;
     const account = (line.account || {}) as Record<string, unknown>;
+    const cc = costCenterMap.get(String(line.cost_center_id || ""));
     const movement = movementFor(line);
     runningBalance = roundMoney(runningBalance + movement);
     return {
@@ -98,6 +118,8 @@ export async function getGeneralLedger(admin: AdminClient, orgId: string, accoun
       account_id: line.account_id,
       account_code: account.code,
       account_name: account.name_ar || account.name_en,
+      cost_center_code: cc?.code || null,
+      cost_center_name: cc?.name || null,
       debit: Number(line.debit || 0),
       credit: Number(line.credit || 0),
       running_balance: runningBalance,

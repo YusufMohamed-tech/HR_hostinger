@@ -40,6 +40,8 @@ import {
   ExportCsvButton,
   MoneyAmount,
 } from "@/components/accounting/AccountingPrimitives";
+import { AccountCombobox } from "@/components/accounting/AccountCombobox";
+import { JournalAttachments } from "@/components/accounting/JournalAttachments";
 import {
   approveExpense,
   createAccountingAccount,
@@ -61,6 +63,7 @@ import {
   getAccountingSalesCompanies,
   getAccountingSettings,
   getCostCenters,
+  getJournalAttachments,
   getCustomers,
   getExpense,
   getExpenses,
@@ -526,7 +529,7 @@ function JournalLinesEditor({ accounts, costCenters, lines, setLines }: { accoun
     <div className="space-y-3">
       {lines.map((line, index) => (
         <div key={index} className="grid gap-3 rounded-lg border border-gray-100 bg-white p-3 md:grid-cols-[1.5fr_1fr_110px_110px_1fr_auto]">
-          <SelectField value={line.account_id || ""} onChange={(value) => patch(index, "account_id", value)}><option value="">اختر الحساب</option>{accounts.filter((a) => a.is_active).map((account) => <option key={account.id} value={account.id}>{account.code} - {account.name_ar}</option>)}</SelectField>
+          <AccountCombobox value={line.account_id || ""} onChange={(value) => patch(index, "account_id", value)} accounts={accounts} />
           <Input placeholder="وصف السطر" value={line.description || ""} onChange={(e) => patch(index, "description", e.target.value)} />
           <Input type="number" placeholder="مدين" value={line.debit || ""} onChange={(e) => patch(index, "debit", e.target.value)} />
           <Input type="number" placeholder="دائن" value={line.credit || ""} onChange={(e) => patch(index, "credit", e.target.value)} />
@@ -681,7 +684,20 @@ function JournalDetail({ id }: { id: string }) {
       ) : (
         <SimpleTable rows={lines} emptyTitle="لا توجد سطور" columns={[["account.code", "الحساب"], ["description", "الوصف"], ["debit", "مدين"], ["credit", "دائن"]]} moneyColumns={["debit", "credit"]} />
       )}
+      <JournalAttachmentsSection journalEntryId={id} canUpload={canManage && ["draft", "posted"].includes(data.status)} canDelete={canManage && data.status === "draft"} />
     </div>
+  );
+}
+
+function JournalAttachmentsSection({ journalEntryId, canUpload, canDelete }: { journalEntryId: string; canUpload: boolean; canDelete: boolean }) {
+  const { data: attachments, load } = useLoad(() => getJournalAttachments(journalEntryId), [journalEntryId]);
+  return (
+    <Card className="border-none shadow-sm">
+      <CardHeader><CardTitle>المرفقات ({attachments?.length || 0})</CardTitle></CardHeader>
+      <CardContent>
+        <JournalAttachments journalEntryId={journalEntryId} attachments={attachments || []} canUpload={canUpload} canDelete={canDelete} onRefresh={load} />
+      </CardContent>
+    </Card>
   );
 }
 
