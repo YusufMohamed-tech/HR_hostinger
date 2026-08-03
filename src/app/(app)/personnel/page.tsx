@@ -324,14 +324,16 @@ export default function PersonnelPage() {
             </Button>
           ))}
         </div>
-        <Button variant="outline" onClick={handleExportExcel}>
-          <Download className="h-4 w-4 ml-2" />
-          تصدير Excel
-        </Button>
-        <Button variant="outline" onClick={handleExport}>
-          <Download className="h-4 w-4 ml-2" />
-          تصدير PDF
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleExportExcel}>
+            <Download className="h-4 w-4 ml-2" />
+            تصدير Excel
+          </Button>
+          <Button variant="outline" onClick={handleExport}>
+            <Download className="h-4 w-4 ml-2" />
+            تصدير PDF
+          </Button>
+        </div>
       </div>
 
       {activeTab === "files" && (
