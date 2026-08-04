@@ -226,7 +226,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     const payload = {
       org_id: currentUser.orgId,
       ...parsed.data,
-      deduction_rule_group_id: null,
       leave_accrual_start_date: parsed.data.hiring_date || todayString(),
     };
 
