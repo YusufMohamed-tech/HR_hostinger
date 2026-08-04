@@ -18,7 +18,6 @@ import {
 } from "@/lib/services/employees";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
-import { getDeductionRuleGroups, type DeductionRuleGroup } from "@/lib/services/deduction-rule-groups";
 import { bankOptions, educationLevelOptions, saudiCityOptions } from "@/lib/hr-options";
 import { inferLocationCity, locationMatchesCompany } from "@/lib/location-classification";
 import {
@@ -75,7 +74,6 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [companies, setCompanies] = useState<SalesCompany[]>([]);
-  const [deductionGroups, setDeductionGroups] = useState<DeductionRuleGroup[]>([]);
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
   const [createLoginAccount, setCreateLoginAccount] = useState(false);
   const [accountRole, setAccountRole] = useState<EmployeeAccountRole>("employee");
@@ -115,7 +113,6 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
     base_salary: "",
     bonus: "",
     deductions: "",
-    deduction_rule_group_id: "",
     leave_balance_manual_adjustment: "",
     leave_accrual_start_date: "",
     payment_method: "",
@@ -167,7 +164,6 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
         bank_name: employee.bank_name || "",
         iban: employee.iban || employee.bank_account || "",
         education_level: employee.education_level || "",
-        deduction_rule_group_id: (employee as Record<string, unknown>).deduction_rule_group_id ? String((employee as Record<string, unknown>).deduction_rule_group_id) : "",
         carrier_supervisor_id: String((employee as Record<string, unknown>).carrier_supervisor_id || ""),
       });
       const managedDepartment = departments.find((department) => {
@@ -194,7 +190,6 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
   useEffect(() => {
     if (!open) return;
     getSalesCompanies().then((result) => setCompanies(result.data || []));
-    getDeductionRuleGroups(String((employee as Record<string, unknown>)?.org_id || "")).then((result) => setDeductionGroups((result.data as DeductionRuleGroup[]) || []));
   }, [open, employee]);
 
   const set = (key: string, value: string | null) => setForm((prev) => ({ ...prev, [key]: value ?? "" }));
@@ -328,7 +323,6 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
       base_salary: form.base_salary ? parseFloat(form.base_salary) : undefined,
       bonus: form.bonus ? parseFloat(form.bonus) : undefined,
       deductions: form.deductions ? parseFloat(form.deductions) : undefined,
-      deduction_rule_group_id: form.deduction_rule_group_id || null,
       leave_balance_manual_adjustment: form.leave_balance_manual_adjustment ? parseFloat(form.leave_balance_manual_adjustment) : undefined,
       leave_accrual_start_date: form.leave_accrual_start_date || form.hiring_date || undefined,
       can_multi_checkin: canMultiCheckin,
@@ -835,21 +829,6 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
                 <Label>الخصومات الثابتة</Label>
                 <Input type="number" value={form.deductions} onChange={(e) => set("deductions", e.target.value)} />
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label>مجموعة قواعد الخصم</Label>
-              <Select value={form.deduction_rule_group_id} onValueChange={(v) => set("deduction_rule_group_id", v || "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر مجموعة الخصم">
-                    {() => deductionGroups.find((g) => g.id === form.deduction_rule_group_id)?.name || "اختر مجموعة الخصم"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {deductionGroups.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">

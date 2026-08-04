@@ -131,7 +131,6 @@ export function SidebarContent() {
       { name: "تقييمات المواقع", href: "/evaluations", icon: ClipboardList },
       { name: "نماذج التقييم", href: "/settings/checklist-templates", icon: ClipboardList, indent: true },
       { name: "الرواتب", href: "/payroll", icon: Calculator },
-      { name: "مجموعات الخصم", href: "/settings/deduction-rules", icon: ShieldAlert, indent: true },
       { name: "التوظيف", href: "/recruitment", icon: Briefcase },
       { name: "الأرصدة والعهد", href: "/balances", icon: WalletCards },
       { name: "الأصول", href: "/assets", icon: Package },

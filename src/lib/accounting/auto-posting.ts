@@ -447,6 +447,25 @@ export async function autoPostPayrollMonth(
     if (employeeGosi + employerGosi > 0) lines.push({ account_id: settings.default_gosi_payable_id, debit: 0, credit: roundMoney(employeeGosi + employerGosi), description: `تأمينات مستحقة ${month}` });
     if (advanceDeductions > 0) lines.push({ account_id: settings.default_employee_advances_id!, debit: 0, credit: advanceDeductions, description: `خصم سلف ${month}` });
 
+    // Clear penalties payable if manual entries were applied this month
+    if (settings.default_penalties_payable_id && settings.default_salary_payable_id) {
+      const { data: appliedEntries } = await (admin as any)
+        .from("employee_manual_entries")
+        .select("id, amount")
+        .eq("org_id", orgId)
+        .eq("month", `${month}-01`)
+        .eq("status", "applied")
+        .eq("accounting_status", "posted");
+      const totalPenalties = roundMoney(
+        ((appliedEntries || []) as Array<{ amount: number | null }>)
+          .reduce((sum, e) => sum + Number(e.amount || 0), 0)
+      );
+      if (totalPenalties > 0) {
+        lines.push({ account_id: settings.default_penalties_payable_id, debit: totalPenalties, credit: 0, description: `تسوية جزاءات ${month}` });
+        lines.push({ account_id: settings.default_salary_payable_id, debit: 0, credit: totalPenalties, description: `خصم جزاءات من الراتب ${month}` });
+      }
+    }
+
     const { createJournalEntry } = await import("@/lib/accounting/posting");
     const commandId = options?.commandId || accountingSourceUuid(`payroll:${orgId}:${run.id}`);
     const entry = await createJournalEntry(admin, {
@@ -943,6 +962,110 @@ function lastDayOfMonth(month: string): string {
   const [year, mon] = month.split("-").map(Number);
   const lastDay = new Date(year, mon, 0).getDate(); // day 0 of next month = last day of this month
   return `${month}-${String(lastDay).padStart(2, "0")}`;
+}
+
+// =============================================================================
+// HR Manual Deduction/Absence Auto-Posting
+// =============================================================================
+
+interface ManualEntryData {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  entry_type: "deduction" | "absence";
+  amount: number;
+  reason: string;
+  entry_date: string;
+}
+
+export async function autoPostManualEntry(
+  admin: AdminClient,
+  orgId: string,
+  userId: string,
+  entry: ManualEntryData,
+  options?: { commandId?: string; requestId?: string }
+): Promise<{ success: boolean; journalEntryId?: string; error?: string }> {
+  try {
+    const settings = (await getAccountingSettings(admin, orgId)) as AccountingSettings | null;
+    if (!settings?.auto_post_hr_penalties) return { success: true };
+    if (!settings.default_penalties_expense_id || !settings.default_penalties_payable_id) {
+      throw new Error("حسابات الجزاءات والخصومات غير مكتملة. أكمل الإعدادات أولاً.");
+    }
+
+    const amount = roundMoney(entry.amount);
+    if (amount <= 0) return { success: true };
+
+    const typeLabel = entry.entry_type === "deduction" ? "خصم" : "غياب";
+    const description = `${typeLabel} - ${entry.employee_name} - ${entry.reason}`;
+
+    const lines = [
+      {
+        account_id: settings.default_penalties_expense_id,
+        debit: amount,
+        credit: 0,
+        description: `${typeLabel} على ${entry.employee_name}`,
+      },
+      {
+        account_id: settings.default_penalties_payable_id,
+        debit: 0,
+        credit: amount,
+        description: `${typeLabel} مستحق - ${entry.employee_name}`,
+      },
+    ];
+
+    const { createJournalEntry } = await import("@/lib/accounting/posting");
+    const commandId = options?.commandId || accountingSourceUuid(`hr-penalty:${orgId}:${entry.id}`);
+
+    const journalEntry = await createJournalEntry(admin, {
+      orgId,
+      userId,
+      entryDate: entry.entry_date,
+      description,
+      sourceModule: "hr_penalty",
+      sourceId: entry.id,
+      status: "posted",
+      lines,
+      commandId,
+      requestId: options?.requestId || commandId,
+    });
+
+    return { success: true, journalEntryId: String(journalEntry.id) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "HR penalty auto-posting failed";
+    await logAutoPostFailure(admin, orgId, "hr_penalty", entry.id, message);
+    return { success: false, error: message };
+  }
+}
+
+export async function autoReverseManualEntry(
+  admin: AdminClient,
+  orgId: string,
+  userId: string,
+  entryId: string,
+  reason: string,
+  options: { commandId: string; requestId: string }
+): Promise<{ success: boolean; reversalEntryId?: string; error?: string }> {
+  try {
+    const { data: original } = await (admin as any)
+      .from("accounting_journal_entries")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("source_module", "hr_penalty")
+      .eq("source_id", entryId)
+      .maybeSingle();
+
+    if (!original) return { success: true };
+
+    const { reverseJournalEntry } = await import("@/lib/accounting/posting");
+    const reversal = await reverseJournalEntry(
+      admin, orgId, String(original.id), userId, reason, options
+    );
+    return { success: true, reversalEntryId: String(reversal.id) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "HR penalty reversal failed";
+    await logAutoPostFailure(admin, orgId, "hr_penalty_reversal", entryId, message);
+    return { success: false, error: message };
+  }
 }
 
 // =============================================================================

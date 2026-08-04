@@ -38,6 +38,8 @@ export interface AccountingSettings {
   default_inventory_cogs_id?: string | null;
   default_inventory_shrinkage_id?: string | null;
   default_agent_receivable_id?: string | null;
+  default_penalties_expense_id?: string | null;
+  default_penalties_payable_id?: string | null;
   auto_post_sales?: boolean;
   auto_post_payroll?: boolean;
   auto_post_advances?: boolean;
@@ -46,6 +48,7 @@ export interface AccountingSettings {
   auto_post_inventory_receipts?: boolean;
   auto_post_product_sales?: boolean;
   auto_post_product_collections?: boolean;
+  auto_post_hr_penalties?: boolean;
   enable_product_agent_commissions?: boolean;
   [key: string]: unknown;
 }

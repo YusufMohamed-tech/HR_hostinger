@@ -245,6 +245,7 @@ export interface AccountingSettings {
   auto_post_inventory_receipts: boolean;
   auto_post_product_sales: boolean;
   auto_post_product_collections: boolean;
+  auto_post_hr_penalties: boolean;
   enable_product_agent_commissions: boolean;
   fiscal_year_start_month: number;
   invoice_prefix: string;

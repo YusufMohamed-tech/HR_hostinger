@@ -1,8 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { Eye, Search, UserX, Users } from "lucide-react";
+import { Eye, MinusCircle, Search, UserX, Users } from "lucide-react";
 import { offboardEmployeeRecord } from "@/lib/services/employees";
 import { EditEmployeeDialog } from "@/components/forms/EditEmployeeDialog";
 import { PromoteEmployeeDialog } from "@/components/forms/PromoteEmployeeDialog";
@@ -24,7 +24,7 @@ import { useEmployees } from "@/hooks/use-data";
 import { AddEmployeeDialog } from "@/components/forms/AddEmployeeDialog";
 import { PageSkeleton } from "@/components/Skeletons";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState, useMemo } from "react";
+import { ManualEntryDialog } from "@/components/forms/ManualEntryDialog";
 
 const statusLabels: Record<string, string> = {
   Active: "نشط",
@@ -54,6 +54,7 @@ export default function EmployeesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("الكل");
   const [actionError, setActionError] = useState("");
+  const [manualEntryTarget, setManualEntryTarget] = useState<{ id: string; name: string } | null>(null);
 
   const uniqueDepartments = useMemo(() => {
     const depts = new Set<string>();
@@ -224,6 +225,11 @@ export default function EmployeesPage() {
                         {canManageEmployees && !["offboarded", "archived"].includes(lifecycleStatus) && (
                           <EditEmployeeDialog employee={emp} onSuccess={refetch} compact />
                         )}
+                        {canManageEmployees && !["offboarded", "archived"].includes(lifecycleStatus) && (
+                          <Button variant="ghost" size="icon-xs" className="text-red-500 hover:text-red-700 hover:bg-red-50" title="خصم / غياب" onClick={() => setManualEntryTarget({ id: empId, name: empName })}>
+                            <MinusCircle className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         <Button asChild variant="ghost" size="icon-xs" className="overflow-hidden text-brand hover:text-brand-dark" aria-label="View employee">
                           <Link href={`/employees/${empId}`}>
                             <Eye className="h-3.5 w-3.5" />
@@ -268,6 +274,14 @@ export default function EmployeesPage() {
           )}
         </CardContent>
       </Card>
+
+      <ManualEntryDialog
+        open={Boolean(manualEntryTarget)}
+        onOpenChange={(open) => { if (!open) setManualEntryTarget(null); }}
+        employeeId={manualEntryTarget?.id || ""}
+        employeeName={manualEntryTarget?.name || ""}
+        onSuccess={refetch}
+      />
     </div>
   );
 }

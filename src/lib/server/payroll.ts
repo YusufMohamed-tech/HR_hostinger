@@ -197,35 +197,14 @@ async function loadEmployeePayrollInput(
     throw new PayrollConfigurationError("Advance deductions exceed the supported money range.");
   }
 
-  let rule = {
-    name: "No deduction group",
+  const rule = {
+    name: "Manual",
     lateGraceMinutes: 0,
     deductionPerLateHourHalalas: 0,
     allowedAbsentDays: 0,
     deductionPerAbsentDayHalalas: 0,
     deductionPerExcessApprovedDayHalalas: 0,
   };
-  if (employee.deduction_rule_group_id) {
-    const ruleResult = await context.admin
-      .from("deduction_rule_groups")
-      .select("name, late_grace_minutes, deduction_per_late_hour, allowed_absent_days, deduction_per_absent_day, deduction_per_excess_approved_day")
-      .eq("id", employee.deduction_rule_group_id)
-      .eq("org_id", context.orgId)
-      .maybeSingle();
-    if (ruleResult.error) throw new Error(`Unable to load deduction rule: ${ruleResult.error.message}`);
-    if (!ruleResult.data) throw new PayrollConfigurationError(`${employee.full_name}'s deduction group is missing or belongs to another organization.`);
-    rule = {
-      name: ruleResult.data.name,
-      lateGraceMinutes: ruleResult.data.late_grace_minutes,
-      deductionPerLateHourHalalas: moneyToHalalas(ruleResult.data.deduction_per_late_hour, "late deduction rate"),
-      allowedAbsentDays: ruleResult.data.allowed_absent_days,
-      deductionPerAbsentDayHalalas: moneyToHalalas(ruleResult.data.deduction_per_absent_day, "absence deduction rate"),
-      deductionPerExcessApprovedDayHalalas: moneyToHalalas(
-        ruleResult.data.deduction_per_excess_approved_day,
-        "approved absence deduction rate"
-      ),
-    };
-  }
 
   const approvedDates = new Set<string>();
   for (const leave of leaveResult.data || []) {
@@ -249,16 +228,27 @@ async function loadEmployeePayrollInput(
       lateMinutes += Number(attendance.late_minutes || 0);
     }
   }
-  const effectiveLateMinutes = Math.max(0, lateMinutes - rule.lateGraceMinutes);
-  const lateNumerator = effectiveLateMinutes * rule.deductionPerLateHourHalalas;
-  if (!Number.isSafeInteger(lateNumerator)) throw new PayrollConfigurationError("Late deduction exceeds the supported money range.");
-  const lateDeductionHalalas = roundDivideHalfUp(lateNumerator, 60);
-  const excessApprovedDays = Math.max(0, approvedAbsentDays - rule.allowedAbsentDays);
-  const absenceDeductionHalalas =
-    unapprovedAbsentDays * rule.deductionPerAbsentDayHalalas
-    + excessApprovedDays * rule.deductionPerExcessApprovedDayHalalas;
-  if (!Number.isSafeInteger(absenceDeductionHalalas)) {
-    throw new PayrollConfigurationError("Absence deduction exceeds the supported money range.");
+  // Manual entries replace automatic rule-based deductions
+  const manualEntriesResult = await context.admin
+    .from("employee_manual_entries")
+    .select("id, entry_type, amount, days")
+    .eq("org_id", context.orgId)
+    .eq("employee_id", employeeId)
+    .eq("month", month)
+    .eq("status", "pending");
+  if (manualEntriesResult.error) throw new Error(`Unable to load manual entries: ${manualEntriesResult.error.message}`);
+  const manualEntries = (manualEntriesResult.data || []) as Array<{ id: string; entry_type: string; amount: number | null; days: number | null }>;
+  const manualDeductionHalalas = manualEntries
+    .filter((e) => e.entry_type === "deduction")
+    .reduce((sum, e) => sum + moneyToHalalas(e.amount, `manual deduction ${e.id}`), 0);
+  const manualAbsenceDays = manualEntries
+    .filter((e) => e.entry_type === "absence")
+    .reduce((sum, e) => sum + (e.days || 0), 0);
+  const dailySalaryHalalas = roundDivideHalfUp(moneyToHalalas(employee.base_salary, "base salary"), 30);
+  const absenceDeductionHalalas = manualAbsenceDays * dailySalaryHalalas;
+  const lateDeductionHalalas = 0;
+  if (!Number.isSafeInteger(manualDeductionHalalas + absenceDeductionHalalas)) {
+    throw new PayrollConfigurationError("Manual deductions exceed the supported money range.");
   }
 
   let insurance: PayrollFormulaInput["insurance"] = { registered: false };
@@ -329,7 +319,7 @@ async function loadEmployeePayrollInput(
     lateDeductionHalalas,
     absenceDeductionHalalas,
     advanceDeductionHalalas,
-    otherDeductionHalalas: 0,
+    otherDeductionHalalas: manualDeductionHalalas,
     manualAdjustments,
     insurance,
   };
@@ -411,6 +401,16 @@ export async function calculateAndSaveEmployeePayslip(
   if (error) throw Object.assign(new Error(error.message), { code: error.code });
   const payslip = data?.[0];
   if (!payslip) throw new Error("Payroll calculation command returned no payslip.");
+
+  // Mark pending manual entries as applied
+  await context.admin
+    .from("employee_manual_entries")
+    .update({ status: "applied", applied_to_payslip_id: (payslip as Record<string, unknown>).id as string, updated_at: new Date().toISOString() })
+    .eq("org_id", context.orgId)
+    .eq("employee_id", values.employeeId)
+    .eq("month", month)
+    .eq("status", "pending");
+
   return payslip;
 }
 

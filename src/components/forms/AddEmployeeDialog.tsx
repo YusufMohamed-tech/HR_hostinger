@@ -16,7 +16,6 @@ import { assignEmployeeShift } from "@/lib/services/schedule";
 import { updateDepartment } from "@/lib/services/departments";
 import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
 import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
-import { getDeductionRuleGroups, type DeductionRuleGroup } from "@/lib/services/deduction-rule-groups";
 import { bankOptions, educationLevelOptions, saudiCityOptions } from "@/lib/hr-options";
 import { inferLocationCity, locationMatchesCompany } from "@/lib/location-classification";
 import {
@@ -72,7 +71,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [companies, setCompanies] = useState<SalesCompany[]>([]);
-  const [deductionGroups, setDeductionGroups] = useState<DeductionRuleGroup[]>([]);
   const [isDepartmentManager, setIsDepartmentManager] = useState(false);
   const [accountRole, setAccountRole] = useState<EmployeeAccountRole>("employee");
   const [accountPassword, setAccountPassword] = useState("");
@@ -108,7 +106,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     base_salary: "",
     bonus: "",
     deductions: "",
-    deduction_rule_group_id: "",
     leave_balance_manual_adjustment: "",
     leave_accrual_start_date: "",
     payment_method: "",
@@ -171,7 +168,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   useEffect(() => {
     if (!open) return;
     getSalesCompanies().then((result) => setCompanies(result.data || []));
-    getDeductionRuleGroups(currentUser?.orgId || "").then((result) => setDeductionGroups((result.data as DeductionRuleGroup[]) || []));
   }, [open, currentUser?.orgId]);
 
   const toggleLocation = (locationId: string, checked: boolean) => {
@@ -230,7 +226,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     const payload = {
       org_id: currentUser.orgId,
       ...parsed.data,
-      deduction_rule_group_id: form.deduction_rule_group_id || null,
+      deduction_rule_group_id: null,
       leave_accrual_start_date: parsed.data.hiring_date || todayString(),
     };
 
@@ -327,7 +323,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       base_salary: "",
       bonus: "",
       deductions: "",
-      deduction_rule_group_id: "",
       leave_balance_manual_adjustment: "",
       leave_accrual_start_date: "",
       payment_method: "",
@@ -718,24 +713,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 <Label>البدلات / المكافآت</Label>
                 <Input type="number" value={form.bonus} onChange={(e) => set("bonus", e.target.value)} placeholder="0" />
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label>مجموعة قواعد الخصم</Label>
-              <Select value={form.deduction_rule_group_id} onValueChange={(v) => set("deduction_rule_group_id", v || "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر مجموعة الخصم">
-                    {() => deductionGroups.find((g) => g.id === form.deduction_rule_group_id)?.name || "اختر مجموعة الخصم"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {deductionGroups.map((g) => (
-                    <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {deductionGroups.length === 0 && (
-                <p className="text-xs text-amber-600">لا توجد مجموعات خصم. أنشئ واحدة من الإعدادات أولاً.</p>
-              )}
             </div>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
