@@ -14,7 +14,8 @@ import { useDepartments, useLocations, useEmployees, useShifts } from "@/hooks/u
 import { createEmployee, replaceEmployeeLocations, type EmployeeAccountRole } from "@/lib/services/employees";
 import { assignEmployeeShift } from "@/lib/services/schedule";
 import { updateDepartment } from "@/lib/services/departments";
-import { employeeFormSchema, getValidationMessage } from "@/lib/validation";
+import { employeeCreateFormSchema, getValidationMessage } from "@/lib/validation";
+import { resolveEmployeeDisplayName } from "@/lib/employee-profile-completion";
 import { getSalesCompanies, type SalesCompany } from "@/lib/services/sales";
 import { bankOptions, educationLevelOptions, saudiCityOptions } from "@/lib/hr-options";
 import { inferLocationCity, locationMatchesCompany } from "@/lib/location-classification";
@@ -92,7 +93,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     date_of_birth: "",
     date_of_birth_hijri: "",
     gender: "",
-    hiring_date: todayString(),
+    hiring_date: "",
     department_id: "",
     job_title: "",
     manager_id: "",
@@ -197,7 +198,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
   const handleSubmit = async () => {
     if (!currentUser?.orgId) return;
 
-    const parsed = employeeFormSchema.safeParse(form);
+    const parsed = employeeCreateFormSchema.safeParse(form);
     if (!parsed.success) {
       setError(getValidationMessage(parsed.error));
       return;
@@ -205,10 +206,6 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
     if (!parsed.data.email) {
       setError("البريد الإلكتروني مطلوب لإنشاء وتفعيل حساب الدخول.");
-      return;
-    }
-    if (!parsed.data.hiring_date) {
-      setError("تاريخ بدء العمل مطلوب.");
       return;
     }
     if (!isStrongEmployeeAccountPassword(accountPassword)) {
@@ -223,15 +220,17 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
     setSubmitting(true);
     setError("");
 
+    const displayName = resolveEmployeeDisplayName(parsed.data, parsed.data.email);
     const payload = {
       org_id: currentUser.orgId,
       ...parsed.data,
-      leave_accrual_start_date: parsed.data.hiring_date || todayString(),
+      full_name: displayName,
+      leave_accrual_start_date: parsed.data.hiring_date || undefined,
     };
 
     const { data: createdEmployee, error: err } = await createEmployee(payload, {
       email: parsed.data.email,
-      full_name: parsed.data.full_name,
+      full_name: displayName,
       role: accountRole,
       password: accountPassword,
     });
@@ -308,7 +307,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       date_of_birth: "",
       date_of_birth_hijri: "",
       gender: "",
-      hiring_date: todayString(),
+      hiring_date: "",
       department_id: "",
       job_title: "",
       manager_id: "",
@@ -350,7 +349,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
       <DialogContent className={employeeDialogContentClass}>
         <DialogHeader>
           <DialogTitle>إضافة موظف</DialogTitle>
-          <DialogDescription>أكمل بيانات الموظف. الحقول المطلوبة عليها علامة *.</DialogDescription>
+          <DialogDescription>يكفي إدخال حساب الدخول وكلمة المرور الآن، ويمكن استكمال باقي البيانات لاحقًا.</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-6 py-2">
@@ -358,7 +357,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
             <p className="text-sm font-semibold text-slate-700">البيانات الأساسية</p>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
-                <Label>الاسم الكامل *</Label>
+                <Label>الاسم الكامل</Label>
                 <Input value={form.full_name_ar} onChange={(e) => setArabicName(e.target.value)} placeholder="أحمد يوسف" />
               </div>
               <div className="space-y-2">
@@ -385,7 +384,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
             </div>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
-                <Label>البريد الإلكتروني</Label>
+                <Label>حساب الدخول (البريد الإلكتروني) *</Label>
                 <Input value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="employee@company.com" />
               </div>
               <div className="space-y-2">
@@ -405,7 +404,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
             </div>
             <div className={twoColumnGridClass}>
               <div className="space-y-2">
-                <Label>مدينة العمل *</Label>
+                <Label>مدينة العمل</Label>
                 <Select value={form.work_city} onValueChange={(value) => setWorkCity(value)}>
                   <SelectTrigger><SelectValue placeholder="اختر المدينة" /></SelectTrigger>
                   <SelectContent>
@@ -543,7 +542,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>المشروع / القناة *</Label>
+                <Label>المشروع / القناة</Label>
                 <Select value={form.project_id} onValueChange={(value) => setProject(value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="اختر المشروع">
@@ -655,7 +654,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
             </div>
             <div className="space-y-2">
               <div className="space-y-2">
-                <Label>نوع الحساب *</Label>
+                <Label>نوع الحساب</Label>
                 <Select value={accountRole} onValueChange={(value) => setAccountRole(value as EmployeeAccountRole)}>
                   <SelectTrigger>
                     <SelectValue>
@@ -741,7 +740,7 @@ export function AddEmployeeDialog({ onSuccess }: Props) {
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button>
-          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting || !form.full_name}>
+          <Button className="bg-brand hover:bg-brand-dark text-white" onClick={handleSubmit} disabled={submitting}>
             {submitting ? "جاري الإضافة..." : "إضافة الموظف"}
           </Button>
         </DialogFooter>

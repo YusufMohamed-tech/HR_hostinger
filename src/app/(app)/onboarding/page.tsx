@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock3, FileUp, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock3, FileUp, RefreshCw, Search, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/Skeletons";
 import { createPersonnelFile } from "@/lib/services/personnel";
+import { EditEmployeeDialog } from "@/components/forms/EditEmployeeDialog";
 import {
   createOnboardingRequirement,
   getOnboardingWorkspace,
@@ -147,7 +148,7 @@ export default function OnboardingPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
-            {workspace?.canManage ? "استكمال ملفات الموظفين" : "استكمال ملفي"}
+            {workspace?.canManage ? "استكمال بيانات الموظفين" : "استكمال ملفي"}
           </h1>
           <p className="mt-1 text-sm text-gray-500">
             الموظف وحسابه يظلان نشطين. هذه القائمة تتابع النواقص ومواعيدها والجاهزية التشغيلية فقط.
@@ -181,6 +182,7 @@ export default function OnboardingPage() {
         {employees.map((employee) => {
           const items = (workspace?.items || []).filter((item) => item.employee_id === employee.id);
           const capabilities = (workspace?.capabilities || []).filter((item) => item.employee_id === employee.id);
+          const missingFields = employee.missing_fields || [];
           return (
             <Card key={employee.id} className="overflow-hidden">
               <CardHeader className="border-b bg-slate-50/70 pb-4">
@@ -203,12 +205,33 @@ export default function OnboardingPage() {
                       />
                     </div>
                     {workspace?.canManage && (
-                      <Button size="sm" variant="outline" onClick={() => void addRequirement(employee)}>
-                        إضافة ملف أو متطلب خاص
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <EditEmployeeDialog employee={employee} onSuccess={() => void load()} />
+                        <Button size="sm" variant="outline" onClick={() => void addRequirement(employee)}>
+                          إضافة ملف أو متطلب خاص
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </div>
+                {missingFields.length > 0 && (
+                  <div role="alert" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <AlertTriangle className="h-4 w-4" />
+                      بيانات ناقصة ({missingFields.length})
+                    </div>
+                    <p className="mt-1 text-xs text-amber-800">
+                      لا تمنع هذه النواقص إنشاء الحساب أو دخوله، وتختفي التنبيهات تلقائيًا بعد حفظ البيانات.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {missingFields.map((field) => (
+                        <Badge key={field.key} variant="outline" className="border-amber-300 bg-white text-amber-800">
+                          {field.label}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {capabilities.map((capability) => (
                     <Badge

@@ -128,7 +128,7 @@ export function EditEmployeeDialog({ employee, onSuccess, compact = false }: Pro
     if (employee && open) {
       setForm({
         full_name: employee.full_name || employee.name || "",
-        full_name_ar: employee.full_name_ar || employee.full_name || employee.name || "",
+        full_name_ar: employee.full_name_ar || "",
         full_name_en: employee.full_name_en || "",
         employee_code: employee.employee_code || "",
         email: employee.email || "",

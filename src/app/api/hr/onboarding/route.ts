@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireTenantContext } from "@/lib/server/tenant-context";
+import { getMissingEmployeeFields } from "@/lib/employee-profile-completion";
 
 type RpcClient = {
   rpc: (name: string, args: Record<string, unknown>) => Promise<{
@@ -8,6 +9,18 @@ type RpcClient = {
     error: { message: string; code?: string } | null;
   }>;
 };
+
+const employeeCompletionSelect = [
+  "id", "org_id", "user_id", "employee_code", "full_name", "full_name_ar", "full_name_en",
+  "email", "phone", "address", "work_city", "national_address_code", "emergency_contact_name",
+  "emergency_contact_phone", "national_id", "date_of_birth", "date_of_birth_hijri", "gender",
+  "hiring_date", "department_id", "job_title", "manager_id", "location_id", "company_id", "project_id",
+  "city", "province", "employment_type", "status", "base_salary", "bonus", "deductions",
+  "leave_balance_manual_adjustment", "leave_accrual_start_date", "payment_method", "bank_account",
+  "bank_account_name", "bank_name", "iban", "education_level", "lifecycle_status", "lifecycle_version",
+  "onboarding_status", "onboarding_progress", "onboarding_due_at", "can_multi_checkin", "carrier_supervisor_id",
+  "employee_locations(location_id,is_primary,assigned_from,assigned_to)",
+].join(",");
 
 const updateSchema = z.object({
   item_id: z.string().uuid(),
@@ -81,7 +94,7 @@ export async function GET(request: NextRequest) {
   const [refreshedEmployees, cases, items, capabilities] = await Promise.all([
     auth.admin
       .from("employees")
-      .select("id, full_name, employee_code, email, lifecycle_status, onboarding_status, onboarding_progress, onboarding_due_at")
+      .select(employeeCompletionSelect)
       .eq("org_id", auth.orgId)
       .in("id", employeeIds)
       .order("full_name"),
@@ -109,7 +122,10 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     data: {
-      employees: refreshedEmployees.data || [],
+      employees: ((refreshedEmployees.data || []) as unknown as Array<Record<string, unknown>>).map((employee) => ({
+        ...employee,
+        missing_fields: getMissingEmployeeFields(employee),
+      })),
       cases: cases.data || [],
       items: items.data || [],
       capabilities: capabilities.data || [],

@@ -125,7 +125,7 @@ export function SidebarContent() {
 
     const fullAdminOps: NavLink[] = [
       { name: "الموظفون", href: "/employees", icon: Users },
-      { name: "استكمال ملفات الموظفين", href: "/onboarding", icon: ClipboardList, indent: true },
+      { name: "استكمال بيانات الموظفين", href: "/onboarding", icon: ClipboardList, indent: true },
       { name: "الأقسام", href: "/departments", icon: Layers },
       { name: "ملفات الموظفين", href: "/personnel", icon: FileText },
       { name: "تقييمات المواقع", href: "/evaluations", icon: ClipboardList },

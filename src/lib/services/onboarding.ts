@@ -7,6 +7,12 @@ export type OnboardingEmployee = {
   onboarding_status: string;
   onboarding_progress: number;
   onboarding_due_at: string | null;
+  missing_fields: Array<{
+    key: string;
+    label: string;
+    section: "basic" | "work" | "payroll";
+  }>;
+  [key: string]: unknown;
 };
 
 export type OnboardingCase = {

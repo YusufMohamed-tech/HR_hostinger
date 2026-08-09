@@ -86,6 +86,16 @@ export const employeeFormSchema = z.object({
   education_level: optionalTrimmedString,
 });
 
+// Employee creation is intentionally progressive: the account can be activated
+// before HR has collected the employee's profile. The database-facing API fills
+// its required display-name column from the account email until a real name is
+// supplied. Editing an existing profile continues to use employeeFormSchema.
+export const employeeCreateFormSchema = employeeFormSchema.extend({
+  full_name: optionalTrimmedString,
+  employment_type: z.enum(["full_time", "part_time", "intern", "contract"]).default("full_time"),
+  status: z.enum(["Active", "Inactive", "On Leave"]).default("Active"),
+});
+
 export const leaveRequestFormSchema = z
   .object({
     leave_type: z.enum(["sick", "vacation", "emergency", "unpaid", "weekly", "marriage", "bereavement"]),
