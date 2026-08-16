@@ -96,7 +96,13 @@ import {
   updateJournalEntry,
   updateVendor,
 } from "@/lib/services/accounting";
-import type { AccountingAccount, AccountingCostCenter, AccountingCustomer, AccountingPayment, AccountingSalesCompanyLink, AccountingTaxRate, AccountingVendor, AgentCommissionFinanceRow, CommissionPaymentMethod, MerchantCommissionFinanceRow } from "@/types/accounting";
+import {
+  ACCOUNT_TYPE_LABELS_AR,
+  getAccountSubtypeLabelAr,
+  getAccountSubtypeOptions,
+  isAccountSubtypeForType,
+} from "@/lib/accounting/account-taxonomy";
+import type { AccountingAccount, AccountingAccountType, AccountingCostCenter, AccountingCustomer, AccountingNormalBalance, AccountingPayment, AccountingSalesCompanyLink, AccountingTaxRate, AccountingVendor, AgentCommissionFinanceRow, CommissionPaymentMethod, MerchantCommissionFinanceRow } from "@/types/accounting";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { EntityManagementPage } from "@/components/accounting/EntityManagement";
 
@@ -126,13 +132,19 @@ type JournalLineDraft = {
   cost_center_id: string;
 };
 
-const accountTypeLabels: Record<string, string> = {
-  asset: "أصل",
-  liability: "التزام",
-  equity: "حقوق ملكية",
-  revenue: "إيراد",
-  expense: "مصروف",
+type AccountFormState = {
+  code: string;
+  name_ar: string;
+  name_en: string;
+  type: AccountingAccountType;
+  subtype: string;
+  normal_balance: AccountingNormalBalance;
+  description: string;
 };
+
+function createEmptyAccountForm(): AccountFormState {
+  return { code: "", name_ar: "", name_en: "", type: "asset", subtype: "", normal_balance: "debit", description: "" };
+}
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -333,8 +345,8 @@ function AccountsPage() {
             <div className="p-6"><AccountingEmptyState title="لا يوجد دليل حسابات" description="ابدأ بتهيئة الإعدادات المحاسبية أو أضف حسابا يدويا." action={canManageSettings ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={async () => { const r = await initializeAccountingDefaults(); if (r.error) setMessage(r.error); else load(); }}>تهيئة الإعدادات المحاسبية</Button> : undefined} /></div>
           ) : (
             <Table>
-              <TableHeader><TableRow><TableHead>الكود</TableHead><TableHead>الحساب</TableHead><TableHead>النوع</TableHead><TableHead>الرصيد الطبيعي</TableHead><TableHead>الحالة</TableHead><TableHead className="text-left">الإجراءات</TableHead></TableRow></TableHeader>
-              <TableBody>{rows.map((account) => <TableRow key={account.id}><TableCell className="font-mono">{account.code}</TableCell><TableCell className="font-medium">{account.name_ar}<div className="text-xs text-gray-500">{account.name_en}</div></TableCell><TableCell>{accountTypeLabels[account.type] || account.type}</TableCell><TableCell>{account.normal_balance === "debit" ? "Debit" : "Credit"}</TableCell><TableCell><AccountingStatusBadge status={account.is_active ? "active" : "cancelled"} /></TableCell><TableCell><div className="flex justify-end gap-2">{canManage ? <><AccountDialog account={account} onDone={load} onMessage={setMessage} />{account.is_active ? <ConfirmActionButton variant="ghost" size="sm" className="text-red-700 hover:bg-red-50" title="تعطيل الحساب" description="سيتم تعطيل الحساب ومنعه من الاستخدام في قيود جديدة دون حذف سجلاته السابقة." confirmLabel="تعطيل" destructive onConfirm={async () => { const r = await deactivateAccountingAccount(account.id); if (r.error) setMessage(r.error); else load(); }}><Power className="h-4 w-4" /></ConfirmActionButton> : null}</> : <span className="text-xs text-gray-400">عرض فقط</span>}</div></TableCell></TableRow>)}</TableBody>
+              <TableHeader><TableRow><TableHead>الكود</TableHead><TableHead>الحساب</TableHead><TableHead>النوع</TableHead><TableHead>التصنيف الفرعي</TableHead><TableHead>الرصيد الطبيعي</TableHead><TableHead>الحالة</TableHead><TableHead className="text-left">الإجراءات</TableHead></TableRow></TableHeader>
+              <TableBody>{rows.map((account) => <TableRow key={account.id}><TableCell className="font-mono">{account.code}</TableCell><TableCell className="font-medium">{account.name_ar}<div className="text-xs text-gray-500">{account.name_en}</div></TableCell><TableCell>{ACCOUNT_TYPE_LABELS_AR[account.type] || account.type}</TableCell><TableCell>{getAccountSubtypeLabelAr(account.subtype)}</TableCell><TableCell>{account.normal_balance === "debit" ? "Debit" : "Credit"}</TableCell><TableCell><AccountingStatusBadge status={account.is_active ? "active" : "cancelled"} /></TableCell><TableCell><div className="flex justify-end gap-2">{canManage ? <><AccountDialog account={account} onDone={load} onMessage={setMessage} />{account.is_active ? <ConfirmActionButton variant="ghost" size="sm" className="text-red-700 hover:bg-red-50" title="تعطيل الحساب" description="سيتم تعطيل الحساب ومنعه من الاستخدام في قيود جديدة دون حذف سجلاته السابقة." confirmLabel="تعطيل" destructive onConfirm={async () => { const r = await deactivateAccountingAccount(account.id); if (r.error) setMessage(r.error); else load(); }}><Power className="h-4 w-4" /></ConfirmActionButton> : null}</> : <span className="text-xs text-gray-400">عرض فقط</span>}</div></TableCell></TableRow>)}</TableBody>
             </Table>
           )}
         </CardContent>
@@ -345,7 +357,7 @@ function AccountsPage() {
 
 function AccountDialog({ account, onDone, onMessage }: { account?: AccountingAccount; onDone: () => void; onMessage: (message: string) => void }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ code: "", name_ar: "", name_en: "", type: "asset", normal_balance: "debit", description: "" });
+  const [form, setForm] = useState<AccountFormState>(createEmptyAccountForm);
   useEffect(() => {
     if (!open) return;
     setForm(account ? {
@@ -353,16 +365,17 @@ function AccountDialog({ account, onDone, onMessage }: { account?: AccountingAcc
       name_ar: account.name_ar || "",
       name_en: account.name_en || "",
       type: account.type || "asset",
+      subtype: account.subtype || "",
       normal_balance: account.normal_balance || "debit",
       description: account.description || "",
-    } : { code: "", name_ar: "", name_en: "", type: "asset", normal_balance: "debit", description: "" });
+    } : createEmptyAccountForm());
   }, [account, open]);
   const save = async () => {
     const result = account ? await updateAccountingAccount(account.id, form as Partial<AccountingAccount>) : await createAccountingAccount(form as Partial<AccountingAccount>);
     if (result.error) onMessage(result.error);
     else {
       setOpen(false);
-      setForm({ code: "", name_ar: "", name_en: "", type: "asset", normal_balance: "debit", description: "" });
+      setForm(createEmptyAccountForm());
       onDone();
     }
   };
@@ -375,11 +388,24 @@ function AccountDialog({ account, onDone, onMessage }: { account?: AccountingAcc
           <Input placeholder="الكود" value={form.code} onChange={(e) => setForm((p) => ({ ...p, code: e.target.value }))} />
           <Input placeholder="الاسم العربي" value={form.name_ar} onChange={(e) => setForm((p) => ({ ...p, name_ar: e.target.value }))} />
           <Input placeholder="الاسم الإنجليزي" value={form.name_en} onChange={(e) => setForm((p) => ({ ...p, name_en: e.target.value }))} />
-          <div className="grid grid-cols-2 gap-3">
-            <SelectField value={form.type} onChange={(value) => setForm((p) => ({ ...p, type: value, normal_balance: value === "asset" || value === "expense" ? "debit" : "credit" }))}>
-              {Object.entries(accountTypeLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <SelectField value={form.type} onChange={(value) => {
+              const nextType = value as AccountingAccountType;
+              setForm((p) => ({
+                ...p,
+                type: nextType,
+                subtype: isAccountSubtypeForType(nextType, p.subtype) ? p.subtype : "",
+                normal_balance: nextType === "asset" || nextType === "expense" ? "debit" : "credit",
+              }));
+            }}>
+              {Object.entries(ACCOUNT_TYPE_LABELS_AR).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
             </SelectField>
-            <SelectField value={form.normal_balance} onChange={(value) => setForm((p) => ({ ...p, normal_balance: value }))}>
+            <SelectField value={form.subtype} onChange={(value) => setForm((p) => ({ ...p, subtype: value }))}>
+              <option value="">التصنيف الفرعي</option>
+              {form.subtype && !isAccountSubtypeForType(form.type, form.subtype) ? <option value={form.subtype}>{getAccountSubtypeLabelAr(form.subtype)} (التصنيف الحالي)</option> : null}
+              {getAccountSubtypeOptions(form.type).map((option) => <option key={option.value} value={option.value}>{option.labelAr}</option>)}
+            </SelectField>
+            <SelectField value={form.normal_balance} onChange={(value) => setForm((p) => ({ ...p, normal_balance: value as AccountingNormalBalance }))}>
               <option value="debit">Debit</option><option value="credit">Credit</option>
             </SelectField>
           </div>
