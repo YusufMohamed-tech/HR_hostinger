@@ -1,5 +1,5 @@
 {
-  "id": "schema_v166_manual_deduction_entries",
-  "file": "db/schema_v166_manual_deduction_entries.sql",
-  "checksumSha256": "4629213fcf8dc83df0ae4e56fe3319fde633ee12abc3249e91fe82bf64dd4dc7"
+  "id": "schema_v167_accounting_customer_status_normalization",
+  "file": "db/schema_v167_accounting_customer_status_normalization.sql",
+  "checksumSha256": "48cde47c7bb90688c37c5c1639ba71227bbb679e45dfddce83ab06ad4bc037c8"
 }

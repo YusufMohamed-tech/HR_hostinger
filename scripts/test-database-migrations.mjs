@@ -2973,6 +2973,81 @@ const launchAssertions = `
   END
   $test$;
 
+  DO $test$
+  DECLARE
+    finance_manager_customer public.accounting_customers;
+    accountant_customer public.accounting_customers;
+    inactive_denied boolean := false;
+  BEGIN
+    UPDATE public.profiles
+    SET account_status = 'active'
+    WHERE org_id = '11111111-1111-4111-8111-111111111111'
+      AND user_id = '45454545-4545-4545-8545-454545454545';
+    UPDATE public.org_members
+    SET role = 'finance_manager'
+    WHERE org_id = '11111111-1111-4111-8111-111111111111'
+      AND user_id = '45454545-4545-4545-8545-454545454545';
+
+    SELECT * INTO finance_manager_customer
+    FROM public.accounting_save_customer(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      '16700000-0000-4000-8000-000000000001', '16700000-0000-4000-8000-000000000002',
+      NULL, 0, jsonb_build_object('name_ar', 'Lowercase Active Finance Manager', 'is_active', true)
+    );
+
+    UPDATE public.org_members
+    SET role = 'accountant'
+    WHERE org_id = '11111111-1111-4111-8111-111111111111'
+      AND user_id = '45454545-4545-4545-8545-454545454545';
+    SELECT * INTO accountant_customer
+    FROM public.accounting_save_customer(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      '16700000-0000-4000-8000-000000000003', '16700000-0000-4000-8000-000000000004',
+      NULL, 0, jsonb_build_object('name_ar', 'Lowercase Active Accountant', 'is_active', true)
+    );
+
+    UPDATE public.profiles
+    SET account_status = 'inactive'
+    WHERE org_id = '11111111-1111-4111-8111-111111111111'
+      AND user_id = '45454545-4545-4545-8545-454545454545';
+    BEGIN
+      PERFORM public.accounting_save_customer(
+        '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+        '16700000-0000-4000-8000-000000000005', '16700000-0000-4000-8000-000000000006',
+        NULL, 0, jsonb_build_object('name_ar', 'Inactive Accounting User', 'is_active', true)
+      );
+    EXCEPTION WHEN insufficient_privilege THEN
+      inactive_denied := true;
+    END;
+
+    IF finance_manager_customer.id IS NULL OR accountant_customer.id IS NULL THEN
+      RAISE EXCEPTION 'Lowercase active accounting profiles could not save customers.';
+    END IF;
+    IF NOT inactive_denied
+       OR EXISTS (
+         SELECT 1 FROM public.accounting_customers
+         WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+           AND name_ar = 'Inactive Accounting User'
+       )
+       OR EXISTS (
+         SELECT 1 FROM public.accounting_customer_commands
+         WHERE organization_id = '11111111-1111-4111-8111-111111111111'
+           AND idempotency_key = '16700000-0000-4000-8000-000000000005'
+       ) THEN
+      RAISE EXCEPTION 'Inactive accounting profile was not rejected before customer mutation.';
+    END IF;
+
+    UPDATE public.profiles
+    SET account_status = 'Active'
+    WHERE org_id = '11111111-1111-4111-8111-111111111111'
+      AND user_id = '45454545-4545-4545-8545-454545454545';
+    UPDATE public.org_members
+    SET role = 'finance_manager'
+    WHERE org_id = '11111111-1111-4111-8111-111111111111'
+      AND user_id = '45454545-4545-4545-8545-454545454545';
+  END
+  $test$;
+
   UPDATE public.accounting_settings settings SET
     default_gosi_expense_id = expense.id,
     default_gosi_payable_id = payable.id
