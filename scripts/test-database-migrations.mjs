@@ -1892,6 +1892,15 @@ const launchAssertions = `
     '45454545-4545-4545-8545-454545454545'
   );
 
+  INSERT INTO public.accounting_cost_centers (
+    id, organization_id, code, name_ar, type, is_active, created_by
+  ) VALUES (
+    'b1690001-0000-4000-8000-000000000001',
+    '11111111-1111-4111-8111-111111111111',
+    'MANUAL-CC', 'مركز تكلفة القيود اليدوية', 'custom', true,
+    '45454545-4545-4545-8545-454545454545'
+  );
+
   SELECT set_config('app.sales_identity_command', 'trusted', false);
   INSERT INTO public.field_agents (
     id, organization_id, user_id, full_name, phone, national_id, status, created_by
@@ -2829,8 +2838,10 @@ const launchAssertions = `
       'notes', 'must commit as one unit', 'sourceModule', 'manual', 'sourceId', NULL,
       'status', 'pending_approval',
       'lines', jsonb_build_array(
-        jsonb_build_object('account_id', debit_account, 'debit', 125.45, 'credit', 0),
-        jsonb_build_object('account_id', credit_account, 'debit', 0, 'credit', 125.45)
+        jsonb_build_object('account_id', debit_account, 'debit', 125.45, 'credit', 0,
+          'cost_center_id', 'b1690001-0000-4000-8000-000000000001'),
+        jsonb_build_object('account_id', credit_account, 'debit', 0, 'credit', 125.45,
+          'cost_center_id', 'b1690001-0000-4000-8000-000000000001')
       )
     );
     SELECT * INTO journal FROM public.accounting_save_journal(
@@ -5312,8 +5323,10 @@ const launchAssertions = `
         'entryDate', '2199-01-01', 'description', 'v168 account reference guard',
         'sourceModule', 'manual', 'sourceId', NULL, 'status', 'draft',
         'lines', jsonb_build_array(
-          jsonb_build_object('account_id', canonical_id, 'debit', 1, 'credit', 0),
-          jsonb_build_object('account_id', system_id, 'debit', 0, 'credit', 1)
+          jsonb_build_object('account_id', canonical_id, 'debit', 1, 'credit', 0,
+            'cost_center_id', 'b1690001-0000-4000-8000-000000000001'),
+          jsonb_build_object('account_id', system_id, 'debit', 0, 'credit', 1,
+            'cost_center_id', 'b1690001-0000-4000-8000-000000000001')
         )
       )
     );
@@ -5355,6 +5368,218 @@ const launchAssertions = `
        OR (SELECT subtype FROM public.accounting_accounts WHERE id = system_id) <> 'cash'
        OR (SELECT subtype FROM public.accounting_accounts WHERE id = canonical_id) <> 'related_party_receivable' THEN
       RAISE EXCEPTION 'Account taxonomy normalization, compatibility, or protection failed.';
+    END IF;
+  END
+  $test$;
+
+  -- v169: manual journals require active same-organization cost centers while
+  -- automatic journals and reversals retain their nullable dimensions.
+  INSERT INTO public.accounting_cost_centers (
+    id, organization_id, code, name_ar, type, is_active, created_by
+  ) VALUES
+    ('b1690002-0000-4000-8000-000000000002',
+      '11111111-1111-4111-8111-111111111111', 'MANUAL-CC-OFF',
+      'مركز تكلفة غير نشط', 'custom', false,
+      '45454545-4545-4545-8545-454545454545'),
+    ('b1690003-0000-4000-8000-000000000003',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'MANUAL-CC-OTHER',
+      'مركز تكلفة لمنظمة أخرى', 'custom', true,
+      '45454545-4545-4545-8545-454545454545');
+
+  DO $test$
+  DECLARE
+    debit_account uuid;
+    credit_account uuid;
+    valid_manual public.accounting_journal_entries;
+    posted_manual public.accounting_journal_entries;
+    automatic_journal public.accounting_journal_entries;
+    posted_automatic public.accounting_journal_entries;
+    reversed_automatic public.accounting_journal_entries;
+    missing_denied boolean := false;
+    inactive_denied boolean := false;
+    foreign_denied boolean := false;
+    edit_removal_denied boolean := false;
+    relabel_denied boolean := false;
+    stale_post_denied boolean := false;
+    direct_nondraft_denied boolean := false;
+  BEGIN
+    SELECT id INTO debit_account FROM public.accounting_accounts
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111' AND code = '1000';
+    SELECT id INTO credit_account FROM public.accounting_accounts
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111' AND code = '3000';
+
+    BEGIN
+      PERFORM public.accounting_save_journal(
+        '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+        'b1690010-0000-4000-8000-000000000010', 'b1690011-0000-4000-8000-000000000011',
+        NULL, 0, jsonb_build_object(
+          'entryDate', '2199-02-01', 'description', 'v169 missing center',
+          'sourceModule', 'manual', 'status', 'draft',
+          'lines', jsonb_build_array(
+            jsonb_build_object('account_id', debit_account, 'debit', 10, 'credit', 0),
+            jsonb_build_object('account_id', credit_account, 'debit', 0, 'credit', 10,
+              'cost_center_id', 'b1690001-0000-4000-8000-000000000001')
+          )
+        )
+      );
+    EXCEPTION WHEN check_violation THEN missing_denied := true;
+    END;
+
+    BEGIN
+      PERFORM public.accounting_save_journal(
+        '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+        'b1690012-0000-4000-8000-000000000012', 'b1690013-0000-4000-8000-000000000013',
+        NULL, 0, jsonb_build_object(
+          'entryDate', '2199-02-02', 'description', 'v169 inactive center',
+          'sourceModule', 'manual', 'status', 'draft',
+          'lines', jsonb_build_array(
+            jsonb_build_object('account_id', debit_account, 'debit', 10, 'credit', 0,
+              'cost_center_id', 'b1690002-0000-4000-8000-000000000002'),
+            jsonb_build_object('account_id', credit_account, 'debit', 0, 'credit', 10,
+              'cost_center_id', 'b1690001-0000-4000-8000-000000000001')
+          )
+        )
+      );
+    EXCEPTION WHEN check_violation THEN inactive_denied := true;
+    END;
+
+    BEGIN
+      PERFORM public.accounting_save_journal(
+        '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+        'b1690014-0000-4000-8000-000000000014', 'b1690015-0000-4000-8000-000000000015',
+        NULL, 0, jsonb_build_object(
+          'entryDate', '2199-02-03', 'description', 'v169 foreign center',
+          'sourceModule', 'manual', 'status', 'draft',
+          'lines', jsonb_build_array(
+            jsonb_build_object('account_id', debit_account, 'debit', 10, 'credit', 0,
+              'cost_center_id', 'b1690003-0000-4000-8000-000000000003'),
+            jsonb_build_object('account_id', credit_account, 'debit', 0, 'credit', 10,
+              'cost_center_id', 'b1690001-0000-4000-8000-000000000001')
+          )
+        )
+      );
+    EXCEPTION WHEN check_violation THEN foreign_denied := true;
+    END;
+
+    SELECT * INTO valid_manual FROM public.accounting_save_journal(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      'b1690016-0000-4000-8000-000000000016', 'b1690017-0000-4000-8000-000000000017',
+      NULL, 0, jsonb_build_object(
+        'entryDate', '2199-02-04', 'description', 'v169 valid manual journal',
+        'sourceModule', 'manual', 'status', 'draft',
+        'lines', jsonb_build_array(
+          jsonb_build_object('account_id', debit_account, 'debit', 20, 'credit', 0,
+            'cost_center_id', 'b1690001-0000-4000-8000-000000000001'),
+          jsonb_build_object('account_id', credit_account, 'debit', 0, 'credit', 20,
+            'cost_center_id', 'b1690001-0000-4000-8000-000000000001')
+        )
+      )
+    );
+
+    BEGIN
+      UPDATE public.accounting_journal_entries SET source_module = 'payroll'
+      WHERE id = valid_manual.id;
+    EXCEPTION WHEN check_violation THEN relabel_denied := true;
+    END;
+
+    BEGIN
+      PERFORM public.accounting_save_journal(
+        '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+        'b1690032-0000-4000-8000-000000000032', 'b1690033-0000-4000-8000-000000000033',
+        valid_manual.id, 0, jsonb_build_object(
+          'entryDate', '2199-02-04', 'description', 'v169 invalid manual edit',
+          'sourceModule', 'manual', 'status', 'draft',
+          'lines', jsonb_build_array(
+            jsonb_build_object('account_id', debit_account, 'debit', 20, 'credit', 0),
+            jsonb_build_object('account_id', credit_account, 'debit', 0, 'credit', 20,
+              'cost_center_id', 'b1690001-0000-4000-8000-000000000001')
+          )
+        )
+      );
+    EXCEPTION WHEN check_violation THEN edit_removal_denied := true;
+    END;
+
+    UPDATE public.accounting_cost_centers SET is_active = false
+    WHERE id = 'b1690001-0000-4000-8000-000000000001';
+    BEGIN
+      PERFORM public.accounting_post_journal(
+        '11111111-1111-4111-8111-111111111111', valid_manual.id,
+        '45454545-4545-4545-8545-454545454545',
+        'b1690018-0000-4000-8000-000000000018', 'b1690019-0000-4000-8000-000000000019', 0
+      );
+    EXCEPTION WHEN check_violation THEN stale_post_denied := true;
+    END;
+    UPDATE public.accounting_cost_centers SET is_active = true
+    WHERE id = 'b1690001-0000-4000-8000-000000000001';
+    SELECT * INTO posted_manual FROM public.accounting_post_journal(
+      '11111111-1111-4111-8111-111111111111', valid_manual.id,
+      '45454545-4545-4545-8545-454545454545',
+      'b1690020-0000-4000-8000-000000000020', 'b1690021-0000-4000-8000-000000000021', 0
+    );
+
+    SELECT * INTO automatic_journal FROM public.accounting_save_journal(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      'b1690022-0000-4000-8000-000000000022', 'b1690023-0000-4000-8000-000000000023',
+      NULL, 0, jsonb_build_object(
+        'entryDate', '2199-02-05', 'description', 'v169 automatic journal',
+        'sourceModule', 'v169_automatic', 'status', 'draft',
+        'lines', jsonb_build_array(
+          jsonb_build_object('account_id', debit_account, 'debit', 30, 'credit', 0),
+          jsonb_build_object('account_id', credit_account, 'debit', 0, 'credit', 30)
+        )
+      )
+    );
+    SELECT * INTO posted_automatic FROM public.accounting_post_journal(
+      '11111111-1111-4111-8111-111111111111', automatic_journal.id,
+      '45454545-4545-4545-8545-454545454545',
+      'b1690024-0000-4000-8000-000000000024', 'b1690025-0000-4000-8000-000000000025', 0
+    );
+    SELECT * INTO reversed_automatic FROM public.accounting_reverse_journal(
+      '11111111-1111-4111-8111-111111111111', automatic_journal.id,
+      '45454545-4545-4545-8545-454545454545',
+      'b1690026-0000-4000-8000-000000000026', 'b1690027-0000-4000-8000-000000000027',
+      1, 'v169 reversal exemption'
+    );
+
+    BEGIN
+      INSERT INTO public.accounting_journal_entries (
+        id, organization_id, entry_no, entry_date, description, source_module,
+        status, total_debit, total_credit
+      ) VALUES (
+        'b1690030-0000-4000-8000-000000000030',
+        '11111111-1111-4111-8111-111111111111', 'V169-DIRECT-INVALID',
+        '2199-02-06', 'v169 direct pending manual', 'manual',
+        'pending_approval', 0, 0
+      );
+    EXCEPTION WHEN check_violation THEN direct_nondraft_denied := true;
+    END;
+
+    IF NOT missing_denied OR NOT inactive_denied OR NOT foreign_denied OR NOT edit_removal_denied
+       OR NOT relabel_denied
+       OR NOT stale_post_denied OR NOT direct_nondraft_denied
+       OR valid_manual.id IS NULL OR posted_manual.status <> 'posted'
+       OR automatic_journal.id IS NULL OR posted_automatic.status <> 'posted'
+       OR reversed_automatic.status <> 'posted'
+       OR EXISTS (
+         SELECT 1 FROM public.accounting_commands
+         WHERE idempotency_key IN (
+           'b1690011-0000-4000-8000-000000000011',
+           'b1690013-0000-4000-8000-000000000013',
+           'b1690015-0000-4000-8000-000000000015',
+           'b1690019-0000-4000-8000-000000000019',
+           'b1690033-0000-4000-8000-000000000033'
+         )
+       )
+       OR (SELECT version FROM public.accounting_journal_entries WHERE id = valid_manual.id) <> 1
+       OR (SELECT source_module FROM public.accounting_journal_entries WHERE id = valid_manual.id) <> 'manual'
+       OR (SELECT count(*) FROM public.accounting_journal_lines
+           WHERE journal_entry_id = valid_manual.id
+             AND cost_center_id = 'b1690001-0000-4000-8000-000000000001') <> 2
+       OR EXISTS (
+         SELECT 1 FROM public.accounting_journal_entries
+         WHERE id = 'b1690030-0000-4000-8000-000000000030'
+       ) THEN
+      RAISE EXCEPTION 'Manual journal cost-center authority or automatic-journal compatibility failed.';
     END IF;
   END
   $test$;

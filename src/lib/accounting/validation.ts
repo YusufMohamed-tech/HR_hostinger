@@ -9,6 +9,21 @@ export type JournalLineInput = {
   location_id?: string | null;
 };
 
+export type JournalLineFieldError = {
+  lineIndex: number;
+  field: "cost_center_id";
+  message: string;
+};
+
+export type JournalValidationOptions = {
+  sourceModule?: string | null;
+};
+
+export function journalRequiresCostCenter(sourceModule: unknown) {
+  const normalized = String(sourceModule ?? "").trim().toLowerCase();
+  return normalized === "" || normalized === "manual";
+}
+
 export function roundMoney(value: unknown) {
   const parsed = Number(value || 0);
   if (!Number.isFinite(parsed)) return 0;
@@ -22,20 +37,26 @@ export function calculateLineAmount(line: JournalLineInput) {
   };
 }
 
-export function validateJournalLines(lines: JournalLineInput[]) {
+export function validateJournalLines(lines: JournalLineInput[], options: JournalValidationOptions = {}) {
   if (!Array.isArray(lines) || lines.length < 2) {
     return { valid: false as const, message: "يجب إضافة سطرين على الأقل للقيد المحاسبي." };
   }
 
+  const lineErrors: JournalLineFieldError[] = journalRequiresCostCenter(options.sourceModule)
+    ? lines.flatMap((line, lineIndex) => !String(line.account_id || "").trim() || String(line.cost_center_id || "").trim()
+      ? []
+      : [{ lineIndex, field: "cost_center_id" as const, message: "مركز التكلفة مطلوب لهذا السطر." }])
+    : [];
+
   let totalDebit = 0;
   let totalCredit = 0;
-  for (const line of lines) {
+  for (const [lineIndex, line] of lines.entries()) {
     const accountId = String(line.account_id || "").trim();
     const { debit, credit } = calculateLineAmount(line);
-    if (!accountId) return { valid: false as const, message: "كل سطر يجب أن يحتوي على حساب." };
-    if (debit < 0 || credit < 0) return { valid: false as const, message: "لا يمكن إدخال مبالغ سالبة." };
+    if (!accountId) return { valid: false as const, message: "كل سطر يجب أن يحتوي على حساب.", lineIndex, lineErrors };
+    if (debit < 0 || credit < 0) return { valid: false as const, message: "لا يمكن إدخال مبالغ سالبة.", lineIndex, lineErrors };
     if ((debit > 0 && credit > 0) || (debit === 0 && credit === 0)) {
-      return { valid: false as const, message: "كل سطر يجب أن يحتوي على مدين أو دائن فقط." };
+      return { valid: false as const, message: "كل سطر يجب أن يحتوي على مدين أو دائن فقط.", lineIndex, lineErrors };
     }
     totalDebit += debit;
     totalCredit += credit;
@@ -44,10 +65,22 @@ export function validateJournalLines(lines: JournalLineInput[]) {
   totalDebit = roundMoney(totalDebit);
   totalCredit = roundMoney(totalCredit);
   if (totalDebit !== totalCredit) {
-    return { valid: false as const, message: "إجمالي المدين يجب أن يساوي إجمالي الدائن.", totalDebit, totalCredit };
+    return { valid: false as const, message: "إجمالي المدين يجب أن يساوي إجمالي الدائن.", totalDebit, totalCredit, lineErrors };
   }
 
-  return { valid: true as const, totalDebit, totalCredit };
+  if (lineErrors.length > 0) {
+    return {
+      valid: false as const,
+      message: "مركز التكلفة مطلوب لكل سطر في القيد اليدوي.",
+      lineIndex: lineErrors[0].lineIndex,
+      field: "cost_center_id" as const,
+      lineErrors,
+      totalDebit,
+      totalCredit,
+    };
+  }
+
+  return { valid: true as const, totalDebit, totalCredit, lineErrors };
 }
 
 export function parseDate(value: unknown, fallback = new Date()) {

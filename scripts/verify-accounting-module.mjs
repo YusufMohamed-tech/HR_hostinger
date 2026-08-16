@@ -26,7 +26,7 @@ const apiAccountingGuard = files.rbac.match(/if \(normalizedPath\.startsWith\("\
 const roleSet = (name) => files.permissions.match(new RegExp(`const ${name} = new Set\\(\\[([^\\]]*)\\]\\);`))?.[1] || "";
 const manageRoles = roleSet("manageRoles");
 const postRoles = roleSet("postRoles");
-const journalValidationCalls = files.posting.match(/validateJournalLines\(input\.lines\)/g)?.length || 0;
+const journalValidationCalls = files.posting.match(/validateJournalLines\(input\.lines(?:, \{ sourceModule \})?\)/g)?.length || 0;
 
 const checks = [
   ["Finance viewer cannot manage", files.permissions.includes("finance_viewer") && manageRoles.length > 0 && !manageRoles.includes("finance_viewer")],

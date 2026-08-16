@@ -30,6 +30,14 @@ function db(admin: AdminClient) {
   return admin as any;
 }
 
+function databaseError(error: { message: string; code?: string | null }) {
+  return Object.assign(new Error(error.message), { code: error.code || undefined });
+}
+
+function journalValidationError(message: string) {
+  return Object.assign(new Error(message), { code: "23514" });
+}
+
 function commandContext(options?: CommandOptions) {
   return {
     commandId: options?.commandId || randomUUID(),
@@ -44,7 +52,7 @@ async function journalWithLines(admin: AdminClient, orgId: string, entryId: stri
     .eq("organization_id", orgId)
     .eq("id", entryId)
     .single();
-  if (error) throw new Error(error.message);
+  if (error) throw databaseError(error);
   return data as Record<string, unknown>;
 }
 
@@ -59,7 +67,7 @@ export async function initializeAccountingDefaults(admin: AdminClient, orgId: st
     p_org_id: orgId,
     p_user_id: userId,
   });
-  if (result.error) throw new Error(result.error.message);
+  if (result.error) throw databaseError(result.error);
 }
 
 export async function getAccountingSettings(admin: AdminClient, orgId: string) {
@@ -68,13 +76,14 @@ export async function getAccountingSettings(admin: AdminClient, orgId: string) {
     .select("*")
     .eq("organization_id", orgId)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) throw databaseError(error);
   return data as Record<string, unknown> | null;
 }
 
 export async function createJournalEntry(admin: AdminClient, input: JournalInput) {
-  const validation = validateJournalLines(input.lines);
-  if (!validation.valid) throw new Error(validation.message);
+  const sourceModule = input.sourceModule || "manual";
+  const validation = validateJournalLines(input.lines, { sourceModule });
+  if (!validation.valid) throw journalValidationError(validation.message);
   const context = commandContext(input);
   const { data, error } = await db(admin).rpc("accounting_save_journal", {
     p_org_id: input.orgId,
@@ -87,29 +96,30 @@ export async function createJournalEntry(admin: AdminClient, input: JournalInput
       entryDate: input.entryDate,
       description: input.description,
       notes: input.notes || null,
-      sourceModule: input.sourceModule || "manual",
+      sourceModule,
       sourceId: input.sourceId || null,
       status: input.status || "draft",
       lines: input.lines,
     },
   });
-  if (error) throw new Error(error.message);
+  if (error) throw databaseError(error);
   const entry = firstRpcRow(data, "Accounting journal creation");
   return journalWithLines(admin, input.orgId, String(entry.id));
 }
 
 export async function updateDraftJournalEntry(admin: AdminClient, input: JournalInput & { entryId: string }) {
-  const validation = validateJournalLines(input.lines);
-  if (!validation.valid) throw new Error(validation.message);
   const currentResult = await db(admin)
     .from("accounting_journal_entries")
     .select("id, version, status, source_module, source_id")
     .eq("organization_id", input.orgId)
     .eq("id", input.entryId)
     .maybeSingle();
-  if (currentResult.error) throw new Error(currentResult.error.message);
+  if (currentResult.error) throw databaseError(currentResult.error);
   const current = currentResult.data as Record<string, unknown> | null;
   if (!current) throw new Error("القيد غير موجود.");
+  const sourceModule = String(current.source_module || "manual");
+  const validation = validateJournalLines(input.lines, { sourceModule });
+  if (!validation.valid) throw journalValidationError(validation.message);
   const context = commandContext(input);
   const targetStatus = input.status || "draft";
   const { data, error } = await db(admin).rpc("accounting_save_journal", {
@@ -123,13 +133,13 @@ export async function updateDraftJournalEntry(admin: AdminClient, input: Journal
       entryDate: input.entryDate,
       description: input.description,
       notes: input.notes || null,
-      sourceModule: String(current.source_module || "manual"),
+      sourceModule,
       sourceId: current.source_id || null,
       status: targetStatus,
       lines: input.lines,
     },
   });
-  if (error) throw new Error(error.message);
+  if (error) throw databaseError(error);
   const entry = firstRpcRow(data, "Accounting journal update");
   return journalWithLines(admin, input.orgId, String(entry.id));
 }
@@ -147,7 +157,7 @@ export async function postJournalEntry(
     .eq("organization_id", orgId)
     .eq("id", entryId)
     .maybeSingle();
-  if (currentResult.error) throw new Error(currentResult.error.message);
+  if (currentResult.error) throw databaseError(currentResult.error);
   const current = currentResult.data as Record<string, unknown> | null;
   if (!current) throw new Error("القيد غير موجود.");
   const context = commandContext(options);
@@ -159,7 +169,7 @@ export async function postJournalEntry(
     p_request_id: context.requestId,
     p_expected_version: options?.expectedVersion ?? Number(current.version || 0),
   });
-  if (error) throw new Error(error.message);
+  if (error) throw databaseError(error);
   firstRpcRow(data, "Accounting journal posting");
   return journalWithLines(admin, orgId, entryId);
 }
@@ -178,7 +188,7 @@ export async function reverseJournalEntry(
     .eq("organization_id", orgId)
     .eq("id", entryId)
     .maybeSingle();
-  if (currentResult.error) throw new Error(currentResult.error.message);
+  if (currentResult.error) throw databaseError(currentResult.error);
   const current = currentResult.data as Record<string, unknown> | null;
   if (!current) throw new Error("القيد غير موجود.");
   const context = commandContext(options);
@@ -191,7 +201,7 @@ export async function reverseJournalEntry(
     p_expected_version: options?.expectedVersion ?? Number(current.version || 0),
     p_reason: reason || null,
   });
-  if (error) throw new Error(error.message);
+  if (error) throw databaseError(error);
   const reversal = firstRpcRow(data, "Accounting journal reversal");
   return journalWithLines(admin, orgId, String(reversal.id));
 }
@@ -209,7 +219,7 @@ export async function cancelJournalEntry(
     .eq("organization_id", orgId)
     .eq("id", entryId)
     .maybeSingle();
-  if (currentResult.error) throw new Error(currentResult.error.message);
+  if (currentResult.error) throw databaseError(currentResult.error);
   const current = currentResult.data as Record<string, unknown> | null;
   if (!current) throw new Error("القيد غير موجود.");
   const context = commandContext(options);
@@ -224,7 +234,7 @@ export async function cancelJournalEntry(
     p_operation: "cancel",
     p_payload: {},
   });
-  if (error) throw new Error(error.message);
+  if (error) throw databaseError(error);
   firstRpcRow(data, "Accounting journal cancellation");
   return journalWithLines(admin, orgId, entryId);
 }

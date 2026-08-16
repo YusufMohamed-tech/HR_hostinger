@@ -102,6 +102,7 @@ import {
   getAccountSubtypeOptions,
   isAccountSubtypeForType,
 } from "@/lib/accounting/account-taxonomy";
+import { journalRequiresCostCenter, validateJournalLines, type JournalLineInput } from "@/lib/accounting/validation";
 import type { AccountingAccount, AccountingAccountType, AccountingCostCenter, AccountingCustomer, AccountingNormalBalance, AccountingPayment, AccountingSalesCompanyLink, AccountingTaxRate, AccountingVendor, AgentCommissionFinanceRow, CommissionPaymentMethod, MerchantCommissionFinanceRow } from "@/types/accounting";
 import { useRoleContext } from "@/providers/RoleProvider";
 import { EntityManagementPage } from "@/components/accounting/EntityManagement";
@@ -132,6 +133,30 @@ type JournalLineDraft = {
   cost_center_id: string;
 };
 
+function journalPayloadLines(lines: JournalLineDraft[]): JournalLineInput[] {
+  return lines.map((line) => ({
+    ...line,
+    debit: Number(line.debit || 0),
+    credit: Number(line.credit || 0),
+    cost_center_id: line.cost_center_id || null,
+  }));
+}
+
+function manualJournalValidation(lines: JournalLineDraft[], sourceModule: string) {
+  const payloadLines = journalPayloadLines(lines);
+  const validation = validateJournalLines(payloadLines, { sourceModule });
+  const costCenterErrors = Object.fromEntries(
+    ("lineErrors" in validation ? validation.lineErrors ?? [] : []).map((error) => [error.lineIndex, error.message]),
+  );
+  return { payloadLines, validation, costCenterErrors };
+}
+
+function focusFirstCostCenterError(errors: Record<number, string>) {
+  const firstIndex = Object.keys(errors).map(Number).sort((a, b) => a - b)[0];
+  if (firstIndex === undefined) return;
+  requestAnimationFrame(() => document.getElementById(`journal-line-${firstIndex}-cost-center`)?.focus());
+}
+
 type AccountFormState = {
   code: string;
   name_ar: string;
@@ -160,16 +185,28 @@ function SelectField({
   onChange,
   children,
   className,
+  id,
+  required,
+  ariaInvalid,
+  ariaDescribedBy,
 }: {
   value: string;
   onChange: (value: string) => void;
   children: React.ReactNode;
   className?: string;
+  id?: string;
+  required?: boolean;
+  ariaInvalid?: boolean;
+  ariaDescribedBy?: string;
 }) {
   return (
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
+      id={id}
+      required={required}
+      aria-invalid={ariaInvalid || undefined}
+      aria-describedby={ariaDescribedBy}
       className={className || "h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"}
     >
       {children}
@@ -529,6 +566,7 @@ function JournalEntryFormPage() {
   const [journalTypes, setJournalTypes] = useState<JournalType[]>([]);
   const [form, setForm] = useState({ entry_date: today(), description: "", notes: "", journal_type_id: "" });
   const [lines, setLines] = useState<JournalLineDraft[]>([{ account_id: "", debit: "", credit: "", description: "", cost_center_id: "" }, { account_id: "", debit: "", credit: "", description: "", cost_center_id: "" }]);
+  const [costCenterErrors, setCostCenterErrors] = useState<Record<number, string>>({});
   const [submittingStatus, setSubmittingStatus] = useState<"draft" | "pending_approval" | null>(null);
   const submitLockRef = useRef(false);
   useEffect(() => {
@@ -544,9 +582,16 @@ function JournalEntryFormPage() {
   const totals = useMemo(() => ({ debit: lines.reduce((s, l) => s + Number(l.debit || 0), 0), credit: lines.reduce((s, l) => s + Number(l.credit || 0), 0) }), [lines]);
   const submit = async (status: "draft" | "pending_approval") => {
     if (submitLockRef.current) return;
+    const checked = manualJournalValidation(lines, "manual");
+    setCostCenterErrors(checked.costCenterErrors);
+    if (!checked.validation.valid) {
+      focusFirstCostCenterError(checked.costCenterErrors);
+      setMessage(checked.validation.message);
+      return;
+    }
     submitLockRef.current = true;
     setSubmittingStatus(status);
-    const result = await createJournalEntry({ ...form, status, lines: lines.map((line) => ({ ...line, debit: Number(line.debit || 0), credit: Number(line.credit || 0), cost_center_id: line.cost_center_id || null })) });
+    const result = await createJournalEntry({ ...form, status, lines: checked.payloadLines });
     if (result.error) {
       submitLockRef.current = false;
       setSubmittingStatus(null);
@@ -560,13 +605,16 @@ function JournalEntryFormPage() {
     <div className="space-y-6">
       <MessageDialog open={Boolean(message)} onOpenChange={(o) => !o && setMessage("")} description={message} />
       <AccountingPageHeader title="قيد يومية جديد" description="أضف سطور المدين والدائن ثم احفظ القيد كمسودة أو أرسله للاعتماد." />
-      <Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5"><div className="grid gap-4 md:grid-cols-4"><div className="space-y-2"><Label>تاريخ القيد</Label><Input type="date" value={form.entry_date} onChange={(e) => setForm((p) => ({ ...p, entry_date: e.target.value }))} /></div>{journalTypes.length > 0 && <div className="space-y-2"><Label>نوع القيد</Label><SelectField value={form.journal_type_id} onChange={(value) => setForm((p) => ({ ...p, journal_type_id: value }))}><option value="">— اختياري —</option>{journalTypes.map((jt) => <option key={jt.id} value={jt.id}>{jt.code} - {jt.name_ar}</option>)}</SelectField></div>}<div className="space-y-2 md:col-span-2"><Label>الوصف</Label><Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div></div><JournalLinesEditor accounts={accounts} costCenters={costCenters} lines={lines} setLines={setLines} /><div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 p-3 text-sm"><div>إجمالي المدين: <MoneyAmount value={totals.debit} /> · إجمالي الدائن: <MoneyAmount value={totals.credit} /></div><div className={totals.debit === totals.credit ? "text-green-700" : "text-red-700"}>{totals.debit === totals.credit ? "القيد متوازن" : "القيد غير متوازن"}</div></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => submit("draft")} disabled={Boolean(submittingStatus)}><Save className="ml-2 h-4 w-4" />{submittingStatus === "draft" ? "جاري الحفظ..." : "حفظ مسودة"}</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={() => submit("pending_approval")} disabled={Boolean(submittingStatus)}>{submittingStatus === "pending_approval" ? "جاري الإرسال..." : "إرسال للاعتماد"}</Button></div></CardContent></Card>
+      <Card className="border-none shadow-sm"><CardContent className="grid gap-4 p-5"><div className="grid gap-4 md:grid-cols-4"><div className="space-y-2"><Label>تاريخ القيد</Label><Input type="date" value={form.entry_date} onChange={(e) => setForm((p) => ({ ...p, entry_date: e.target.value }))} /></div>{journalTypes.length > 0 && <div className="space-y-2"><Label>نوع القيد</Label><SelectField value={form.journal_type_id} onChange={(value) => setForm((p) => ({ ...p, journal_type_id: value }))}><option value="">— اختياري —</option>{journalTypes.map((jt) => <option key={jt.id} value={jt.id}>{jt.code} - {jt.name_ar}</option>)}</SelectField></div>}<div className="space-y-2 md:col-span-2"><Label>الوصف</Label><Input value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} /></div></div><JournalLinesEditor accounts={accounts} costCenters={costCenters} lines={lines} setLines={setLines} costCenterErrors={costCenterErrors} clearCostCenterError={(index) => setCostCenterErrors((current) => { const next = { ...current }; delete next[index]; return next; })} /><div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 p-3 text-sm"><div>إجمالي المدين: <MoneyAmount value={totals.debit} /> · إجمالي الدائن: <MoneyAmount value={totals.credit} /></div><div className={totals.debit === totals.credit ? "text-green-700" : "text-red-700"}>{totals.debit === totals.credit ? "القيد متوازن" : "القيد غير متوازن"}</div></div><div className="flex justify-end gap-2"><Button variant="outline" onClick={() => submit("draft")} disabled={Boolean(submittingStatus)}><Save className="ml-2 h-4 w-4" />{submittingStatus === "draft" ? "جاري الحفظ..." : "حفظ مسودة"}</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={() => submit("pending_approval")} disabled={Boolean(submittingStatus)}>{submittingStatus === "pending_approval" ? "جاري الإرسال..." : "إرسال للاعتماد"}</Button></div></CardContent></Card>
     </div>
   );
 }
 
-function JournalLinesEditor({ accounts, costCenters, lines, setLines }: { accounts: AccountingAccount[]; costCenters: AccountingCostCenter[]; lines: JournalLineDraft[]; setLines: React.Dispatch<React.SetStateAction<JournalLineDraft[]>> }) {
-  const patch = (index: number, key: keyof JournalLineDraft, value: string) => setLines(lines.map((line, i) => i === index ? { ...line, [key]: value } : line));
+function JournalLinesEditor({ accounts, costCenters, lines, setLines, requireCostCenter = true, costCenterErrors = {}, clearCostCenterError }: { accounts: AccountingAccount[]; costCenters: AccountingCostCenter[]; lines: JournalLineDraft[]; setLines: React.Dispatch<React.SetStateAction<JournalLineDraft[]>>; requireCostCenter?: boolean; costCenterErrors?: Record<number, string>; clearCostCenterError?: (index: number) => void }) {
+  const patch = (index: number, key: keyof JournalLineDraft, value: string) => {
+    setLines(lines.map((line, i) => i === index ? { ...line, [key]: value } : line));
+    if (key === "cost_center_id") clearCostCenterError?.(index);
+  };
   return (
     <div className="space-y-3">
       {lines.map((line, index) => (
@@ -575,7 +623,11 @@ function JournalLinesEditor({ accounts, costCenters, lines, setLines }: { accoun
           <Input placeholder="وصف السطر" value={line.description || ""} onChange={(e) => patch(index, "description", e.target.value)} />
           <Input type="number" placeholder="مدين" value={line.debit || ""} onChange={(e) => patch(index, "debit", e.target.value)} />
           <Input type="number" placeholder="دائن" value={line.credit || ""} onChange={(e) => patch(index, "credit", e.target.value)} />
-          <SelectField value={line.cost_center_id || ""} onChange={(value) => patch(index, "cost_center_id", value)}><option value="">مركز تكلفة</option>{costCenters.map((center) => <option key={center.id} value={center.id}>{center.code} - {center.name_ar}</option>)}</SelectField>
+          <div className="space-y-1">
+            <Label htmlFor={`journal-line-${index}-cost-center`} className="text-xs">مركز التكلفة {requireCostCenter ? <span className="text-red-600">*</span> : null}</Label>
+            <SelectField id={`journal-line-${index}-cost-center`} value={line.cost_center_id || ""} onChange={(value) => patch(index, "cost_center_id", value)} required={requireCostCenter} ariaInvalid={Boolean(costCenterErrors[index])} ariaDescribedBy={costCenterErrors[index] ? `journal-line-${index}-cost-center-error` : undefined}><option value="">{requireCostCenter ? "اختر مركز التكلفة (مطلوب)" : "مركز تكلفة — اختياري"}</option>{costCenters.filter((center) => center.is_active).map((center) => <option key={center.id} value={center.id}>{center.code} - {center.name_ar}</option>)}</SelectField>
+            {costCenterErrors[index] ? <p id={`journal-line-${index}-cost-center-error`} role="alert" className="text-xs text-red-600">{costCenterErrors[index]}</p> : null}
+          </div>
           <Button variant="ghost" size="sm" onClick={() => setLines(lines.filter((_, i) => i !== index))}>حذف</Button>
         </div>
       ))}
@@ -601,6 +653,7 @@ function JournalDetail({ id }: { id: string }) {
   const [costCenters, setCostCenters] = useState<AccountingCostCenter[]>([]);
   const [editForm, setEditForm] = useState({ entry_date: today(), description: "", notes: "" });
   const [editLines, setEditLines] = useState<JournalLineDraft[]>([]);
+  const [editCostCenterErrors, setEditCostCenterErrors] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (!editing) return;
@@ -622,35 +675,22 @@ function JournalDetail({ id }: { id: string }) {
       description: line.description || "",
       cost_center_id: line.cost_center_id || "",
     })));
+    setEditCostCenterErrors({});
   }, [data, editing]);
 
-  const validateEdit = () => {
-    if (editLines.length < 2) return "يجب أن يحتوي القيد على سطرين على الأقل.";
-    const invalidLine = editLines.find((line) => !line.account_id || (Number(line.debit || 0) > 0 && Number(line.credit || 0) > 0) || Number(line.debit || 0) < 0 || Number(line.credit || 0) < 0 || (Number(line.debit || 0) === 0 && Number(line.credit || 0) === 0));
-    if (invalidLine) return "كل سطر يحتاج حسابا نشطا ومبلغ مدين أو دائن فقط دون قيم سالبة.";
-    const debit = editLines.reduce((sum, line) => sum + Number(line.debit || 0), 0);
-    const credit = editLines.reduce((sum, line) => sum + Number(line.credit || 0), 0);
-    if (Math.round(debit * 100) !== Math.round(credit * 100)) return "يجب أن يتساوى إجمالي المدين مع إجمالي الدائن.";
-    return "";
-  };
-
   const saveDraft = async (status?: "pending_approval") => {
-    const validationMessage = validateEdit();
-    if (validationMessage) {
-      setMessage(validationMessage);
+    const checked = manualJournalValidation(editLines, String(data?.source_module || "manual"));
+    setEditCostCenterErrors(checked.costCenterErrors);
+    if (!checked.validation.valid) {
+      focusFirstCostCenterError(checked.costCenterErrors);
+      setMessage(checked.validation.message);
       return;
     }
     setSavingEdit(true);
     const r = await updateJournalEntry(id, {
       ...editForm,
       status,
-      lines: editLines.map((line) => ({
-        account_id: line.account_id,
-        debit: Number(line.debit || 0),
-        credit: Number(line.credit || 0),
-        description: line.description || null,
-        cost_center_id: line.cost_center_id || null,
-      })),
+      lines: checked.payloadLines,
     });
     setSavingEdit(false);
     if (r.error) setMessage(r.error);
@@ -714,7 +754,7 @@ function JournalDetail({ id }: { id: string }) {
                 <Input value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} />
               </div>
             </div>
-            <JournalLinesEditor accounts={accounts} costCenters={costCenters} lines={editLines} setLines={setEditLines} />
+            <JournalLinesEditor accounts={accounts} costCenters={costCenters} lines={editLines} setLines={setEditLines} requireCostCenter={journalRequiresCostCenter(data.source_module)} costCenterErrors={editCostCenterErrors} clearCostCenterError={(index) => setEditCostCenterErrors((current) => { const next = { ...current }; delete next[index]; return next; })} />
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 p-3 text-sm">
               <div>إجمالي المدين: <MoneyAmount value={editTotals.debit} /> · إجمالي الدائن: <MoneyAmount value={editTotals.credit} /></div>
               <div className={Math.round(editTotals.debit * 100) === Math.round(editTotals.credit * 100) ? "text-green-700" : "text-red-700"}>{Math.round(editTotals.debit * 100) === Math.round(editTotals.credit * 100) ? "القيد متوازن" : "القيد غير متوازن"}</div>

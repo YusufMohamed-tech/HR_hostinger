@@ -1,5 +1,5 @@
 {
-  "id": "schema_v168_accounting_account_taxonomy",
-  "file": "db/schema_v168_accounting_account_taxonomy.sql",
-  "checksumSha256": "d28e440f7e5d0d3a41e826432ebc5a78494bd43f001f80ca6edbb37ea436f8b2"
+  "id": "schema_v169_manual_journal_cost_centers",
+  "file": "db/schema_v169_manual_journal_cost_centers.sql",
+  "checksumSha256": "d2434f5376d90adf14093d233982bde7b8584f738d36d699f392bb39b1413e05"
 }

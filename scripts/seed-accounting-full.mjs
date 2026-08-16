@@ -445,6 +445,7 @@ async function seedPeriods(orgId, userId) {
 // ─── Journal Entries (main GL postings) ───
 async function seedJournalEntries(orgId, userId, accounts, costCenters) {
   const entries = [];
+  const manualCenter = costCenters.find((center) => center.code === "CC-ADMIN") || costCenters[0];
   // Get max existing journal number
   const { data: existingJE } = await supabase
     .from("accounting_journal_entries")
@@ -466,15 +467,15 @@ async function seedJournalEntries(orgId, userId, accounts, costCenters) {
     description: "قيود افتتاحية - رصيد أول المدة",
     source_module: "manual",
     lines: [
-      { account_id: accounts["1000"].id, debit: 50000, credit: 0, description: "رصيد النقدية" },
-      { account_id: accounts["1010"].id, debit: 500000, credit: 0, description: "رصيد البنك الأهلي" },
-      { account_id: accounts["1020"].id, debit: 300000, credit: 0, description: "رصيد بنك الراجحي" },
-      { account_id: accounts["1100"].id, debit: 150000, credit: 0, description: "ذمم مدينة سابقة" },
-      { account_id: accounts["1500"].id, debit: 200000, credit: 0, description: "أصول ثابتة" },
-      { account_id: accounts["2000"].id, debit: 0, credit: 80000, description: "ذمم دائنة سابقة" },
-      { account_id: accounts["2400"].id, debit: 0, credit: 300000, description: "قرض بنكي" },
-      { account_id: accounts["3000"].id, debit: 0, credit: 500000, description: "رأس المال" },
-      { account_id: accounts["3100"].id, debit: 0, credit: 320000, description: "أرباح مبقاة" },
+      { account_id: accounts["1000"].id, debit: 50000, credit: 0, description: "رصيد النقدية", cost_center_id: manualCenter.id },
+      { account_id: accounts["1010"].id, debit: 500000, credit: 0, description: "رصيد البنك الأهلي", cost_center_id: manualCenter.id },
+      { account_id: accounts["1020"].id, debit: 300000, credit: 0, description: "رصيد بنك الراجحي", cost_center_id: manualCenter.id },
+      { account_id: accounts["1100"].id, debit: 150000, credit: 0, description: "ذمم مدينة سابقة", cost_center_id: manualCenter.id },
+      { account_id: accounts["1500"].id, debit: 200000, credit: 0, description: "أصول ثابتة", cost_center_id: manualCenter.id },
+      { account_id: accounts["2000"].id, debit: 0, credit: 80000, description: "ذمم دائنة سابقة", cost_center_id: manualCenter.id },
+      { account_id: accounts["2400"].id, debit: 0, credit: 300000, description: "قرض بنكي", cost_center_id: manualCenter.id },
+      { account_id: accounts["3000"].id, debit: 0, credit: 500000, description: "رأس المال", cost_center_id: manualCenter.id },
+      { account_id: accounts["3100"].id, debit: 0, credit: 320000, description: "أرباح مبقاة", cost_center_id: manualCenter.id },
     ],
   });
   if (openingEntry) entries.push(openingEntry);
@@ -530,7 +531,7 @@ async function seedJournalEntries(orgId, userId, accounts, costCenters) {
       source_module: "manual",
       lines: [
         { account_id: accounts["5100"].id, debit: rent, credit: 0, description: "إيجار شهري", cost_center_id: cc.id },
-        { account_id: accounts["1010"].id, debit: 0, credit: rent, description: "من البنك" },
+        { account_id: accounts["1010"].id, debit: 0, credit: rent, description: "من البنك", cost_center_id: cc.id },
       ],
     });
     if (rentEntry) entries.push(rentEntry);
@@ -622,8 +623,8 @@ async function seedJournalEntries(orgId, userId, accounts, costCenters) {
       description: `إهلاك شهري - ${month}`,
       source_module: "manual",
       lines: [
-        { account_id: accounts["5300"].id, debit: depAmount, credit: 0, description: "مصروف إهلاك" },
-        { account_id: accounts["1510"].id, debit: 0, credit: depAmount, description: "مجمع الإهلاك" },
+        { account_id: accounts["5300"].id, debit: depAmount, credit: 0, description: "مصروف إهلاك", cost_center_id: manualCenter.id },
+        { account_id: accounts["1510"].id, debit: 0, credit: depAmount, description: "مجمع الإهلاك", cost_center_id: manualCenter.id },
       ],
     });
     if (depEntry) entries.push(depEntry);
