@@ -190,6 +190,7 @@
     { "id": "schema_v162_journal_attachments", "file": "db/schema_v162_journal_attachments.sql" },
     { "id": "schema_v163_customer_vendor_permissions", "file": "db/schema_v163_customer_vendor_permissions.sql" },
     { "id": "schema_v164_journal_types", "file": "db/schema_v164_journal_types.sql" },
-    { "id": "schema_v165_banking_module", "file": "db/schema_v165_banking_module.sql" }
+    { "id": "schema_v165_banking_module", "file": "db/schema_v165_banking_module.sql" },
+    { "id": "schema_v166_manual_deduction_entries", "file": "db/schema_v166_manual_deduction_entries.sql" }
   ]
 }

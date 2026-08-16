@@ -1,5 +1,5 @@
 {
-  "id": "schema_v160_product_trader_workflow_corrections",
-  "file": "db/schema_v160_product_trader_workflow_corrections.sql",
-  "checksumSha256": "e465ff4908dbe26c5333197dcead69642c370555bf20350d9280168d0dbe1c99"
+  "id": "schema_v166_manual_deduction_entries",
+  "file": "db/schema_v166_manual_deduction_entries.sql",
+  "checksumSha256": "4629213fcf8dc83df0ae4e56fe3319fde633ee12abc3249e91fe82bf64dd4dc7"
 }
