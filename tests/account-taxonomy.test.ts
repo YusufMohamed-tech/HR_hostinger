@@ -3,9 +3,15 @@ import test from "node:test";
 import {
   ACCOUNT_SUBTYPE_LABELS_AR,
   ACCOUNT_SUBTYPE_TAXONOMY,
+  isAccountingAccountType,
   getAccountSubtypeLabelAr,
   getAccountSubtypeOptions,
   isAccountSubtypeForType,
+  isCanonicalAccountSubtype,
+  isKnownLegacyAccountSubtypeForType,
+  isSupportedAccountSubtypeForType,
+  normalizeAccountingAccountSubtype,
+  normalizeAccountingAccountType,
   normalizeAccountSubtype,
 } from "../src/lib/accounting/account-taxonomy";
 
@@ -31,8 +37,32 @@ test("account subtypes are constrained to their parent account type", () => {
 
 test("changing account type preserves compatible subtypes and clears incompatible ones", () => {
   assert.equal(normalizeAccountSubtype("asset", "bank"), "bank");
+  assert.equal(normalizeAccountSubtype("asset", "  BANK  "), "bank");
   assert.equal(normalizeAccountSubtype("expense", "bank"), "");
   assert.equal(normalizeAccountSubtype("revenue", null), "");
+});
+
+test("account classification input normalization is safe for API payloads", () => {
+  assert.equal(isAccountingAccountType("asset"), true);
+  assert.equal(isAccountingAccountType(" asset "), false);
+  assert.equal(normalizeAccountingAccountType(" Asset "), "asset");
+  assert.equal(normalizeAccountingAccountType("contra_asset"), null);
+  assert.equal(normalizeAccountingAccountType({}), null);
+  assert.equal(normalizeAccountingAccountSubtype(" Related_Party_Receivable "), "related_party_receivable");
+  assert.equal(normalizeAccountingAccountSubtype("   "), null);
+  assert.equal(normalizeAccountingAccountSubtype(null), null);
+  assert.equal(isCanonicalAccountSubtype("related_party_receivable"), true);
+  assert.equal(isCanonicalAccountSubtype("employee_advances"), false);
+});
+
+test("known legacy subtypes remain type-bound while unknown values are unsupported", () => {
+  assert.equal(isKnownLegacyAccountSubtypeForType("asset", "employee_advances"), true);
+  assert.equal(isKnownLegacyAccountSubtypeForType("expense", "employee_advances"), false);
+  assert.equal(isKnownLegacyAccountSubtypeForType("expense", "cost_of_sales"), true);
+  assert.equal(isSupportedAccountSubtypeForType("asset", "related_party_receivable"), true);
+  assert.equal(isSupportedAccountSubtypeForType("liability", "related_party_receivable"), false);
+  assert.equal(isSupportedAccountSubtypeForType("asset", "custom_legacy_value"), false);
+  assert.equal(isSupportedAccountSubtypeForType("asset", null), true);
 });
 
 test("subtype labels handle canonical, legacy, empty, and unknown values", () => {

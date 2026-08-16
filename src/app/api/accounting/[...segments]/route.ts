@@ -39,6 +39,11 @@ import {
 } from "@/lib/accounting/reports/index";
 import { reportToCSV } from "@/lib/accounting/reports/export/csv";
 import { parseDate, requireText, roundMoney, type JournalLineInput } from "@/lib/accounting/validation";
+import {
+  isSupportedAccountSubtypeForType,
+  normalizeAccountingAccountSubtype,
+  normalizeAccountingAccountType,
+} from "@/lib/accounting/account-taxonomy";
 
 type RouteContext = { params: Promise<{ segments?: string[] }> };
 
@@ -142,6 +147,50 @@ function customerCommandPayload(body: Record<string, unknown>, current?: Record<
     sales_company_id: body.sales_company_id === undefined ? current?.sales_company_id ?? null : body.sales_company_id || null,
     is_active: body.is_active === undefined ? current?.is_active ?? true : Boolean(body.is_active),
   };
+}
+
+type AccountCommandPayloadResult =
+  | {
+      valid: true;
+      type: NonNullable<ReturnType<typeof normalizeAccountingAccountType>>;
+      subtype: string | null;
+      payload: Record<string, unknown>;
+    }
+  | { valid: false; message: string };
+
+function accountCommandPayload(
+  body: Record<string, unknown>,
+  current?: Record<string, unknown>,
+): AccountCommandPayloadResult {
+  const hasType = Object.prototype.hasOwnProperty.call(body, "type");
+  const hasSubtype = Object.prototype.hasOwnProperty.call(body, "subtype");
+  const type = normalizeAccountingAccountType(hasType ? body.type : current?.type);
+  if (!type) return { valid: false, message: "نوع الحساب غير صالح." };
+  if (hasSubtype && body.subtype !== null && typeof body.subtype !== "string") {
+    return { valid: false, message: "التصنيف الفرعي للحساب غير صالح." };
+  }
+
+  const currentType = normalizeAccountingAccountType(current?.type);
+  const currentSubtype = current?.subtype === null || current?.subtype === undefined
+    ? null
+    : String(current.subtype);
+  const normalizedCurrentSubtype = normalizeAccountingAccountSubtype(currentSubtype);
+  const normalizedSubtype = normalizeAccountingAccountSubtype(hasSubtype ? body.subtype : currentSubtype);
+  const supported = isSupportedAccountSubtypeForType(type, normalizedSubtype);
+  const unchangedLegacyPair = Boolean(
+    current
+      && currentType === type
+      && normalizedCurrentSubtype === normalizedSubtype,
+  );
+  if (!supported && !unchangedLegacyPair) {
+    return { valid: false, message: "التصنيف الفرعي لا يتوافق مع نوع الحساب." };
+  }
+
+  const subtype = !supported && unchangedLegacyPair ? currentSubtype : normalizedSubtype;
+  const payload = { ...body };
+  if (hasType || !current) payload.type = type;
+  if (hasSubtype || !current) payload.subtype = subtype;
+  return { valid: true, type, subtype, payload };
 }
 
 function invoiceCommandPayload(body: Record<string, unknown>, current?: Record<string, unknown>) {
@@ -509,6 +558,21 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const { dateFrom, dateTo, asOf } = getQueryDates(request);
     if (parts[0] === "dashboard") return json(await getAccountingDashboard(admin, auth.orgId, dateFrom, dateTo));
     if (parts[0] === "commissions") return json(await getSalesCommissionsFinance(admin, auth.orgId, request));
+    if (parts[0] === "accounts" && parts[1] === "search") {
+      const q = request.nextUrl.searchParams.get("q") || "";
+      const limit = Math.min(parseInt(request.nextUrl.searchParams.get("limit") || "30"), 50);
+      let query = db(admin)
+        .from("accounting_accounts")
+        .select("id, code, name_ar, name_en, type, subtype, normal_balance, parent_id, is_active")
+        .eq("organization_id", auth.orgId)
+        .eq("is_active", true)
+        .order("code", { ascending: true })
+        .limit(limit);
+      if (q) query = query.or(`code.ilike.${q}%,name_ar.ilike.%${q}%,name_en.ilike.%${q}%`);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
     if (parts[0] === "accounts") return json(await listTable(admin, "accounting_accounts", auth.orgId, request, "code"));
     if (parts[0] === "cost-centers") return json(await listTable(admin, "accounting_cost_centers", auth.orgId, request, "code"));
     if (parts[0] === "journal-types") {
@@ -559,21 +623,6 @@ export async function GET(request: NextRequest, context: RouteContext) {
       }
       if (parts[1]) return json(await getRecord(admin, "accounting_journal_entries", auth.orgId, parts[1], "*, lines:accounting_journal_lines(*, account:account_id(*), cost_center:cost_center_id(*))"));
       return json(await listTable(admin, "accounting_journal_entries", auth.orgId, request, "entry_date"));
-    }
-    if (parts[0] === "accounts" && parts[1] === "search") {
-      const q = request.nextUrl.searchParams.get("q") || "";
-      const limit = Math.min(parseInt(request.nextUrl.searchParams.get("limit") || "30"), 50);
-      let query = db(admin)
-        .from("accounting_accounts")
-        .select("id, code, name_ar, name_en, type, normal_balance, parent_id, is_active")
-        .eq("organization_id", auth.orgId)
-        .eq("is_active", true)
-        .order("code", { ascending: true })
-        .limit(limit);
-      if (q) query = query.or(`code.ilike.${q}%,name_ar.ilike.%${q}%,name_en.ilike.%${q}%`);
-      const { data, error } = await query;
-      if (error) throw new Error(error.message);
-      return json(data || []);
     }
     if (parts[0] === "expenses") {
       if (parts[1]) return json(await getRecord(admin, "accounting_expenses", auth.orgId, parts[1], "*, vendor:vendor_id(*), employee:employee_id(full_name, employee_code), cost_center:cost_center_id(*)"));
@@ -1940,14 +1989,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     if (parts[0] === "accounts") {
+      const classification = accountCommandPayload(body);
+      if (!classification.valid) return message(classification.message, 400);
       const values = {
         code: requireText(body.code),
         name_ar: requireText(body.name_ar),
         name_en: requireText(body.name_en) || null,
-        type: requireText(body.type),
-        subtype: requireText(body.subtype) || null,
+        type: classification.type,
+        subtype: classification.subtype,
         parent_id: body.parent_id || null,
-        normal_balance: requireText(body.normal_balance, body.type === "asset" || body.type === "expense" ? "debit" : "credit"),
+        normal_balance: requireText(
+          body.normal_balance,
+          classification.type === "asset" || classification.type === "expense" ? "debit" : "credit",
+        ).toLowerCase(),
         description: requireText(body.description) || null,
       };
       if (!values.code || !values.name_ar) return message("رقم الحساب والاسم العربي مطلوبان.", 400);
@@ -2688,8 +2742,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return json({ ...updated, lines: lines || [] });
     }
 
+    if (parts[0] === "accounts" && parts[1]) {
+      const current = await getRecord(admin, "accounting_accounts", auth.orgId, parts[1]);
+      const classification = accountCommandPayload(body, current);
+      if (!classification.valid) return message(classification.message, 400);
+      const command = accountingCommandContext(request, body);
+      return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+        p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
+        p_request_id: command.requestId, p_command_id: command.commandId,
+        p_entity_type: "account", p_entity_id: parts[1],
+        p_expected_version: Number(body.expected_version ?? current.version ?? 0),
+        p_operation: "save", p_payload: classification.payload,
+      }));
+    }
+
     const map: Record<string, { table: string; entity: string }> = {
-      accounts: { table: "accounting_accounts", entity: "account" },
       "cost-centers": { table: "accounting_cost_centers", entity: "cost_center" },
       vendors: { table: "accounting_vendors", entity: "vendor" },
     };

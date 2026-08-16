@@ -36,6 +36,8 @@ export type AccountSubtypeOption = Readonly<{
   labelAr: string;
 }>;
 
+export const ACCOUNT_TYPES = ["asset", "liability", "equity", "revenue", "expense"] as const;
+
 export const ACCOUNT_TYPE_LABELS_AR = {
   asset: "أصل",
   liability: "التزام",
@@ -125,6 +127,58 @@ const LEGACY_ACCOUNT_SUBTYPE_LABELS_AR: Readonly<Record<string, string>> = {
   cost_of_sales: "تكلفة المبيعات",
 };
 
+export const LEGACY_ACCOUNT_SUBTYPE_TYPES = {
+  employee_advances: "asset",
+  fixed_assets: "asset",
+  accumulated_depreciation: "asset",
+  vat_receivable: "asset",
+  vat_payable: "liability",
+  accrued: "liability",
+  accrued_expenses: "liability",
+  salary_payable: "liability",
+  commission_payable: "liability",
+  eos_provision: "liability",
+  operating_revenue: "revenue",
+  sales: "revenue",
+  services: "revenue",
+  payroll: "expense",
+  salary_expense: "expense",
+  salaries: "expense",
+  bonuses: "expense",
+  commissions: "expense",
+  social_insurance: "expense",
+  rent: "expense",
+  utilities: "expense",
+  telecom: "expense",
+  recruitment: "expense",
+  training: "expense",
+  travel: "expense",
+  office_supplies: "expense",
+  depreciation: "expense",
+  cost_of_sales: "expense",
+} as const satisfies Readonly<Record<string, AccountingAccountType>>;
+
+export function isAccountingAccountType(value: unknown): value is AccountingAccountType {
+  return typeof value === "string" && ACCOUNT_TYPES.some((type) => type === value);
+}
+
+export function normalizeAccountingAccountType(value: unknown): AccountingAccountType | null {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return isAccountingAccountType(normalized) ? normalized : null;
+}
+
+export function normalizeAccountingAccountSubtype(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return normalized || null;
+}
+
+export function isCanonicalAccountSubtype(value: unknown): value is AccountingAccountSubtype {
+  return typeof value === "string"
+    && Object.values(ACCOUNT_SUBTYPE_TAXONOMY)
+      .some((options) => options.some((option) => option.value === value));
+}
+
 export function getAccountSubtypeOptions(type: AccountingAccountType): readonly AccountSubtypeOption[] {
   return ACCOUNT_SUBTYPE_TAXONOMY[type];
 }
@@ -137,11 +191,29 @@ export function isAccountSubtypeForType(
   return ACCOUNT_SUBTYPE_TAXONOMY[type].some((option) => option.value === subtype);
 }
 
+export function isKnownLegacyAccountSubtypeForType(
+  type: AccountingAccountType,
+  subtype: string | null | undefined,
+): boolean {
+  if (!subtype) return false;
+  return LEGACY_ACCOUNT_SUBTYPE_TYPES[subtype as keyof typeof LEGACY_ACCOUNT_SUBTYPE_TYPES] === type;
+}
+
+export function isSupportedAccountSubtypeForType(
+  type: AccountingAccountType,
+  subtype: string | null | undefined,
+): boolean {
+  return subtype === null || subtype === undefined
+    || isAccountSubtypeForType(type, subtype)
+    || isKnownLegacyAccountSubtypeForType(type, subtype);
+}
+
 export function normalizeAccountSubtype(
   type: AccountingAccountType,
   subtype: string | null | undefined,
 ): AccountingAccountSubtype | "" {
-  return isAccountSubtypeForType(type, subtype) ? subtype : "";
+  const normalized = normalizeAccountingAccountSubtype(subtype);
+  return isAccountSubtypeForType(type, normalized) ? normalized : "";
 }
 
 export function getAccountSubtypeLabelAr(subtype: string | null | undefined): string {

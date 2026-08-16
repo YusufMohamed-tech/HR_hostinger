@@ -1,5 +1,5 @@
 {
-  "id": "schema_v167_accounting_customer_status_normalization",
-  "file": "db/schema_v167_accounting_customer_status_normalization.sql",
-  "checksumSha256": "48cde47c7bb90688c37c5c1639ba71227bbb679e45dfddce83ab06ad4bc037c8"
+  "id": "schema_v168_accounting_account_taxonomy",
+  "file": "db/schema_v168_accounting_account_taxonomy.sql",
+  "checksumSha256": "d28e440f7e5d0d3a41e826432ebc5a78494bd43f001f80ca6edbb37ea436f8b2"
 }

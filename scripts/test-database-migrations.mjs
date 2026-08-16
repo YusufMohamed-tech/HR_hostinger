@@ -5190,6 +5190,175 @@ const launchAssertions = `
   END
   $test$;
 
+  -- v168: account taxonomy is normalized and enforced without breaking an
+  -- untouched unknown legacy classification during a descriptive update.
+  ALTER TABLE public.accounting_accounts
+    DISABLE TRIGGER trg_accounting_accounts_validate_classification;
+  INSERT INTO public.accounting_accounts (
+    id, organization_id, code, name_ar, type, subtype, normal_balance,
+    is_system, is_active, created_by, updated_by, version
+  ) VALUES (
+    'a16800f0-0000-4000-8000-0000000000f0',
+    '11111111-1111-4111-8111-111111111111',
+    'TAXONOMY-168-LEGACY', 'Unknown legacy classification', 'asset',
+    'future_legacy_subtype', 'debit', false, true,
+    '45454545-4545-4545-8545-454545454545',
+    '45454545-4545-4545-8545-454545454545', 1
+  );
+  ALTER TABLE public.accounting_accounts
+    ENABLE TRIGGER trg_accounting_accounts_validate_classification;
+
+  DO $test$
+  DECLARE
+    canonical jsonb;
+    canonical_updated jsonb;
+    known_legacy jsonb;
+    reclassified jsonb;
+    blank_subtype jsonb;
+    grandfathered jsonb;
+    canonical_id uuid;
+    legacy_id uuid;
+    system_id uuid;
+    system_version integer;
+    journal public.accounting_journal_entries;
+    cross_type_denied boolean := false;
+    unknown_denied boolean := false;
+    system_demotion_denied boolean := false;
+    system_change_denied boolean := false;
+    referenced_change_denied boolean := false;
+  BEGIN
+    canonical := public.execute_accounting_master_command(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      'a1680001-0000-4000-8000-000000000001', 'a1680002-0000-4000-8000-000000000002',
+      'account', NULL, 0, 'save',
+      '{"code":"TAXONOMY-168-A","name_ar":"Canonical taxonomy account","type":"asset","subtype":"  RELATED_PARTY_RECEIVABLE  ","normal_balance":"debit"}'::jsonb
+    );
+    canonical_id := (canonical->>'id')::uuid;
+    canonical_updated := public.execute_accounting_master_command(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      'a1680003-0000-4000-8000-000000000003', 'a1680004-0000-4000-8000-000000000004',
+      'account', canonical_id, 1, 'save', '{"name_ar":"Canonical taxonomy account updated"}'::jsonb
+    );
+    known_legacy := public.execute_accounting_master_command(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      'a1680005-0000-4000-8000-000000000005', 'a1680006-0000-4000-8000-000000000006',
+      'account', NULL, 0, 'save',
+      '{"code":"TAXONOMY-168-B","name_ar":"Known legacy taxonomy account","type":"expense","subtype":" COST_OF_SALES ","normal_balance":"debit"}'::jsonb
+    );
+    legacy_id := (known_legacy->>'id')::uuid;
+    reclassified := public.execute_accounting_master_command(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      'a1680007-0000-4000-8000-000000000007', 'a1680008-0000-4000-8000-000000000008',
+      'account', legacy_id, 1, 'save',
+      '{"type":"asset","subtype":"other_asset","normal_balance":"debit"}'::jsonb
+    );
+    blank_subtype := public.execute_accounting_master_command(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      'a1680009-0000-4000-8000-000000000009', 'a1680010-0000-4000-8000-000000000010',
+      'account', NULL, 0, 'save',
+      '{"code":"TAXONOMY-168-C","name_ar":"Nullable taxonomy account","type":"asset","subtype":"   ","normal_balance":"debit"}'::jsonb
+    );
+
+    BEGIN
+      PERFORM public.execute_accounting_master_command(
+        '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+        'a1680011-0000-4000-8000-000000000011', 'a1680012-0000-4000-8000-000000000012',
+        'account', NULL, 0, 'save',
+        '{"code":"TAXONOMY-168-X","name_ar":"Cross type taxonomy account","type":"liability","subtype":"cash","normal_balance":"credit"}'::jsonb
+      );
+    EXCEPTION WHEN check_violation THEN
+      cross_type_denied := true;
+    END;
+    BEGIN
+      PERFORM public.execute_accounting_master_command(
+        '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+        'a1680013-0000-4000-8000-000000000013', 'a1680014-0000-4000-8000-000000000014',
+        'account', NULL, 0, 'save',
+        '{"code":"TAXONOMY-168-Y","name_ar":"Unknown taxonomy account","type":"asset","subtype":"future_unknown","normal_balance":"debit"}'::jsonb
+      );
+    EXCEPTION WHEN check_violation THEN
+      unknown_denied := true;
+    END;
+
+    grandfathered := public.execute_accounting_master_command(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      'a1680015-0000-4000-8000-000000000015', 'a1680016-0000-4000-8000-000000000016',
+      'account', 'a16800f0-0000-4000-8000-0000000000f0', 1, 'save',
+      '{"name_ar":"Unknown legacy classification updated"}'::jsonb
+    );
+
+    SELECT id, version INTO system_id, system_version
+    FROM public.accounting_accounts
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111' AND code = '1000';
+    BEGIN
+      UPDATE public.accounting_accounts SET is_system = false WHERE id = system_id;
+    EXCEPTION WHEN object_not_in_prerequisite_state THEN
+      system_demotion_denied := true;
+    END;
+    BEGIN
+      PERFORM public.execute_accounting_master_command(
+        '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+        'a1680017-0000-4000-8000-000000000017', 'a1680018-0000-4000-8000-000000000018',
+        'account', system_id, system_version, 'save', '{"subtype":"bank"}'::jsonb
+      );
+    EXCEPTION WHEN object_not_in_prerequisite_state THEN
+      system_change_denied := true;
+    END;
+
+    SELECT * INTO journal FROM public.accounting_save_journal(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      'a1680019-0000-4000-8000-000000000019', 'a1680020-0000-4000-8000-000000000020',
+      NULL, 0, jsonb_build_object(
+        'entryDate', '2199-01-01', 'description', 'v168 account reference guard',
+        'sourceModule', 'manual', 'sourceId', NULL, 'status', 'draft',
+        'lines', jsonb_build_array(
+          jsonb_build_object('account_id', canonical_id, 'debit', 1, 'credit', 0),
+          jsonb_build_object('account_id', system_id, 'debit', 0, 'credit', 1)
+        )
+      )
+    );
+    BEGIN
+      PERFORM public.execute_accounting_master_command(
+        '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+        'a1680021-0000-4000-8000-000000000021', 'a1680022-0000-4000-8000-000000000022',
+        'account', canonical_id, 2, 'save', '{"subtype":"receivable"}'::jsonb
+      );
+    EXCEPTION WHEN object_not_in_prerequisite_state THEN
+      referenced_change_denied := true;
+    END;
+
+    IF canonical->>'subtype' <> 'related_party_receivable'
+       OR canonical_updated->>'subtype' <> 'related_party_receivable'
+       OR canonical_updated->>'name_ar' <> 'Canonical taxonomy account updated'
+       OR known_legacy->>'subtype' <> 'cost_of_sales'
+       OR reclassified->>'type' <> 'asset' OR reclassified->>'subtype' <> 'other_asset'
+       OR blank_subtype->>'subtype' IS NOT NULL
+       OR grandfathered->>'subtype' <> 'future_legacy_subtype'
+       OR grandfathered->>'name_ar' <> 'Unknown legacy classification updated'
+       OR NOT cross_type_denied OR NOT unknown_denied
+       OR NOT system_demotion_denied OR NOT system_change_denied OR NOT referenced_change_denied
+       OR journal.id IS NULL
+       OR EXISTS (
+         SELECT 1 FROM public.accounting_accounts
+         WHERE code IN ('TAXONOMY-168-X', 'TAXONOMY-168-Y')
+       )
+       OR EXISTS (
+         SELECT 1 FROM public.accounting_commands
+         WHERE idempotency_key IN (
+           'a1680012-0000-4000-8000-000000000012',
+           'a1680014-0000-4000-8000-000000000014',
+           'a1680018-0000-4000-8000-000000000018',
+           'a1680022-0000-4000-8000-000000000022'
+         )
+       )
+       OR NOT (SELECT is_system FROM public.accounting_accounts WHERE id = system_id)
+       OR (SELECT subtype FROM public.accounting_accounts WHERE id = system_id) <> 'cash'
+       OR (SELECT subtype FROM public.accounting_accounts WHERE id = canonical_id) <> 'related_party_receivable' THEN
+      RAISE EXCEPTION 'Account taxonomy normalization, compatibility, or protection failed.';
+    END IF;
+  END
+  $test$;
+
   -- v108: promoter configuration is versioned and validates connected sales data.
   INSERT INTO public.sales_companies(id,organization_id,name,slug,code)
   VALUES('ad200001-0000-4000-8000-000000000001','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',

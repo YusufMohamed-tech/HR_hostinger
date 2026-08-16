@@ -1315,7 +1315,7 @@ export function deleteJournalAttachment(journalEntryId: string, attachmentId: st
 
 // Account Search
 export function searchAccounts(query: string, limit = 30) {
-  return apiFetch<Array<{ id: string; code: string; name_ar: string; name_en: string | null; type: string; normal_balance: string; parent_id: string | null; is_active: boolean }>>(`/api/accounting/accounts/search${qs({ q: query, limit: String(limit) })}`);
+  return apiFetch<Array<{ id: string; code: string; name_ar: string; name_en: string | null; type: string; subtype: string | null; normal_balance: string; parent_id: string | null; is_active: boolean }>>(`/api/accounting/accounts/search${qs({ q: query, limit: String(limit) })}`);
 }
 
 // Journal Types
