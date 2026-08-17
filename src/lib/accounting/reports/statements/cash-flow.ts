@@ -60,8 +60,12 @@ export async function getCashFlowStatement(admin: AdminClient, orgId: string, da
     total: roundMoney(financing.total + uncategorizedByType.financing.total),
   };
 
-  // Get opening cash balance
-  const priorLines = await queryLedger(admin, { orgId, dateTo: dateFrom, accountTypes: ["asset"] });
+  // Get opening cash balance (exclusive: day BEFORE dateFrom to avoid counting first-day transactions)
+  const openingDateTo = new Date(dateFrom);
+  openingDateTo.setDate(openingDateTo.getDate() - 1);
+  const openingDateStr = openingDateTo.toISOString().split("T")[0];
+
+  const priorLines = await queryLedger(admin, { orgId, dateTo: openingDateStr, accountTypes: ["asset"] });
   const cashAccounts = priorLines.filter((l) =>
     l.account.subtype === "cash" || l.account.subtype === "bank"
   );
@@ -70,14 +74,25 @@ export async function getCashFlowStatement(admin: AdminClient, orgId: string, da
   );
 
   const netChange = roundMoney(operatingSection.total + investingSection.total + financingSection.total);
+  const closingCash = roundMoney(openingCash + netChange);
 
-  const data: CashFlowData = {
+  // Reconciliation check: verify closing = GL balance at dateTo
+  const closingLines = await queryLedger(admin, { orgId, dateTo, accountTypes: ["asset"] });
+  const closingCashFromGL = roundMoney(
+    closingLines
+      .filter((l) => l.account.subtype === "cash" || l.account.subtype === "bank")
+      .reduce((sum, l) => sum + Number(l.debit || 0) - Number(l.credit || 0), 0)
+  );
+  const reconciliationDifference = roundMoney(closingCash - closingCashFromGL);
+
+  const data: CashFlowData & { reconciliation_difference?: number } = {
     operating: operatingSection,
     investing: investingSection,
     financing: financingSection,
     net_change: netChange,
     opening_cash: openingCash,
-    closing_cash: roundMoney(openingCash + netChange),
+    closing_cash: closingCash,
+    ...(reconciliationDifference !== 0 ? { reconciliation_difference: reconciliationDifference } : {}),
   };
 
   return buildReportResponse("cash_flow_statement", orgId, { from: dateFrom, to: dateTo }, data);
