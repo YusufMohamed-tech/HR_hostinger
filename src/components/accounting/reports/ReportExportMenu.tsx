@@ -54,7 +54,7 @@ export function ReportExportMenu({ reportId, params }: ReportExportMenuProps) {
       if (entityHeader) headers["X-Accounting-Entity-Id"] = entityHeader;
 
       const res = await fetch(
-        `/api/accounting/reports/${reportId}/export?${queryParams}`,
+        `/api/accounting/reports/export/${reportId}?${queryParams}`,
         { headers }
       );
 
