@@ -12,7 +12,7 @@ import {
   getExchangeRates, saveExchangeRate, approveExchangeRate,
   getFiscalCalendars, saveFiscalCalendar,
 } from "@/lib/server/accounting/entities";
-import { getUserAllowedEntities, ensureDefaultEntity } from "@/lib/server/accounting/context";
+import { getUserAllowedEntities, ensureDefaultEntity, resolveAccountingEntityContext, isEntityContextError } from "@/lib/server/accounting/context";
 import {
   getAccountingDashboard,
   getBalanceSheet,
@@ -38,6 +38,8 @@ import {
   getAPAgingReport,
 } from "@/lib/accounting/reports/index";
 import { reportToCSV } from "@/lib/accounting/reports/export/csv";
+import { trialBalanceExcel, profitLossExcel, generateExcelBuffer } from "@/lib/accounting/reports/export/excel";
+import { trialBalancePdf, profitLossPdf, generateReportHtml } from "@/lib/accounting/reports/export/pdf";
 import { parseDate, requireText, roundMoney, type JournalLineInput } from "@/lib/accounting/validation";
 import {
   isSupportedAccountSubtypeForType,
@@ -271,8 +273,9 @@ function actionFor(method: string, parts: string[]): AccountingAction {
   return "manage";
 }
 
-async function listTable(admin: ReturnType<typeof createAdminClient>, table: string, orgId: string, request: NextRequest, orderColumn = "created_at") {
+async function listTable(admin: ReturnType<typeof createAdminClient>, table: string, orgId: string, request: NextRequest, orderColumn = "created_at", legalEntityId?: string) {
   let query = db(admin).from(table).select("*").eq("organization_id", orgId).order(orderColumn, { ascending: false });
+  if (legalEntityId) query = query.eq("legal_entity_id", legalEntityId);
   const search = request.nextUrl.searchParams.get("q")?.trim();
   const status = request.nextUrl.searchParams.get("status")?.trim();
   const type = request.nextUrl.searchParams.get("type")?.trim();
@@ -554,6 +557,14 @@ export async function GET(request: NextRequest, context: RouteContext) {
   if ("error" in auth) return auth.error;
   const admin = createAdminClient();
 
+  // Resolve legal entity context for data isolation
+  const requestedEntityId = request.headers.get("X-Accounting-Entity-Id") || undefined;
+  const entityCtx = await resolveAccountingEntityContext(auth.orgId, auth.user.id, auth.role, requestedEntityId);
+  if (isEntityContextError(entityCtx)) {
+    return NextResponse.json({ message: entityCtx.message_ar, error: entityCtx.error }, { status: entityCtx.status });
+  }
+  const entityId = entityCtx.legalEntityId;
+
   try {
     const { dateFrom, dateTo, asOf } = getQueryDates(request);
     if (parts[0] === "dashboard") return json(await getAccountingDashboard(admin, auth.orgId, dateFrom, dateTo));
@@ -565,6 +576,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         .from("accounting_accounts")
         .select("id, code, name_ar, name_en, type, subtype, normal_balance, parent_id, is_active")
         .eq("organization_id", auth.orgId)
+        .eq("legal_entity_id", entityId)
         .eq("is_active", true)
         .order("code", { ascending: true })
         .limit(limit);
@@ -573,8 +585,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (error) throw new Error(error.message);
       return json(data || []);
     }
-    if (parts[0] === "accounts") return json(await listTable(admin, "accounting_accounts", auth.orgId, request, "code"));
-    if (parts[0] === "cost-centers") return json(await listTable(admin, "accounting_cost_centers", auth.orgId, request, "code"));
+    if (parts[0] === "accounts") return json(await listTable(admin, "accounting_accounts", auth.orgId, request, "code", entityId));
+    if (parts[0] === "cost-centers") return json(await listTable(admin, "accounting_cost_centers", auth.orgId, request, "code", entityId));
     if (parts[0] === "journal-types") {
       const { data, error } = await db(admin)
         .from("accounting_journal_types")
@@ -623,11 +635,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     if (parts[0] === "vendors") {
       if (parts[1]) return json(await getRecord(admin, "accounting_vendors", auth.orgId, parts[1]));
-      return json(await listTable(admin, "accounting_vendors", auth.orgId, request));
+      return json(await listTable(admin, "accounting_vendors", auth.orgId, request, "created_at", entityId));
     }
     if (parts[0] === "customers") {
       if (parts[1]) return json(await getRecord(admin, "accounting_customers", auth.orgId, parts[1]));
-      return json(await listTable(admin, "accounting_customers", auth.orgId, request));
+      return json(await listTable(admin, "accounting_customers", auth.orgId, request, "created_at", entityId));
     }
     if (parts[0] === "journal-entries") {
       if (parts[1] && parts[2] === "attachments") {
@@ -641,19 +653,19 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return json(data || []);
       }
       if (parts[1]) return json(await getRecord(admin, "accounting_journal_entries", auth.orgId, parts[1], "*, lines:accounting_journal_lines(*, account:account_id(*), cost_center:cost_center_id(*))"));
-      return json(await listTable(admin, "accounting_journal_entries", auth.orgId, request, "entry_date"));
+      return json(await listTable(admin, "accounting_journal_entries", auth.orgId, request, "entry_date", entityId));
     }
     if (parts[0] === "expenses") {
       if (parts[1]) return json(await getRecord(admin, "accounting_expenses", auth.orgId, parts[1], "*, vendor:vendor_id(*), employee:employee_id(full_name, employee_code), cost_center:cost_center_id(*)"));
-      return json(await listTable(admin, "accounting_expenses", auth.orgId, request, "expense_date"));
+      return json(await listTable(admin, "accounting_expenses", auth.orgId, request, "expense_date", entityId));
     }
     if (parts[0] === "invoices") {
       if (parts[1]) return json(await getRecord(admin, "accounting_invoices", auth.orgId, parts[1], "*, customer:customer_id(*), lines:accounting_invoice_lines(*)"));
-      return json(await listTable(admin, "accounting_invoices", auth.orgId, request, "invoice_date"));
+      return json(await listTable(admin, "accounting_invoices", auth.orgId, request, "invoice_date", entityId));
     }
     if (parts[0] === "payments") {
       if (parts[1]) return json(await getRecord(admin, "accounting_payments", auth.orgId, parts[1]));
-      return json(await listTable(admin, "accounting_payments", auth.orgId, request, "payment_date"));
+      return json(await listTable(admin, "accounting_payments", auth.orgId, request, "payment_date", entityId));
     }
     if (parts[0] === "tax-rates") {
       return json(await listTable(admin, "accounting_tax_rates", auth.orgId, request, "name_ar"));
@@ -666,6 +678,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         .from("accounting_accounts")
         .select("id, code, name_ar, name_en")
         .eq("organization_id", auth.orgId)
+        .eq("legal_entity_id", entityId)
         .eq("type", "revenue")
         .eq("is_active", true)
         .order("code", { ascending: true });
@@ -689,6 +702,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         .from("accounting_invoices")
         .select("id, invoice_no, status, total_amount, balance_due, journal_entry_id")
         .eq("organization_id", auth.orgId)
+        .eq("legal_entity_id", entityId)
         .eq("source_module", "sales_log")
         .eq("source_id", logId)
         .not("status", "in", "(cancelled,void)")
@@ -1045,6 +1059,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           .from("accounting_invoices")
           .select("invoice_no, invoice_date, due_date, total_amount, paid_amount, balance_due, status, customer:customer_id(name_ar)")
           .eq("organization_id", auth.orgId)
+          .eq("legal_entity_id", entityId)
           .in("status", ["issued", "partially_paid"])
           .gt("balance_due", 0)
           .order("due_date", { ascending: true });
@@ -1057,6 +1072,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           .from("accounting_expenses")
           .select("expense_no, expense_date, total_amount, paid_status, status, vendor:vendor_id(name_ar)")
           .eq("organization_id", auth.orgId)
+          .eq("legal_entity_id", entityId)
           .eq("status", "approved")
           .neq("paid_status", "paid")
           .order("expense_date", { ascending: true });
@@ -1069,6 +1085,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           .from("accounting_expenses")
           .select("expense_no, expense_date, description, amount_before_vat, vat_amount, total_amount, status, cost_center:cost_center_id(name_ar, code)")
           .eq("organization_id", auth.orgId)
+          .eq("legal_entity_id", entityId)
           .in("status", ["approved", "paid"])
           .gte("expense_date", dateFrom || "1900-01-01")
           .lte("expense_date", dateTo || "2999-12-31")
@@ -1081,6 +1098,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
           .from("accounting_invoices")
           .select("invoice_no, invoice_date, subtotal, discount_amount, vat_amount, total_amount, status, source_module, customer:customer_id(name_ar, sales_company_id)")
           .eq("organization_id", auth.orgId)
+          .eq("legal_entity_id", entityId)
           .in("status", ["issued", "partially_paid", "paid"])
           .gte("invoice_date", dateFrom || "1900-01-01")
           .lte("invoice_date", dateTo || "2999-12-31")
@@ -1155,13 +1173,52 @@ export async function GET(request: NextRequest, context: RouteContext) {
         if (!generator) return message("تقرير غير مدعوم للتصدير.", 404);
         const reportData = await generator();
         const format = request.nextUrl.searchParams.get("format") || "csv";
+        const filename = `${reportId}_${dateTo || "report"}`;
         if (format === "csv") {
           const csv = reportToCSV(reportData as Record<string, unknown>);
           return new Response(csv, {
             status: 200,
             headers: {
               "Content-Type": "text/csv; charset=utf-8",
-              "Content-Disposition": `attachment; filename="${reportId}_${dateTo || "report"}.csv"`,
+              "Content-Disposition": `attachment; filename="${filename}.csv"`,
+            },
+          });
+        }
+        if (format === "xlsx") {
+          let buffer: Buffer;
+          const period = [dateFrom, dateTo].filter(Boolean).join(" — ");
+          if (reportId === "trial-balance") {
+            buffer = await trialBalanceExcel(reportData as Record<string, unknown>[], { period });
+          } else if (reportId === "profit-loss") {
+            buffer = await profitLossExcel(reportData as Record<string, unknown>, { period });
+          } else {
+            const rows = Array.isArray(reportData) ? reportData as Record<string, unknown>[] : [];
+            buffer = await generateExcelBuffer({ title: reportId, columns: rows.length > 0 ? Object.keys(rows[0]).map((k) => ({ key: k, label: k })) : [], rows });
+          }
+          return new Response(new Uint8Array(buffer), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              "Content-Disposition": `attachment; filename="${filename}.xlsx"`,
+            },
+          });
+        }
+        if (format === "pdf") {
+          const period = [dateFrom, dateTo].filter(Boolean).join(" — ");
+          let html: string;
+          if (reportId === "trial-balance") {
+            html = trialBalancePdf(reportData as Record<string, unknown>[], { period });
+          } else if (reportId === "profit-loss") {
+            html = profitLossPdf(reportData as Record<string, unknown>, { period });
+          } else {
+            const rows = Array.isArray(reportData) ? reportData as Record<string, unknown>[] : [];
+            html = generateReportHtml({ title: reportId, period, columns: rows.length > 0 ? Object.keys(rows[0]).map((k) => ({ key: k, label: k })) : [], rows });
+          }
+          return new Response(html, {
+            status: 200,
+            headers: {
+              "Content-Type": "text/html; charset=utf-8",
+              "Content-Disposition": `attachment; filename="${filename}.html"`,
             },
           });
         }

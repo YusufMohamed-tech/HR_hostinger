@@ -32,6 +32,7 @@ export const FINANCE_NAVIGATION: NavGroup[] = [
       { id: "customers-list", label_ar: "العملاء", label_en: "Customers", path: "/accounting/customers" },
       { id: "invoices", label_ar: "الفواتير", label_en: "Invoices", path: "/accounting/invoices" },
       { id: "payments-in", label_ar: "التحصيلات", label_en: "Receipts", path: "/accounting/payments" },
+      { id: "netting", label_ar: "تسوية AR/AP", label_en: "AR/AP Netting", path: "/accounting/netting" },
     ],
   },
   {

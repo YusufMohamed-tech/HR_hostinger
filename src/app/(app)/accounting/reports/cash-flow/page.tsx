@@ -50,13 +50,6 @@ export default function CashFlowPage() {
         <div className="text-center py-12 text-muted-foreground">لا توجد بيانات</div>
       ) : (
         <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <SummaryCard label="الرصيد الافتتاحي" value={cashFlow.opening_cash} />
-            <SummaryCard label="صافي التغير" value={cashFlow.net_change} />
-            <SummaryCard label="الرصيد الختامي" value={cashFlow.closing_cash} />
-          </div>
-
           {/* Chart */}
           <Card>
             <CardHeader><CardTitle>ملخص التدفقات النقدية</CardTitle></CardHeader>
@@ -81,6 +74,13 @@ export default function CashFlowPage() {
           <CashFlowSection title="الأنشطة التشغيلية" section={cashFlow.operating} />
           <CashFlowSection title="الأنشطة الاستثمارية" section={cashFlow.investing} />
           <CashFlowSection title="الأنشطة التمويلية" section={cashFlow.financing} />
+
+          {/* Summary Cards - Footer */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-4 border-t">
+            <SummaryCard label="الرصيد الافتتاحي" value={cashFlow.opening_cash} />
+            <SummaryCard label="صافي التغير" value={cashFlow.net_change} />
+            <SummaryCard label="الرصيد الختامي" value={cashFlow.closing_cash} />
+          </div>
         </>
       )}
     </div>
