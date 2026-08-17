@@ -34,14 +34,22 @@ function delay(milliseconds) {
 async function waitForPostgres() {
   // pg_isready can return 0 during the init-phase restart cycle, so verify
   // with an actual query that survives the container's initialization restart.
+  // Require two consecutive successes with a 1s gap to survive the restart.
+  let consecutiveOk = 0;
   for (let attempt = 0; attempt < 120; attempt += 1) {
     const result = spawnSync(
       "docker",
       ["exec", containerName, "psql", "-U", "postgres", "-c", "SELECT 1"],
       { encoding: "utf8", timeout: 5_000 }
     );
-    if (result.status === 0) return;
-    await delay(500);
+    if (result.status === 0) {
+      consecutiveOk += 1;
+      if (consecutiveOk >= 2) return;
+      await delay(1_000);
+    } else {
+      consecutiveOk = 0;
+      await delay(500);
+    }
   }
   throw new Error("Disposable PostgreSQL did not become ready within 60 seconds.");
 }
