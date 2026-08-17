@@ -1,5 +1,5 @@
 {
-  "id": "schema_v171_accounting_identity_status_hardening",
-  "file": "db/schema_v171_accounting_identity_status_hardening.sql",
-  "checksumSha256": "d06cc9e8839eeb7ac3e7a4d6be77e712f39c6fa4ddfe92573263de8eb7ff9327"
+  "id": "schema_v172_accounting_entity_scope_enforcement",
+  "file": "db/schema_v172_accounting_entity_scope_enforcement.sql",
+  "checksumSha256": "4e5bc0ac4dc629d0e0a25354c37b594b4495da88c10de2fd39ed39d98effe271"
 }
