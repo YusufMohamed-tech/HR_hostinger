@@ -301,10 +301,10 @@ export default function StatementsPage() {
                       {getBankStatementActionCapabilities(stmt, role).canCancel ? (
                         <Button variant="ghost" size="sm" className="text-red-700 hover:bg-red-50" aria-label="إلغاء الكشف" onClick={() => openLifecycle(stmt, "cancel")}><Archive className="h-4 w-4" /></Button>
                       ) : null}
-                      {canManage && stmt.status === "in_progress" ? (
+                      {String(role).toLowerCase() === "finance_manager" && stmt.status === "in_progress" ? (
                         <Button variant="ghost" size="sm" className="text-green-700 hover:bg-green-50" aria-label="اعتماد الكشف" onClick={async () => { const r = await approveStatement(stmt.id); if (r.error) setMessage(r.error); else load(); }}>اعتماد</Button>
                       ) : null}
-                      {canManage && stmt.status === "approved" ? (
+                      {String(role).toLowerCase() === "finance_manager" && stmt.status === "approved" ? (
                         <Button variant="ghost" size="sm" className="text-gray-600 hover:bg-gray-100" aria-label="أرشفة الكشف" onClick={async () => { const r = await archiveStatement(stmt.id); if (r.error) setMessage(r.error); else load(); }}>أرشفة</Button>
                       ) : null}
                     </div>
