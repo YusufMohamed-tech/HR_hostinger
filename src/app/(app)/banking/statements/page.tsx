@@ -172,8 +172,18 @@ export default function StatementsPage() {
   const handleAutoMatch = async () => {
     if (!selectedStatement) return;
     const result = await autoMatchStatement(selectedStatement.id);
-    if (result.error) setMessage(result.error);
-    else await openStatement(selectedStatement);
+    if (result.error) {
+      setMessage(result.error);
+    } else {
+      const matched = (result.data as { matched?: number })?.matched || 0;
+      const unmatched = (result.data as { unmatched?: number })?.unmatched || 0;
+      if (matched === 0) {
+        setMessage(`لم يتم العثور على قيود مطابقة. تأكد من وجود قيود مرحّلة على حساب البنك (1010) بنفس مبالغ العمليات في الكشف. العمليات غير المطابقة: ${unmatched}`);
+      } else {
+        setMessage(`تمت مطابقة ${matched} عملية بنجاح. المتبقي بدون مطابقة: ${unmatched}`);
+      }
+      await openStatement(selectedStatement);
+    }
   };
 
   const handleExclude = async (lineId: string) => {
