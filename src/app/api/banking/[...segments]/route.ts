@@ -118,8 +118,14 @@ async function getStatementLinkedAccount(
   const relation = data?.bank_account;
   const bankAccount = Array.isArray(relation) ? relation[0] : relation;
   const linkedAccountId = requireText(bankAccount?.linked_account_id);
-  if (!data || bankAccount?.is_active !== true || !linkedAccountId) {
-    throw Object.assign(new Error("The statement needs an active bank account linked to a ledger account."), { code: "23514" });
+  if (!data) {
+    throw Object.assign(new Error("لم يتم العثور على الكشف أو أنه ليس في حالة تسمح بالمطابقة."), { code: "23514" });
+  }
+  if (bankAccount?.is_active !== true) {
+    throw Object.assign(new Error("الحساب البنكي المرتبط بهذا الكشف غير مفعل. فعّل الحساب من البنوك ← الحسابات البنكية."), { code: "23514" });
+  }
+  if (!linkedAccountId) {
+    throw Object.assign(new Error("الحساب البنكي غير مرتبط بحساب في دليل الحسابات. اذهب إلى البنوك ← الحسابات البنكية ← عدّل الحساب واختر حسابًا من نوع نقدية/بنك في حقل «الحساب المرتبط». إذا لم يكن موجودًا، أنشئ حسابًا جديدًا بنوع أصول وتصنيف فرعي نقدية وبنك من دليل الحسابات أولًا."), { code: "23514" });
   }
   return linkedAccountId;
 }
