@@ -592,35 +592,59 @@ export async function POST(request: NextRequest, context: RouteContext) {
       );
       for (const line of unmatchedLines) {
         const amt = Math.abs(Number(line.amount));
+        const txDate = String(line.transaction_date || "");
         const { data: candidates } = await db(admin)
           .from("accounting_journal_lines")
-          .select("id, debit, credit, description, journal_entry:journal_entry_id!inner(status)")
+          .select("id, debit, credit, description, journal_entry:journal_entry_id!inner(status, entry_date)")
           .eq("organization_id", auth.orgId)
           .eq("account_id", linkedAccountId)
           .eq("journal_entry.status", "posted")
           .or(`debit.eq.${amt},credit.eq.${amt}`)
-          .limit(5);
+          .limit(10);
 
         const availableCandidates = (candidates || []).filter(
           (candidate: Record<string, unknown>) => !usedJournalLineIds.has(String(candidate.id)),
         );
+
+        let bestMatch: Record<string, unknown> | null = null;
         if (availableCandidates.length === 1) {
+          bestMatch = availableCandidates[0];
+        } else if (availableCandidates.length > 1 && txDate) {
+          const withinWindow = availableCandidates.filter((c: Record<string, unknown>) => {
+            const entryDate = String((c.journal_entry as Record<string, unknown>)?.entry_date || "");
+            if (!entryDate) return false;
+            const diff = Math.abs(Date.parse(entryDate) - Date.parse(txDate));
+            return diff <= 3 * 86_400_000;
+          });
+          if (withinWindow.length === 1) bestMatch = withinWindow[0];
+        }
+
+        if (bestMatch) {
           const { error: matchError } = await db(admin)
             .from("banking_statement_lines")
             .update({
               match_status: "matched",
-              matched_journal_line_id: availableCandidates[0].id,
+              matched_journal_line_id: bestMatch.id,
               matched_at: new Date().toISOString(),
               matched_by: auth.user.id,
-              match_confidence: 0.85,
+              match_confidence: availableCandidates.length === 1 ? 0.9 : 0.75,
             })
             .eq("id", line.id)
             .eq("organization_id", auth.orgId)
             .eq("statement_id", parts[1]);
           if (matchError) throw databaseError(matchError);
-          usedJournalLineIds.add(String(availableCandidates[0].id));
+          usedJournalLineIds.add(String(bestMatch.id));
           matchedCount++;
         }
+      }
+
+      if (matchedCount > 0) {
+        await db(admin)
+          .from("banking_statements")
+          .update({ status: "in_progress", updated_at: new Date().toISOString(), updated_by: auth.user.id })
+          .eq("id", parts[1])
+          .eq("organization_id", auth.orgId)
+          .eq("status", "imported");
       }
 
       return json({ matched: matchedCount, unmatched: unmatchedLines.length - matchedCount });
