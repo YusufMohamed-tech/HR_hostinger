@@ -43,11 +43,26 @@ export interface BankStatement {
   closing_balance: number;
   file_name: string | null;
   import_format: string;
-  status: "imported" | "in_progress" | "reconciled";
+  status: "imported" | "in_progress" | "reconciled" | "cancelled";
   transaction_count: number;
   matched_count: number;
   imported_at: string;
+  version: number;
+  updated_at: string;
+  updated_by: string | null;
+  recalled_at: string | null;
+  recalled_by: string | null;
+  recall_reason: string | null;
+  archived_at: string | null;
+  archived_by: string | null;
+  archive_reason: string | null;
+  has_line_activity: boolean;
 }
+
+export type BankStatementEditValues = Pick<BankStatement,
+  "bank_account_id" | "statement_date" | "period_start" | "period_end" |
+  "opening_balance" | "closing_balance" | "file_name"
+>;
 
 export interface StatementLine {
   id: string;
@@ -119,6 +134,42 @@ export function importStatement(values: { bank_account_id: string; statement_dat
   return apiFetch<BankStatement>("/api/banking/statements/import", {
     method: "POST",
     body: JSON.stringify(values),
+  });
+}
+
+export function updateBankStatement(
+  id: string,
+  expectedVersion: number,
+  values: BankStatementEditValues,
+  commandId = crypto.randomUUID(),
+) {
+  return apiFetch<BankStatement>(`/api/banking/statements/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ ...values, expected_version: expectedVersion, command_id: commandId }),
+  });
+}
+
+export function recallBankStatement(
+  id: string,
+  expectedVersion: number,
+  reason: string,
+  commandId = crypto.randomUUID(),
+) {
+  return apiFetch<BankStatement>(`/api/banking/statements/${id}/recall`, {
+    method: "POST",
+    body: JSON.stringify({ expected_version: expectedVersion, reason, command_id: commandId }),
+  });
+}
+
+export function cancelBankStatement(
+  id: string,
+  expectedVersion: number,
+  reason: string,
+  commandId = crypto.randomUUID(),
+) {
+  return apiFetch<BankStatement>(`/api/banking/statements/${id}`, {
+    method: "DELETE",
+    body: JSON.stringify({ expected_version: expectedVersion, reason, command_id: commandId }),
   });
 }
 

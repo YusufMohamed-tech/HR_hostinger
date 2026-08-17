@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAccountingAccess } from "@/lib/accounting/permissions";
+import {
+  normalizeBankStatementEditInput,
+  normalizeBankStatementReason,
+} from "@/lib/banking/statement-actions";
 
 type RouteContext = { params: Promise<{ segments?: string[] }> };
 
@@ -14,10 +19,20 @@ function json(data: unknown, status = 200) {
 }
 
 function errorResponse(error: unknown, status = 500) {
+  const code = error && typeof error === "object" && "code" in error ? String(error.code || "") : "";
+  const resolvedStatus = status !== 500 ? status
+    : code === "42501" ? 403
+      : code === "P0002" || code === "PGRST116" ? 404
+        : ["23505", "40001", "55000"].includes(code) ? 409
+          : ["22007", "22023", "22P02", "23514"].includes(code) ? 400 : 500;
   return NextResponse.json(
     { message: error instanceof Error ? error.message : String(error || "حدث خطأ غير متوقع.") },
-    { status }
+    { status: resolvedStatus }
   );
+}
+
+function databaseError(error: { message: string; code?: string }) {
+  return Object.assign(new Error(error.message), { code: error.code });
 }
 
 async function segments(context: RouteContext) {
@@ -27,6 +42,86 @@ async function segments(context: RouteContext) {
 function requireText(value: unknown, fallback = ""): string {
   if (typeof value === "string") return value.trim() || fallback;
   return fallback;
+}
+
+function uuidOrNull(value: unknown) {
+  const valueText = String(value || "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(valueText)
+    ? valueText
+    : null;
+}
+
+function commandContext(request: NextRequest, body: Record<string, unknown>) {
+  return {
+    commandId: uuidOrNull(body.command_id) || uuidOrNull(request.headers.get("idempotency-key")) || randomUUID(),
+    requestId: uuidOrNull(body.request_id) || uuidOrNull(request.headers.get("x-request-id")) || randomUUID(),
+  };
+}
+
+async function executeStatementCommand(
+  admin: ReturnType<typeof createAdminClient>,
+  auth: { orgId: string; user: { id: string } },
+  request: NextRequest,
+  statementId: string,
+  expectedVersion: number,
+  action: "edit" | "recall" | "cancel",
+  payload: Record<string, unknown>,
+  body: Record<string, unknown>,
+) {
+  const command = commandContext(request, body);
+  const { data, error } = await db(admin).rpc("execute_banking_statement_command", {
+    p_org_id: auth.orgId,
+    p_actor_user_id: auth.user.id,
+    p_request_id: command.requestId,
+    p_command_id: command.commandId,
+    p_statement_id: statementId,
+    p_expected_version: expectedVersion,
+    p_action: action,
+    p_payload: payload,
+  });
+  if (error) throw databaseError(error);
+  if (!data || typeof data !== "object") throw new Error("Bank statement command returned no result.");
+  return data as Record<string, unknown>;
+}
+
+async function addLineActivity(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  rows: Array<Record<string, unknown>>,
+) {
+  const ids = rows.map((row) => String(row.id || "")).filter(Boolean);
+  if (ids.length === 0) return rows;
+  const { data, error } = await db(admin)
+    .from("banking_statement_lines")
+    .select("statement_id")
+    .eq("organization_id", orgId)
+    .in("statement_id", ids)
+    .neq("match_status", "unmatched");
+  if (error) throw databaseError(error);
+  const activeIds = new Set((data || []).map((line: Record<string, unknown>) => String(line.statement_id)));
+  return rows.map((row) => ({ ...row, has_line_activity: activeIds.has(String(row.id)) }));
+}
+
+async function getStatementLinkedAccount(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  statementId: string,
+) {
+  const { data, error } = await db(admin)
+    .from("banking_statements")
+    .select("id, status, bank_account:bank_account_id!inner(linked_account_id, is_active)")
+    .eq("id", statementId)
+    .eq("organization_id", orgId)
+    .in("status", ["imported", "in_progress"])
+    .maybeSingle();
+  if (error) throw databaseError(error);
+  const relation = data?.bank_account;
+  const bankAccount = Array.isArray(relation) ? relation[0] : relation;
+  const linkedAccountId = requireText(bankAccount?.linked_account_id);
+  if (!data || bankAccount?.is_active !== true || !linkedAccountId) {
+    throw Object.assign(new Error("The statement needs an active bank account linked to a ledger account."), { code: "23514" });
+  }
+  return linkedAccountId;
 }
 
 export async function GET(request: NextRequest, context: RouteContext) {
@@ -58,13 +153,22 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     if (parts[0] === "statements") {
       if (parts[1] && parts[2] === "lines") {
+        const { data: parent, error: parentError } = await db(admin)
+          .from("banking_statements")
+          .select("id")
+          .eq("organization_id", auth.orgId)
+          .eq("id", parts[1])
+          .neq("status", "cancelled")
+          .maybeSingle();
+        if (parentError) throw databaseError(parentError);
+        if (!parent) return errorResponse("Bank statement not found.", 404);
         const { data, error } = await db(admin)
           .from("banking_statement_lines")
           .select("*")
           .eq("organization_id", auth.orgId)
           .eq("statement_id", parts[1])
           .order("transaction_date", { ascending: true });
-        if (error) throw new Error(error.message);
+        if (error) throw databaseError(error);
         return json(data || []);
       }
       if (parts[1]) {
@@ -73,20 +177,23 @@ export async function GET(request: NextRequest, context: RouteContext) {
           .select("*, bank_account:bank_account_id(id, name_ar, bank_name, account_number)")
           .eq("organization_id", auth.orgId)
           .eq("id", parts[1])
+          .neq("status", "cancelled")
           .single();
-        if (error) throw new Error(error.message);
-        return json(data);
+        if (error) throw databaseError(error);
+        const [decorated] = await addLineActivity(admin, auth.orgId, [data]);
+        return json(decorated);
       }
       const bankAccountId = request.nextUrl.searchParams.get("bank_account_id");
       let query = db(admin)
         .from("banking_statements")
         .select("*, bank_account:bank_account_id(id, name_ar, bank_name)")
         .eq("organization_id", auth.orgId)
+        .neq("status", "cancelled")
         .order("statement_date", { ascending: false });
       if (bankAccountId) query = query.eq("bank_account_id", bankAccountId);
       const { data, error } = await query;
-      if (error) throw new Error(error.message);
-      return json(data || []);
+      if (error) throw databaseError(error);
+      return json(await addLineActivity(admin, auth.orgId, data || []));
     }
 
     if (parts[0] === "reconciliations") {
@@ -115,11 +222,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       const { data: line } = await db(admin)
         .from("banking_statement_lines")
-        .select("amount, transaction_date, description, reference")
+        .select("statement_id, amount, transaction_date, description, reference")
         .eq("id", statementLineId)
         .eq("organization_id", auth.orgId)
         .single();
       if (!line) return errorResponse("Statement line not found.", 404);
+      const linkedAccountId = await getStatementLinkedAccount(admin, auth.orgId, line.statement_id);
 
       const amount = Math.abs(Number(line.amount));
       const dateFrom = new Date(line.transaction_date);
@@ -129,8 +237,10 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
       const { data: candidates } = await db(admin)
         .from("accounting_journal_lines")
-        .select("id, debit, credit, description, journal_entry_id, account:account_id(code, name_ar)")
+        .select("id, debit, credit, description, journal_entry_id, account:account_id(code, name_ar), journal_entry:journal_entry_id!inner(status)")
         .eq("organization_id", auth.orgId)
+        .eq("account_id", linkedAccountId)
+        .eq("journal_entry.status", "posted")
         .or(`debit.eq.${amount},credit.eq.${amount}`)
         .limit(20);
 
@@ -143,14 +253,80 @@ export async function GET(request: NextRequest, context: RouteContext) {
   }
 }
 
-export async function POST(request: NextRequest, context: RouteContext) {
+export async function PATCH(request: NextRequest, context: RouteContext) {
   const parts = await segments(context);
+  if (parts[0] !== "statements" || !parts[1] || parts.length !== 2) {
+    return errorResponse("Unknown banking endpoint.", 404);
+  }
   const auth = await requireAccountingAccess("manage", request);
   if ("error" in auth) return auth.error;
-  const admin = createAdminClient();
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+  const expectedVersion = Number(body.expected_version);
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+    return errorResponse("expected_version is required.", 400);
+  }
+  const normalized = normalizeBankStatementEditInput(body);
+  if (!normalized.ok) return errorResponse(normalized.error, 400);
 
   try {
+    const result = await executeStatementCommand(
+      createAdminClient(), auth, request, parts[1], expectedVersion,
+      "edit", normalized.value, body,
+    );
+    return json(result);
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request: NextRequest, context: RouteContext) {
+  const parts = await segments(context);
+  if (parts[0] !== "statements" || !parts[1] || parts.length !== 2) {
+    return errorResponse("Unknown banking endpoint.", 404);
+  }
+  const auth = await requireAccountingAccess("manage", request);
+  if ("error" in auth) return auth.error;
+  const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+  const expectedVersion = Number(body.expected_version);
+  if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+    return errorResponse("expected_version is required.", 400);
+  }
+  const reason = normalizeBankStatementReason(body.reason, true);
+  if (!reason.ok) return errorResponse(reason.error.replace("الاسترجاع", "الإلغاء"), 400);
+
+  try {
+    const result = await executeStatementCommand(
+      createAdminClient(), auth, request, parts[1], expectedVersion,
+      "cancel", { reason: reason.value }, body,
+    );
+    return json(result);
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function POST(request: NextRequest, context: RouteContext) {
+  const parts = await segments(context);
+  const isStatementRecall = parts[0] === "statements" && Boolean(parts[1]) && parts[2] === "recall";
+  const auth = await requireAccountingAccess(isStatementRecall ? "post" : "manage", request);
+  if ("error" in auth) return auth.error;
+  const admin = createAdminClient();
+  const body = await request.json().catch(() => ({})) as Record<string, unknown>;
+
+  try {
+    if (isStatementRecall) {
+      const expectedVersion = Number(body.expected_version);
+      if (!Number.isInteger(expectedVersion) || expectedVersion < 0) {
+        return errorResponse("expected_version is required.", 400);
+      }
+      const reason = normalizeBankStatementReason(body.reason, true);
+      if (!reason.ok) return errorResponse(reason.error, 400);
+      return json(await executeStatementCommand(
+        admin, auth, request, parts[1], expectedVersion,
+        "recall", { reason: reason.value }, body,
+      ));
+    }
+
     // Bank Accounts CRUD
     if (parts[0] === "accounts") {
       if (parts[1] && parts[2] === "deactivate") {
@@ -162,6 +338,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
         if (error) throw new Error(error.message);
         return json({ ok: true });
       }
+      const linkedAccountId = requireText(body.linked_account_id) || null;
+      if (linkedAccountId) {
+        const { data: linkedAccount, error: linkedAccountError } = await db(admin)
+          .from("accounting_accounts")
+          .select("id")
+          .eq("id", linkedAccountId)
+          .eq("organization_id", auth.orgId)
+          .eq("is_active", true)
+          .maybeSingle();
+        if (linkedAccountError) throw databaseError(linkedAccountError);
+        if (!linkedAccount) return errorResponse("The linked ledger account must be active and belong to the organization.", 400);
+      }
       const payload = {
         organization_id: auth.orgId,
         name_ar: requireText(body.name_ar),
@@ -171,7 +359,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         iban: requireText(body.iban) || null,
         swift_code: requireText(body.swift_code) || null,
         currency: requireText(body.currency) || "SAR",
-        linked_account_id: requireText(body.linked_account_id) || null,
+        linked_account_id: linkedAccountId,
         opening_balance: Number(body.opening_balance || 0),
         opening_balance_date: requireText(body.opening_balance_date) || null,
         is_active: body.is_active !== false,
@@ -203,6 +391,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const lines = Array.isArray(body.lines) ? body.lines as Array<Record<string, unknown>> : [];
       if (!bankAccountId || lines.length === 0) return errorResponse("bank_account_id and lines are required.", 400);
 
+      const { data: bankAccount, error: bankAccountError } = await db(admin)
+        .from("banking_accounts")
+        .select("id")
+        .eq("id", bankAccountId)
+        .eq("organization_id", auth.orgId)
+        .eq("is_active", true)
+        .maybeSingle();
+      if (bankAccountError) throw databaseError(bankAccountError);
+      if (!bankAccount) return errorResponse("The bank account must be active and belong to the organization.", 400);
+
       const statementDate = requireText(body.statement_date) || new Date().toISOString().slice(0, 10);
       const periodStart = requireText(body.period_start) || statementDate;
       const periodEnd = requireText(body.period_end) || statementDate;
@@ -225,7 +423,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         })
         .select()
         .single();
-      if (stmtErr) throw new Error(stmtErr.message);
+      if (stmtErr) throw databaseError(stmtErr);
 
       const lineRows = lines.map((line) => ({
         organization_id: auth.orgId,
@@ -243,7 +441,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const { error: linesErr } = await db(admin)
         .from("banking_statement_lines")
         .insert(lineRows);
-      if (linesErr) throw new Error(linesErr.message);
+      if (linesErr) throw databaseError(linesErr);
 
       return json(stmt, 201);
     }
@@ -253,8 +451,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const lineId = requireText(body.line_id);
       const journalLineId = requireText(body.journal_line_id);
       if (!lineId || !journalLineId) return errorResponse("line_id and journal_line_id are required.", 400);
+      const linkedAccountId = await getStatementLinkedAccount(admin, auth.orgId, parts[1]);
+      const { data: journalLine, error: journalLineError } = await db(admin)
+        .from("accounting_journal_lines")
+        .select("id, journal_entry:journal_entry_id!inner(status)")
+        .eq("id", journalLineId)
+        .eq("organization_id", auth.orgId)
+        .eq("account_id", linkedAccountId)
+        .eq("journal_entry.status", "posted")
+        .maybeSingle();
+      if (journalLineError) throw databaseError(journalLineError);
+      if (!journalLine) return errorResponse("Choose a posted journal line for the linked bank ledger account.", 400);
 
-      const { error } = await db(admin)
+      const { data: matchedLine, error } = await db(admin)
         .from("banking_statement_lines")
         .update({
           match_status: "manually_matched",
@@ -265,21 +474,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
         })
         .eq("id", lineId)
         .eq("organization_id", auth.orgId)
-        .eq("statement_id", parts[1]);
-      if (error) throw new Error(error.message);
-
-      // Update statement matched count
-      const { data: countData } = await db(admin)
-        .from("banking_statement_lines")
-        .select("id", { count: "exact" })
         .eq("statement_id", parts[1])
-        .eq("organization_id", auth.orgId)
-        .in("match_status", ["matched", "manually_matched"]);
-      await db(admin)
-        .from("banking_statements")
-        .update({ matched_count: countData?.length || 0, status: "in_progress" })
-        .eq("id", parts[1])
-        .eq("organization_id", auth.orgId);
+        .select("id")
+        .maybeSingle();
+      if (error) throw databaseError(error);
+      if (!matchedLine) return errorResponse("Statement line not found.", 404);
 
       return json({ ok: true });
     }
@@ -288,12 +487,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (parts[0] === "statements" && parts[1] && parts[2] === "unmatch") {
       const lineId = requireText(body.line_id);
       if (!lineId) return errorResponse("line_id is required.", 400);
-      const { error } = await db(admin)
+      const { data: unmatchedLine, error } = await db(admin)
         .from("banking_statement_lines")
         .update({ match_status: "unmatched", matched_journal_line_id: null, matched_at: null, matched_by: null, match_confidence: null })
         .eq("id", lineId)
-        .eq("organization_id", auth.orgId);
-      if (error) throw new Error(error.message);
+        .eq("organization_id", auth.orgId)
+        .eq("statement_id", parts[1])
+        .select("id")
+        .maybeSingle();
+      if (error) throw databaseError(error);
+      if (!unmatchedLine) return errorResponse("Statement line not found.", 404);
       return json({ ok: true });
     }
 
@@ -301,57 +504,82 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (parts[0] === "statements" && parts[1] && parts[2] === "exclude") {
       const lineId = requireText(body.line_id);
       if (!lineId) return errorResponse("line_id is required.", 400);
-      const { error } = await db(admin)
+      const { data: excludedLine, error } = await db(admin)
         .from("banking_statement_lines")
-        .update({ match_status: "excluded", notes: requireText(body.notes) || null })
+        .update({
+          match_status: "excluded",
+          matched_journal_line_id: null,
+          matched_at: null,
+          matched_by: null,
+          match_confidence: null,
+          notes: requireText(body.notes) || null,
+        })
         .eq("id", lineId)
-        .eq("organization_id", auth.orgId);
-      if (error) throw new Error(error.message);
+        .eq("organization_id", auth.orgId)
+        .eq("statement_id", parts[1])
+        .select("id")
+        .maybeSingle();
+      if (error) throw databaseError(error);
+      if (!excludedLine) return errorResponse("Statement line not found.", 404);
       return json({ ok: true });
     }
 
     // Auto-match statement
     if (parts[0] === "statements" && parts[1] && parts[2] === "auto-match") {
-      const { data: unmatchedLines } = await db(admin)
+      const linkedAccountId = await getStatementLinkedAccount(admin, auth.orgId, parts[1]);
+      const [{ data: unmatchedLines }, { data: existingMatches, error: existingMatchesError }] = await Promise.all([
+        db(admin)
         .from("banking_statement_lines")
         .select("id, amount, transaction_date, description, reference")
         .eq("statement_id", parts[1])
         .eq("organization_id", auth.orgId)
-        .eq("match_status", "unmatched");
+        .eq("match_status", "unmatched"),
+        db(admin)
+          .from("banking_statement_lines")
+          .select("matched_journal_line_id")
+          .eq("organization_id", auth.orgId)
+          .not("matched_journal_line_id", "is", null),
+      ]);
+      if (existingMatchesError) throw databaseError(existingMatchesError);
 
       if (!unmatchedLines?.length) return json({ matched: 0, unmatched: 0 });
 
       let matchedCount = 0;
+      const usedJournalLineIds = new Set(
+        (existingMatches || []).map((line: Record<string, unknown>) => String(line.matched_journal_line_id)),
+      );
       for (const line of unmatchedLines) {
         const amt = Math.abs(Number(line.amount));
         const { data: candidates } = await db(admin)
           .from("accounting_journal_lines")
-          .select("id, debit, credit, description")
+          .select("id, debit, credit, description, journal_entry:journal_entry_id!inner(status)")
           .eq("organization_id", auth.orgId)
+          .eq("account_id", linkedAccountId)
+          .eq("journal_entry.status", "posted")
           .or(`debit.eq.${amt},credit.eq.${amt}`)
           .limit(5);
 
-        if (candidates && candidates.length === 1) {
-          await db(admin)
+        const availableCandidates = (candidates || []).filter(
+          (candidate: Record<string, unknown>) => !usedJournalLineIds.has(String(candidate.id)),
+        );
+        if (availableCandidates.length === 1) {
+          const { error: matchError } = await db(admin)
             .from("banking_statement_lines")
             .update({
               match_status: "matched",
-              matched_journal_line_id: candidates[0].id,
+              matched_journal_line_id: availableCandidates[0].id,
               matched_at: new Date().toISOString(),
               matched_by: auth.user.id,
               match_confidence: 0.85,
             })
             .eq("id", line.id)
-            .eq("organization_id", auth.orgId);
+            .eq("organization_id", auth.orgId)
+            .eq("statement_id", parts[1]);
+          if (matchError) throw databaseError(matchError);
+          usedJournalLineIds.add(String(availableCandidates[0].id));
           matchedCount++;
         }
       }
-
-      await db(admin)
-        .from("banking_statements")
-        .update({ matched_count: matchedCount, status: "in_progress" })
-        .eq("id", parts[1])
-        .eq("organization_id", auth.orgId);
 
       return json({ matched: matchedCount, unmatched: unmatchedLines.length - matchedCount });
     }

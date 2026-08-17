@@ -5584,6 +5584,307 @@ const launchAssertions = `
   END
   $test$;
 
+  -- v170: canonical bank statements use versioned edit/recall/soft-cancel
+  -- commands while retaining imported files, lines, and detached-match history.
+  INSERT INTO public.banking_accounts (
+    id, organization_id, name_ar, bank_name, account_number, currency, is_active, created_by
+  ) VALUES
+    ('b1700001-0000-4000-8000-000000000001',
+      '11111111-1111-4111-8111-111111111111', 'V170 Primary Bank', 'V170 Bank',
+      'V170-PRIMARY-001', 'SAR', true, '45454545-4545-4545-8545-454545454545'),
+    ('b1700002-0000-4000-8000-000000000002',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'V170 Foreign Bank', 'V170 Other Bank',
+      'V170-FOREIGN-001', 'SAR', true, '45454545-4545-4545-8545-454545454545');
+
+  DO $test$
+  DECLARE
+    edit_result jsonb;
+    edit_replay jsonb;
+    recall_result jsonb;
+    cancel_result jsonb;
+    posted_line_ids uuid[];
+    bank_gl_account_id uuid;
+    match_journal public.accounting_journal_entries;
+    accountant_recall_denied boolean := false;
+    reconciliation_recall_denied boolean := false;
+    stale_denied boolean := false;
+    command_reuse_denied boolean := false;
+    foreign_bank_denied boolean := false;
+    hard_delete_denied boolean := false;
+    missing_cancel_reason_denied boolean := false;
+  BEGIN
+    SELECT id INTO bank_gl_account_id FROM public.accounting_accounts
+    WHERE organization_id = '11111111-1111-4111-8111-111111111111' AND code = '1000';
+    UPDATE public.banking_accounts SET linked_account_id = bank_gl_account_id
+    WHERE id = 'b1700001-0000-4000-8000-000000000001';
+    SELECT * INTO match_journal FROM public.accounting_save_journal(
+      '11111111-1111-4111-8111-111111111111', '45454545-4545-4545-8545-454545454545',
+      'b1700401-0000-4000-8000-000000000401', 'b1700402-0000-4000-8000-000000000402',
+      NULL, 0, jsonb_build_object(
+        'entryDate', '2199-04-01', 'description', 'v170 linked bank match fixture',
+        'sourceModule', 'v170_banking_fixture', 'status', 'draft',
+        'lines', jsonb_build_array(
+          jsonb_build_object('account_id', bank_gl_account_id, 'debit', 30, 'credit', 0),
+          jsonb_build_object('account_id', bank_gl_account_id, 'debit', 0, 'credit', 30)
+        )
+      )
+    );
+    SELECT * INTO match_journal FROM public.accounting_post_journal(
+      '11111111-1111-4111-8111-111111111111', match_journal.id,
+      '45454545-4545-4545-8545-454545454545',
+      'b1700403-0000-4000-8000-000000000403', 'b1700404-0000-4000-8000-000000000404', 0
+    );
+    SELECT array_agg(line.id ORDER BY line.id) INTO posted_line_ids
+    FROM (
+      SELECT journal_line.id
+      FROM public.accounting_journal_lines journal_line
+      JOIN public.accounting_journal_entries journal
+        ON journal.id = journal_line.journal_entry_id
+      WHERE journal_line.journal_entry_id = match_journal.id
+        AND journal.status = 'posted' AND journal_line.account_id = bank_gl_account_id
+      ORDER BY journal_line.id
+      LIMIT 2
+    ) line;
+    IF cardinality(posted_line_ids) <> 2 THEN
+      RAISE EXCEPTION 'v170 requires two posted journal lines for matching regressions.';
+    END IF;
+
+    INSERT INTO public.banking_statements (
+      id, organization_id, bank_account_id, statement_date, period_start, period_end,
+      opening_balance, closing_balance, file_path, file_name, imported_by, transaction_count
+    ) VALUES (
+      'b1700010-0000-4000-8000-000000000010',
+      '11111111-1111-4111-8111-111111111111',
+      'b1700001-0000-4000-8000-000000000001',
+      '2199-03-31', '2199-03-01', '2199-03-31', 100, 200,
+      'banking/v170/edit.csv', 'edit.csv',
+      '45454545-4545-4545-8545-454545454545', 1
+    );
+    INSERT INTO public.banking_statement_lines (
+      id, organization_id, statement_id, transaction_date, description, amount
+    ) VALUES (
+      'b1700110-0000-4000-8000-000000000110',
+      '11111111-1111-4111-8111-111111111111',
+      'b1700010-0000-4000-8000-000000000010', '2199-03-15', 'v170 edit evidence', 100
+    );
+
+    edit_result := public.execute_banking_statement_command(
+      '11111111-1111-4111-8111-111111111111',
+      'ab400000-0000-4000-8000-000000000001',
+      'b1700201-0000-4000-8000-000000000201',
+      'b1700202-0000-4000-8000-000000000202',
+      'b1700010-0000-4000-8000-000000000010', 0, 'edit',
+      '{"statement_date":"2199-03-30","period_start":"2199-03-01","period_end":"2199-03-31","opening_balance":110,"closing_balance":210,"file_name":"edited.csv"}'::jsonb
+    );
+    edit_replay := public.execute_banking_statement_command(
+      '11111111-1111-4111-8111-111111111111',
+      'ab400000-0000-4000-8000-000000000001',
+      'b1700201-0000-4000-8000-000000000201',
+      'b1700202-0000-4000-8000-000000000202',
+      'b1700010-0000-4000-8000-000000000010', 0, 'edit',
+      '{"statement_date":"2199-03-30","period_start":"2199-03-01","period_end":"2199-03-31","opening_balance":110,"closing_balance":210,"file_name":"edited.csv"}'::jsonb
+    );
+    BEGIN
+      PERFORM public.execute_banking_statement_command(
+        '11111111-1111-4111-8111-111111111111',
+        'ab400000-0000-4000-8000-000000000001',
+        'b1700203-0000-4000-8000-000000000203',
+        'b1700202-0000-4000-8000-000000000202',
+        'b1700010-0000-4000-8000-000000000010', 1, 'cancel',
+        '{"reason":"different command"}'::jsonb
+      );
+    EXCEPTION WHEN unique_violation THEN command_reuse_denied := true;
+    END;
+    BEGIN
+      PERFORM public.execute_banking_statement_command(
+        '11111111-1111-4111-8111-111111111111',
+        '45454545-4545-4545-8545-454545454545',
+        'b1700204-0000-4000-8000-000000000204',
+        'b1700205-0000-4000-8000-000000000205',
+        'b1700010-0000-4000-8000-000000000010', 0, 'edit', '{}'::jsonb
+      );
+    EXCEPTION WHEN serialization_failure THEN stale_denied := true;
+    END;
+    BEGIN
+      PERFORM public.execute_banking_statement_command(
+        '11111111-1111-4111-8111-111111111111',
+        '45454545-4545-4545-8545-454545454545',
+        'b1700206-0000-4000-8000-000000000206',
+        'b1700207-0000-4000-8000-000000000207',
+        'b1700010-0000-4000-8000-000000000010', 1, 'edit',
+        '{"bank_account_id":"b1700002-0000-4000-8000-000000000002"}'::jsonb
+      );
+    EXCEPTION WHEN check_violation THEN foreign_bank_denied := true;
+    END;
+    BEGIN
+      PERFORM public.execute_banking_statement_command(
+        '11111111-1111-4111-8111-111111111111',
+        'ab400000-0000-4000-8000-000000000001',
+        'b1700208-0000-4000-8000-000000000208',
+        'b1700209-0000-4000-8000-000000000209',
+        'b1700010-0000-4000-8000-000000000010', 1, 'cancel', '{}'::jsonb
+      );
+    EXCEPTION WHEN invalid_parameter_value THEN missing_cancel_reason_denied := true;
+    END;
+    cancel_result := public.execute_banking_statement_command(
+      '11111111-1111-4111-8111-111111111111',
+      'ab400000-0000-4000-8000-000000000001',
+      'b1700210-0000-4000-8000-000000000210',
+      'b1700211-0000-4000-8000-000000000211',
+      'b1700010-0000-4000-8000-000000000010', 1, 'cancel',
+      '{"reason":"superseded import"}'::jsonb
+    );
+    BEGIN
+      DELETE FROM public.banking_statements
+      WHERE id = 'b1700010-0000-4000-8000-000000000010';
+    EXCEPTION WHEN object_not_in_prerequisite_state THEN hard_delete_denied := true;
+    END;
+    INSERT INTO public.banking_statements (
+      id, organization_id, bank_account_id, statement_date, period_start, period_end,
+      opening_balance, closing_balance, imported_by, transaction_count
+    ) VALUES (
+      'b1700011-0000-4000-8000-000000000011',
+      '11111111-1111-4111-8111-111111111111',
+      'b1700001-0000-4000-8000-000000000001',
+      '2199-03-30', '2199-03-01', '2199-03-31', 110, 210,
+      '45454545-4545-4545-8545-454545454545', 0
+    );
+
+    INSERT INTO public.banking_statements (
+      id, organization_id, bank_account_id, statement_date, period_start, period_end,
+      opening_balance, closing_balance, file_path, file_name, imported_by, transaction_count
+    ) VALUES (
+      'b1700012-0000-4000-8000-000000000012',
+      '11111111-1111-4111-8111-111111111111',
+      'b1700001-0000-4000-8000-000000000001',
+      '2199-04-30', '2199-04-01', '2199-04-30', 200, 250,
+      'banking/v170/recall.csv', 'recall.csv',
+      '45454545-4545-4545-8545-454545454545', 3
+    );
+    INSERT INTO public.banking_statement_lines (
+      id, organization_id, statement_id, transaction_date, description, amount, notes
+    ) VALUES
+      ('b1700111-0000-4000-8000-000000000111',
+        '11111111-1111-4111-8111-111111111111',
+        'b1700012-0000-4000-8000-000000000012', '2199-04-10', 'v170 automatic match', 10, 'match note'),
+      ('b1700112-0000-4000-8000-000000000112',
+        '11111111-1111-4111-8111-111111111111',
+        'b1700012-0000-4000-8000-000000000012', '2199-04-11', 'v170 manual match', 20, 'manual note'),
+      ('b1700113-0000-4000-8000-000000000113',
+        '11111111-1111-4111-8111-111111111111',
+        'b1700012-0000-4000-8000-000000000012', '2199-04-12', 'v170 exclusion', 30, 'exclusion evidence');
+    UPDATE public.banking_statement_lines SET
+      match_status = 'matched', matched_journal_line_id = posted_line_ids[1],
+      matched_at = now(), matched_by = '45454545-4545-4545-8545-454545454545', match_confidence = 0.85
+    WHERE id = 'b1700111-0000-4000-8000-000000000111';
+    UPDATE public.banking_statement_lines SET
+      match_status = 'manually_matched', matched_journal_line_id = posted_line_ids[2],
+      matched_at = now(), matched_by = '45454545-4545-4545-8545-454545454545', match_confidence = 1
+    WHERE id = 'b1700112-0000-4000-8000-000000000112';
+    UPDATE public.banking_statement_lines SET match_status = 'excluded'
+    WHERE id = 'b1700113-0000-4000-8000-000000000113';
+
+    BEGIN
+      PERFORM public.execute_banking_statement_command(
+        '11111111-1111-4111-8111-111111111111',
+        'ab400000-0000-4000-8000-000000000001',
+        'b1700212-0000-4000-8000-000000000212',
+        'b1700213-0000-4000-8000-000000000213',
+        'b1700012-0000-4000-8000-000000000012', 3, 'recall',
+        '{"reason":"accountant must not recall"}'::jsonb
+      );
+    EXCEPTION WHEN insufficient_privilege THEN accountant_recall_denied := true;
+    END;
+    recall_result := public.execute_banking_statement_command(
+      '11111111-1111-4111-8111-111111111111',
+      '45454545-4545-4545-8545-454545454545',
+      'b1700214-0000-4000-8000-000000000214',
+      'b1700215-0000-4000-8000-000000000215',
+      'b1700012-0000-4000-8000-000000000012', 3, 'recall',
+      '{"reason":"wrong matching batch"}'::jsonb
+    );
+
+    INSERT INTO public.banking_statements (
+      id, organization_id, bank_account_id, statement_date, period_start, period_end,
+      opening_balance, closing_balance, imported_by, transaction_count
+    ) VALUES (
+      'b1700013-0000-4000-8000-000000000013',
+      '11111111-1111-4111-8111-111111111111',
+      'b1700001-0000-4000-8000-000000000001',
+      '2199-05-31', '2199-05-01', '2199-05-31', 250, 260,
+      '45454545-4545-4545-8545-454545454545', 1
+    );
+    INSERT INTO public.banking_statement_lines (
+      id, organization_id, statement_id, transaction_date, description, amount
+    ) VALUES (
+      'b1700114-0000-4000-8000-000000000114',
+      '11111111-1111-4111-8111-111111111111',
+      'b1700013-0000-4000-8000-000000000013', '2199-05-10', 'reconciliation evidence', 10
+    );
+    UPDATE public.banking_statement_lines SET match_status = 'excluded'
+    WHERE id = 'b1700114-0000-4000-8000-000000000114';
+    INSERT INTO public.banking_reconciliations (
+      id, organization_id, bank_account_id, statement_id, reconciliation_date,
+      statement_balance, ledger_balance, difference, status
+    ) VALUES (
+      'b1700301-0000-4000-8000-000000000301',
+      '11111111-1111-4111-8111-111111111111',
+      'b1700001-0000-4000-8000-000000000001',
+      'b1700013-0000-4000-8000-000000000013', '2199-05-31', 260, 260, 0, 'completed'
+    );
+    BEGIN
+      PERFORM public.execute_banking_statement_command(
+        '11111111-1111-4111-8111-111111111111',
+        '45454545-4545-4545-8545-454545454545',
+        'b1700216-0000-4000-8000-000000000216',
+        'b1700217-0000-4000-8000-000000000217',
+        'b1700013-0000-4000-8000-000000000013', 1, 'recall',
+        '{"reason":"must retain reconciliation"}'::jsonb
+      );
+    EXCEPTION WHEN object_not_in_prerequisite_state THEN reconciliation_recall_denied := true;
+    END;
+
+    IF edit_result IS DISTINCT FROM edit_replay
+       OR (edit_result->>'version')::integer <> 1
+       OR edit_result->>'statement_date' <> '2199-03-30'
+       OR (cancel_result->>'version')::integer <> 2 OR cancel_result->>'status' <> 'cancelled'
+       OR (recall_result->>'version')::integer <> 4 OR recall_result->>'status' <> 'imported'
+       OR NOT accountant_recall_denied OR NOT reconciliation_recall_denied
+       OR NOT stale_denied OR NOT command_reuse_denied OR NOT foreign_bank_denied
+       OR NOT hard_delete_denied OR NOT missing_cancel_reason_denied
+       OR (SELECT count(*) FROM public.banking_statement_lines
+           WHERE statement_id = 'b1700010-0000-4000-8000-000000000010') <> 1
+       OR (SELECT file_path FROM public.banking_statements
+           WHERE id = 'b1700010-0000-4000-8000-000000000010') <> 'banking/v170/edit.csv'
+       OR EXISTS (SELECT 1 FROM public.banking_statement_lines
+           WHERE statement_id = 'b1700012-0000-4000-8000-000000000012'
+             AND (match_status <> 'unmatched' OR matched_journal_line_id IS NOT NULL
+               OR matched_at IS NOT NULL OR matched_by IS NOT NULL OR match_confidence IS NOT NULL))
+       OR (SELECT notes FROM public.banking_statement_lines
+           WHERE id = 'b1700113-0000-4000-8000-000000000113') <> 'exclusion evidence'
+       OR (SELECT count(*) FROM public.banking_statement_line_action_history history
+           JOIN public.banking_statement_commands command ON command.id = history.command_id
+           WHERE command.idempotency_key = 'b1700215-0000-4000-8000-000000000215') <> 3
+       OR (SELECT count(*) FROM public.business_events
+           WHERE source_type = 'banking_statement'
+             AND business_key IN (
+               'b1700202-0000-4000-8000-000000000202',
+               'b1700211-0000-4000-8000-000000000211',
+               'b1700215-0000-4000-8000-000000000215'
+             )) <> 3
+       OR EXISTS (SELECT 1 FROM public.banking_statement_commands
+           WHERE idempotency_key IN (
+             'b1700205-0000-4000-8000-000000000205',
+             'b1700207-0000-4000-8000-000000000207',
+             'b1700209-0000-4000-8000-000000000209',
+             'b1700213-0000-4000-8000-000000000213',
+             'b1700217-0000-4000-8000-000000000217'
+           )) THEN
+      RAISE EXCEPTION 'Bank statement lifecycle commands did not preserve version, authority, or evidence.';
+    END IF;
+  END
+  $test$;
+
   -- v108: promoter configuration is versioned and validates connected sales data.
   INSERT INTO public.sales_companies(id,organization_id,name,slug,code)
   VALUES('ad200001-0000-4000-8000-000000000001','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',

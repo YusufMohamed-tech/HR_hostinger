@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { FileUp, Wand2 } from "lucide-react";
+import { Archive, FileUp, Pencil, RotateCcw, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,8 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AccountingPageHeader, AccountingLoading, AccountingEmptyState, AccountingStatusBadge, MoneyAmount } from "@/components/accounting/AccountingPrimitives";
+import { MessageDialog } from "@/components/ui/feedback-dialog";
+import { useRoleContext } from "@/providers/RoleProvider";
+import { getBankStatementActionCapabilities } from "@/lib/banking/statement-actions";
 import {
   getBankAccounts,
+  getBankStatement,
   getBankStatements,
   getStatementLines,
   importStatement,
@@ -18,6 +22,9 @@ import {
   matchLine,
   unmatchLine,
   excludeLine,
+  updateBankStatement,
+  recallBankStatement,
+  cancelBankStatement,
   type BankAccount,
   type BankStatement,
   type StatementLine,
@@ -40,6 +47,7 @@ function parseCSVLines(csvText: string): Array<Record<string, unknown>> {
 }
 
 export default function StatementsPage() {
+  const { currentUser } = useRoleContext();
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [statements, setStatements] = useState<BankStatement[]>([]);
   const [selectedStatement, setSelectedStatement] = useState<BankStatement | null>(null);
@@ -48,6 +56,15 @@ export default function StatementsPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [importForm, setImportForm] = useState({ bank_account_id: "", statement_date: "", period_start: "", period_end: "", opening_balance: "0", closing_balance: "0" });
   const [csvData, setCsvData] = useState<Array<Record<string, unknown>>>([]);
+  const [message, setMessage] = useState("");
+  const [editStatement, setEditStatement] = useState<BankStatement | null>(null);
+  const [editForm, setEditForm] = useState({ bank_account_id: "", statement_date: "", period_start: "", period_end: "", opening_balance: "0", closing_balance: "0", file_name: "" });
+  const [lifecycleAction, setLifecycleAction] = useState<"recall" | "cancel" | null>(null);
+  const [actionStatement, setActionStatement] = useState<BankStatement | null>(null);
+  const [actionReason, setActionReason] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+  const role = currentUser?.orgMembershipRole || currentUser?.role || "";
+  const canManage = ["finance_manager", "accountant"].includes(String(role).toLowerCase());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -60,9 +77,69 @@ export default function StatementsPage() {
   useEffect(() => { load(); }, [load]);
 
   const openStatement = async (stmt: BankStatement) => {
-    setSelectedStatement(stmt);
-    const r = await getStatementLines(stmt.id);
-    setLines(r.data || []);
+    const [statementResult, linesResult] = await Promise.all([
+      getBankStatement(stmt.id),
+      getStatementLines(stmt.id),
+    ]);
+    if (statementResult.error || linesResult.error || !statementResult.data) {
+      setMessage(statementResult.error || linesResult.error || "تعذر تحديث كشف الحساب.");
+      return;
+    }
+    setSelectedStatement(statementResult.data);
+    setLines(linesResult.data || []);
+  };
+
+  const openEdit = (statement: BankStatement) => {
+    setEditStatement(statement);
+    setEditForm({
+      bank_account_id: statement.bank_account_id,
+      statement_date: statement.statement_date,
+      period_start: statement.period_start,
+      period_end: statement.period_end,
+      opening_balance: String(statement.opening_balance),
+      closing_balance: String(statement.closing_balance),
+      file_name: statement.file_name || "",
+    });
+  };
+
+  const submitEdit = async () => {
+    if (!editStatement) return;
+    setActionLoading(true);
+    const result = await updateBankStatement(editStatement.id, editStatement.version, {
+      ...editForm,
+      opening_balance: Number(editForm.opening_balance),
+      closing_balance: Number(editForm.closing_balance),
+      file_name: editForm.file_name || null,
+    });
+    setActionLoading(false);
+    if (result.error) {
+      setMessage(result.error);
+      return;
+    }
+    setEditStatement(null);
+    await load();
+  };
+
+  const openLifecycle = (statement: BankStatement, action: "recall" | "cancel") => {
+    setActionStatement(statement);
+    setLifecycleAction(action);
+    setActionReason("");
+  };
+
+  const submitLifecycle = async () => {
+    if (!actionStatement || !lifecycleAction || !actionReason.trim()) return;
+    setActionLoading(true);
+    const result = lifecycleAction === "recall"
+      ? await recallBankStatement(actionStatement.id, actionStatement.version, actionReason)
+      : await cancelBankStatement(actionStatement.id, actionStatement.version, actionReason);
+    setActionLoading(false);
+    if (result.error) {
+      setMessage(result.error);
+      return;
+    }
+    setLifecycleAction(null);
+    setActionStatement(null);
+    await load();
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -91,20 +168,23 @@ export default function StatementsPage() {
 
   const handleAutoMatch = async () => {
     if (!selectedStatement) return;
-    await autoMatchStatement(selectedStatement.id);
-    openStatement(selectedStatement);
+    const result = await autoMatchStatement(selectedStatement.id);
+    if (result.error) setMessage(result.error);
+    else await openStatement(selectedStatement);
   };
 
   const handleExclude = async (lineId: string) => {
     if (!selectedStatement) return;
-    await excludeLine(selectedStatement.id, lineId);
-    openStatement(selectedStatement);
+    const result = await excludeLine(selectedStatement.id, lineId);
+    if (result.error) setMessage(result.error);
+    else await openStatement(selectedStatement);
   };
 
   const handleUnmatch = async (lineId: string) => {
     if (!selectedStatement) return;
-    await unmatchLine(selectedStatement.id, lineId);
-    openStatement(selectedStatement);
+    const result = await unmatchLine(selectedStatement.id, lineId);
+    if (result.error) setMessage(result.error);
+    else await openStatement(selectedStatement);
   };
 
   if (loading) return <AccountingLoading />;
@@ -114,12 +194,13 @@ export default function StatementsPage() {
     const matchedCount = lines.filter((l) => ["matched", "manually_matched"].includes(l.match_status)).length;
     return (
       <div className="space-y-6">
+        <MessageDialog open={Boolean(message)} onOpenChange={(open) => !open && setMessage("")} description={message} />
         <AccountingPageHeader
           title={`كشف ${selectedStatement.statement_date}`}
           description={`${selectedStatement.bank_account?.bank_name} - ${selectedStatement.bank_account?.name_ar}`}
           actions={<>
             <Button variant="outline" onClick={() => { setSelectedStatement(null); setLines([]); }}>رجوع</Button>
-            <Button className="bg-brand text-white hover:bg-brand-dark" onClick={handleAutoMatch}><Wand2 className="ml-2 h-4 w-4" />مطابقة تلقائية</Button>
+            {canManage ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={handleAutoMatch}><Wand2 className="ml-2 h-4 w-4" />مطابقة تلقائية</Button> : null}
           </>}
         />
         <div className="grid gap-4 sm:grid-cols-4">
@@ -158,10 +239,10 @@ export default function StatementsPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
-                      {["matched", "manually_matched"].includes(line.match_status) && (
+                      {canManage && ["matched", "manually_matched"].includes(line.match_status) && (
                         <Button variant="ghost" size="sm" onClick={() => handleUnmatch(line.id)}>إلغاء</Button>
                       )}
-                      {line.match_status === "unmatched" && (
+                      {canManage && line.match_status === "unmatched" && (
                         <Button variant="ghost" size="sm" onClick={() => handleExclude(line.id)}>استثناء</Button>
                       )}
                     </div>
@@ -177,8 +258,9 @@ export default function StatementsPage() {
 
   return (
     <div className="space-y-6">
+      <MessageDialog open={Boolean(message)} onOpenChange={(open) => !open && setMessage("")} description={message} />
       <AccountingPageHeader title="كشوف الحساب" description="استيراد كشوف البنك ومطابقتها مع قيود النظام" actions={
-        <Button className="bg-brand text-white hover:bg-brand-dark" onClick={() => setImportOpen(true)}><FileUp className="ml-2 h-4 w-4" />استيراد كشف</Button>
+        canManage ? <Button className="bg-brand text-white hover:bg-brand-dark" onClick={() => setImportOpen(true)}><FileUp className="ml-2 h-4 w-4" />استيراد كشف</Button> : null
       } />
 
       {statements.length === 0 ? (
@@ -203,7 +285,18 @@ export default function StatementsPage() {
                   <TableCell>{stmt.matched_count}/{stmt.transaction_count}</TableCell>
                   <TableCell><AccountingStatusBadge status={stmt.status} /></TableCell>
                   <TableCell>
-                    <Button variant="outline" size="sm" onClick={() => openStatement(stmt)}>عرض</Button>
+                    <div className="flex justify-end gap-1">
+                      <Button variant="outline" size="sm" onClick={() => openStatement(stmt)}>عرض</Button>
+                      {getBankStatementActionCapabilities(stmt, role).canEdit ? (
+                        <Button variant="ghost" size="sm" aria-label="تعديل الكشف" onClick={() => openEdit(stmt)}><Pencil className="h-4 w-4" /></Button>
+                      ) : null}
+                      {getBankStatementActionCapabilities(stmt, role).canRecall ? (
+                        <Button variant="ghost" size="sm" aria-label="استرجاع الكشف" onClick={() => openLifecycle(stmt, "recall")}><RotateCcw className="h-4 w-4" /></Button>
+                      ) : null}
+                      {getBankStatementActionCapabilities(stmt, role).canCancel ? (
+                        <Button variant="ghost" size="sm" className="text-red-700 hover:bg-red-50" aria-label="حذف الكشف" onClick={() => openLifecycle(stmt, "cancel")}><Archive className="h-4 w-4" /></Button>
+                      ) : null}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -241,6 +334,50 @@ export default function StatementsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setImportOpen(false)}>إلغاء</Button>
             <Button className="bg-brand text-white hover:bg-brand-dark" onClick={submitImport} disabled={!importForm.bank_account_id || csvData.length === 0}>استيراد</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(editStatement)} onOpenChange={(open) => !open && setEditStatement(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>تعديل بيانات كشف الحساب</DialogTitle></DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label>الحساب البنكي</Label>
+              <select value={editForm.bank_account_id} onChange={(event) => setEditForm((previous) => ({ ...previous, bank_account_id: event.target.value }))} className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm">
+                <option value="">اختر الحساب</option>
+                {bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.name_ar} - {account.bank_name}</option>)}
+              </select>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-2"><Label>تاريخ الكشف</Label><Input type="date" value={editForm.statement_date} onChange={(event) => setEditForm((previous) => ({ ...previous, statement_date: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>من</Label><Input type="date" value={editForm.period_start} onChange={(event) => setEditForm((previous) => ({ ...previous, period_start: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>إلى</Label><Input type="date" value={editForm.period_end} onChange={(event) => setEditForm((previous) => ({ ...previous, period_end: event.target.value }))} /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2"><Label>الرصيد الافتتاحي</Label><Input type="number" value={editForm.opening_balance} onChange={(event) => setEditForm((previous) => ({ ...previous, opening_balance: event.target.value }))} /></div>
+              <div className="space-y-2"><Label>الرصيد الختامي</Label><Input type="number" value={editForm.closing_balance} onChange={(event) => setEditForm((previous) => ({ ...previous, closing_balance: event.target.value }))} /></div>
+            </div>
+            <div className="space-y-2"><Label>اسم الملف</Label><Input value={editForm.file_name} onChange={(event) => setEditForm((previous) => ({ ...previous, file_name: event.target.value }))} /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditStatement(null)} disabled={actionLoading}>إلغاء</Button>
+            <Button className="bg-brand text-white hover:bg-brand-dark" onClick={submitEdit} disabled={actionLoading}>{actionLoading ? "جاري الحفظ..." : "حفظ التعديل"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(lifecycleAction)} onOpenChange={(open) => !open && setLifecycleAction(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{lifecycleAction === "recall" ? "استرجاع كشف الحساب" : "حذف كشف الحساب"}</DialogTitle></DialogHeader>
+          <div className="space-y-2 py-4">
+            <p className="text-sm text-gray-600">{lifecycleAction === "recall" ? "سيتم إلغاء كل المطابقات والاستثناءات وإعادة الكشف إلى حالة مستورد." : "سيتم إخفاء الكشف مع الاحتفاظ بالملف والعمليات وسجل التدقيق."}</p>
+            <Label htmlFor="statement-action-reason">السبب *</Label>
+            <Input id="statement-action-reason" value={actionReason} onChange={(event) => setActionReason(event.target.value)} placeholder="اكتب سبب الإجراء" autoFocus />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLifecycleAction(null)} disabled={actionLoading}>إلغاء</Button>
+            <Button className={lifecycleAction === "cancel" ? "bg-red-600 text-white hover:bg-red-700" : "bg-brand text-white hover:bg-brand-dark"} onClick={submitLifecycle} disabled={actionLoading || !actionReason.trim()}>{actionLoading ? "جاري التنفيذ..." : "تأكيد"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
