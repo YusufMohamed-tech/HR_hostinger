@@ -4,7 +4,6 @@ import { useState, useRef, useEffect } from "react";
 import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import {
   type ExportFormat,
-  type ReportMeta,
   getReportMeta,
   generateExportFilename,
 } from "@/lib/accounting/reports/registry";

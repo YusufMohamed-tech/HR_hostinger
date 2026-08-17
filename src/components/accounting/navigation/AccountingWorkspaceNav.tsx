@@ -88,10 +88,10 @@ export function AccountingWorkspaceNav() {
 
   return (
     <nav
-      className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+      className="relative z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
       aria-label="Finance workspace navigation"
     >
-      <div className="flex items-center gap-1 overflow-x-auto px-4 py-1 scrollbar-none">
+      <div className="flex items-center gap-1 px-4 py-1 flex-wrap">
         {FINANCE_NAVIGATION.map((group) => (
           <GroupDropdown
             key={group.id}

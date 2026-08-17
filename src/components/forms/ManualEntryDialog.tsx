@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,7 +43,7 @@ const currentMonth = () => {
 };
 
 export function ManualEntryDialog({ open, onOpenChange, employeeId, employeeName, onSuccess }: Props) {
-  const { currentUser } = useRoleContext();
+  useRoleContext();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [entries, setEntries] = useState<ManualEntry[]>([]);
@@ -60,12 +60,7 @@ export function ManualEntryDialog({ open, onOpenChange, employeeId, employeeName
 
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }));
 
-  useEffect(() => {
-    if (!open || !employeeId) return;
-    loadEntries();
-  }, [open, employeeId]);
-
-  const loadEntries = async () => {
+  const loadEntries = useCallback(async () => {
     setLoadingEntries(true);
     try {
       const res = await fetch(`/api/manual-entries?employee_id=${employeeId}`);
@@ -75,7 +70,12 @@ export function ManualEntryDialog({ open, onOpenChange, employeeId, employeeName
       setEntries([]);
     }
     setLoadingEntries(false);
-  };
+  }, [employeeId]);
+
+  useEffect(() => {
+    if (!open || !employeeId) return;
+    loadEntries();
+  }, [open, employeeId, loadEntries]);
 
   const handleSubmit = async () => {
     setError("");

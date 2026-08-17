@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useRef, useState } from "react";
-import { FileText, Image, Paperclip, Trash2, Upload, X } from "lucide-react";
+import { FileText, Image as ImageIcon, Paperclip, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { addJournalAttachment, deleteJournalAttachment } from "@/lib/services/accounting";
@@ -32,7 +32,7 @@ function formatFileSize(bytes: number): string {
 }
 
 function fileIcon(mimeType: string) {
-  if (mimeType.startsWith("image/")) return <Image className="h-5 w-5 text-blue-500" />;
+  if (mimeType.startsWith("image/")) return <ImageIcon className="h-5 w-5 text-blue-500" />;
   if (mimeType === "application/pdf") return <FileText className="h-5 w-5 text-red-500" />;
   return <Paperclip className="h-5 w-5 text-gray-500" />;
 }

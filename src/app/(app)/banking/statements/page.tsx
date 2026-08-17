@@ -19,7 +19,6 @@ import {
   getStatementLines,
   importStatement,
   autoMatchStatement,
-  matchLine,
   unmatchLine,
   excludeLine,
   updateBankStatement,

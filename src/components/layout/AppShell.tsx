@@ -22,7 +22,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Header />
         {isFinanceRoute && <AccountingWorkspaceNav />}
         <SalesShiftMonitor />
-        <main className="flex-1 overflow-auto p-4 md:p-8 mr-0 lg:mr-2">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 mr-0 lg:mr-2">
           <div className="mx-auto max-w-7xl">
             <ErrorBoundary>{children}</ErrorBoundary>
           </div>

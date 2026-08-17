@@ -2,8 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { Building2, FileText, GitCompare, Landmark } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Building2, FileText, GitCompare } from "lucide-react";
 import { AccountingPageHeader, AccountingLoading, AccountingStatCard } from "@/components/accounting/AccountingPrimitives";
 import { getBankAccounts, getBankStatements, type BankAccount, type BankStatement } from "@/lib/services/banking";
 

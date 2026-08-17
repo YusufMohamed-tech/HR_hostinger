@@ -37,7 +37,7 @@ interface Props {
   isLoading?: boolean;
 }
 
-function formatAmount(amount: number, currency: string): string {
+function formatAmount(amount: number): string {
   const formatted = Math.abs(amount).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -64,7 +64,7 @@ function SectionBlock({ section }: { section: IncomeStatementSection }) {
         )}
         <span className="flex-1 text-start">{section.label_ar}</span>
         <span className="font-mono text-sm tabular-nums" dir="ltr">
-          {formatAmount(section.total, "SAR")}
+          {formatAmount(section.total)}
         </span>
       </button>
 
@@ -108,7 +108,7 @@ function AccountRow({ row, depth }: { row: IncomeStatementRow; depth: number }) 
         </span>
         <span className="flex-1">{row.account_name_ar}</span>
         <span className="font-mono text-sm tabular-nums" dir="ltr">
-          {formatAmount(row.amount, "SAR")}
+          {formatAmount(row.amount)}
         </span>
       </div>
       {hasChildren && expanded && row.children!.map((child, idx) => (
@@ -123,7 +123,7 @@ function SummaryLine({ label, amount, isBold }: { label: string; amount: number;
     <div className={`flex items-center px-4 py-2 ${isBold ? "font-bold text-base" : "font-semibold text-sm"} border-t`}>
       <span className="flex-1">{label}</span>
       <span className={`font-mono tabular-nums ${amount < 0 ? "text-destructive" : ""}`} dir="ltr">
-        {formatAmount(amount, "SAR")}
+        {formatAmount(amount)}
       </span>
     </div>
   );

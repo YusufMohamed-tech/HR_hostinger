@@ -2006,6 +2006,9 @@ const handlers: Record<string, OutboxHandler> = {
       link: `/supervisor/evaluations`,
     });
   },
+  "banking.statement.edited": async () => {},
+  "banking.statement.recalled": async () => {},
+  "banking.statement.cancelled": async () => {},
 };
 
 export async function processOutboxBatch(workerId: string, batchSize = 25) {

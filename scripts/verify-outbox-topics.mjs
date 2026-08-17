@@ -81,6 +81,11 @@ const dynamicTopicsByFile = new Map([
     "product_inventory.trader_loss_reported",
     "product_inventory.trader_loss_recovered",
   ])],
+  ["db/schema_v170_banking_statement_lifecycle.sql", new Set([
+    "banking.statement.edited",
+    "banking.statement.recalled",
+    "banking.statement.cancelled",
+  ])],
 ]);
 
 function splitSqlList(value) {

@@ -311,7 +311,7 @@ export async function middleware(request: NextRequest) {
       const requiredFeatures = requiredFeaturesForPath(pathname);
       if (requiredFeatures.length > 0) {
         if (!requiredFeatures.some(
-          (feature) => featureEnabled(organizationFeatures, feature) && planAllowsFeature(plan, feature)
+          (requiredFeature) => featureEnabled(organizationFeatures, requiredFeature) && planAllowsFeature(plan, requiredFeature)
         )) {
           if (isApi) {
             return secure(NextResponse.json({ message: "This module is not enabled for the organization plan." }, { status: 403 }));
