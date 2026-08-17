@@ -165,7 +165,8 @@ export default function StatementsPage() {
       lines: csvData,
       import_format: "csv",
     });
-    if (!r.error) { setImportOpen(false); setCsvData([]); load(); }
+    if (r.error) { setMessage(r.error); }
+    else { setImportOpen(false); setCsvData([]); load(); }
   };
 
   const handleAutoMatch = async () => {

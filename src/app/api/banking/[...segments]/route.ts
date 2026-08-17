@@ -431,7 +431,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
     if (parts[0] === "statements" && parts[1] === "import") {
       const bankAccountId = requireText(body.bank_account_id);
       const lines = Array.isArray(body.lines) ? body.lines as Array<Record<string, unknown>> : [];
-      if (!bankAccountId || lines.length === 0) return errorResponse("bank_account_id and lines are required.", 400);
+      if (!bankAccountId || lines.length === 0) return errorResponse("اختر حسابًا بنكيًا وتأكد من رفع ملف CSV يحتوي على عمليات.", 400);
 
       const { data: bankAccount, error: bankAccountError } = await db(admin)
         .from("banking_accounts")
@@ -441,7 +441,7 @@ export async function POST(request: NextRequest, context: RouteContext) {
         .eq("is_active", true)
         .maybeSingle();
       if (bankAccountError) throw databaseError(bankAccountError);
-      if (!bankAccount) return errorResponse("The bank account must be active and belong to the organization.", 400);
+      if (!bankAccount) return errorResponse("الحساب البنكي غير مفعل أو لا ينتمي للمنشأة. فعّل الحساب من البنوك ← الحسابات البنكية.", 400);
 
       const statementDate = requireText(body.statement_date) || new Date().toISOString().slice(0, 10);
       const periodStart = requireText(body.period_start) || statementDate;
