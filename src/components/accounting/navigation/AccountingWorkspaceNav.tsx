@@ -82,7 +82,14 @@ function GroupDropdown({ group, isActive }: { group: NavGroup; isActive: boolean
 
 export function AccountingWorkspaceNav() {
   const pathname = usePathname();
-  const isFinanceRoute = pathname.startsWith("/accounting") || pathname.startsWith("/banking");
+  const isFinanceRoute =
+    pathname.startsWith("/accounting") ||
+    pathname.startsWith("/banking") ||
+    pathname.startsWith("/chat") ||
+    pathname.startsWith("/notifications") ||
+    pathname.startsWith("/payroll") ||
+    pathname.startsWith("/lms") ||
+    pathname.startsWith("/learn");
 
   if (!isFinanceRoute) return null;
 

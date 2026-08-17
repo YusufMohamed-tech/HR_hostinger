@@ -9,7 +9,14 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isFinanceRoute = pathname.startsWith("/accounting") || pathname.startsWith("/banking");
+  const isFinanceRoute =
+    pathname.startsWith("/accounting") ||
+    pathname.startsWith("/banking") ||
+    pathname.startsWith("/chat") ||
+    pathname.startsWith("/notifications") ||
+    pathname.startsWith("/payroll") ||
+    pathname.startsWith("/lms") ||
+    pathname.startsWith("/learn");
 
   return (
     <div className="flex h-screen overflow-hidden bg-muted" dir="rtl">

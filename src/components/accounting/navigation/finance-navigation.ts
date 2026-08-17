@@ -88,4 +88,15 @@ export const FINANCE_NAVIGATION: NavGroup[] = [
       { id: "team", label_ar: "الفريق والصلاحيات", label_en: "Team & Permissions", path: "/accounting/team", capability: "permissions:manage" },
     ],
   },
+  {
+    id: "extras",
+    label_ar: "المزيد",
+    label_en: "Extras",
+    items: [
+      { id: "chat", label_ar: "المحادثات", label_en: "Chat", path: "/chat" },
+      { id: "notifications", label_ar: "الإشعارات", label_en: "Notifications", path: "/notifications" },
+      { id: "payroll", label_ar: "الرواتب", label_en: "Payroll", path: "/payroll" },
+      { id: "lms", label_ar: "التعلم", label_en: "Learning", path: "/lms" },
+    ],
+  },
 ];
