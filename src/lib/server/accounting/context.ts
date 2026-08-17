@@ -11,12 +11,19 @@ export interface ResolvedAccountingContext extends AccountingEntityContext {
   allowedBranchIds: string[];
 }
 
+export interface EntityContextError {
+  error: string;
+  status: number;
+  message_ar: string;
+  message_en: string;
+}
+
 export async function resolveAccountingEntityContext(
   organizationId: string,
   userId: string,
   role: string,
   requestedEntityId?: string | null
-): Promise<ResolvedAccountingContext | null> {
+): Promise<ResolvedAccountingContext | EntityContextError> {
   const admin = createAdminClient();
 
   const { data: scopes } = await admin
@@ -37,9 +44,29 @@ export async function resolveAccountingEntityContext(
     .filter((s: Record<string, unknown>) => s.branch_id)
     .map((s: Record<string, unknown>) => String(s.branch_id));
 
+  // FAIL-CLOSED: If user has no scopes, deny access instead of returning all entities
+  if (allowedEntityIds.length === 0) {
+    return {
+      error: "no_entity_scope",
+      status: 403,
+      message_ar: "لا يوجد نطاق شركة مخصص لهذا المستخدم. يرجى التواصل مع المدير المالي.",
+      message_en: "No entity scope assigned to this user. Contact the finance manager.",
+    };
+  }
+
   let targetEntityId: string | undefined = requestedEntityId || undefined;
 
-  if (!targetEntityId || !allowedEntityIds.includes(targetEntityId)) {
+  // If requested entity is not in allowed list, reject explicitly
+  if (targetEntityId && !allowedEntityIds.includes(targetEntityId)) {
+    return {
+      error: "entity_scope_denied",
+      status: 403,
+      message_ar: "ليس لديك صلاحية الوصول إلى هذه الشركة.",
+      message_en: "You do not have access to this entity.",
+    };
+  }
+
+  if (!targetEntityId) {
     const { data: defaultEntity } = await admin
       .from("accounting_legal_entities")
       .select("id")
@@ -51,10 +78,8 @@ export async function resolveAccountingEntityContext(
     const defaultId = (defaultEntity as { id: string } | null)?.id;
     if (defaultId && allowedEntityIds.includes(defaultId)) {
       targetEntityId = defaultId;
-    } else if (allowedEntityIds.length > 0) {
-      targetEntityId = allowedEntityIds[0];
     } else {
-      return null;
+      targetEntityId = allowedEntityIds[0];
     }
   }
 
@@ -65,7 +90,14 @@ export async function resolveAccountingEntityContext(
     .eq("organization_id", organizationId)
     .single();
 
-  if (!entity) return null;
+  if (!entity) {
+    return {
+      error: "entity_not_found",
+      status: 404,
+      message_ar: "الشركة غير موجودة أو غير نشطة.",
+      message_en: "Entity not found or inactive.",
+    };
+  }
   const entityRow = entity as Record<string, unknown>;
 
   const { data: defaultBook } = await admin
@@ -128,15 +160,9 @@ export async function getUserAllowedEntities(
     .eq("user_id", userId)
     .eq("is_active", true);
 
+  // FAIL-CLOSED: No scopes = no entities (empty array, not all entities)
   if (!scopes || scopes.length === 0) {
-    const { data: entities } = await admin
-      .from("accounting_legal_entities")
-      .select("*")
-      .eq("organization_id", organizationId)
-      .in("status", ["active", "draft"])
-      .order("is_default", { ascending: false })
-      .order("code");
-    return (entities || []) as unknown as AccountingLegalEntity[];
+    return [];
   }
 
   const entityIds = [...new Set((scopes as Record<string, unknown>[]).map((s) => String(s.legal_entity_id)))];
@@ -151,4 +177,8 @@ export async function getUserAllowedEntities(
     .order("code");
 
   return (entities || []) as unknown as AccountingLegalEntity[];
+}
+
+export function isEntityContextError(result: ResolvedAccountingContext | EntityContextError): result is EntityContextError {
+  return "error" in result;
 }

@@ -195,6 +195,7 @@
     { "id": "schema_v167_accounting_customer_status_normalization", "file": "db/schema_v167_accounting_customer_status_normalization.sql" },
     { "id": "schema_v168_accounting_account_taxonomy", "file": "db/schema_v168_accounting_account_taxonomy.sql" },
     { "id": "schema_v169_manual_journal_cost_centers", "file": "db/schema_v169_manual_journal_cost_centers.sql" },
-    { "id": "schema_v170_banking_statement_lifecycle", "file": "db/schema_v170_banking_statement_lifecycle.sql" }
+    { "id": "schema_v170_banking_statement_lifecycle", "file": "db/schema_v170_banking_statement_lifecycle.sql" },
+    { "id": "schema_v171_accounting_identity_status_hardening", "file": "db/schema_v171_accounting_identity_status_hardening.sql" }
   ]
 }

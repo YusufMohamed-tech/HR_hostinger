@@ -585,13 +585,32 @@ export async function GET(request: NextRequest, context: RouteContext) {
       return json(data || []);
     }
     if (parts[0] === "permissions" && parts[1] === "me") {
-      const { data, error } = await db(admin)
+      const { resolveCapabilities } = await import("@/lib/accounting/permissions");
+      const baseCapabilities = resolveCapabilities(auth.role);
+      const { data: explicitGrants } = await db(admin)
         .from("accounting_role_permissions")
-        .select("permission")
+        .select("permission_key")
         .eq("organization_id", auth.orgId)
-        .eq("role", auth.role);
+        .eq("role", auth.role)
+        .eq("is_granted", true);
+      const granted = (explicitGrants || []).map((r: { permission_key: string }) => r.permission_key);
+      const allCapabilities = [...new Set([...baseCapabilities, ...granted])];
+      return json({ role: auth.role, capabilities: allCapabilities });
+    }
+    if (parts[0] === "diagnostics" && parts[1] === "user-access") {
+      if (auth.role !== "finance_manager" && auth.role !== "admin") {
+        return new Response(JSON.stringify({ error: "forbidden" }), { status: 403 });
+      }
+      const targetUserId = new URL(request.url).searchParams.get("user_id");
+      if (!targetUserId) {
+        return new Response(JSON.stringify({ error: "user_id required" }), { status: 400 });
+      }
+      const { data, error } = await admin.rpc("accounting_diagnose_user_access", {
+        p_organization_id: auth.orgId,
+        p_user_id: targetUserId,
+      });
       if (error) throw new Error(error.message);
-      return json((data || []).map((r: { permission: string }) => r.permission));
+      return json(data);
     }
     if (parts[0] === "permissions") {
       const { data, error } = await db(admin)
@@ -1190,6 +1209,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     if (parts[0] === "permissions" && parts[1] === "grant") {
+      if (auth.role !== "finance_manager") {
+        return new Response(JSON.stringify({ error: "forbidden", message_ar: "إدارة الصلاحيات متاحة للمدير المالي فقط." }), { status: 403 });
+      }
       const role = requireText(body.role);
       const permission = requireText(body.permission);
       if (!role || !permission) return message("role and permission are required.", 400);
@@ -1203,6 +1225,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     if (parts[0] === "permissions" && parts[1] === "revoke") {
+      if (auth.role !== "finance_manager") {
+        return new Response(JSON.stringify({ error: "forbidden", message_ar: "إدارة الصلاحيات متاحة للمدير المالي فقط." }), { status: 403 });
+      }
       const role = requireText(body.role);
       const permission = requireText(body.permission);
       if (!role || !permission) return message("role and permission are required.", 400);

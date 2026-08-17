@@ -1,5 +1,5 @@
 {
-  "id": "schema_v169_manual_journal_cost_centers",
-  "file": "db/schema_v169_manual_journal_cost_centers.sql",
-  "checksumSha256": "d2434f5376d90adf14093d233982bde7b8584f738d36d699f392bb39b1413e05"
+  "id": "schema_v171_accounting_identity_status_hardening",
+  "file": "db/schema_v171_accounting_identity_status_hardening.sql",
+  "checksumSha256": "d06cc9e8839eeb7ac3e7a4d6be77e712f39c6fa4ddfe92573263de8eb7ff9327"
 }

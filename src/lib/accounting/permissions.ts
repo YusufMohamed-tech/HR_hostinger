@@ -3,6 +3,21 @@ import { requireTenantContext } from "@/lib/server/tenant-context";
 
 export type AccountingAction = "view" | "manage" | "post" | "settings" | "payroll" | "sales" | "reports";
 
+export type AccountingCapability =
+  | "accounting:read"
+  | "reports:export"
+  | "journals:prepare"
+  | "journals:post"
+  | "master_data:edit_contacts"
+  | "master_data:manage_coa"
+  | "control_accounts:assign"
+  | "party_netting:prepare"
+  | "party_netting:approve"
+  | "bank_statement:edit"
+  | "bank_statement:recall_approved"
+  | "bank_statement:archive"
+  | "permissions:manage";
+
 export type PartyPermission =
   | "customers:view" | "customers:create" | "customers:edit" | "customers:delete"
   | "vendors:view" | "vendors:create" | "vendors:edit" | "vendors:delete";
@@ -17,12 +32,39 @@ export type AccountingAuthContext = {
   canPost: boolean;
   canManageSettings: boolean;
   canViewReports: boolean;
+  capabilities: AccountingCapability[];
   requestId: string;
 };
 
 const viewRoles = new Set(["finance_manager", "accountant", "finance_viewer"]);
 const manageRoles = new Set(["finance_manager", "accountant"]);
 const postRoles = new Set(["finance_manager"]);
+
+export function resolveCapabilities(role: string): AccountingCapability[] {
+  switch (role) {
+    case "finance_manager":
+      return [
+        "accounting:read", "reports:export", "journals:prepare", "journals:post",
+        "master_data:edit_contacts", "master_data:manage_coa", "control_accounts:assign",
+        "party_netting:prepare", "party_netting:approve",
+        "bank_statement:edit", "bank_statement:recall_approved", "bank_statement:archive",
+        "permissions:manage",
+      ];
+    case "accountant":
+      return [
+        "accounting:read", "reports:export", "journals:prepare",
+        "master_data:edit_contacts", "party_netting:prepare", "bank_statement:edit",
+      ];
+    case "finance_viewer":
+      return ["accounting:read", "reports:export"];
+    default:
+      return [];
+  }
+}
+
+export function hasCapability(auth: AccountingAuthContext, cap: AccountingCapability): boolean {
+  return auth.capabilities.includes(cap);
+}
 
 export function getAccountingCapabilities(role: string) {
   return {
@@ -73,6 +115,7 @@ export async function requireAccountingAccess(action: AccountingAction = "view",
     role: tenant.role,
     isSuperadmin: false,
     ...capabilities,
+    capabilities: resolveCapabilities(tenant.role),
     requestId: tenant.requestId,
   } satisfies AccountingAuthContext;
 }
