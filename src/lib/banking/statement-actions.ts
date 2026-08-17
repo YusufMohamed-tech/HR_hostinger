@@ -94,6 +94,6 @@ export function getBankStatementActionCapabilities(statement: StatementActionSum
   return {
     canEdit: canManage && statement.status === "imported" && !hasActivity,
     canRecall: canRecall && statement.status === "in_progress",
-    canCancel: canManage && statement.status === "imported" && !hasActivity && !statement.recalled_at,
+    canCancel: canManage && statement.status === "imported" && !hasActivity,
   };
 }

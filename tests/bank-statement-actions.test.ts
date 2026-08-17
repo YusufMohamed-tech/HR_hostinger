@@ -44,7 +44,7 @@ test("statement action capabilities follow role, lifecycle, activity, and recall
     canCancel: true,
   });
   assert.equal(getBankStatementActionCapabilities({ ...imported, has_line_activity: true }, "Finance_Manager").canEdit, false);
-  assert.equal(getBankStatementActionCapabilities({ ...imported, recalled_at: "2026-08-17T00:00:00Z" }, "Finance_Manager").canCancel, false);
+  assert.equal(getBankStatementActionCapabilities({ ...imported, recalled_at: "2026-08-17T00:00:00Z" }, "Finance_Manager").canCancel, true);
   assert.equal(getBankStatementActionCapabilities({ ...imported, status: "in_progress" }, "Finance_Manager").canRecall, true);
   assert.equal(getBankStatementActionCapabilities({ ...imported, status: "in_progress" }, "Accountant").canRecall, false);
 });
