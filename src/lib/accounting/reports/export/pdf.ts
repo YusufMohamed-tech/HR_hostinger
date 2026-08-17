@@ -90,27 +90,81 @@ export function trialBalancePdf(rows: Record<string, unknown>[], options?: { per
 }
 
 export function profitLossPdf(data: Record<string, unknown>, options?: { period?: string; orgName?: string }): string {
-  const revenue = (data.revenue || []) as Record<string, unknown>[];
-  const expenses = (data.expenses || []) as Record<string, unknown>[];
-  const allRows = [
-    ...revenue.map((r) => ({ ...r, section: "الإيرادات" })),
-    ...expenses.map((r) => ({ ...r, section: "المصروفات" })),
-  ];
+  const allRows: Record<string, unknown>[] = [];
+
+  if (data.revenue && typeof data.revenue === "object" && "items" in (data.revenue as object)) {
+    const sections = [
+      { label: "الإيرادات", data: data.revenue },
+      { label: "تكلفة الإيرادات", data: data.cost_of_revenue },
+      { label: "المصاريف التشغيلية", data: data.operating_expenses },
+      { label: "إيرادات أخرى", data: data.other_income },
+      { label: "مصاريف أخرى", data: data.other_expenses },
+    ];
+    for (const section of sections) {
+      const s = (section.data || { items: [], total: 0 }) as { items: Record<string, unknown>[]; total: number };
+      if (!s.items?.length) continue;
+      for (const item of s.items) {
+        allRows.push({ section: section.label, account_code: item.account_code || "", account_name: item.account_name_ar || "", amount: Number(item.amount || 0) });
+      }
+      allRows.push({ section: "", account_code: "", account_name: `إجمالي ${section.label}`, amount: s.total });
+    }
+  } else {
+    const revenue = (data.revenue || []) as Record<string, unknown>[];
+    const expenses = (data.expenses || []) as Record<string, unknown>[];
+    allRows.push(...revenue.map((r) => ({ ...r, section: "الإيرادات", amount: r.balance })));
+    allRows.push(...expenses.map((r) => ({ ...r, section: "المصروفات", amount: r.balance })));
+  }
 
   return generateReportHtml({
     title: "قائمة الدخل",
-    subtitle: `صافي الربح: ${formatMoney(Number(data.netProfit || 0))}`,
+    subtitle: `صافي الربح: ${formatMoney(Number(data.net_profit || data.netProfit || 0))}`,
     period: options?.period,
     orgName: options?.orgName,
     columns: [
       { key: "section", label: "القسم" },
       { key: "account_code", label: "رمز الحساب" },
       { key: "account_name", label: "اسم الحساب" },
-      { key: "balance", label: "الرصيد", align: "left", isMoney: true },
+      { key: "amount", label: "المبلغ", align: "left", isMoney: true },
     ],
     rows: allRows,
     totals: {
-      balance: Number(data.netProfit || 0),
+      amount: Number(data.net_profit || data.netProfit || 0),
     },
+  });
+}
+
+export function cashFlowPdf(data: Record<string, unknown>, options?: { period?: string; orgName?: string }): string {
+  const cfData = (data as { data?: Record<string, unknown> }).data || data;
+  const sections = [
+    { label: "الأنشطة التشغيلية", key: "operating" },
+    { label: "الأنشطة الاستثمارية", key: "investing" },
+    { label: "الأنشطة التمويلية", key: "financing" },
+  ];
+
+  const allRows: Record<string, unknown>[] = [];
+  for (const section of sections) {
+    const sectionData = (cfData as Record<string, unknown>)[section.key] as { items?: Record<string, unknown>[]; total?: number } | undefined;
+    if (!sectionData || !sectionData.items?.length) continue;
+    for (const item of sectionData.items) {
+      allRows.push({ section: section.label, account_name: item.account_name || "", amount: Number(item.amount || 0) });
+    }
+    allRows.push({ section: "", account_name: `إجمالي ${section.label}`, amount: sectionData.total || 0 });
+  }
+
+  allRows.push({ section: "ملخص", account_name: "الرصيد الافتتاحي", amount: Number((cfData as Record<string, unknown>).opening_cash || 0) });
+  allRows.push({ section: "", account_name: "صافي التغير", amount: Number((cfData as Record<string, unknown>).net_change || 0) });
+  allRows.push({ section: "", account_name: "الرصيد الختامي", amount: Number((cfData as Record<string, unknown>).closing_cash || 0) });
+
+  return generateReportHtml({
+    title: "قائمة التدفقات النقدية",
+    subtitle: `صافي التدفق: ${formatMoney(Number((cfData as Record<string, unknown>).net_change || 0))}`,
+    period: options?.period,
+    orgName: options?.orgName,
+    columns: [
+      { key: "section", label: "النشاط" },
+      { key: "account_name", label: "البيان" },
+      { key: "amount", label: "المبلغ", align: "left", isMoney: true },
+    ],
+    rows: allRows,
   });
 }

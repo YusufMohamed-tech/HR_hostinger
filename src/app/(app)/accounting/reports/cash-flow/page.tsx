@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AccountingPageHeader, MoneyAmount } from "@/components/accounting/AccountingPrimitives";
+import { ReportExportMenu } from "@/components/accounting/reports/ReportExportMenu";
 import { getAccountingReport } from "@/lib/services/accounting";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -40,6 +41,7 @@ export default function CashFlowPage() {
             <Input type="date" value={dates.date_from} onChange={(e) => setDates((d) => ({ ...d, date_from: e.target.value }))} className="w-40" />
             <Input type="date" value={dates.date_to} onChange={(e) => setDates((d) => ({ ...d, date_to: e.target.value }))} className="w-40" />
             <Button onClick={load}>تحديث</Button>
+            <ReportExportMenu reportId="cash-flow" params={{ date_from: dates.date_from, date_to: dates.date_to }} />
           </>
         }
       />
@@ -74,6 +76,18 @@ export default function CashFlowPage() {
           <CashFlowSection title="الأنشطة التشغيلية" section={cashFlow.operating} />
           <CashFlowSection title="الأنشطة الاستثمارية" section={cashFlow.investing} />
           <CashFlowSection title="الأنشطة التمويلية" section={cashFlow.financing} />
+
+          {/* Reconciliation warning */}
+          {cashFlow.reconciliation_difference && cashFlow.reconciliation_difference !== 0 && (
+            <div className="rounded-md border border-yellow-300 bg-yellow-50 p-3 text-sm">
+              <p className="font-semibold text-yellow-800">
+                تحذير: فرق في المطابقة ({cashFlow.reconciliation_difference.toLocaleString("ar-SA", { minimumFractionDigits: 2 })} ر.س)
+              </p>
+              <p className="text-yellow-700 mt-1">
+                الرصيد المحسوب لا يطابق رصيد دفتر الأستاذ. يرجى مراجعة تصنيف الحسابات.
+              </p>
+            </div>
+          )}
 
           {/* Summary Cards - Footer */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-4 border-t">

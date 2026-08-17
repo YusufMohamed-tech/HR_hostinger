@@ -38,8 +38,8 @@ import {
   getAPAgingReport,
 } from "@/lib/accounting/reports/index";
 import { reportToCSV } from "@/lib/accounting/reports/export/csv";
-import { trialBalanceExcel, profitLossExcel, generateExcelBuffer } from "@/lib/accounting/reports/export/excel";
-import { trialBalancePdf, profitLossPdf, generateReportHtml } from "@/lib/accounting/reports/export/pdf";
+import { trialBalanceExcel, profitLossExcel, cashFlowExcel, generateExcelBuffer } from "@/lib/accounting/reports/export/excel";
+import { trialBalancePdf, profitLossPdf, cashFlowPdf, generateReportHtml } from "@/lib/accounting/reports/export/pdf";
 import { parseDate, requireText, roundMoney, type JournalLineInput } from "@/lib/accounting/validation";
 import {
   isSupportedAccountSubtypeForType,
@@ -275,7 +275,7 @@ function actionFor(method: string, parts: string[]): AccountingAction {
 
 async function listTable(admin: ReturnType<typeof createAdminClient>, table: string, orgId: string, request: NextRequest, orderColumn = "created_at", legalEntityId?: string) {
   let query = db(admin).from(table).select("*").eq("organization_id", orgId).order(orderColumn, { ascending: false });
-  if (legalEntityId) query = query.eq("legal_entity_id", legalEntityId);
+  if (legalEntityId) query = query.or(`legal_entity_id.eq.${legalEntityId},legal_entity_id.is.null`);
   const search = request.nextUrl.searchParams.get("q")?.trim();
   const status = request.nextUrl.searchParams.get("status")?.trim();
   const type = request.nextUrl.searchParams.get("type")?.trim();
@@ -1191,6 +1191,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
             buffer = await trialBalanceExcel(reportData as Record<string, unknown>[], { period });
           } else if (reportId === "profit-loss") {
             buffer = await profitLossExcel(reportData as Record<string, unknown>, { period });
+          } else if (reportId === "cash-flow") {
+            buffer = await cashFlowExcel(reportData as Record<string, unknown>, { period });
           } else {
             const rows = Array.isArray(reportData) ? reportData as Record<string, unknown>[] : [];
             buffer = await generateExcelBuffer({ title: reportId, columns: rows.length > 0 ? Object.keys(rows[0]).map((k) => ({ key: k, label: k })) : [], rows });
@@ -1210,6 +1212,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
             html = trialBalancePdf(reportData as Record<string, unknown>[], { period });
           } else if (reportId === "profit-loss") {
             html = profitLossPdf(reportData as Record<string, unknown>, { period });
+          } else if (reportId === "cash-flow") {
+            html = cashFlowPdf(reportData as Record<string, unknown>, { period });
           } else {
             const rows = Array.isArray(reportData) ? reportData as Record<string, unknown>[] : [];
             html = generateReportHtml({ title: reportId, period, columns: rows.length > 0 ? Object.keys(rows[0]).map((k) => ({ key: k, label: k })) : [], rows });
@@ -2165,12 +2169,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
       };
       if (!values.code || !values.name_ar) return message("رقم الحساب والاسم العربي مطلوبان.", 400);
       const command = accountingCommandContext(request, body);
-      return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+      const record = await accountingRpcRecord(admin, "execute_accounting_master_command", {
         p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
         p_request_id: command.requestId, p_command_id: command.commandId,
         p_entity_type: "account", p_entity_id: null, p_expected_version: 0,
         p_operation: "save", p_payload: values,
-      }), 201);
+      });
+      const acctEntityId = await ensureDefaultEntity(auth.orgId);
+      if (acctEntityId && record.id) {
+        await db(admin).from("accounting_accounts").update({ legal_entity_id: acctEntityId }).eq("id", record.id);
+        record.legal_entity_id = acctEntityId;
+      }
+      return json(record, 201);
     }
 
     if (parts[0] === "cost-centers") {
@@ -2183,17 +2193,23 @@ export async function POST(request: NextRequest, context: RouteContext) {
       };
       if (!values.code || !values.name_ar) return message("رقم مركز التكلفة والاسم العربي مطلوبان.", 400);
       const command = accountingCommandContext(request, body);
-      return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+      const record = await accountingRpcRecord(admin, "execute_accounting_master_command", {
         p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
         p_request_id: command.requestId, p_command_id: command.commandId,
         p_entity_type: "cost_center", p_entity_id: null, p_expected_version: 0,
         p_operation: "save", p_payload: values,
-      }), 201);
+      });
+      const entityId = await ensureDefaultEntity(auth.orgId);
+      if (entityId && record.id) {
+        await db(admin).from("accounting_cost_centers").update({ legal_entity_id: entityId }).eq("id", record.id);
+        record.legal_entity_id = entityId;
+      }
+      return json(record, 201);
     }
 
     if (parts[0] === "customers") {
       const command = accountingCommandContext(request, body);
-      return json(await accountingRpcRecord(admin, "accounting_save_customer", {
+      const record = await accountingRpcRecord(admin, "accounting_save_customer", {
         p_org_id: auth.orgId,
         p_actor_user_id: auth.user.id,
         p_command_id: command.commandId,
@@ -2201,7 +2217,13 @@ export async function POST(request: NextRequest, context: RouteContext) {
         p_customer_id: null,
         p_expected_version: 0,
         p_payload: customerCommandPayload(body),
-      }), 201);
+      });
+      const custEntityId = await ensureDefaultEntity(auth.orgId);
+      if (custEntityId && record.id) {
+        await db(admin).from("accounting_customers").update({ legal_entity_id: custEntityId }).eq("id", record.id);
+        record.legal_entity_id = custEntityId;
+      }
+      return json(record, 201);
     }
 
     if (parts[0] === "vendors") {
@@ -2221,12 +2243,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
       values.iban = requireText(body.iban) || null;
       if (!values.name_ar) return message("اسم المورد العربي مطلوب.", 400);
       const command = accountingCommandContext(request, body);
-      return json(await accountingRpcRecord(admin, "execute_accounting_master_command", {
+      const record = await accountingRpcRecord(admin, "execute_accounting_master_command", {
         p_org_id: auth.orgId, p_actor_user_id: auth.user.id,
         p_request_id: command.requestId, p_command_id: command.commandId,
         p_entity_type: "vendor", p_entity_id: null, p_expected_version: 0,
         p_operation: "save", p_payload: values,
-      }), 201);
+      });
+      const vendorEntityId = await ensureDefaultEntity(auth.orgId);
+      if (vendorEntityId && record.id) {
+        await db(admin).from("accounting_vendors").update({ legal_entity_id: vendorEntityId }).eq("id", record.id);
+        record.legal_entity_id = vendorEntityId;
+      }
+      return json(record, 201);
     }
 
     if (parts[0] === "journal-entries" && parts[1] && parts[2] === "attachments") {

@@ -112,12 +112,49 @@ export async function trialBalanceExcel(rows: Record<string, unknown>[], options
 }
 
 export async function profitLossExcel(data: Record<string, unknown>, options?: { period?: string; orgName?: string }): Promise<Buffer> {
-  const revenue = (data.revenue || []) as Record<string, unknown>[];
-  const expenses = (data.expenses || []) as Record<string, unknown>[];
-  const allRows = [
-    ...revenue.map((r) => ({ ...r, section: "الإيرادات" })),
-    ...expenses.map((r) => ({ ...r, section: "المصروفات" })),
-  ];
+  // Support new structured format (sections with items) and legacy flat format
+  const sections: { label: string; items: Record<string, unknown>[]; total: number }[] = [];
+
+  if (data.revenue && typeof data.revenue === "object" && "items" in (data.revenue as object)) {
+    const rev = data.revenue as { items: Record<string, unknown>[]; total: number };
+    const cor = (data.cost_of_revenue || { items: [], total: 0 }) as { items: Record<string, unknown>[]; total: number };
+    const opex = (data.operating_expenses || { items: [], total: 0 }) as { items: Record<string, unknown>[]; total: number };
+    const oi = (data.other_income || { items: [], total: 0 }) as { items: Record<string, unknown>[]; total: number };
+    const oe = (data.other_expenses || { items: [], total: 0 }) as { items: Record<string, unknown>[]; total: number };
+
+    sections.push({ label: "الإيرادات", items: rev.items, total: rev.total });
+    sections.push({ label: "تكلفة الإيرادات", items: cor.items, total: cor.total });
+    sections.push({ label: "المصاريف التشغيلية", items: opex.items, total: opex.total });
+    sections.push({ label: "إيرادات أخرى", items: oi.items, total: oi.total });
+    sections.push({ label: "مصاريف أخرى", items: oe.items, total: oe.total });
+  } else {
+    const revenue = (data.revenue || []) as Record<string, unknown>[];
+    const expenses = (data.expenses || []) as Record<string, unknown>[];
+    sections.push({ label: "الإيرادات", items: revenue, total: Number(data.totalRevenue || 0) });
+    sections.push({ label: "المصروفات", items: expenses, total: Number(data.totalExpenses || 0) });
+  }
+
+  const allRows: Record<string, unknown>[] = [];
+  for (const section of sections) {
+    if (section.items.length === 0) continue;
+    for (const item of section.items) {
+      allRows.push({
+        section: section.label,
+        account_code: item.account_code || "",
+        account_name: item.account_name_ar || item.account_name || "",
+        amount: Number(item.amount || item.balance || 0),
+      });
+    }
+    allRows.push({ section: "", account_code: "", account_name: `إجمالي ${section.label}`, amount: section.total });
+  }
+
+  // Summary rows
+  if (data.gross_profit !== undefined) {
+    allRows.push({ section: "", account_code: "", account_name: "إجمالي الربح", amount: Number(data.gross_profit) });
+  }
+  if (data.operating_income !== undefined) {
+    allRows.push({ section: "", account_code: "", account_name: "الربح التشغيلي", amount: Number(data.operating_income) });
+  }
 
   return generateExcelBuffer({
     title: "قائمة الدخل",
@@ -125,12 +162,54 @@ export async function profitLossExcel(data: Record<string, unknown>, options?: {
     period: options?.period,
     orgName: options?.orgName,
     columns: [
-      { key: "section", label: "القسم", width: 14 },
+      { key: "section", label: "القسم", width: 18 },
       { key: "account_code", label: "رمز الحساب", width: 14 },
       { key: "account_name", label: "اسم الحساب", width: 30 },
-      { key: "balance", label: "الرصيد", isMoney: true },
+      { key: "amount", label: "المبلغ", isMoney: true },
     ],
     rows: allRows,
-    totals: { balance: Number(data.netProfit || 0) },
+    totals: { amount: Number(data.net_profit || data.netProfit || 0) },
+  });
+}
+
+export async function cashFlowExcel(data: Record<string, unknown>, options?: { period?: string; orgName?: string }): Promise<Buffer> {
+  const cfData = (data as { data?: Record<string, unknown> }).data || data;
+  const sections = [
+    { label: "الأنشطة التشغيلية", key: "operating" },
+    { label: "الأنشطة الاستثمارية", key: "investing" },
+    { label: "الأنشطة التمويلية", key: "financing" },
+  ];
+
+  const allRows: Record<string, unknown>[] = [];
+  for (const section of sections) {
+    const sectionData = (cfData as Record<string, unknown>)[section.key] as { items?: Record<string, unknown>[]; total?: number } | undefined;
+    if (!sectionData || !sectionData.items?.length) continue;
+    for (const item of sectionData.items) {
+      allRows.push({
+        section: section.label,
+        account_name: item.account_name || "",
+        amount: Number(item.amount || 0),
+      });
+    }
+    allRows.push({ section: "", account_name: `إجمالي ${section.label}`, amount: sectionData.total || 0 });
+  }
+
+  // Summary
+  allRows.push({ section: "", account_name: "", amount: "" });
+  allRows.push({ section: "ملخص", account_name: "الرصيد الافتتاحي", amount: Number((cfData as Record<string, unknown>).opening_cash || 0) });
+  allRows.push({ section: "", account_name: "صافي التغير", amount: Number((cfData as Record<string, unknown>).net_change || 0) });
+  allRows.push({ section: "", account_name: "الرصيد الختامي", amount: Number((cfData as Record<string, unknown>).closing_cash || 0) });
+
+  return generateExcelBuffer({
+    title: "قائمة التدفقات النقدية",
+    sheetName: "التدفقات النقدية",
+    period: options?.period,
+    orgName: options?.orgName,
+    columns: [
+      { key: "section", label: "النشاط", width: 22 },
+      { key: "account_name", label: "البيان", width: 30 },
+      { key: "amount", label: "المبلغ", isMoney: true },
+    ],
+    rows: allRows,
   });
 }

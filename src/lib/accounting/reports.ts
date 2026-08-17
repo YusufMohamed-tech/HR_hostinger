@@ -16,7 +16,7 @@ async function getPostedLines(admin: AdminClient, orgId: string, dateFrom?: stri
   // Official financial reports use posted/reversed ledger entries only; draft operational records stay out.
   const { data, error } = await db(admin)
     .from("accounting_journal_lines")
-    .select("*, account:account_id(id, code, name_ar, name_en, type, normal_balance), entry:journal_entry_id(id, entry_no, entry_date, description, status, source_module)")
+    .select("*, account:account_id(id, code, name_ar, name_en, type, subtype, normal_balance), entry:journal_entry_id(id, entry_no, entry_date, description, status, source_module)")
     .eq("organization_id", orgId);
 
   if (error) throw new Error(error.message);
@@ -38,6 +38,7 @@ export async function getTrialBalance(admin: AdminClient, orgId: string, dateFro
       account_code: String(account.code || ""),
       account_name: String(account.name_ar || account.name_en || ""),
       account_type: String(account.type || ""),
+      account_subtype: account.subtype ? String(account.subtype) : null,
       normal_balance: String(account.normal_balance || "debit"),
       debit: 0,
       credit: 0,
@@ -135,11 +136,61 @@ export async function getGeneralLedger(admin: AdminClient, orgId: string, accoun
 
 export async function getProfitLoss(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
   const rows = await getTrialBalance(admin, orgId, dateFrom, dateTo);
-  const revenue = rows.filter((row) => row.account_type === "revenue");
-  const expenses = rows.filter((row) => row.account_type === "expense");
-  const totalRevenue = roundMoney(revenue.reduce((sum, row) => sum + Number(row.balance || 0), 0));
-  const totalExpenses = roundMoney(expenses.reduce((sum, row) => sum + Number(row.balance || 0), 0));
-  return { revenue, expenses, totalRevenue, totalExpenses, netProfit: roundMoney(totalRevenue - totalExpenses) };
+
+  const revenueRows = rows.filter((row) => row.account_type === "revenue");
+  const expenseRows = rows.filter((row) => row.account_type === "expense");
+
+  const toItem = (row: Record<string, unknown>) => ({
+    account_code: String(row.account_code || ""),
+    account_name_ar: String(row.account_name || ""),
+    amount: Math.abs(Number(row.balance || 0)),
+  });
+
+  // Group revenue by subtype
+  const revenueMain = revenueRows.filter((r) => !r.account_subtype || r.account_subtype === "sales_revenue" || r.account_subtype === "commission_revenue" || r.account_subtype === "service_revenue" || r.account_subtype === "operating_revenue" || r.account_subtype === "sales" || r.account_subtype === "services");
+  const otherIncomeRows = revenueRows.filter((r) => r.account_subtype === "other_income");
+
+  // Group expenses by subtype
+  const costOfRevenueRows = expenseRows.filter((r) => r.account_subtype === "cost_of_revenue" || r.account_subtype === "cost_of_sales");
+  const otherExpenseRows = expenseRows.filter((r) => r.account_subtype === "other_expense" || r.account_subtype === "finance_cost");
+  const operatingExpenseRows = expenseRows.filter((r) =>
+    !r.account_subtype || (r.account_subtype !== "cost_of_revenue" && r.account_subtype !== "cost_of_sales" && r.account_subtype !== "other_expense" && r.account_subtype !== "finance_cost")
+  );
+
+  // Unmapped: revenue/expense accounts with NULL subtype
+  const unmappedAccounts = [...revenueRows, ...expenseRows]
+    .filter((r) => !r.account_subtype)
+    .map((r) => ({ code: String(r.account_code || ""), name_ar: String(r.account_name || "") }));
+
+  const sumItems = (items: { amount: number }[]) => roundMoney(items.reduce((s, i) => s + i.amount, 0));
+
+  const revenue = { items: revenueMain.map(toItem), total: sumItems(revenueMain.map(toItem)) };
+  const cost_of_revenue = { items: costOfRevenueRows.map(toItem), total: sumItems(costOfRevenueRows.map(toItem)) };
+  const operating_expenses = { items: operatingExpenseRows.map(toItem), total: sumItems(operatingExpenseRows.map(toItem)) };
+  const other_income = { items: otherIncomeRows.map(toItem), total: sumItems(otherIncomeRows.map(toItem)) };
+  const other_expenses = { items: otherExpenseRows.map(toItem), total: sumItems(otherExpenseRows.map(toItem)) };
+
+  const totalRevenue = revenue.total;
+  const totalCostOfRevenue = cost_of_revenue.total;
+  const gross_profit = roundMoney(totalRevenue - totalCostOfRevenue);
+  const operating_income = roundMoney(gross_profit - operating_expenses.total);
+  const net_profit = roundMoney(operating_income + other_income.total - other_expenses.total);
+
+  return {
+    revenue,
+    cost_of_revenue,
+    operating_expenses,
+    other_income,
+    other_expenses,
+    gross_profit,
+    operating_income,
+    net_profit,
+    unmapped_accounts: unmappedAccounts.length > 0 ? unmappedAccounts : undefined,
+    // Legacy compat fields for dashboard/comparative consumers
+    totalRevenue,
+    totalExpenses: roundMoney(totalCostOfRevenue + operating_expenses.total + other_expenses.total),
+    netProfit: net_profit,
+  };
 }
 
 export async function getBalanceSheet(admin: AdminClient, orgId: string, asOf?: string) {
