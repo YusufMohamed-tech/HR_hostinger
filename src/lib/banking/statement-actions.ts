@@ -93,6 +93,7 @@ export function getBankStatementActionCapabilities(statement: StatementActionSum
   const hasActivity = statement.has_line_activity === true || Number(statement.matched_count) > 0;
   return {
     canEdit: canManage && statement.status === "imported" && !hasActivity,
+    canSubmit: canManage && statement.status === "imported",
     canRecall: canRecall && statement.status === "in_progress",
     canCancel: canManage && statement.status === "imported" && !hasActivity,
   };

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Archive, FileUp, Pencil, RotateCcw, Wand2 } from "lucide-react";
+import { Archive, FileUp, Pencil, RotateCcw, Send, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,7 @@ import {
   updateBankStatement,
   recallBankStatement,
   cancelBankStatement,
+  submitStatement,
   approveStatement,
   archiveStatement,
   type BankAccount,
@@ -291,13 +292,16 @@ export default function StatementsPage() {
                       {getBankStatementActionCapabilities(stmt, role).canEdit ? (
                         <Button variant="ghost" size="sm" aria-label="تعديل الكشف" onClick={() => openEdit(stmt)}><Pencil className="h-4 w-4" /></Button>
                       ) : null}
+                      {getBankStatementActionCapabilities(stmt, role).canSubmit ? (
+                        <Button variant="ghost" size="sm" className="text-blue-700 hover:bg-blue-50" aria-label="إرسال للمراجعة" onClick={async () => { const r = await submitStatement(stmt.id); if (r.error) setMessage(r.error); else load(); }}><Send className="h-4 w-4" /></Button>
+                      ) : null}
                       {getBankStatementActionCapabilities(stmt, role).canRecall ? (
                         <Button variant="ghost" size="sm" aria-label="استرجاع الكشف" onClick={() => openLifecycle(stmt, "recall")}><RotateCcw className="h-4 w-4" /></Button>
                       ) : null}
                       {getBankStatementActionCapabilities(stmt, role).canCancel ? (
-                        <Button variant="ghost" size="sm" className="text-red-700 hover:bg-red-50" aria-label="حذف الكشف" onClick={() => openLifecycle(stmt, "cancel")}><Archive className="h-4 w-4" /></Button>
+                        <Button variant="ghost" size="sm" className="text-red-700 hover:bg-red-50" aria-label="إلغاء الكشف" onClick={() => openLifecycle(stmt, "cancel")}><Archive className="h-4 w-4" /></Button>
                       ) : null}
-                      {canManage && ["imported", "in_progress"].includes(stmt.status) ? (
+                      {canManage && stmt.status === "in_progress" ? (
                         <Button variant="ghost" size="sm" className="text-green-700 hover:bg-green-50" aria-label="اعتماد الكشف" onClick={async () => { const r = await approveStatement(stmt.id); if (r.error) setMessage(r.error); else load(); }}>اعتماد</Button>
                       ) : null}
                       {canManage && stmt.status === "approved" ? (

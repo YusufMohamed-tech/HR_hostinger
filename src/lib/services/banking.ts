@@ -173,6 +173,10 @@ export function cancelBankStatement(
   });
 }
 
+export function submitStatement(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/banking/statements/${id}/submit`, { method: "POST", body: "{}" });
+}
+
 export function approveStatement(id: string) {
   return apiFetch<{ ok: boolean }>(`/api/banking/statements/${id}/approve`, { method: "POST", body: "{}" });
 }

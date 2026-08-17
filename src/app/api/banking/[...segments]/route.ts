@@ -339,6 +339,18 @@ export async function POST(request: NextRequest, context: RouteContext) {
       return json({ ok: true });
     }
 
+    // Statement submit (imported → in_progress)
+    if (parts[0] === "statements" && parts[1] && parts[2] === "submit") {
+      const { error } = await db(admin)
+        .from("banking_statements")
+        .update({ status: "in_progress", updated_by: auth.user.id, updated_at: new Date().toISOString() })
+        .eq("id", parts[1])
+        .eq("organization_id", auth.orgId)
+        .eq("status", "imported");
+      if (error) throw databaseError(error);
+      return json({ ok: true });
+    }
+
     // Statement archive
     if (parts[0] === "statements" && parts[1] && parts[2] === "archive") {
       const { error } = await db(admin)
