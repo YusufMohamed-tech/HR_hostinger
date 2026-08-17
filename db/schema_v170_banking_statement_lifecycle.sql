@@ -5,6 +5,8 @@ ALTER TABLE public.banking_statements
   ADD COLUMN IF NOT EXISTS version integer NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now(),
   ADD COLUMN IF NOT EXISTS updated_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS approved_at timestamptz,
+  ADD COLUMN IF NOT EXISTS approved_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS recalled_at timestamptz,
   ADD COLUMN IF NOT EXISTS recalled_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS recall_reason text,
@@ -33,7 +35,7 @@ WHERE counts.id = statement.id
 ALTER TABLE public.banking_statements
   DROP CONSTRAINT IF EXISTS banking_statements_status_check,
   ADD CONSTRAINT banking_statements_status_check
-    CHECK (status IN ('imported', 'in_progress', 'reconciled', 'cancelled')),
+    CHECK (status IN ('imported', 'in_progress', 'approved', 'archived', 'reconciled', 'cancelled')),
   DROP CONSTRAINT IF EXISTS banking_statements_version_check,
   ADD CONSTRAINT banking_statements_version_check CHECK (version >= 0),
   DROP CONSTRAINT IF EXISTS banking_statements_transaction_count_check,
@@ -56,6 +58,8 @@ ALTER TABLE public.banking_statements
 
 ALTER TABLE public.banking_statements
   DROP CONSTRAINT IF EXISTS banking_statements_organization_id_bank_account_id_statement_date_key;
+ALTER TABLE public.banking_statements
+  DROP CONSTRAINT IF EXISTS banking_statements_organization_id_bank_account_id_statemen_key;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_banking_statements_active_date
   ON public.banking_statements(organization_id, bank_account_id, statement_date)
   WHERE status <> 'cancelled';
@@ -258,8 +262,8 @@ BEGIN
 
     IF NEW.transaction_count IS DISTINCT FROM actual_transaction_count
        OR NEW.matched_count IS DISTINCT FROM actual_matched_count
-       OR NEW.status IS DISTINCT FROM CASE
-         WHEN actual_activity_count > 0 THEN 'in_progress' ELSE 'imported' END THEN
+       OR NEW.status IS DISTINCT FROM (CASE
+         WHEN actual_activity_count > 0 THEN 'in_progress' ELSE 'imported' END) THEN
       RAISE EXCEPTION 'Bank statement counters or lifecycle do not match its lines.'
         USING ERRCODE = '23514';
     END IF;
