@@ -18,6 +18,7 @@ import { LogOut, Menu, Search, Network, Users, MapPin, Calendar, CheckSquare, Be
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { SidebarContent } from "./Sidebar";
+import { AccountingEntitySwitcher } from "@/components/accounting/entities/AccountingEntitySwitcher";
 
 const ALL_SEARCH_ITEMS = [
   { label: "الموظفون", href: "/employees", icon: Users, keywords: ["staff", "people", "team", "workers", "موظف", "فريق"] },
@@ -196,6 +197,7 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-4 mr-4">
+        <AccountingEntitySwitcher />
         <div className="hidden sm:flex items-center mx-4">
           <span className="text-xs font-semibold tracking-wider text-brand bg-brand-light px-2.5 py-1 rounded-full">
             عرض {ROLE_LABELS[currentUser.role] || currentUser.role}
