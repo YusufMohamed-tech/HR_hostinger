@@ -199,20 +199,24 @@ async function linkToUnifiedParty(
 
   if (existingParty) {
     partyId = existingParty.id as string;
-    // Update link field
+    // Update link field and ensure name is populated
     const linkField = opts.role === "customer" ? "linked_customer_id" : "linked_vendor_id";
+    const nameAr = typeof opts.name_ar === "string" && opts.name_ar.trim() ? opts.name_ar.trim() : null;
+    const updates: Record<string, unknown> = { [linkField]: opts.linkedId, updated_at: new Date().toISOString() };
+    if (nameAr && !existingParty.name_ar) updates.name_ar = nameAr;
     await db(admin)
       .from("accounting_parties")
-      .update({ [linkField]: opts.linkedId, updated_at: new Date().toISOString() })
+      .update(updates)
       .eq("id", partyId);
   } else {
     // Create new party
     isNewParty = true;
+    const partyNameAr = typeof opts.name_ar === "string" && opts.name_ar.trim() ? opts.name_ar.trim() : "طرف بدون اسم";
     const partyData: Record<string, unknown> = {
       organization_id: orgId,
       legal_entity_id: entityId,
       party_type: opts.role,
-      name_ar: typeof opts.name_ar === "string" ? opts.name_ar : "",
+      name_ar: partyNameAr,
       name_en: typeof opts.name_en === "string" ? opts.name_en : null,
       vat_number: vatNumber,
       commercial_registration: crNumber,
@@ -1397,7 +1401,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         .from("accounting_open_items")
         .select("*")
         .eq("organization_id", auth.orgId)
-        .eq("direction", direction)
+        .eq("side", direction)
         .gt("outstanding_amount", 0)
         .order("due_date", { ascending: true });
       if (partyId) query = query.eq("party_id", partyId);
@@ -1441,7 +1445,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
       // Flatten party name onto each role record for easier consumption
       const enriched = ((data || []) as Record<string, unknown>[]).map((r) => {
         const party = r.party as Record<string, unknown> | null;
-        return { ...r, party_name_ar: party?.name_ar || "", party_name_en: party?.name_en || "", role_type: r.role };
+        return {
+          ...r,
+          party_name_ar: party?.name_ar || party?.name_en || "",
+          party_name_en: party?.name_en || "",
+          role_type: r.role,
+        };
       });
       return json(enriched);
     }
