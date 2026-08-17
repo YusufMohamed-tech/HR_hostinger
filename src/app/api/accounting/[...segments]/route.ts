@@ -1432,13 +1432,18 @@ export async function GET(request: NextRequest, context: RouteContext) {
       const partyId = request.nextUrl.searchParams.get("party_id");
       let query = db(admin)
         .from("accounting_party_roles")
-        .select("*")
+        .select("*, party:party_id(id, name_ar, name_en, vat_number)")
         .eq("organization_id", auth.orgId)
         .order("created_at", { ascending: false });
       if (partyId) query = query.eq("party_id", partyId);
       const { data, error } = await query;
       if (error) throw new Error(error.message);
-      return json(data || []);
+      // Flatten party name onto each role record for easier consumption
+      const enriched = ((data || []) as Record<string, unknown>[]).map((r) => {
+        const party = r.party as Record<string, unknown> | null;
+        return { ...r, party_name_ar: party?.name_ar || "", party_name_en: party?.name_en || "", role_type: r.role };
+      });
+      return json(enriched);
     }
     // Party financial profiles
     if (parts[0] === "party-financial-profiles") {
