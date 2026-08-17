@@ -43,7 +43,7 @@ export interface BankStatement {
   closing_balance: number;
   file_name: string | null;
   import_format: string;
-  status: "imported" | "in_progress" | "reconciled" | "cancelled";
+  status: "imported" | "in_progress" | "approved" | "archived" | "reconciled" | "cancelled";
   transaction_count: number;
   matched_count: number;
   imported_at: string;
@@ -171,6 +171,14 @@ export function cancelBankStatement(
     method: "DELETE",
     body: JSON.stringify({ expected_version: expectedVersion, reason, command_id: commandId }),
   });
+}
+
+export function approveStatement(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/banking/statements/${id}/approve`, { method: "POST", body: "{}" });
+}
+
+export function archiveStatement(id: string) {
+  return apiFetch<{ ok: boolean }>(`/api/banking/statements/${id}/archive`, { method: "POST", body: "{}" });
 }
 
 export function autoMatchStatement(statementId: string) {

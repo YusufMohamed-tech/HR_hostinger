@@ -327,6 +327,30 @@ export async function POST(request: NextRequest, context: RouteContext) {
       ));
     }
 
+    // Statement approve
+    if (parts[0] === "statements" && parts[1] && parts[2] === "approve") {
+      const { error } = await db(admin)
+        .from("banking_statements")
+        .update({ status: "approved", approved_by: auth.user.id, approved_at: new Date().toISOString() })
+        .eq("id", parts[1])
+        .eq("organization_id", auth.orgId)
+        .in("status", ["in_progress", "imported"]);
+      if (error) throw databaseError(error);
+      return json({ ok: true });
+    }
+
+    // Statement archive
+    if (parts[0] === "statements" && parts[1] && parts[2] === "archive") {
+      const { error } = await db(admin)
+        .from("banking_statements")
+        .update({ status: "archived", archived_at: new Date().toISOString() })
+        .eq("id", parts[1])
+        .eq("organization_id", auth.orgId)
+        .eq("status", "approved");
+      if (error) throw databaseError(error);
+      return json({ ok: true });
+    }
+
     // Bank Accounts CRUD
     if (parts[0] === "accounts") {
       if (parts[1] && parts[2] === "deactivate") {

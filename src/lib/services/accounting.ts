@@ -1429,10 +1429,11 @@ export interface NettingAllocation {
   document_no?: string;
 }
 
-export function getPartyOpenItems(partyId: string, side?: "receivable" | "payable") {
+export function getPartyOpenItems(partyId: string, direction?: "receivable" | "payable") {
   const params = new URLSearchParams();
-  if (side) params.set("side", side);
-  return apiFetch<OpenItem[]>(`/api/accounting/parties/${partyId}/open-items?${params}`);
+  params.set("party_id", partyId);
+  if (direction) params.set("direction", direction);
+  return apiFetch<OpenItem[]>(`/api/accounting/open-items?${params}`);
 }
 
 export function getPartyNettings(partyId?: string) {

@@ -1,4 +1,4 @@
-export type BankStatementLifecycleStatus = "imported" | "in_progress" | "reconciled" | "cancelled";
+export type BankStatementLifecycleStatus = "imported" | "in_progress" | "approved" | "archived" | "reconciled" | "cancelled";
 
 export type BankStatementEditInput = {
   bank_account_id: string;
