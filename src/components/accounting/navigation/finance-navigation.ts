@@ -97,6 +97,7 @@ export const FINANCE_NAVIGATION: NavGroup[] = [
       { id: "notifications", label_ar: "الإشعارات", label_en: "Notifications", path: "/notifications" },
       { id: "balances", label_ar: "الأرصدة والسلف", label_en: "Balances", path: "/balances" },
       { id: "payroll", label_ar: "الرواتب", label_en: "Payroll", path: "/payroll" },
+      { id: "user-settings", label_ar: "الإعدادات الشخصية", label_en: "Settings", path: "/settings" },
     ],
   },
   {

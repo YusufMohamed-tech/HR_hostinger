@@ -83,6 +83,16 @@ function GroupDropdown({ group, isActive }: { group: NavGroup; isActive: boolean
   );
 }
 
+function filterNavForRole(role: string): NavGroup[] {
+  const isManager = role === "Finance_Manager";
+  return FINANCE_NAVIGATION
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.capability || isManager),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
 export function AccountingWorkspaceNav() {
   const pathname = usePathname();
   const { currentUser } = useRoleContext();
@@ -95,13 +105,15 @@ export function AccountingWorkspaceNav() {
 
   if (!isFinanceRoute) return null;
 
+  const visibleGroups = filterNavForRole(role);
+
   return (
     <nav
       className="relative z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
       aria-label="Finance workspace navigation"
     >
       <div className="flex items-center gap-1 px-4 py-1 flex-wrap">
-        {FINANCE_NAVIGATION.map((group) => (
+        {visibleGroups.map((group) => (
           <GroupDropdown
             key={group.id}
             group={group}
