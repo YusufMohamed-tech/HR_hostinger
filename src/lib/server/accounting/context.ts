@@ -33,18 +33,30 @@ export async function resolveAccountingEntityContext(
     .eq("user_id", userId)
     .eq("is_active", true);
 
+  const isFullAccess = role === "finance_manager" || role === "admin" || role === "owner";
+
   const activeScopes = (scopes || []).filter((s: Record<string, unknown>) => {
     if (s.effective_from && new Date(String(s.effective_from)) > new Date()) return false;
     if (s.effective_to && new Date(String(s.effective_to)) < new Date()) return false;
     return true;
   });
 
-  const allowedEntityIds: string[] = [...new Set(activeScopes.map((s: Record<string, unknown>) => String(s.legal_entity_id)))];
+  let allowedEntityIds: string[];
   const allowedBranchIds: string[] = activeScopes
     .filter((s: Record<string, unknown>) => s.branch_id)
     .map((s: Record<string, unknown>) => String(s.branch_id));
 
-  // FAIL-CLOSED: If user has no scopes, deny access instead of returning all entities
+  if (isFullAccess) {
+    const { data: allEntities } = await admin
+      .from("accounting_legal_entities")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .in("status", ["active", "draft"]);
+    allowedEntityIds = (allEntities || []).map((e: Record<string, unknown>) => String(e.id));
+  } else {
+    allowedEntityIds = [...new Set(activeScopes.map((s: Record<string, unknown>) => String(s.legal_entity_id)))];
+  }
+
   if (allowedEntityIds.length === 0) {
     return {
       error: "no_entity_scope",
@@ -56,7 +68,6 @@ export async function resolveAccountingEntityContext(
 
   let targetEntityId: string | undefined = requestedEntityId || undefined;
 
-  // If requested entity is not in allowed list, reject explicitly
   if (targetEntityId && !allowedEntityIds.includes(targetEntityId)) {
     return {
       error: "entity_scope_denied",
@@ -149,9 +160,23 @@ export async function ensureDefaultEntity(organizationId: string): Promise<strin
 
 export async function getUserAllowedEntities(
   organizationId: string,
-  userId: string
+  userId: string,
+  role?: string
 ): Promise<AccountingLegalEntity[]> {
   const admin = createAdminClient();
+
+  const isFullAccess = role === "finance_manager" || role === "admin" || role === "owner";
+
+  if (isFullAccess) {
+    const { data: entities } = await admin
+      .from("accounting_legal_entities")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .in("status", ["active", "draft"])
+      .order("is_default", { ascending: false })
+      .order("code");
+    return (entities || []) as unknown as AccountingLegalEntity[];
+  }
 
   const { data: scopes } = await admin
     .from("accounting_user_scopes")
@@ -160,7 +185,6 @@ export async function getUserAllowedEntities(
     .eq("user_id", userId)
     .eq("is_active", true);
 
-  // FAIL-CLOSED: No scopes = no entities (empty array, not all entities)
   if (!scopes || scopes.length === 0) {
     return [];
   }

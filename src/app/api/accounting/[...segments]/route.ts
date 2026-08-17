@@ -731,7 +731,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
   try {
     const { dateFrom, dateTo, asOf } = getQueryDates(request);
-    if (parts[0] === "dashboard") return json(await getAccountingDashboard(admin, auth.orgId, dateFrom, dateTo));
+    if (parts[0] === "dashboard") return json(await getAccountingDashboard(admin, auth.orgId, dateFrom, dateTo, entityId));
     if (parts[0] === "commissions") return json(await getSalesCommissionsFinance(admin, auth.orgId, request));
     if (parts[0] === "accounts" && parts[1] === "search") {
       const q = request.nextUrl.searchParams.get("q") || "";
@@ -877,7 +877,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     // Multi-entity management endpoints
     if (parts[0] === "entities") {
-      if (parts[1] === "allowed") return json(await getUserAllowedEntities(auth.orgId, auth.user.id));
+      if (parts[1] === "allowed") return json(await getUserAllowedEntities(auth.orgId, auth.user.id, auth.role));
       if (parts[1]) return json(await getLegalEntity(auth.orgId, parts[1]));
       return json(await getLegalEntities(auth.orgId));
     }
@@ -1210,11 +1210,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
     }
     if (parts[0] === "reports") {
       // Official financial reports are generated from posted/reversed ledger entries only.
-      if (parts[1] === "trial-balance") return json(await getTrialBalance(admin, auth.orgId, dateFrom, dateTo));
-      if (parts[1] === "general-ledger") return json(await getGeneralLedger(admin, auth.orgId, request.nextUrl.searchParams.get("account_id") || undefined, dateFrom, dateTo, request.nextUrl.searchParams.get("cost_center_id") || undefined));
-      if (parts[1] === "profit-loss") return json(await getProfitLoss(admin, auth.orgId, dateFrom, dateTo));
-      if (parts[1] === "balance-sheet") return json(await getBalanceSheet(admin, auth.orgId, asOf || dateTo));
-      if (parts[1] === "vat") return json(await getVatReport(admin, auth.orgId, dateFrom, dateTo));
+      if (parts[1] === "trial-balance") return json(await getTrialBalance(admin, auth.orgId, dateFrom, dateTo, entityId));
+      if (parts[1] === "general-ledger") return json(await getGeneralLedger(admin, auth.orgId, request.nextUrl.searchParams.get("account_id") || undefined, dateFrom, dateTo, request.nextUrl.searchParams.get("cost_center_id") || undefined, entityId));
+      if (parts[1] === "profit-loss") return json(await getProfitLoss(admin, auth.orgId, dateFrom, dateTo, entityId));
+      if (parts[1] === "balance-sheet") return json(await getBalanceSheet(admin, auth.orgId, asOf || dateTo, entityId));
+      if (parts[1] === "vat") return json(await getVatReport(admin, auth.orgId, dateFrom, dateTo, entityId));
       if (parts[1] === "payroll-cost") return json(await getPayrollCostReport(admin, auth.orgId, dateFrom, dateTo));
       if (parts[1] === "employee-advances") return json(await getEmployeeAdvancesReport(admin, auth.orgId, dateFrom, dateTo));
       // Operational AR aging uses business document status, not draft invoices.
@@ -1271,7 +1271,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         return json(data || []);
       }
       if (parts[1] === "cash-flow") {
-        return json(await getCashFlowStatement(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31"));
+        return json(await getCashFlowStatement(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31", entityId));
       }
       if (parts[1] === "kpi-dashboard") {
         return json(await getKPIDashboard(admin, auth.orgId, dateFrom || new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10), dateTo || new Date().toISOString().slice(0, 10)));
@@ -1327,11 +1327,11 @@ export async function GET(request: NextRequest, context: RouteContext) {
         const reportId = parts[2];
         if (!reportId) return message("معرف التقرير مطلوب.", 400);
         const reportGenerators: Record<string, () => Promise<unknown>> = {
-          "trial-balance": () => getTrialBalance(admin, auth.orgId, dateFrom, dateTo),
-          "profit-loss": () => getProfitLoss(admin, auth.orgId, dateFrom, dateTo),
-          "balance-sheet": () => getBalanceSheet(admin, auth.orgId, asOf || dateTo),
-          "cash-flow": () => getCashFlowStatement(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31"),
-          "general-ledger": () => getGeneralLedger(admin, auth.orgId, request.nextUrl.searchParams.get("account_id") || undefined, dateFrom, dateTo),
+          "trial-balance": () => getTrialBalance(admin, auth.orgId, dateFrom, dateTo, entityId),
+          "profit-loss": () => getProfitLoss(admin, auth.orgId, dateFrom, dateTo, entityId),
+          "balance-sheet": () => getBalanceSheet(admin, auth.orgId, asOf || dateTo, entityId),
+          "cash-flow": () => getCashFlowStatement(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31", entityId),
+          "general-ledger": () => getGeneralLedger(admin, auth.orgId, request.nextUrl.searchParams.get("account_id") || undefined, dateFrom, dateTo, undefined, entityId),
         };
         const generator = reportGenerators[reportId];
         if (!generator) return message("تقرير غير مدعوم للتصدير.", 404);
@@ -1494,6 +1494,10 @@ export async function POST(request: NextRequest, context: RouteContext) {
   const admin = createAdminClient();
   const body = await request.json().catch(() => ({}));
   body.request_id ||= auth.requestId;
+
+  const requestedEntityId = request.headers.get("X-Accounting-Entity-Id") || undefined;
+  const entityCtx = await resolveAccountingEntityContext(auth.orgId, auth.user.id, auth.role, requestedEntityId);
+  const entityId = !isEntityContextError(entityCtx) ? entityCtx.legalEntityId : undefined;
 
   try {
     if (parts[0] === "init-defaults") {
@@ -2883,9 +2887,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
       if (!reportName) return message("report name is required.", 400);
       const { dateFrom, dateTo } = getQueryDates(request);
       let reportData: unknown;
-      if (reportName === "trial-balance") reportData = await getTrialBalance(admin, auth.orgId, dateFrom, dateTo);
-      else if (reportName === "profit-loss") reportData = await getProfitLoss(admin, auth.orgId, dateFrom, dateTo);
-      else if (reportName === "balance-sheet") reportData = await getBalanceSheet(admin, auth.orgId, dateTo);
+      if (reportName === "trial-balance") reportData = await getTrialBalance(admin, auth.orgId, dateFrom, dateTo, entityId);
+      else if (reportName === "profit-loss") reportData = await getProfitLoss(admin, auth.orgId, dateFrom, dateTo, entityId);
+      else if (reportName === "balance-sheet") reportData = await getBalanceSheet(admin, auth.orgId, dateTo, entityId);
       else return message("Report not supported for export.", 400);
 
       if (format === "csv") {

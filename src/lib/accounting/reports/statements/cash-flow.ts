@@ -20,8 +20,8 @@ interface CashFlowData {
   closing_cash: number;
 }
 
-export async function getCashFlowStatement(admin: AdminClient, orgId: string, dateFrom: string, dateTo: string) {
-  const lines = await queryLedger(admin, { orgId, dateFrom, dateTo });
+export async function getCashFlowStatement(admin: AdminClient, orgId: string, dateFrom: string, dateTo: string, entityId?: string) {
+  const lines = await queryLedger(admin, { orgId, entityId, dateFrom, dateTo });
 
   const categorize = (category: string) => {
     const categoryLines = lines.filter((l) => l.account.cash_flow_category === category);
@@ -65,7 +65,7 @@ export async function getCashFlowStatement(admin: AdminClient, orgId: string, da
   openingDateTo.setDate(openingDateTo.getDate() - 1);
   const openingDateStr = openingDateTo.toISOString().split("T")[0];
 
-  const priorLines = await queryLedger(admin, { orgId, dateTo: openingDateStr, accountTypes: ["asset"] });
+  const priorLines = await queryLedger(admin, { orgId, entityId, dateTo: openingDateStr, accountTypes: ["asset"] });
   const cashAccounts = priorLines.filter((l) =>
     l.account.subtype === "cash" || l.account.subtype === "bank"
   );
@@ -77,7 +77,7 @@ export async function getCashFlowStatement(admin: AdminClient, orgId: string, da
   const closingCash = roundMoney(openingCash + netChange);
 
   // Reconciliation check: verify closing = GL balance at dateTo
-  const closingLines = await queryLedger(admin, { orgId, dateTo, accountTypes: ["asset"] });
+  const closingLines = await queryLedger(admin, { orgId, entityId, dateTo, accountTypes: ["asset"] });
   const closingCashFromGL = roundMoney(
     closingLines
       .filter((l) => l.account.subtype === "cash" || l.account.subtype === "bank")

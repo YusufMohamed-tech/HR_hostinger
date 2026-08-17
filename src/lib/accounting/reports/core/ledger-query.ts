@@ -10,6 +10,7 @@ function db(admin: AdminClient) {
 
 export interface LedgerQueryOptions {
   orgId: string;
+  entityId?: string;
   dateFrom?: string;
   dateTo?: string;
   accountIds?: string[];
@@ -54,7 +55,7 @@ export interface LedgerLine {
 export async function queryLedger(admin: AdminClient, options: LedgerQueryOptions): Promise<LedgerLine[]> {
   const { data, error } = await db(admin)
     .from("accounting_journal_lines")
-    .select("*, account:account_id(id, code, name_ar, name_en, type, subtype, normal_balance, cash_flow_category), entry:journal_entry_id(id, entry_no, entry_date, description, status, source_module, source_id)")
+    .select("*, account:account_id(id, code, name_ar, name_en, type, subtype, normal_balance, cash_flow_category), entry:journal_entry_id(id, entry_no, entry_date, description, status, source_module, source_id, legal_entity_id)")
     .eq("organization_id", options.orgId);
 
   if (error) throw new Error(error.message);
@@ -63,6 +64,7 @@ export async function queryLedger(admin: AdminClient, options: LedgerQueryOption
     const entry = line.entry as Record<string, unknown> | null;
     if (!entry) return false;
     if (!["posted", "reversed"].includes(String(entry.status))) return false;
+    if (options.entityId && String(entry.legal_entity_id || "") !== options.entityId) return false;
 
     const entryDate = String(entry.entry_date);
     if (options.dateFrom && entryDate < options.dateFrom) return false;

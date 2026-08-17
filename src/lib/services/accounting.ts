@@ -74,11 +74,28 @@ import type {
 
 type ApiResult<T> = { data: T | null; error: string | null };
 
+function getEntityHeader(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem("accounting_selected_entity") || null;
+  } catch {
+    return null;
+  }
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<ApiResult<T>> {
   try {
+    const entityId = getEntityHeader();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(options?.headers as Record<string, string> || {}),
+    };
+    if (entityId && !headers["X-Accounting-Entity-Id"]) {
+      headers["X-Accounting-Entity-Id"] = entityId;
+    }
     const response = await fetch(path, {
       ...options,
-      headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
+      headers,
       cache: options?.method ? undefined : "no-store",
     });
     const payload = await response.json().catch(() => ({}));

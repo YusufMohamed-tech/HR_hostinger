@@ -1,7 +1,8 @@
 "use client";
 
 import { useAccountingEntity } from "@/providers/AccountingEntityProvider";
-import { Building2, ChevronDown } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Building2, Check, ChevronDown, Plus } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
 export function AccountingEntitySwitcher() {
@@ -9,6 +10,7 @@ export function AccountingEntitySwitcher() {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -21,16 +23,6 @@ export function AccountingEntitySwitcher() {
   }, []);
 
   if (isLoading || allowedEntities.length === 0) return null;
-
-  if (allowedEntities.length === 1) {
-    return (
-      <div className="flex items-center gap-1.5 px-2 py-1 text-sm text-muted-foreground">
-        <Building2 className="h-4 w-4" />
-        <span className="max-w-[120px] truncate">{currentEntity?.name_ar || currentEntity?.code}</span>
-        <span className="text-xs opacity-60">{currentEntity?.functional_currency_code}</span>
-      </div>
-    );
-  }
 
   const filtered = allowedEntities.filter((e) =>
     !search || e.name_ar.includes(search) || (e.name_en || "").toLowerCase().includes(search.toLowerCase()) || e.code.includes(search)
@@ -53,7 +45,7 @@ export function AccountingEntitySwitcher() {
       </button>
 
       {open && (
-        <div className="absolute start-0 top-full z-50 mt-1 min-w-[220px] rounded-md border bg-popover p-1 shadow-md">
+        <div className="absolute start-0 top-full z-50 mt-1 min-w-[240px] rounded-md border bg-popover p-1 shadow-md">
           {allowedEntities.length > 3 && (
             <input
               type="text"
@@ -65,30 +57,46 @@ export function AccountingEntitySwitcher() {
             />
           )}
           <ul role="listbox" className="max-h-[200px] overflow-y-auto">
-            {filtered.map((entity) => (
-              <li key={entity.id} role="option" aria-selected={entity.id === currentEntity?.id}>
-                <button
-                  onClick={() => {
-                    switchEntity(entity.id);
-                    setOpen(false);
-                    setSearch("");
-                  }}
-                  className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-accent ${
-                    entity.id === currentEntity?.id ? "bg-accent font-medium" : ""
-                  }`}
-                >
-                  <span className="flex-1 truncate text-start">{entity.name_ar}</span>
-                  <span className="text-xs text-muted-foreground">{entity.functional_currency_code}</span>
-                  {entity.is_default && (
-                    <span className="text-[10px] text-muted-foreground">(افتراضي)</span>
-                  )}
-                </button>
-              </li>
-            ))}
+            {filtered.map((entity) => {
+              const isSelected = entity.id === currentEntity?.id;
+              return (
+                <li key={entity.id} role="option" aria-selected={isSelected}>
+                  <button
+                    onClick={() => {
+                      switchEntity(entity.id);
+                      setOpen(false);
+                      setSearch("");
+                    }}
+                    className={`flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-800 ${
+                      isSelected ? "bg-gray-50 dark:bg-gray-900 font-medium" : ""
+                    }`}
+                  >
+                    <Check className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-emerald-600" : "invisible"}`} />
+                    <span className="flex-1 truncate text-start">{entity.name_ar}</span>
+                    <span className="text-xs text-muted-foreground">{entity.functional_currency_code}</span>
+                    {entity.is_default && (
+                      <span className="text-[10px] text-muted-foreground">(افتراضي)</span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
             {filtered.length === 0 && (
               <li className="px-2 py-1.5 text-sm text-muted-foreground">لا توجد نتائج</li>
             )}
           </ul>
+          <div className="border-t mt-1 pt-1">
+            <button
+              onClick={() => {
+                setOpen(false);
+                router.push("/accounting/entity-setup");
+              }}
+              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-muted-foreground hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>إدارة الكيانات</span>
+            </button>
+          </div>
         </div>
       )}
     </div>

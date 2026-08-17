@@ -12,22 +12,23 @@ function inDateRange(date: string, from?: string, to?: string) {
   return (!from || date >= from) && (!to || date <= to);
 }
 
-async function getPostedLines(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
-  // Official financial reports use posted/reversed ledger entries only; draft operational records stay out.
+async function getPostedLines(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string, entityId?: string) {
   const { data, error } = await db(admin)
     .from("accounting_journal_lines")
-    .select("*, account:account_id(id, code, name_ar, name_en, type, subtype, normal_balance), entry:journal_entry_id(id, entry_no, entry_date, description, status, source_module)")
+    .select("*, account:account_id(id, code, name_ar, name_en, type, subtype, normal_balance), entry:journal_entry_id(id, entry_no, entry_date, description, status, source_module, legal_entity_id)")
     .eq("organization_id", orgId);
 
   if (error) throw new Error(error.message);
   return ((data || []) as Record<string, unknown>[]).filter((line) => {
     const entry = line.entry as Record<string, unknown> | null;
-    return ["posted", "reversed"].includes(String(entry?.status)) && inDateRange(String(entry?.entry_date), dateFrom, dateTo);
+    if (!entry) return false;
+    if (entityId && String(entry.legal_entity_id || "") !== entityId) return false;
+    return ["posted", "reversed"].includes(String(entry.status)) && inDateRange(String(entry.entry_date), dateFrom, dateTo);
   });
 }
 
-export async function getTrialBalance(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
-  const lines = await getPostedLines(admin, orgId, dateFrom, dateTo);
+export async function getTrialBalance(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string, entityId?: string) {
+  const lines = await getPostedLines(admin, orgId, dateFrom, dateTo, entityId);
   const rows = new Map<string, Record<string, unknown>>();
 
   for (const line of lines) {
@@ -56,8 +57,8 @@ export async function getTrialBalance(admin: AdminClient, orgId: string, dateFro
   return Array.from(rows.values()).sort((a, b) => String(a.account_code).localeCompare(String(b.account_code)));
 }
 
-export async function getGeneralLedger(admin: AdminClient, orgId: string, accountId?: string, dateFrom?: string, dateTo?: string, costCenterId?: string) {
-  const allLines = await getPostedLines(admin, orgId, undefined, dateTo);
+export async function getGeneralLedger(admin: AdminClient, orgId: string, accountId?: string, dateFrom?: string, dateTo?: string, costCenterId?: string, entityId?: string) {
+  const allLines = await getPostedLines(admin, orgId, undefined, dateTo, entityId);
 
   const matchesCostCenter = (line: Record<string, unknown>) =>
     !costCenterId || String(line.cost_center_id || "") === costCenterId;
@@ -134,8 +135,8 @@ export async function getGeneralLedger(admin: AdminClient, orgId: string, accoun
   };
 }
 
-export async function getProfitLoss(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
-  const rows = await getTrialBalance(admin, orgId, dateFrom, dateTo);
+export async function getProfitLoss(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string, entityId?: string) {
+  const rows = await getTrialBalance(admin, orgId, dateFrom, dateTo, entityId);
 
   const revenueRows = rows.filter((row) => row.account_type === "revenue");
   const expenseRows = rows.filter((row) => row.account_type === "expense");
@@ -193,8 +194,8 @@ export async function getProfitLoss(admin: AdminClient, orgId: string, dateFrom?
   };
 }
 
-export async function getBalanceSheet(admin: AdminClient, orgId: string, asOf?: string) {
-  const rows = await getTrialBalance(admin, orgId, undefined, asOf);
+export async function getBalanceSheet(admin: AdminClient, orgId: string, asOf?: string, entityId?: string) {
+  const rows = await getTrialBalance(admin, orgId, undefined, asOf, entityId);
   const assets = rows.filter((row) => row.account_type === "asset");
   const liabilities = rows.filter((row) => row.account_type === "liability");
   const equity = rows.filter((row) => row.account_type === "equity");
@@ -220,7 +221,7 @@ export async function getBalanceSheet(admin: AdminClient, orgId: string, asOf?: 
   };
 }
 
-export async function getVatReport(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
+export async function getVatReport(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string, entityId?: string) {
   const settings = await db(admin)
     .from("accounting_settings")
     .select("default_vat_payable_id, default_vat_receivable_id")
@@ -230,7 +231,7 @@ export async function getVatReport(admin: AdminClient, orgId: string, dateFrom?:
 
   const payableId = String(settings.data?.default_vat_payable_id || "");
   const receivableId = String(settings.data?.default_vat_receivable_id || "");
-  const lines = await getPostedLines(admin, orgId, dateFrom, dateTo);
+  const lines = await getPostedLines(admin, orgId, dateFrom, dateTo, entityId);
   const payableLines = payableId ? lines.filter((line) => String(line.account_id) === payableId) : [];
   const receivableLines = receivableId ? lines.filter((line) => String(line.account_id) === receivableId) : [];
   const vatCollected = roundMoney(payableLines.reduce((sum, line) => sum + Number(line.credit || 0) - Number(line.debit || 0), 0));
@@ -274,15 +275,26 @@ export async function getEmployeeAdvancesReport(admin: AdminClient, orgId: strin
   };
 }
 
-export async function getAccountingDashboard(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string) {
+export async function getAccountingDashboard(admin: AdminClient, orgId: string, dateFrom?: string, dateTo?: string, entityId?: string) {
+  let journalQuery = db(admin).from("accounting_journal_entries").select("*").eq("organization_id", orgId);
+  let invoiceQuery = db(admin).from("accounting_invoices").select("*, customer:customer_id(name_ar)").eq("organization_id", orgId);
+  let expenseQuery = db(admin).from("accounting_expenses").select("*, vendor:vendor_id(name_ar)").eq("organization_id", orgId);
+  let paymentQuery = db(admin).from("accounting_payments").select("*").eq("organization_id", orgId);
+  if (entityId) {
+    journalQuery = journalQuery.eq("legal_entity_id", entityId);
+    invoiceQuery = invoiceQuery.eq("legal_entity_id", entityId);
+    expenseQuery = expenseQuery.eq("legal_entity_id", entityId);
+    paymentQuery = paymentQuery.eq("legal_entity_id", entityId);
+  }
+
   const [trialBalance, profitLoss, vat, journalResult, invoiceResult, expenseResult, paymentResult] = await Promise.all([
-    getTrialBalance(admin, orgId, dateFrom, dateTo),
-    getProfitLoss(admin, orgId, dateFrom, dateTo),
-    getVatReport(admin, orgId, dateFrom, dateTo),
-    db(admin).from("accounting_journal_entries").select("*").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(8),
-    db(admin).from("accounting_invoices").select("*, customer:customer_id(name_ar)").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(8),
-    db(admin).from("accounting_expenses").select("*, vendor:vendor_id(name_ar)").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(8),
-    db(admin).from("accounting_payments").select("*").eq("organization_id", orgId).order("created_at", { ascending: false }).limit(8),
+    getTrialBalance(admin, orgId, dateFrom, dateTo, entityId),
+    getProfitLoss(admin, orgId, dateFrom, dateTo, entityId),
+    getVatReport(admin, orgId, dateFrom, dateTo, entityId),
+    journalQuery.order("created_at", { ascending: false }).limit(8),
+    invoiceQuery.order("created_at", { ascending: false }).limit(8),
+    expenseQuery.order("created_at", { ascending: false }).limit(8),
+    paymentQuery.order("created_at", { ascending: false }).limit(8),
   ]);
 
   if (journalResult.error) throw new Error(journalResult.error.message);
