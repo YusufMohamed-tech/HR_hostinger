@@ -72,6 +72,7 @@ export function AccountingStatusBadge({ status }: { status: string }) {
     in_progress: { label: "قيد المطابقة", className: "bg-amber-50 text-amber-700 border-amber-200" },
     reconciled: { label: "تمت التسوية", className: "bg-green-50 text-green-700 border-green-200" },
     approved: { label: "معتمد", className: "bg-blue-50 text-blue-700 border-blue-200" },
+    archived: { label: "مؤرشف", className: "bg-slate-50 text-slate-600 border-slate-200" },
     rejected: { label: "مرفوض", className: "bg-red-50 text-red-700 border-red-200" },
     paid: { label: "مدفوع", className: "bg-green-50 text-green-700 border-green-200" },
     issued: { label: "مصدرة", className: "bg-blue-50 text-blue-700 border-blue-200" },
