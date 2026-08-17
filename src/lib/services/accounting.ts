@@ -943,6 +943,24 @@ export function saveParty(values: Record<string, unknown>, id?: string) {
   });
 }
 
+export function getPartyFinancialProfile(partyId: string) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/party-financial-profiles?party_id=${partyId}`);
+}
+
+export function updatePartyFinancialProfile(profileId: string, updates: Record<string, unknown>) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/party-financial-profiles/${profileId}`, {
+    method: "PATCH",
+    body: JSON.stringify(updates),
+  });
+}
+
+export function checkPartyMatch(vatNumber?: string, cr?: string) {
+  const params = new URLSearchParams();
+  if (vatNumber) params.set("vat_number", vatNumber);
+  else if (cr) params.set("commercial_registration", cr);
+  return apiFetch<Record<string, unknown> | null>(`/api/accounting/party-match?${params}`);
+}
+
 export function getCreditNotes(params?: Record<string, string | undefined>) {
   return apiFetch<AccountingCreditNote[]>(`/api/accounting/credit-notes${qs(params)}`);
 }

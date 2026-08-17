@@ -151,6 +151,166 @@ function customerCommandPayload(body: Record<string, unknown>, current?: Record<
   };
 }
 
+async function linkToUnifiedParty(
+  admin: ReturnType<typeof createAdminClient>,
+  orgId: string,
+  actorUserId: string,
+  entityId: string | null,
+  opts: {
+    role: "customer" | "vendor";
+    linkedId: string;
+    name_ar?: unknown;
+    name_en?: unknown;
+    vat_number?: unknown;
+    commercial_registration?: unknown;
+    phone?: unknown;
+    email?: unknown;
+    city?: unknown;
+  },
+) {
+  const vatNumber = typeof opts.vat_number === "string" && opts.vat_number.trim() ? opts.vat_number.trim() : null;
+  const crNumber = typeof opts.commercial_registration === "string" && opts.commercial_registration.trim() ? opts.commercial_registration.trim() : null;
+
+  // Check if a party with same VAT or CR already exists in this org
+  let existingParty: Record<string, unknown> | null = null;
+  if (vatNumber) {
+    const { data } = await db(admin)
+      .from("accounting_parties")
+      .select("*")
+      .eq("organization_id", orgId)
+      .eq("vat_number", vatNumber)
+      .limit(1)
+      .maybeSingle();
+    if (data) existingParty = data;
+  }
+  if (!existingParty && crNumber) {
+    const { data } = await db(admin)
+      .from("accounting_parties")
+      .select("*")
+      .eq("organization_id", orgId)
+      .eq("commercial_registration", crNumber)
+      .limit(1)
+      .maybeSingle();
+    if (data) existingParty = data;
+  }
+
+  let partyId: string;
+  let isNewParty = false;
+
+  if (existingParty) {
+    partyId = existingParty.id as string;
+    // Update link field
+    const linkField = opts.role === "customer" ? "linked_customer_id" : "linked_vendor_id";
+    await db(admin)
+      .from("accounting_parties")
+      .update({ [linkField]: opts.linkedId, updated_at: new Date().toISOString() })
+      .eq("id", partyId);
+  } else {
+    // Create new party
+    isNewParty = true;
+    const partyData: Record<string, unknown> = {
+      organization_id: orgId,
+      legal_entity_id: entityId,
+      party_type: opts.role,
+      name_ar: typeof opts.name_ar === "string" ? opts.name_ar : "",
+      name_en: typeof opts.name_en === "string" ? opts.name_en : null,
+      vat_number: vatNumber,
+      commercial_registration: crNumber,
+      phone: typeof opts.phone === "string" ? opts.phone : null,
+      email: typeof opts.email === "string" ? opts.email : null,
+      city: typeof opts.city === "string" ? opts.city : null,
+      linked_customer_id: opts.role === "customer" ? opts.linkedId : null,
+      linked_vendor_id: opts.role === "vendor" ? opts.linkedId : null,
+    };
+    const { data, error } = await db(admin)
+      .from("accounting_parties")
+      .insert(partyData)
+      .select()
+      .single();
+    if (error) return null;
+    partyId = data.id;
+  }
+
+  // Ensure party role exists
+  await db(admin)
+    .from("accounting_party_roles")
+    .upsert(
+      { organization_id: orgId, party_id: partyId, role: opts.role, status: "active" },
+      { onConflict: "organization_id,party_id,role" },
+    );
+
+  // Ensure financial profile with default AR/AP accounts
+  if (entityId) {
+    const { data: existingProfile } = await db(admin)
+      .from("accounting_party_financial_profiles")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("legal_entity_id", entityId)
+      .eq("party_id", partyId)
+      .maybeSingle();
+
+    if (!existingProfile) {
+      // Find default AR/AP accounts
+      let arAccountId: string | null = null;
+      let apAccountId: string | null = null;
+
+      const { data: arAccount } = await db(admin)
+        .from("accounting_accounts")
+        .select("id")
+        .eq("organization_id", orgId)
+        .eq("type", "asset")
+        .eq("subtype", "receivable")
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      if (arAccount) arAccountId = arAccount.id;
+
+      const { data: apAccount } = await db(admin)
+        .from("accounting_accounts")
+        .select("id")
+        .eq("organization_id", orgId)
+        .eq("type", "liability")
+        .eq("subtype", "payable")
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+      if (apAccount) apAccountId = apAccount.id;
+
+      await db(admin)
+        .from("accounting_party_financial_profiles")
+        .insert({
+          organization_id: orgId,
+          legal_entity_id: entityId,
+          party_id: partyId,
+          ar_account_id: arAccountId,
+          ap_account_id: apAccountId,
+          updated_by: actorUserId,
+        });
+    }
+  }
+
+  // Return party info with roles
+  const { data: roles } = await db(admin)
+    .from("accounting_party_roles")
+    .select("role, status")
+    .eq("party_id", partyId);
+
+  const { data: profile } = await db(admin)
+    .from("accounting_party_financial_profiles")
+    .select("ar_account_id, ap_account_id, payment_terms_days, credit_limit")
+    .eq("party_id", partyId)
+    .eq("organization_id", orgId)
+    .maybeSingle();
+
+  return {
+    party_id: partyId,
+    is_new_party: isNewParty,
+    linked_existing: !isNewParty,
+    roles: roles || [],
+    financial_profile: profile || null,
+  };
+}
+
 type AccountCommandPayloadResult =
   | {
       valid: true;
@@ -1280,6 +1440,33 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (error) throw new Error(error.message);
       return json(data || []);
     }
+    // Party financial profiles
+    if (parts[0] === "party-financial-profiles") {
+      const partyId = request.nextUrl.searchParams.get("party_id");
+      if (!partyId) return message("party_id مطلوب.", 400);
+      const { data, error } = await db(admin)
+        .from("accounting_party_financial_profiles")
+        .select("*, ar_account:ar_account_id(id, code, name_ar, type, subtype), ap_account:ap_account_id(id, code, name_ar, type, subtype)")
+        .eq("organization_id", auth.orgId)
+        .eq("party_id", partyId)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      return json(data);
+    }
+    // Check for existing party by VAT number (for linking suggestion)
+    if (parts[0] === "party-match") {
+      const vatNumber = request.nextUrl.searchParams.get("vat_number");
+      const cr = request.nextUrl.searchParams.get("commercial_registration");
+      if (!vatNumber && !cr) return json(null);
+      let query = db(admin).from("accounting_parties").select("id, name_ar, name_en, vat_number, commercial_registration, party_type").eq("organization_id", auth.orgId);
+      if (vatNumber) query = query.eq("vat_number", vatNumber);
+      else if (cr) query = query.eq("commercial_registration", cr);
+      const { data } = await query.limit(1).maybeSingle();
+      if (!data) return json(null);
+      // Get existing roles
+      const { data: roles } = await db(admin).from("accounting_party_roles").select("role, status").eq("party_id", data.id);
+      return json({ ...data, roles: roles || [] });
+    }
     return message("مسار محاسبي غير مدعوم.", 404);
   } catch (error) {
     return message(error);
@@ -2223,6 +2410,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
         await db(admin).from("accounting_customers").update({ legal_entity_id: custEntityId }).eq("id", record.id);
         record.legal_entity_id = custEntityId;
       }
+      // Unified party: link customer to party
+      const partyResult = await linkToUnifiedParty(admin, auth.orgId, auth.user.id, custEntityId, {
+        role: "customer",
+        linkedId: String(record.id),
+        name_ar: body.name_ar,
+        name_en: body.name_en,
+        vat_number: body.vat_number,
+        commercial_registration: body.commercial_registration,
+        phone: body.phone,
+        email: body.email,
+        city: body.city,
+      });
+      if (partyResult) record.party = partyResult;
       return json(record, 201);
     }
 
@@ -2254,6 +2454,19 @@ export async function POST(request: NextRequest, context: RouteContext) {
         await db(admin).from("accounting_vendors").update({ legal_entity_id: vendorEntityId }).eq("id", record.id);
         record.legal_entity_id = vendorEntityId;
       }
+      // Unified party: link vendor to party
+      const partyResult = await linkToUnifiedParty(admin, auth.orgId, auth.user.id, vendorEntityId, {
+        role: "vendor",
+        linkedId: String(record.id),
+        name_ar: values.name_ar as string,
+        name_en: values.name_en as string | undefined,
+        vat_number: values.vat_number as string | undefined,
+        commercial_registration: values.commercial_registration as string | undefined,
+        phone: values.phone as string | undefined,
+        email: values.email as string | undefined,
+        city: values.city as string | undefined,
+      });
+      if (partyResult) record.party = partyResult;
       return json(record, 201);
     }
 
@@ -3019,6 +3232,28 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         p_expected_version: Number(body.expected_version ?? current.version ?? 0),
         p_operation: "save", p_payload: classification.payload,
       }));
+    }
+
+    // Party financial profile update (AR/AP accounts) — Finance Manager only
+    if (parts[0] === "party-financial-profiles" && parts[1]) {
+      if (auth.role !== "finance_manager" && auth.role !== "admin") {
+        return message("تعديل حسابات الذمم المدينة/الدائنة متاح فقط للمدير المالي.", 403);
+      }
+      const profileId = parts[1];
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString(), updated_by: auth.user.id };
+      if (body.ar_account_id !== undefined) updates.ar_account_id = body.ar_account_id || null;
+      if (body.ap_account_id !== undefined) updates.ap_account_id = body.ap_account_id || null;
+      if (body.payment_terms_days !== undefined) updates.payment_terms_days = Number(body.payment_terms_days) || 30;
+      if (body.credit_limit !== undefined) updates.credit_limit = body.credit_limit ? Number(body.credit_limit) : null;
+      const { data, error } = await db(admin)
+        .from("accounting_party_financial_profiles")
+        .update(updates)
+        .eq("id", profileId)
+        .eq("organization_id", auth.orgId)
+        .select("*, ar_account:ar_account_id(id, code, name_ar), ap_account:ap_account_id(id, code, name_ar)")
+        .single();
+      if (error) throw new Error(error.message);
+      return json(data);
     }
 
     const map: Record<string, { table: string; entity: string }> = {

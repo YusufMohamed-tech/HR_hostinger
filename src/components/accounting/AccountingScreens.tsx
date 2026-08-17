@@ -95,6 +95,9 @@ import {
   updateCustomer,
   updateJournalEntry,
   updateVendor,
+  checkPartyMatch,
+  getPartyFinancialProfile,
+  updatePartyFinancialProfile,
 } from "@/lib/services/accounting";
 import {
   ACCOUNT_TYPE_LABELS_AR,
@@ -508,9 +511,14 @@ function PartyDialog({ kind, party, onDone, onMessage }: { kind: "vendors" | "cu
   const [open, setOpen] = useState(false);
   const [salesCompanies, setSalesCompanies] = useState<AccountingSalesCompanyLink[]>([]);
   const [form, setForm] = useState({ name_ar: "", name_en: "", vat_number: "", commercial_registration: "", phone: "", email: "", city: "", bank_name: "", iban: "", sales_company_id: "" });
+  const [vatMatch, setVatMatch] = useState<Record<string, unknown> | null>(null);
+  const [financialProfile, setFinancialProfile] = useState<Record<string, unknown> | null>(null);
+  const [accounts, setAccounts] = useState<AccountingAccount[]>([]);
+  const { canManageSettings } = useAccountingCapabilities();
+
   useEffect(() => {
     if (kind === "customers" && open) getAccountingSalesCompanies().then((result) => setSalesCompanies(result.data || []));
-    if (!open) return;
+    if (!open) { setVatMatch(null); setFinancialProfile(null); return; }
     const customer = party as AccountingCustomer | undefined;
     setForm(party ? {
       name_ar: party.name_ar || "",
@@ -524,18 +532,106 @@ function PartyDialog({ kind, party, onDone, onMessage }: { kind: "vendors" | "cu
       iban: (party as AccountingVendor).iban || "",
       sales_company_id: customer?.sales_company_id || "",
     } : { name_ar: "", name_en: "", vat_number: "", commercial_registration: "", phone: "", email: "", city: "", bank_name: "", iban: "", sales_company_id: "" });
+    // Load financial profile for existing party
+    if (party) {
+      getAccountingAccounts().then((r) => setAccounts(r.data || []));
+      const partyRecord = party as unknown as Record<string, unknown>;
+      const linkedPartyId = partyRecord.party_id as string | undefined;
+      if (linkedPartyId) {
+        getPartyFinancialProfile(linkedPartyId).then((r) => { if (r.data) setFinancialProfile(r.data); });
+      }
+    }
   }, [kind, party, open]);
+
+  const handleVatBlur = async () => {
+    if (!form.vat_number || party) return;
+    const { data } = await checkPartyMatch(form.vat_number);
+    setVatMatch(data || null);
+  };
+
   const save = async () => {
     const result = kind === "vendors"
       ? party ? await updateVendor(party.id, form as Partial<AccountingVendor>) : await createVendor(form as Partial<AccountingVendor>)
       : party ? await updateCustomer(party.id, form as Partial<AccountingCustomer>) : await createCustomer(form as Partial<AccountingCustomer>);
     if (result.error) onMessage(result.error);
-    else { setOpen(false); setForm({ name_ar: "", name_en: "", vat_number: "", commercial_registration: "", phone: "", email: "", city: "", bank_name: "", iban: "", sales_company_id: "" }); onDone(); }
+    else {
+      const record = result.data as Record<string, unknown> | null;
+      if (record?.party && (record.party as Record<string, unknown>).linked_existing) {
+        onMessage(`تم ربط ${kind === "vendors" ? "المورد" : "العميل"} بطرف موحد موجود (نفس الرقم الضريبي). الطرف يحمل الآن دور عميل ومورد.`);
+      }
+      setOpen(false);
+      setForm({ name_ar: "", name_en: "", vat_number: "", commercial_registration: "", phone: "", email: "", city: "", bank_name: "", iban: "", sales_company_id: "" });
+      onDone();
+    }
   };
+
+  const handleProfileUpdate = async (field: string, value: string) => {
+    if (!financialProfile || !canManageSettings) return;
+    const profileId = financialProfile.id as string;
+    const { data, error } = await updatePartyFinancialProfile(profileId, { [field]: value || null });
+    if (error) onMessage(error);
+    else if (data) setFinancialProfile(data);
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant={party ? "ghost" : "default"} size={party ? "sm" : "default"} className={party ? "text-brand hover:text-brand-dark" : "bg-brand text-white hover:bg-brand-dark"} />}>{party ? <Pencil className="h-4 w-4" /> : <><Plus className="ml-2 h-4 w-4" />{kind === "vendors" ? "إضافة مورد" : "إضافة عميل"}</>}</DialogTrigger>
-      <DialogContent><DialogHeader><DialogTitle>{party ? (kind === "vendors" ? "تعديل مورد" : "تعديل عميل") : (kind === "vendors" ? "إضافة مورد" : "إضافة عميل")}</DialogTitle></DialogHeader><div className="grid gap-3 py-4 sm:grid-cols-2"><Input placeholder="الاسم العربي" value={form.name_ar} onChange={(e) => setForm((p) => ({ ...p, name_ar: e.target.value }))} /><Input placeholder="الاسم الإنجليزي" value={form.name_en} onChange={(e) => setForm((p) => ({ ...p, name_en: e.target.value }))} /><Input placeholder="الرقم الضريبي" value={form.vat_number} onChange={(e) => setForm((p) => ({ ...p, vat_number: e.target.value }))} /><Input placeholder="السجل التجاري" value={form.commercial_registration} onChange={(e) => setForm((p) => ({ ...p, commercial_registration: e.target.value }))} /><Input placeholder="الجوال" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} /><Input placeholder="البريد الإلكتروني" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} /><Input placeholder="المدينة" value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} />{kind === "customers" ? <SelectField value={form.sales_company_id} onChange={(value) => setForm((p) => ({ ...p, sales_company_id: value }))}><option value="">بدون ربط بشركة مبيعات</option>{salesCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</SelectField> : null}{kind === "vendors" ? <><Input placeholder="البنك" value={form.bank_name} onChange={(e) => setForm((p) => ({ ...p, bank_name: e.target.value }))} /><Input placeholder="IBAN" dir="ltr" value={form.iban} onChange={(e) => setForm((p) => ({ ...p, iban: e.target.value }))} /></> : null}</div><DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={save}>حفظ</Button></DialogFooter></DialogContent>
+      <DialogContent className="max-w-lg"><DialogHeader><DialogTitle>{party ? (kind === "vendors" ? "تعديل مورد" : "تعديل عميل") : (kind === "vendors" ? "إضافة مورد" : "إضافة عميل")}</DialogTitle></DialogHeader>
+        <div className="grid gap-3 py-4 sm:grid-cols-2">
+          <Input placeholder="الاسم العربي" value={form.name_ar} onChange={(e) => setForm((p) => ({ ...p, name_ar: e.target.value }))} />
+          <Input placeholder="الاسم الإنجليزي" value={form.name_en} onChange={(e) => setForm((p) => ({ ...p, name_en: e.target.value }))} />
+          <Input placeholder="الرقم الضريبي" value={form.vat_number} onChange={(e) => setForm((p) => ({ ...p, vat_number: e.target.value }))} onBlur={handleVatBlur} />
+          <Input placeholder="السجل التجاري" value={form.commercial_registration} onChange={(e) => setForm((p) => ({ ...p, commercial_registration: e.target.value }))} />
+          <Input placeholder="الجوال" value={form.phone} onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))} />
+          <Input placeholder="البريد الإلكتروني" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
+          <Input placeholder="المدينة" value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} />
+          {kind === "customers" ? <SelectField value={form.sales_company_id} onChange={(value) => setForm((p) => ({ ...p, sales_company_id: value }))}><option value="">بدون ربط بشركة مبيعات</option>{salesCompanies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</SelectField> : null}
+          {kind === "vendors" ? <><Input placeholder="البنك" value={form.bank_name} onChange={(e) => setForm((p) => ({ ...p, bank_name: e.target.value }))} /><Input placeholder="IBAN" dir="ltr" value={form.iban} onChange={(e) => setForm((p) => ({ ...p, iban: e.target.value }))} /></> : null}
+        </div>
+
+        {/* VAT match suggestion */}
+        {vatMatch && !party && (
+          <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm mb-3">
+            <p className="font-semibold text-blue-800">تم العثور على طرف مسجل بنفس الرقم الضريبي</p>
+            <p className="text-blue-700 mt-1">{vatMatch.name_ar as string} — الأدوار: {((vatMatch.roles as Array<{ role: string }>) || []).map(r => r.role === "customer" ? "عميل" : "مورد").join("، ")}</p>
+            <p className="text-blue-600 mt-1">عند الحفظ سيتم ربط {kind === "vendors" ? "المورد" : "العميل"} تلقائيًا بهذا الطرف كدور إضافي.</p>
+          </div>
+        )}
+
+        {/* Financial profile (AR/AP accounts) — visible when editing existing party */}
+        {party && financialProfile && (
+          <div className="border-t pt-3 mt-2 space-y-2">
+            <p className="text-sm font-semibold">الملف المالي (حسابات الذمم)</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <Label className="text-xs">حساب الذمم المدينة (AR)</Label>
+                {canManageSettings ? (
+                  <SelectField value={String((financialProfile.ar_account_id as string) || "")} onChange={(v) => handleProfileUpdate("ar_account_id", v)}>
+                    <option value="">— لا يوجد —</option>
+                    {accounts.filter(a => a.type === "asset" && a.subtype === "receivable").map(a => <option key={a.id} value={a.id}>{a.code} - {a.name_ar}</option>)}
+                  </SelectField>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{(financialProfile.ar_account as Record<string, unknown>)?.name_ar as string || "غير محدد"}</p>
+                )}
+              </div>
+              <div>
+                <Label className="text-xs">حساب الذمم الدائنة (AP)</Label>
+                {canManageSettings ? (
+                  <SelectField value={String((financialProfile.ap_account_id as string) || "")} onChange={(v) => handleProfileUpdate("ap_account_id", v)}>
+                    <option value="">— لا يوجد —</option>
+                    {accounts.filter(a => a.type === "liability" && a.subtype === "payable").map(a => <option key={a.id} value={a.id}>{a.code} - {a.name_ar}</option>)}
+                  </SelectField>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{(financialProfile.ap_account as Record<string, unknown>)?.name_ar as string || "غير محدد"}</p>
+                )}
+              </div>
+            </div>
+            {!canManageSettings && <p className="text-xs text-muted-foreground">تغيير حسابات الذمم متاح فقط للمدير المالي.</p>}
+          </div>
+        )}
+
+        <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>إلغاء</Button><Button className="bg-brand text-white hover:bg-brand-dark" onClick={save}>حفظ</Button></DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }
