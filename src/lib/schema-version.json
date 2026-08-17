@@ -1,5 +1,5 @@
 {
-  "id": "schema_v172_accounting_entity_scope_enforcement",
-  "file": "db/schema_v172_accounting_entity_scope_enforcement.sql",
-  "checksumSha256": "4e5bc0ac4dc629d0e0a25354c37b594b4495da88c10de2fd39ed39d98effe271"
+  "id": "schema_v173_accounting_unified_party_roles",
+  "file": "db/schema_v173_accounting_unified_party_roles.sql",
+  "checksumSha256": "1dba7d6e73bd212c04bc7561f314a3208643f5f000be8899e88184c6674faceb"
 }

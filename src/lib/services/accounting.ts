@@ -1373,3 +1373,98 @@ export function revokePermission(role: string, permission: string) {
     body: JSON.stringify({ role, permission }),
   });
 }
+
+// --- Capabilities ---
+
+export function getMyCapabilities() {
+  return apiFetch<{ role: string; capabilities: string[] }>("/api/accounting/permissions/me");
+}
+
+// --- Diagnostics ---
+
+export function diagnoseUserAccess(userId: string) {
+  return apiFetch<Record<string, unknown>>(`/api/accounting/diagnostics/user-access?user_id=${userId}`);
+}
+
+// --- Party Netting ---
+
+export interface PartyNetting {
+  id: string;
+  netting_no: string;
+  party_id: string;
+  netting_date: string;
+  currency_code: string;
+  total_amount: number;
+  status: "draft" | "prepared" | "posted" | "reversed" | "cancelled";
+  journal_entry_id?: string;
+  prepared_by?: string;
+  approved_by?: string;
+  version: number;
+}
+
+export interface OpenItem {
+  id: string;
+  party_id: string;
+  side: "receivable" | "payable";
+  source_type: string;
+  source_id: string;
+  document_no?: string;
+  document_date: string;
+  due_date?: string;
+  account_id: string;
+  currency_code: string;
+  original_amount: number;
+  settled_amount: number;
+  outstanding_amount: number;
+  status: "open" | "partially_settled" | "settled" | "reversed" | "cancelled";
+}
+
+export interface NettingAllocation {
+  open_item_id: string;
+  side: "receivable" | "payable";
+  allocated_amount: number;
+  account_id: string;
+  source_type: string;
+  source_id: string;
+  document_no?: string;
+}
+
+export function getPartyOpenItems(partyId: string, side?: "receivable" | "payable") {
+  const params = new URLSearchParams();
+  if (side) params.set("side", side);
+  return apiFetch<OpenItem[]>(`/api/accounting/parties/${partyId}/open-items?${params}`);
+}
+
+export function getPartyNettings(partyId?: string) {
+  const params = partyId ? `?party_id=${partyId}` : "";
+  return apiFetch<PartyNetting[]>(`/api/accounting/party-nettings${params}`);
+}
+
+export function createPartyNetting(payload: {
+  party_id: string;
+  netting_date: string;
+  currency_code: string;
+  total_amount: number;
+  allocations: NettingAllocation[];
+  reason?: string;
+  reference?: string;
+}) {
+  return apiFetch<PartyNetting>("/api/accounting/party-nettings", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function postPartyNetting(nettingId: string, expectedVersion: number) {
+  return apiFetch<PartyNetting>(`/api/accounting/party-nettings/${nettingId}/post`, {
+    method: "POST",
+    body: JSON.stringify({ expected_version: expectedVersion }),
+  });
+}
+
+export function reversePartyNetting(nettingId: string, expectedVersion: number, reason: string) {
+  return apiFetch<PartyNetting>(`/api/accounting/party-nettings/${nettingId}/reverse`, {
+    method: "POST",
+    body: JSON.stringify({ expected_version: expectedVersion, reason }),
+  });
+}
