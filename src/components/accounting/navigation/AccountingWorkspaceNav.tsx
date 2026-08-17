@@ -4,7 +4,10 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown } from "lucide-react";
+import { useRoleContext } from "@/providers/RoleProvider";
 import { FINANCE_NAVIGATION, type NavGroup } from "./finance-navigation";
+
+const FINANCE_ROLES = new Set(["Finance_Manager", "Accountant", "Finance_Viewer"]);
 
 function isGroupActive(group: NavGroup, pathname: string): boolean {
   return group.items.some((item) => pathname === item.path || pathname.startsWith(item.path + "/"));
@@ -82,14 +85,13 @@ function GroupDropdown({ group, isActive }: { group: NavGroup; isActive: boolean
 
 export function AccountingWorkspaceNav() {
   const pathname = usePathname();
+  const { currentUser } = useRoleContext();
+  const role = currentUser?.role ?? "";
+  const isFinanceUser = FINANCE_ROLES.has(role);
   const isFinanceRoute =
+    isFinanceUser ||
     pathname.startsWith("/accounting") ||
-    pathname.startsWith("/banking") ||
-    pathname.startsWith("/chat") ||
-    pathname.startsWith("/notifications") ||
-    pathname.startsWith("/payroll") ||
-    pathname.startsWith("/lms") ||
-    pathname.startsWith("/learn");
+    pathname.startsWith("/banking");
 
   if (!isFinanceRoute) return null;
 

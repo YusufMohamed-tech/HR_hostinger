@@ -93,10 +93,31 @@ export const FINANCE_NAVIGATION: NavGroup[] = [
     label_ar: "المزيد",
     label_en: "Extras",
     items: [
-      { id: "chat", label_ar: "المحادثات", label_en: "Chat", path: "/chat" },
+      { id: "chat", label_ar: "الشات", label_en: "Chat", path: "/chat" },
       { id: "notifications", label_ar: "الإشعارات", label_en: "Notifications", path: "/notifications" },
+      { id: "balances", label_ar: "الأرصدة والسلف", label_en: "Balances", path: "/balances" },
       { id: "payroll", label_ar: "الرواتب", label_en: "Payroll", path: "/payroll" },
-      { id: "lms", label_ar: "التعلم", label_en: "Learning", path: "/lms" },
+    ],
+  },
+  {
+    id: "learning",
+    label_ar: "التعلم",
+    label_en: "Learning",
+    items: [
+      { id: "learn-hall", label_ar: "قاعة التعلم", label_en: "Learning Hall", path: "/learn" },
+      { id: "lms-my", label_ar: "تعلمي", label_en: "My Learning", path: "/lms/my" },
+      { id: "lms-catalog", label_ar: "كتالوج الدورات", label_en: "Course Catalog", path: "/lms/catalog" },
+      { id: "lms-instructor", label_ar: "لوحة المدرب", label_en: "Instructor", path: "/lms/instructor" },
+    ],
+  },
+  {
+    id: "inventory",
+    label_ar: "المخزون",
+    label_en: "Inventory",
+    items: [
+      { id: "product-inventory", label_ar: "مخزون المنتجات", label_en: "Product Inventory", path: "/sales/inventory", capability: "permissions:manage" },
+      { id: "employee-custody", label_ar: "تسليم وعهد الموظفين", label_en: "Employee Custody", path: "/sales/inventory/employee-custody", capability: "permissions:manage" },
+      { id: "inventory-returns", label_ar: "مرتجعات أجهزة الراوتر", label_en: "Returns", path: "/sales/inventory/returns", capability: "permissions:manage" },
     ],
   },
 ];
