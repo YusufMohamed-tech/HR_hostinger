@@ -1141,6 +1141,83 @@ export async function GET(request: NextRequest, context: RouteContext) {
       if (parts[1] === "ap-aging-enhanced") {
         return json(await getAPAgingReport(admin, auth.orgId, asOf || undefined));
       }
+      if (parts[1] === "export") {
+        const reportId = parts[2];
+        if (!reportId) return message("معرف التقرير مطلوب.", 400);
+        const reportGenerators: Record<string, () => Promise<unknown>> = {
+          "trial-balance": () => getTrialBalance(admin, auth.orgId, dateFrom, dateTo),
+          "profit-loss": () => getProfitLoss(admin, auth.orgId, dateFrom, dateTo),
+          "balance-sheet": () => getBalanceSheet(admin, auth.orgId, asOf || dateTo),
+          "cash-flow": () => getCashFlowStatement(admin, auth.orgId, dateFrom || "1900-01-01", dateTo || "2999-12-31"),
+          "general-ledger": () => getGeneralLedger(admin, auth.orgId, request.nextUrl.searchParams.get("account_id") || undefined, dateFrom, dateTo),
+        };
+        const generator = reportGenerators[reportId];
+        if (!generator) return message("تقرير غير مدعوم للتصدير.", 404);
+        const reportData = await generator();
+        const format = request.nextUrl.searchParams.get("format") || "csv";
+        if (format === "csv") {
+          const csv = reportToCSV(reportData as Record<string, unknown>);
+          return new Response(csv, {
+            status: 200,
+            headers: {
+              "Content-Type": "text/csv; charset=utf-8",
+              "Content-Disposition": `attachment; filename="${reportId}_${dateTo || "report"}.csv"`,
+            },
+          });
+        }
+        return json(reportData);
+      }
+    }
+    // Party open items (AR/AP)
+    if (parts[0] === "open-items") {
+      const partyId = request.nextUrl.searchParams.get("party_id");
+      const direction = request.nextUrl.searchParams.get("direction") || "receivable";
+      let query = db(admin)
+        .from("accounting_open_items")
+        .select("*")
+        .eq("organization_id", auth.orgId)
+        .eq("direction", direction)
+        .gt("outstanding_amount", 0)
+        .order("due_date", { ascending: true });
+      if (partyId) query = query.eq("party_id", partyId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    // Party netting documents
+    if (parts[0] === "party-nettings") {
+      if (parts[1]) {
+        const netting = await getRecord(admin, "accounting_party_nettings", auth.orgId, parts[1]);
+        const { data: lines } = await db(admin)
+          .from("accounting_party_netting_lines")
+          .select("*, open_item:open_item_id(*)")
+          .eq("netting_id", parts[1])
+          .order("created_at");
+        return json({ ...netting, lines: lines || [] });
+      }
+      const partyId = request.nextUrl.searchParams.get("party_id");
+      let query = db(admin)
+        .from("accounting_party_nettings")
+        .select("*")
+        .eq("organization_id", auth.orgId)
+        .order("netting_date", { ascending: false });
+      if (partyId) query = query.eq("party_id", partyId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return json(data || []);
+    }
+    // Party roles
+    if (parts[0] === "party-roles") {
+      const partyId = request.nextUrl.searchParams.get("party_id");
+      let query = db(admin)
+        .from("accounting_party_roles")
+        .select("*")
+        .eq("organization_id", auth.orgId)
+        .order("created_at", { ascending: false });
+      if (partyId) query = query.eq("party_id", partyId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return json(data || []);
     }
     return message("مسار محاسبي غير مدعوم.", 404);
   } catch (error) {
@@ -2631,6 +2708,84 @@ export async function POST(request: NextRequest, context: RouteContext) {
       const result = await recordGOSIPayment(admin, auth.orgId, auth.user.id, month, totalAmount);
       if (!result.success) return message(result.error || "فشل تسجيل سداد التأمينات.", 500);
       return json(result, 201);
+    }
+
+    // Party netting: create, post, reverse
+    if (parts[0] === "party-nettings") {
+      const { commandId } = accountingCommandContext(request, body);
+      if (parts[1] && parts[2] === "post") {
+        const result = await accountingRpcRecord(admin, "execute_party_netting_command", {
+          p_org_id: auth.orgId,
+          p_actor_user_id: auth.user.id,
+          p_command_id: commandId,
+          p_netting_id: parts[1],
+          p_action: "post",
+        });
+        return json(result);
+      }
+      if (parts[1] && parts[2] === "reverse") {
+        const result = await accountingRpcRecord(admin, "execute_party_netting_command", {
+          p_org_id: auth.orgId,
+          p_actor_user_id: auth.user.id,
+          p_command_id: commandId,
+          p_netting_id: parts[1],
+          p_action: "reverse",
+        });
+        return json(result);
+      }
+      // Create new netting
+      const allocations = Array.isArray(body.allocations) ? body.allocations : [];
+      if (allocations.length === 0) return message("يجب تحديد بنود المقاصة.", 400);
+      const { data: netting, error: nettingError } = await db(admin)
+        .from("accounting_party_nettings")
+        .insert({
+          organization_id: auth.orgId,
+          party_id: body.party_id,
+          netting_date: parseDate(body.netting_date),
+          currency_code: requireText(body.currency_code, "SAR"),
+          total_amount: Number(body.total_amount || 0),
+          notes: requireText(body.notes) || null,
+          status: "draft",
+          created_by: auth.user.id,
+        })
+        .select()
+        .single();
+      if (nettingError) throw new Error(nettingError.message);
+      // Insert netting lines
+      const nettingLines = allocations.map((alloc: Record<string, unknown>) => ({
+        netting_id: netting.id,
+        organization_id: auth.orgId,
+        open_item_id: alloc.open_item_id,
+        direction: alloc.direction,
+        allocated_amount: Number(alloc.allocated_amount || 0),
+      }));
+      const { error: linesError } = await db(admin)
+        .from("accounting_party_netting_lines")
+        .insert(nettingLines);
+      if (linesError) throw new Error(linesError.message);
+      return json(netting, 201);
+    }
+
+    // Party roles
+    if (parts[0] === "party-roles") {
+      if (parts[1]) {
+        const { data, error } = await db(admin)
+          .from("accounting_party_roles")
+          .update({ ...body, updated_at: new Date().toISOString() })
+          .eq("organization_id", auth.orgId)
+          .eq("id", parts[1])
+          .select()
+          .single();
+        if (error) throw new Error(error.message);
+        return json(data);
+      }
+      const { data, error } = await db(admin)
+        .from("accounting_party_roles")
+        .insert({ ...body, organization_id: auth.orgId })
+        .select()
+        .single();
+      if (error) throw new Error(error.message);
+      return json(data, 201);
     }
 
     return message("مسار محاسبي غير مدعوم.", 404);
