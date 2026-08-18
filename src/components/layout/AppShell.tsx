@@ -21,10 +21,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/banking");
 
   return (
-    <div className="flex h-screen overflow-hidden bg-muted" dir="rtl">
+    <div className="flex h-screen bg-muted" dir="rtl">
       {!isFinanceRoute && <Sidebar />}
       <div
-        className={`flex w-full flex-col bg-muted relative ${
+        className={`flex w-full flex-col bg-muted relative min-h-0 ${
           isFinanceRoute ? "" : "lg:pr-[240px]"
         }`}
       >
