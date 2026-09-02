@@ -333,6 +333,10 @@ export async function getLmsCourse(auth: LmsAuth, courseId: string, options: { l
   const course = result.data ? asRecord(result.data) : null;
   if (!course) throw new Error("Course not found");
 
+  // Flatten lessons from sections for consumers that read course.lessons directly
+  const courseSections = asRows(course.sections);
+  course.lessons = courseSections.flatMap((section) => asRows(section.lessons));
+
   const canManage = await canManageCourse(auth, courseId, "any");
   if (!canManage && !(await canAccessPublishedCourse(auth, course))) throw new Error("Forbidden");
   if (options.learner && !canManage) return stripQuizAnswers(course);

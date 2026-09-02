@@ -28,7 +28,7 @@ import {
   getClassroomLesson,
   updateWorkspaceState,
 } from "@/lib/services/learn";
-import { L, N, R, S, Spinner, formatDate } from "./shared";
+import { L, N, R, S, Spinner, formatDate, itemHref } from "./shared";
 import { useClassroomContext } from "./shared";
 
 function embedUrl(url: string) {
@@ -103,7 +103,7 @@ export function LessonExperience({ enrollmentId, lessonId }: { enrollmentId: str
     if (!result.error) {
       await load();
       classroom.refetch();
-      if (S(next.id)) router.push(`/learn/${enrollmentId}/lesson/${S(next.id)}`);
+      if (S(next.id)) router.push(itemHref(enrollmentId, { kind: (S(next.kind) || "lesson") as "lesson" | "quiz" | "project", id: S(next.id) }));
     }
   };
 
@@ -224,12 +224,12 @@ export function LessonExperience({ enrollmentId, lessonId }: { enrollmentId: str
         <div className="mr-auto flex items-center gap-2">
           {S(previous.id) ? (
             <Button asChild variant="ghost" size="sm" className="gap-1">
-              <Link href={`/learn/${enrollmentId}/lesson/${S(previous.id)}`}><ArrowRight className="h-4 w-4" /> السابق</Link>
+              <Link href={itemHref(enrollmentId, { kind: (S(previous.kind) || "lesson") as "lesson" | "quiz" | "project", id: S(previous.id) })}><ArrowRight className="h-4 w-4" /> السابق</Link>
             </Button>
           ) : null}
           {S(next.id) ? (
             <Button asChild variant="ghost" size="sm" className="gap-1">
-              <Link href={`/learn/${enrollmentId}/lesson/${S(next.id)}`}>التالي <ArrowLeft className="h-4 w-4" /></Link>
+              <Link href={itemHref(enrollmentId, { kind: (S(next.kind) || "lesson") as "lesson" | "quiz" | "project", id: S(next.id) })}>التالي <ArrowLeft className="h-4 w-4" /></Link>
             </Button>
           ) : null}
         </div>

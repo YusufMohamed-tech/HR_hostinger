@@ -1985,9 +1985,11 @@ export function LmsCommunityScreen({ courseId }: { courseId?: string }) {
     void getLmsDashboard().then((result) => {
       if (result.data) {
         setDashboard(result.data);
-        const first = rows(result.data.assigned)[0];
-        const firstCourse = getCourseFromEnrollment(first);
-        setSelectedCourseId(str(firstCourse, "id"));
+        const assigned = rows(result.data.assigned);
+        if (assigned.length > 0) {
+          const firstCourse = getCourseFromEnrollment(assigned[0]);
+          setSelectedCourseId(str(firstCourse, "id"));
+        }
       }
     });
   }, [courseId]);
@@ -2069,6 +2071,7 @@ export function LmsCommunityScreen({ courseId }: { courseId?: string }) {
                       <Badge className="border border-slate-200 bg-slate-50 text-slate-600">{postTypeLabels[str(post, "post_type")]}</Badge>
                       {bool(post, "is_pinned") ? <Badge className="border border-amber-200 bg-amber-50 text-amber-700">مثبت</Badge> : null}
                     </div>
+                    <p className="mt-0.5 text-xs text-slate-400">{str(asRow(post.employee), "full_name")}</p>
                     <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{str(post, "body")}</p>
                   </div>
                   <Button size="sm" variant="outline" onClick={() => void reactToLmsPost(postId).then(reload)}>تفاعل</Button>
@@ -2077,7 +2080,7 @@ export function LmsCommunityScreen({ courseId }: { courseId?: string }) {
                   {comments.map((comment) => (
                     <div key={str(comment, "id")} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
                       <div className="mb-1 flex items-center gap-2">
-                        <span className="font-medium">{str(comment, "employee_id")}</span>
+                        <span className="font-medium">{str(asRow(comment.employee), "full_name") || str(comment, "employee_id")}</span>
                         {bool(comment, "is_instructor_reply") ? <Badge className="border border-sky-200 bg-sky-50 text-sky-700">مدرب</Badge> : null}
                       </div>
                       {str(comment, "body")}
@@ -2169,7 +2172,7 @@ export function LmsCertificatesScreen() {
                 </div>
                 <div>
                   <p className="text-sm text-slate-500">ممنوحة إلى</p>
-                  <p className="mt-1 text-xl font-semibold">{str(employee, "name") || str(certificate, "employee_id")}</p>
+                  <p className="mt-1 text-xl font-semibold">{str(employee, "full_name") || str(certificate, "employee_id")}</p>
                 </div>
                 <div className="flex justify-center gap-6 text-sm text-slate-500">
                   <span>{dateText(certificate.issued_at)}</span>

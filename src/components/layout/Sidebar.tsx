@@ -167,7 +167,7 @@ export function SidebarContent() {
       { name: "فريق المبيعات", href: "/sales/team", icon: Users },
     ];
     const hrSalesManagementOps = salesManagementOps.filter(
-      (link) => !["/sales/agents", "/sales/stock"].includes(link.href)
+      (link) => !["/sales/agents", "/sales/stock", "/sales/inventory", "/sales/inventory/assignments", "/sales/inventory/returns"].includes(link.href)
     );
     const ongroundAgentOps: NavLink[] = [
       { name: "المندوبون الميدانيون", href: "/sales/agents", icon: Users },

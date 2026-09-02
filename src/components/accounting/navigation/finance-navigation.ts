@@ -116,7 +116,7 @@ export const FINANCE_NAVIGATION: NavGroup[] = [
     label_ar: "المخزون",
     label_en: "Inventory",
     items: [
-      { id: "product-inventory", label_ar: "مخزون المنتجات", label_en: "Product Inventory", path: "/sales/inventory", capability: "permissions:manage" },
+      { id: "product-inventory", label_ar: "مخزون المنتجات", label_en: "Product Inventory", path: "/accounting/inventory", capability: "permissions:manage" },
       { id: "employee-custody", label_ar: "تسليم وعهد الموظفين", label_en: "Employee Custody", path: "/sales/inventory/employee-custody", capability: "permissions:manage" },
       { id: "inventory-returns", label_ar: "مرتجعات أجهزة الراوتر", label_en: "Returns", path: "/sales/inventory/returns", capability: "permissions:manage" },
     ],
